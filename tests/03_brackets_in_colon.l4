@@ -1,0 +1,6 @@
+: nums { 1 2 3 } ;
+nums .
+: pair [ 10 20 ] ;
+pair .
+: combine { 1 2 } { 2 3 } union ;
+combine .

@@ -1,0 +1,4 @@
+: double 2 * ;
+: m { 1 2 3 } ' double map ;
+: outer m . cr ;
+outer

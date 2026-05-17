@@ -1,0 +1,5 @@
+variable s
+"" s !
+: g 1500 begin s @ "x" + s ! 1 - dup 0 = until drop ;
+g
+s @ cardinality .

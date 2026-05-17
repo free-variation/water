@@ -1,0 +1,6 @@
+logicforth
+{ 2 3 4 } ok
+<1> 1 ok
+{ } ok
+<4> 1 10 20 30 ok
+{ 5 6 } ok
