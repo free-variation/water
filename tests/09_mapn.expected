@@ -1,0 +1,7 @@
+logicforth
+[ 11 22 33 ] ok
+[ 111 222 333 ] ok
+[ ] ok
+[ -5 ] ok
+ok
+[ 4 5 6 ] ok

@@ -113,9 +113,10 @@
  * Each word's header sits immediately before its code field. The layout,
  * with positions given relative to the code field address ("CFA"):
  *
- *     mem[cfa - 3]   link       index of the previous word's CFA, or 0
- *     mem[cfa - 2]   flags      bit 0 = immediate
- *     mem[cfa - 1]   name idx   offset into the byte pool `namepool[]`
+ *     mem[cfa - 4]   link       index of the previous word's CFA, or 0
+ *     mem[cfa - 3]   flags      bit 0 = immediate
+ *     mem[cfa - 2]   name idx   offset into the byte pool `namepool[]`
+ *     mem[cfa - 1]   src idx    offset into `source_pool[]`, or 0
  *     mem[cfa    ]   code field function pointer cast to a cell
  *     mem[cfa + 1]   body...    optional, depending on the word's kind
  *
@@ -124,6 +125,12 @@
  * you add one. References stored in the body of a colon definition are
  * pointers — `cell`s holding `&mem[other_cfa]`. The inner interpreter
  * reads one of these, dereferences it to get the handler, and calls it.
+ *
+ * The `src idx` field is what enables image save: when a colon definition
+ * is compiled, the original body source is captured and stashed in
+ * `source_pool[]`, and this field points at it. Non-colon words (primi-
+ * tives, variables, symbols) carry 0 here. See "image save/load" near
+ * the end of the file for details.
  *
  * The dictionary as a whole is a singly-linked list threaded backward
  * through the link fields. The variable `latest_cfa` points to the most
@@ -233,6 +240,7 @@ static Val mk_mark(void)         { Val r; r.tag = T_MARK;  r.v = 0;   return r; 
 #define RSTACK   256
 #define MAXOBJS  1024
 #define INBUFSZ  16384
+#define SOURCEPOOL 32768
 
 
 /* ---- universe of state ----------------------------------------------- */
@@ -248,6 +256,41 @@ static int  here = 0;
  * dictionary cell-aligned. */
 static char namepool[NAMEPOOL];
 static int  names_here = 0;
+
+/* Captured body source text for every colon definition, stored as
+ * null-terminated strings packed into one byte pool. Each header's
+ * SRCIDX field is the offset of that word's source within this pool,
+ * or 0 if the word has none (primitives, variables, symbols). We start
+ * `sources_here` at 1 so that offset 0 is reserved as the "no source"
+ * sentinel — source_pool[0] stays a null byte forever as a defensive
+ * empty string.
+ *
+ * This pool exists for one purpose: it lets `save` emit a colon
+ * definition back out as the exact text the user originally typed,
+ * which is what makes the saved image human-readable and re-editable
+ * without any decompilation. */
+static char source_pool[SOURCEPOOL];
+static int  sources_here = 1;
+
+/* While compiling a colon definition, this holds the inbuf offset at
+ * which the body source begins — set by `:` (p_colon) right after the
+ * name token has been consumed, and read by `;` (p_semi) to slice out
+ * the body bytes and copy them into source_pool. Cleared on every
+ * compile termination (normal `;`, error, or REPL reset). The fact that
+ * inbuf is *not* reset between lines during a multi-line compile is
+ * what lets this offset stay valid across fgets calls — see the main
+ * loop. */
+static int  compiling_src_start = 0;
+
+/* The outer interpreter's input buffer. The REPL appends fgets'd lines
+ * here and `process()` walks through them token by token. Declared up
+ * here (rather than down beside the tokenizer) so the colon/semi pair
+ * can reference inp directly when capturing body source. See "input
+ * buffer and tokeniser" further down for the rest of the machinery. */
+static char inbuf[INBUFSZ];
+static int  inbuf_len = 0;
+static int  inp = 0;
+static int  need_more = 0;
 
 /* The data stack. All arithmetic, comparison, I/O, and the immediate-
  * word back-patching mechanism push and pop tagged Vals from here. */
@@ -276,9 +319,16 @@ static int  err = 0;
  * breaks the inner-interpreter loop and returns control to the outer. */
 static int  running = 0;
 
-#define LINK(c)    mem[(c) - 3]
-#define FLAGS(c)   mem[(c) - 2]
-#define NAMEIDX(c) mem[(c) - 1]
+/* Header accessor macros. The four header cells sit just before each
+ * CFA in memory order; the offsets here match the layout diagram up at
+ * the top of the file. Adding a new field means picking another negative
+ * index — bumping the size constant in create_header — and updating
+ * FORGET and the GC's dictionary walker to keep their body-boundary
+ * arithmetic in sync. */
+#define LINK(c)    mem[(c) - 4]
+#define FLAGS(c)   mem[(c) - 3]
+#define NAMEIDX(c) mem[(c) - 2]
+#define SRCIDX(c)  mem[(c) - 1]
 #define IS_IMM(c)  (FLAGS(c) & 1)
 
 
@@ -486,25 +536,42 @@ static void print_double(double d) {
     else
         printf("%g", d);
 }
+/* Cap how many elements of a collection get printed. Anything longer
+ * than FIRST + LAST shows the first FIRST, an ellipsis, and the last
+ * LAST — that way truncation always shortens the output rather than
+ * expanding it (which is what would happen at lengths 11..13 if we
+ * truncated every collection with more than 10 elements).
+ *
+ * `print_truncate` is the on/off switch. It applies to every print
+ * call, including nested collections inside whatever's being printed.
+ * The `.a` primitive flips it off for one call by save/setting/
+ * restoring it around print_val. */
+#define PRINT_FIRST 10
+#define PRINT_LAST  3
+static int print_truncate = 1;
+
+static void print_items(Obj *s) {
+    int n = s->len;
+    if (!print_truncate || n <= PRINT_FIRST + PRINT_LAST) {
+        for (int i = 0; i < n; i++) { print_val(s->items[i]); putchar(' '); }
+    } else {
+        for (int i = 0; i < PRINT_FIRST; i++) {
+            print_val(s->items[i]); putchar(' ');
+        }
+        fputs("... ", stdout);
+        for (int i = n - PRINT_LAST; i < n; i++) {
+            print_val(s->items[i]); putchar(' ');
+        }
+    }
+}
+
 static void print_val(Val v) {
     switch (v.tag) {
         case T_FLOAT: print_double(val_f(v)); break;
         case T_SYM:   fputs(&namepool[NAMEIDX(v.v)], stdout); break;
         case T_STR:   fputs(objs[v.v]->bytes, stdout); break;
-        case T_SET: {
-            Obj *s = objs[v.v];
-            fputs("{ ", stdout);
-            for (int i = 0; i < s->len; i++) { print_val(s->items[i]); putchar(' '); }
-            putchar('}');
-            break;
-        }
-        case T_ARR: {
-            Obj *s = objs[v.v];
-            fputs("[ ", stdout);
-            for (int i = 0; i < s->len; i++) { print_val(s->items[i]); putchar(' '); }
-            putchar(']');
-            break;
-        }
+        case T_SET:   fputs("{ ", stdout); print_items(objs[v.v]); putchar('}'); break;
+        case T_ARR:   fputs("[ ", stdout); print_items(objs[v.v]); putchar(']'); break;
         case T_XT:   printf("<xt %lld>",   (long long)v.v); break;
         case T_ADDR: printf("<addr %lld>", (long long)v.v); break;
         default:     printf("<?>"); break;
@@ -636,9 +703,15 @@ static void execute_cfa(int cfa) {
 
 /* ---- defining new words: headers and code fields --------------------- */
 /* alloc_name copies a name into the byte pool. create_header lays down
- * the three header cells (link, flags, name index) and returns the CFA —
- * the index of the cell that will become the code field. The caller
- * fills in that cell with whichever handler is appropriate.
+ * the four header cells (link, flags, name index, source index) and
+ * returns the CFA — the index of the cell that will become the code
+ * field. The caller fills in that cell with whichever handler is
+ * appropriate.
+ *
+ * The source-index field is initialized to 0 ("no source") and is later
+ * filled in by `;` (p_semi) for colon definitions, which captures the
+ * body source text and stashes it in source_pool[] for image save. For
+ * everything else (primitives, variables, symbols) it stays at 0.
  *
  * def_prim is the convenience wrapper that does both: create a header,
  * then write a function pointer into the code field. Returns the CFA so
@@ -654,12 +727,13 @@ static int alloc_name(const char *s) {
     return idx;
 }
 static int create_header(const char *name, int immediate) {
-    if (here + 3 >= MEMSZ) { err = 1; return 0; }
+    if (here + 4 >= MEMSZ) { err = 1; return 0; }
     int link = latest_cfa;
     int n = alloc_name(name);
     mem[here++] = link;
     mem[here++] = immediate ? 1 : 0;
     mem[here++] = n;
+    mem[here++] = 0;            /* SRCIDX — filled in later by `;` if any */
     int cfa = here;
     latest_cfa = cfa;
     return cfa;
@@ -831,6 +905,15 @@ static void p_over(cell *c) { (void)c; Val b = pop(), a = pop(); push(a); push(b
 static void p_rot(cell *c)  { (void)c; Val z = pop(), y = pop(), x = pop(); push(y); push(z); push(x); }
 
 static void p_dot(cell *c)  { (void)c; print_val(pop()); putchar(' '); fflush(stdout); }
+static void p_dot_all(cell *c) {
+    (void)c;
+    int saved = print_truncate;
+    print_truncate = 0;
+    print_val(pop());
+    putchar(' ');
+    fflush(stdout);
+    print_truncate = saved;
+}
 static void p_cr(cell *c)   { (void)c; putchar('\n'); fflush(stdout); }
 static void p_emit_(cell *c){
     (void)c; Val a = pop();
@@ -972,15 +1055,17 @@ static void p_execute(cell *c) {
     execute_cfa((int)v.v);
 }
 
-/* `map`: apply an xt to each element of a set, collect the results into
- * an array. The result is an array — not a set — so the element count
- * and the source's sorted iteration order are both preserved. (A set
- * would silently dedup `f x = f y` cases, which is rarely what the user
- * wants when they say "apply f to each.") We snapshot the source's
+/* `map`: apply an xt to each element of a set or array, collect the
+ * results into a new array. The result is always an array — not a set —
+ * so element count and source iteration order are both preserved. (A
+ * set would silently dedup `f x = f y` cases, which is rarely what the
+ * user wants when they say "apply f to each.") For a set input the
+ * iteration order follows the set's internal sort; for an array input
+ * it follows the array's positional order. We snapshot the source's
  * elements first because the user's mapping word might do anything to
  * the registry.
  *
- * Two GC roots are needed during the loop: `sv` is the source set, which
+ * Two GC roots are needed during the loop: `sv` is the source, which
  * is no longer on the data stack and whose items we read from across xt
  * calls; and the partially-built result array, whose handle is only held
  * in a C local until we push it at the end. We also zero-initialize the
@@ -990,7 +1075,9 @@ static void p_execute(cell *c) {
  * mark_val ignores. */
 static void p_map(cell *c) {
     (void)c; Val xt = pop(), sv = pop();
-    if (xt.tag != T_XT || sv.tag != T_SET) { type_err("map"); return; }
+    if (xt.tag != T_XT || (sv.tag != T_SET && sv.tag != T_ARR)) {
+        type_err("map"); return;
+    }
     Obj *s = objs[sv.v];
     int srclen = s->len;
     Val *src = malloc(sizeof(Val) * (size_t)(srclen > 0 ? srclen : 1));
@@ -1011,6 +1098,62 @@ static void p_map(cell *c) {
     gc_root_pop();
     free(src);
     push(mk_arr(h));
+}
+
+/* `mapn`: n-ary zip-map. ( arr1 arr2 ... arrN xt N -- result )
+ *
+ * All N source arrays must be the same length. For each index i the xt
+ * is called with arr1[i], arr2[i], ..., arrN[i] pushed in that order on
+ * top of the data stack; the xt is expected to consume those N values
+ * and leave one result, which becomes result[i].
+ *
+ * The source arrays stay on the data stack throughout the loop — that's
+ * what keeps them rooted across xt calls that might trigger GC. We
+ * push the per-row inputs ABOVE the source arrays, call xt, and pop
+ * exactly one result. After the loop the sources are dropped and the
+ * result array is pushed. */
+static void p_mapn(cell *c) {
+    (void)c;
+    Val nv = pop();
+    if (nv.tag != T_FLOAT) { type_err("mapn"); return; }
+    int n = (int)val_f(nv);
+    if (n < 1) { type_err("mapn"); return; }
+    Val xt = pop();
+    if (xt.tag != T_XT)     { type_err("mapn"); return; }
+    if (n > dsp)            { type_err("mapn"); return; }
+
+    int base = dsp - n;
+    int len = -1;
+    for (int i = 0; i < n; i++) {
+        if (ds[base + i].tag != T_ARR) { type_err("mapn"); return; }
+        Obj *a = objs[ds[base + i].v];
+        if (len < 0) len = a->len;
+        else if (a->len != len) { type_err("mapn"); return; }
+    }
+
+    int h = obj_new_arr(len);
+    if (err) return;
+    Obj *result = objs[h];
+    memset(result->items, 0, sizeof(Val) * (size_t)(len > 0 ? len : 1));
+    gc_root_push(mk_arr(h));
+
+    for (int i = 0; i < len && !err; i++) {
+        int dsp_before = dsp;
+        for (int k = 0; k < n; k++) {
+            Obj *a = objs[ds[base + k].v];
+            push(a->items[i]);
+        }
+        execute_cfa((int)xt.v);
+        if (err) break;
+        if (dsp != dsp_before + 1) { type_err("mapn"); break; }
+        result->items[i] = pop();
+    }
+    gc_root_pop();
+
+    if (!err) {
+        dsp = base;
+        push(mk_arr(h));
+    }
 }
 
 /* `words`: list every name in the dictionary. Walks the linked list
@@ -1049,7 +1192,47 @@ static void p_words(cell *c) {
  * carries the user's values. They never coexist — compile-time stack use
  * is bracketed by the immediate words, which clean up after themselves. */
 
-static void p_semi(cell *c)  { (void)c; emit((cell)&mem[exit_cfa]); compiling = 0; }
+/* `;` — close the current colon definition. Beyond the obvious work
+ * (emit EXIT, leave compile mode), this also captures the body source
+ * text and stores it for image save.
+ *
+ * The capture works because the outer interpreter has just consumed the
+ * `;` token: `inp` points at the first whitespace after `;`, so the
+ * `;` itself lives at `inp - 1` in inbuf. The body source spans from
+ * `compiling_src_start` (set by `:` right after the name was read) up
+ * to but not including `inp - 1`. We copy those bytes verbatim into
+ * `source_pool` and record the offset in the new word's SRCIDX header
+ * cell. `latest_cfa` still refers to the word being closed — the body
+ * compilation didn't create any new headers (anon quotations don't have
+ * headers, by design) so it hasn't moved.
+ *
+ * For multi-line definitions to work, the REPL main loop must NOT have
+ * reset inbuf between lines. See the "outer REPL loop" code at the
+ * bottom of main: while `compiling` is set, inbuf accumulates so this
+ * slice is contiguous. */
+static void p_semi(cell *c) {
+    (void)c;
+    emit((cell)&mem[exit_cfa]);
+    if (compiling_src_start > 0 && latest_cfa != 0) {
+        int src_end = inp - 1;                  /* position of the ';' */
+        int src_len = src_end - compiling_src_start;
+        if (src_len < 0) src_len = 0;
+        if (sources_here + src_len + 1 > SOURCEPOOL) {
+            printf("? source pool full\n");
+            err = 1;
+        } else {
+            int idx = sources_here;
+            memcpy(&source_pool[sources_here],
+                   &inbuf[compiling_src_start],
+                   (size_t)src_len);
+            source_pool[sources_here + src_len] = 0;
+            sources_here += src_len + 1;
+            SRCIDX(latest_cfa) = idx;
+        }
+    }
+    compiling = 0;
+    compiling_src_start = 0;
+}
 static void p_if(cell *c)    { (void)c; emit((cell)&mem[zbranch_cfa]); push(mk_float((double)here)); emit(0); }
 static void p_then(cell *c)  {
     (void)c; int slot = (int)val_f(pop());
@@ -1156,6 +1339,10 @@ static void p_colon(cell *c) {
     create_header(t, 0);
     emit((cell)&docol);
     compiling = 1;
+    /* Remember where in inbuf the body source starts so `;` can copy it
+     * out. `inp` here is the inbuf position just past the name token,
+     * which is exactly where we want the captured source to begin. */
+    compiling_src_start = inp;
 }
 static void p_variable(cell *c) {
     (void)c; char *t = next_token();
@@ -1176,17 +1363,35 @@ static void p_symbol(cell *c) {
 /* forget: discard the named word and everything defined after it. We
  * roll back here (so the dictionary memory above is available again),
  * names_here (so the name pool reclaims any names of forgotten words),
- * and latest_cfa (so the linked list's head moves back). Objects in the
- * registry that were referenced only from forgotten code are no longer
- * reachable from any root, so the next GC will sweep them up. */
+ * latest_cfa (so the linked list's head moves back), and sources_here
+ * (so any captured body sources for forgotten colon defs are dropped).
+ * Objects in the object registry that were referenced only from
+ * forgotten code are no longer reachable from any root, so the next
+ * GC will sweep them up.
+ *
+ * The sources_here rollback is more involved than the other two: words
+ * that survived the forget might have sources at scattered offsets in
+ * source_pool, so we walk the surviving dictionary chain to find the
+ * highest used source-pool extent, and set sources_here there. Words
+ * without a stored source (SRCIDX == 0) are skipped. */
 static void p_forget(cell *c) {
     (void)c; char *t = next_token();
     if (!t) { printf("? forget needs a name\n"); err = 1; return; }
     int target = find(t);
     if (!target) { printf("? %s\n", t); err = 1; return; }
-    here       = target - 3;
+    here       = target - 4;
     names_here = (int)NAMEIDX(target);
     latest_cfa = (int)LINK(target);
+
+    int max_src_end = 1;  /* offset 0 is reserved as "no source" sentinel */
+    for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
+        int s = (int)SRCIDX(cf);
+        if (s > 0) {
+            int end = s + (int)strlen(&source_pool[s]) + 1;
+            if (end > max_src_end) max_src_end = end;
+        }
+    }
+    sources_here = max_src_end;
 }
 
 
@@ -1203,12 +1408,11 @@ static void p_forget(cell *c) {
  *
  *   · `(` and `\` introduce Forth-style comments — paren comments end at
  *     `)`, line comments end at newline. These are handled inline by the
- *     dispatcher rather than the tokenizer. */
-
-static char inbuf[INBUFSZ];
-static int  inbuf_len = 0;
-static int  inp = 0;
-static int  need_more = 0;
+ *     dispatcher rather than the tokenizer.
+ *
+ * The buffer itself (`inbuf`, `inbuf_len`, `inp`, `need_more`) is
+ * declared up in the "universe of state" section because `:` and `;`
+ * need to read inp during source capture. */
 
 static void inbuf_reset(void) { inbuf_len = 0; inp = 0; inbuf[0] = 0; need_more = 0; }
 
@@ -1406,6 +1610,85 @@ static void process(void) {
 }
 
 
+/* ---- load: process a source file as if typed at the REPL ------------- */
+/* `load` takes a filename as a string on the stack and runs the file's
+ * contents through process() as if the user had typed them.
+ *
+ * The implementation swaps inbuf to hold the file's contents while
+ * processing, then restores the previous input state. Nested loads
+ * stack naturally — each call saves its predecessor's buffer. Errors
+ * inside the loaded file propagate to the caller via the global `err`,
+ * which main() handles by clearing the stacks and compile state.
+ *
+ * Two structural problems specific to file input are caught explicitly:
+ * a string literal with no closing `"` would leave the parser in
+ * need_more state forever (there's no next line to fetch from a file
+ * the way there is from stdin); and a colon definition with no `;`
+ * would leave the system in compile mode after load returns. Both
+ * become errors here. */
+static void p_load(cell *c) {
+    (void)c;
+    Val v = pop();
+    if (v.tag != T_STR) { type_err("load"); return; }
+    gc_root_push(v);
+    const char *filename = objs[v.v]->bytes;
+
+    FILE *f = fopen(filename, "r");
+    if (!f) {
+        printf("? cannot open %s\n", filename);
+        err = 1;
+        gc_root_pop();
+        return;
+    }
+
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    if (fsize < 0 || fsize >= INBUFSZ) {
+        printf("? %s too large or invalid (%ld bytes, max %d)\n",
+               filename, fsize, INBUFSZ - 1);
+        err = 1;
+        fclose(f);
+        gc_root_pop();
+        return;
+    }
+
+    char *saved_buf = malloc((size_t)inbuf_len + 1);
+    memcpy(saved_buf, inbuf, (size_t)inbuf_len);
+    int saved_inbuf_len   = inbuf_len;
+    int saved_inp         = inp;
+    int saved_need_more   = need_more;
+
+    size_t n = fread(inbuf, 1, (size_t)fsize, f);
+    fclose(f);
+    inbuf[n] = 0;
+    inbuf_len = (int)n;
+    inp = 0;
+    need_more = 0;
+
+    process();
+
+    if (!err && need_more) {
+        printf("? %s: unterminated string literal\n", filename);
+        err = 1;
+    }
+    if (!err && compiling) {
+        printf("? %s: unterminated definition\n", filename);
+        err = 1;
+        compiling = 0;
+    }
+
+    memcpy(inbuf, saved_buf, (size_t)saved_inbuf_len);
+    inbuf[saved_inbuf_len] = 0;
+    inbuf_len = saved_inbuf_len;
+    inp       = saved_inp;
+    need_more = saved_need_more;
+    free(saved_buf);
+
+    gc_root_pop();
+}
+
+
 /* ---- garbage collection: mark and sweep ------------------------------ */
 /* Strings, sets, and arrays accumulate in objs[] as side effects of
  * normal execution — every `+` on strings, every set operation, every
@@ -1491,7 +1774,7 @@ static void gc(void) {
     for (int i = 0; i < ncfas; i++) {
         int cfa = cfas[i];
         int body_start = cfa + 1;
-        int body_end = (i + 1 < ncfas) ? cfas[i + 1] - 3 : here;
+        int body_end = (i + 1 < ncfas) ? cfas[i + 1] - 4 : here;
         cfa_fn fn = (cfa_fn)mem[cfa];
         if (fn == docol) {
             mark_body(body_start, body_end);
@@ -1510,6 +1793,217 @@ static void gc(void) {
             objs[h] = NULL;
         }
     }
+}
+
+
+/* ---- image save: write the live state as re-loadable source --------- */
+/* `save` writes the current VM state to a file in the form of a normal
+ * `.l4` source program — the kind of thing the user could have typed
+ * themselves to recreate this state. Loading is just `"foo.l4" load`,
+ * routed through the same outer interpreter as any other input. There
+ * is no separate restore step.
+ *
+ * Why source rather than a binary image:
+ *
+ *   · No pointer relocation. mem[] is full of process-specific addresses
+ *     — code field cells point at C handler functions, body cells point
+ *     into mem itself — and a binary save would have to translate every
+ *     one of them. Source dodges the whole problem.
+ *
+ *   · No decompilation. Reconstructing `if/then/else` and `begin/until`
+ *     from compiled (0branch)/(branch) offsets is finicky, and you lose
+ *     comments and formatting in the process. The body source we capture
+ *     at `;` time is the user's original text, byte for byte.
+ *
+ *   · Human-editable output. The saved file is a real program. You can
+ *     open it, tweak a definition by hand, save it, and reload — same
+ *     workflow as any other source file.
+ *
+ * What `save` emits:
+ *
+ *   · The user-defined words in their original definition order. Walking
+ *     latest_cfa back via LINK gives newest-first; we collect into an
+ *     array and emit in reverse so earlier defs come out first. For each
+ *     word, the format depends on what kind it is, identified by the
+ *     handler in the code field:
+ *
+ *        docol → ": <name> <captured-source> ;"
+ *        dovar → "variable <name>\n<value> <name> !"   (literal value)
+ *        dosym → "symbol <name>"
+ *        anything else (primitive) → skipped — primitives are re-created
+ *                                    by main() at startup.
+ *
+ *   · The data stack, bottom up, each value emitted as a literal in the
+ *     same syntax the parser accepts. Sets and arrays recurse via
+ *     write_val_literal; symbol values turn back into their bare name;
+ *     execution tokens get serialized as `' <name>` if the target word
+ *     can be found in the dictionary by CFA.
+ *
+ * What `save` deliberately doesn't preserve:
+ *
+ *   · Anonymous quotations on the data stack (a T_XT whose CFA is not in
+ *     the dictionary chain). The source for an anon is only available
+ *     when it's embedded in a named definition's captured body; one
+ *     stranded on the stack has no name and no separate stored source.
+ *     We emit a placeholder and a `\` comment flagging it.
+ *
+ *   · Return-stack contents and in-flight execution state. Saving while
+ *     mid-computation isn't a use case the design targets.
+ *
+ *   · The original compile-time binding between callers and callees in
+ *     the face of redefinition. If `foo` referenced an older `bar` that
+ *     was later shadowed, the reloaded `foo` will resolve `bar` to
+ *     whichever version is latest at load time. With no shadowing — the
+ *     overwhelmingly common case — this distinction never matters.
+ *
+ * Object lifetime around the file write: the filename Val is rooted via
+ * gc_root_push before fopen, even though nothing in `save` itself
+ * triggers allocation. It's defensive — write_val_literal recurses
+ * through sets and arrays, and there's no harm in pinning the input
+ * string for the duration. */
+
+static void write_val_literal(FILE *f, Val v);
+
+static void write_val_literal(FILE *f, Val v) {
+    switch (v.tag) {
+        case T_FLOAT: {
+            double d = val_f(v);
+            if (d == (double)(int64_t)d && d > -1e15 && d < 1e15)
+                fprintf(f, "%lld", (long long)d);
+            else
+                fprintf(f, "%.17g", d);   /* high-precision for round trip */
+            break;
+        }
+        case T_STR: {
+            /* Our string syntax has no escapes, so an embedded `"`
+             * would terminate the literal early. Write a placeholder
+             * and a comment for now — adding escapes is a separate
+             * piece of work in the tokenizer. */
+            const char *s = objs[v.v]->bytes;
+            if (strchr(s, '"')) {
+                fputs("\"\" \\ unsavable string (contains quote)", f);
+            } else {
+                fputc('"', f);
+                fputs(s, f);
+                fputc('"', f);
+            }
+            break;
+        }
+        case T_SET: {
+            Obj *s = objs[v.v];
+            fputs("{ ", f);
+            for (int i = 0; i < s->len; i++) {
+                write_val_literal(f, s->items[i]);
+                fputc(' ', f);
+            }
+            fputc('}', f);
+            break;
+        }
+        case T_ARR: {
+            Obj *s = objs[v.v];
+            fputs("[ ", f);
+            for (int i = 0; i < s->len; i++) {
+                write_val_literal(f, s->items[i]);
+                fputc(' ', f);
+            }
+            fputc(']', f);
+            break;
+        }
+        case T_SYM: {
+            fputs(&namepool[NAMEIDX(v.v)], f);
+            break;
+        }
+        case T_XT: {
+            /* Resolve back to a name by scanning the dictionary chain
+             * for a matching CFA. Anonymous quotations created at the
+             * REPL with `[: ... :]` have no dictionary entry and can't
+             * be reproduced this way — we flag them and emit something
+             * that at least parses. */
+            int target = (int)v.v;
+            int found = 0;
+            for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
+                if (cf == target) { found = 1; break; }
+            }
+            if (found) {
+                fprintf(f, "' %s", &namepool[NAMEIDX(target)]);
+            } else {
+                fputs("0 \\ anonymous xt — cannot be saved", f);
+            }
+            break;
+        }
+        default:
+            fprintf(f, "0 \\ unsupported tag %d", (int)v.tag);
+            break;
+    }
+}
+
+static void p_save(cell *c) {
+    (void)c;
+    Val v = pop();
+    if (v.tag != T_STR) { type_err("save"); return; }
+    gc_root_push(v);
+    const char *filename = objs[v.v]->bytes;
+
+    FILE *f = fopen(filename, "w");
+    if (!f) {
+        printf("? cannot create %s\n", filename);
+        err = 1;
+        gc_root_pop();
+        return;
+    }
+
+    /* Walk the dictionary chain newest-first, collect, then reverse so
+     * we emit oldest-first. Forget-time emit ordering matters because
+     * later definitions can reference earlier ones; reading the file
+     * back has to see those earlier defs first.
+     *
+     * Stack allocation is fine: a header is at minimum 5 cells, so the
+     * upper bound on CFAs is MEMSZ/5 ≈ 6500, well within the C stack. */
+    int cfas[MEMSZ];
+    int n = 0;
+    for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
+        if (n < MEMSZ) cfas[n++] = cf;
+    }
+
+    fprintf(f, "\\ logicforth image\n\n");
+
+    for (int i = n - 1; i >= 0; i--) {
+        int cfa = cfas[i];
+        const char *name = &namepool[NAMEIDX(cfa)];
+        cfa_fn fn = (cfa_fn)mem[cfa];
+
+        if (fn == docol) {
+            int src_idx = (int)SRCIDX(cfa);
+            const char *src = (src_idx > 0) ? &source_pool[src_idx] : "";
+            fprintf(f, ": %s%s;\n", name, src);
+        } else if (fn == dovar) {
+            /* Body layout: [tag, payload]. Read the current value back
+             * out as a Val so we can write it through write_val_literal.
+             * The dovar handler stores tag and payload separately in
+             * the two body cells; reassembling them here is symmetric. */
+            fprintf(f, "variable %s\n", name);
+            Val val;
+            val.tag = (Tag)mem[cfa + 1];
+            val.v   = mem[cfa + 2];
+            write_val_literal(f, val);
+            fprintf(f, " %s !\n", name);
+        } else if (fn == dosym) {
+            fprintf(f, "symbol %s\n", name);
+        }
+        /* Primitives have no on-disk representation — they come back
+         * automatically when main() re-registers them at startup. */
+    }
+
+    if (dsp > 0) {
+        fprintf(f, "\n\\ data stack (bottom to top)\n");
+        for (int i = 0; i < dsp; i++) {
+            write_val_literal(f, ds[i]);
+            fputc('\n', f);
+        }
+    }
+
+    fclose(f);
+    gc_root_pop();
 }
 
 
@@ -1535,10 +2029,13 @@ int main(void) {
     def_prim(">",      p_gt,    0);
     def_prim("0=",     p_zeq,   0);
     def_prim(".",      p_dot,   0);
+    def_prim(".a",     p_dot_all, 0);
     def_prim("cr",     p_cr,    0);
     def_prim("emit",   p_emit_, 0);
     def_prim(".s",     p_dots,  0);
     def_prim("bye",    p_bye,   0);
+    def_prim("load",   p_load,  0);
+    def_prim("save",   p_save,  0);
     def_prim(">r",     p_tor,    0);
     def_prim("r>",     p_rfrom,  0);
     def_prim("r@",     p_rfetch, 0);
@@ -1559,6 +2056,7 @@ int main(void) {
     def_prim("at",           p_at,          0);
     def_prim("execute",      p_execute,     0);
     def_prim("map",          p_map,         0);
+    def_prim("mapn",         p_mapn,        0);
     def_prim("words",        p_words,       0);
 
     exit_cfa    = def_prim("exit",      p_exit,    0);
@@ -1586,6 +2084,22 @@ int main(void) {
 
     printf("logicforth\n");
     char line[1024];
+    /* REPL outer loop. Three states the loop can leave a line in:
+     *
+     *   1. `need_more` — a string literal opened on this line and didn't
+     *      close. Skip the cleanup and keep inbuf intact; the next fgets
+     *      appends to it so read_string_literal can finish.
+     *
+     *   2. `compiling` — we're inside a `:` ... `;` that crossed a line
+     *      boundary. Again skip cleanup so inbuf keeps accumulating;
+     *      `;` will need the body source to still be there when it
+     *      captures it into source_pool.
+     *
+     *   3. Otherwise — finished a top-level chunk: print "ok" (if no
+     *      error) and reset inbuf for the next fgets.
+     *
+     * On error we reset everything that holds compile-time state,
+     * including compiling_src_start so the next `:` starts clean. */
     while (fgets(line, sizeof(line), stdin)) {
         int line_len = (int)strlen(line);
         if (inbuf_len + line_len < INBUFSZ - 1) {
@@ -1596,8 +2110,14 @@ int main(void) {
         need_more = 0;
         process();
         if (need_more) continue;
-        if (err) { compiling = 0; dsp = 0; rsp = 0; }
-        if (!err && !compiling) { printf("ok\n"); fflush(stdout); }
+        if (err) {
+            compiling = 0;
+            dsp = 0;
+            rsp = 0;
+            compiling_src_start = 0;
+        }
+        if (compiling) continue;
+        if (!err) { printf("ok\n"); fflush(stdout); }
         inbuf_reset();
     }
     return 0;
