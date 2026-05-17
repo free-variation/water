@@ -1,0 +1,14 @@
+: double 2 * ;
+: square dup * ;
+variable counter
+42 counter !
+symbol red
+5
+{ 1 2 3 }
+red
+"/tmp/lf_image_test.l4" save
+forget double
+"/tmp/lf_image_test.l4" load
+.s
+8 double .
+counter @ .
