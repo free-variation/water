@@ -12,11 +12,11 @@ set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
-src="$root/src/c/logicforth.c"
-bin=$(mktemp -t logicforth-test.XXXXXX)
-trap 'rm -f "$bin"' EXIT
+bin="$root/logicforth"
 
-cc -Wall -Wextra -o "$bin" "$src" || { echo "build failed"; exit 1; }
+# Build via the Makefile so tests run against the same flags as the
+# real binary (-O2, -Wall, -Wextra). make rebuilds only when stale.
+(cd "$root" && make logicforth) || { echo "build failed"; exit 1; }
 
 pass=0
 fail=0

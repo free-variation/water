@@ -1,0 +1,11 @@
+: double 2 * ;
+: square dup * ;
+variable counter
+42 counter !
+symbol red
+' double see
+' square see
+' counter see
+' red see
+' + see
+[: 99 :] see

@@ -58,23 +58,29 @@
  * other words, the question is: what kind of reference, and how does
  * execution step through them? This is "threaded code" — the body is a
  * "thread" that the inner interpreter follows. There are four classical
- * answers, differing in what the body contains and what dispatch costs:
+ * answers, differing in what the body contains and how dispatch works:
  *
  *     Direct-threaded (DTC).   Each body cell is a machine code address.
- *                              The inner interpreter jumps to it. Fastest;
- *                              not portable in C.
+ *                              The inner interpreter jumps to it. Often
+ *                              the fastest; not portable in C.
  *
  *     Subroutine-threaded.     Each body cell is a real CALL instruction.
  *                              No software inner interpreter needed; the
- *                              CPU's call/return mechanism does everything.
+ *                              CPU's call/return mechanism does every-
+ *                              thing. Largest bodies; very fast on CPUs
+ *                              with deep return-stack predictors.
  *
- *     Token-threaded.          Each body cell is a small integer indexing a
- *                              dispatch table. Compact, slowest.
+ *     Token-threaded.          Each body cell is a small integer indexing
+ *                              a dispatch table. Most compact bodies,
+ *                              which gives it good i-cache behavior;
+ *                              roughly comparable to ITC in per-step
+ *                              cost on modern hardware.
  *
  *     Indirect-threaded (ITC). Each body cell is a pointer to a "code
  *                              field" cell. Each word has a code field
  *                              whose value is the address of a handler.
- *                              One extra dereference per step.
+ *                              One extra dereference per step. Same
+ *                              ballpark as token-threaded.
  *
  * This implementation uses ITC. The extra indirection buys us uniformity:
  * every word — primitive, colon definition, variable, constant, whatever —
@@ -106,24 +112,24 @@
  *                            DICTIONARY MEMORY
  *
  * The entire dictionary — headers, code fields, bodies — lives in one flat
- * array of cells, `mem[]`. There is no separate heap and no use of malloc
+ * array of cells, `dict[]`. There is no separate heap and no use of malloc
  * for dictionary storage. A pointer `here` marks the next free cell;
  * defining a new word advances `here`.
  *
  * Each word's header sits immediately before its code field. The layout,
  * with positions given relative to the code field address ("CFA"):
  *
- *     mem[cfa - 4]   link       index of the previous word's CFA, or 0
- *     mem[cfa - 3]   flags      bit 0 = immediate
- *     mem[cfa - 2]   name idx   offset into the byte pool `namepool[]`
- *     mem[cfa - 1]   src idx    offset into `source_pool[]`, or 0
- *     mem[cfa    ]   code field function pointer cast to a cell
- *     mem[cfa + 1]   body...    optional, depending on the word's kind
+ *     dict[cfa - 4]   link       index of the previous word's CFA, or 0
+ *     dict[cfa - 3]   flags      bit 0 = immediate
+ *     dict[cfa - 2]   name idx   offset into the byte pool `namepool[]`
+ *     dict[cfa - 1]   src idx    offset into `source_pool[]`, or 0
+ *     dict[cfa    ]   code field function pointer cast to a cell
+ *     dict[cfa + 1]   body...    optional, depending on the word's kind
  *
  * "CFA" is short for "code field address" and is the conventional way to
  * refer to a word. To get to the header you subtract; to get to the body
  * you add one. References stored in the body of a colon definition are
- * pointers — `cell`s holding `&mem[other_cfa]`. The inner interpreter
+ * pointers — `cell`s holding `&dict[other_cfa]`. The inner interpreter
  * reads one of these, dereferences it to get the handler, and calls it.
  *
  * The `src idx` field is what enables image save: when a colon definition
@@ -210,45 +216,57 @@ typedef int64_t cell;
  * trouble and works the same on every machine. Handles (for objects in
  * the object registry) are small integers stored directly. */
 
+/* Ordering matters: val_cmp uses the numeric Tag value as the cross-type
+ * tie-breaker when comparing values of different kinds. The sequence
+ * below goes from conceptually simplest to most complex — atoms first
+ * (T_SYM is just an identity), then scalars (T_FLOAT carries arithmetic
+ * semantics), then text (T_STRING is variable-length bytes), then
+ * collections, then internal/reserved types. The specific numbers are
+ * never inspected outside this comparison, so the ordering choice is
+ * cosmetic: it determines how heterogeneous sets sort and how mixed
+ * stacks display. */
 typedef enum {
     T_NONE = 0,
-    T_FLOAT,      /* the only numeric type                                 */
     T_SYM,        /* symbol; payload = CFA of the defining word            */
-    T_STR,        /* string; payload = index into objs[]                   */
-    T_SET,        /* set; payload = index into objs[]                      */
-    T_ARR,        /* array; payload = index into objs[]                    */
+    T_FLOAT,      /* the only numeric type                                 */
+    T_STRING,     /* string; payload = index into objects[]                */
+    T_SET,        /* set; payload = index into objects[]                   */
+    T_ARRAY,      /* array; payload = index into objects[]                 */
     T_XT,         /* execution token; payload = CFA                        */
-    T_ADDR,       /* dictionary address; payload = cell index into mem[]   */
+    T_ADDR,       /* dictionary address; payload = cell index into dict[]  */
     T_MARK        /* internal marker used by `{` `}` and `[` `]` collection */
 } Tag;
 
-typedef struct { Tag tag; int64_t v; } Val;
+typedef struct { Tag tag; int64_t data; } Val;
 
-static double val_f(Val x)       { double d; memcpy(&d, &x.v, 8); return d; }
-static Val mk_float(double d)    { Val r; r.tag = T_FLOAT; memcpy(&r.v, &d, 8); return r; }
-static Val mk_sym(int cfa)       { Val r; r.tag = T_SYM;   r.v = cfa; return r; }
-static Val mk_str(int h)         { Val r; r.tag = T_STR;   r.v = h;   return r; }
-static Val mk_set(int h)         { Val r; r.tag = T_SET;   r.v = h;   return r; }
-static Val mk_arr(int h)         { Val r; r.tag = T_ARR;   r.v = h;   return r; }
-static Val mk_xt(int cfa)        { Val r; r.tag = T_XT;    r.v = cfa; return r; }
-static Val mk_addr(int idx)      { Val r; r.tag = T_ADDR;  r.v = idx; return r; }
-static Val mk_mark(void)         { Val r; r.tag = T_MARK;  r.v = 0;   return r; }
+static double unpack_float(Val packed)  { double d; memcpy(&d, &packed.data, 8); return d; }
+static Val make_float(double d)         { Val value; value.tag = T_FLOAT;  memcpy(&value.data, &d, 8); return value; }
+static Val make_sym(int cfa)            { Val value; value.tag = T_SYM;    value.data = cfa; return value; }
+static Val make_string(int handle)      { Val value; value.tag = T_STRING; value.data = handle; return value; }
+static Val make_set(int handle)         { Val value; value.tag = T_SET;    value.data = handle; return value; }
+static Val make_array(int handle)       { Val value; value.tag = T_ARRAY;  value.data = handle; return value; }
+static Val make_xt(int cfa)             { Val value; value.tag = T_XT;     value.data = cfa; return value; }
+static Val make_addr(int cell_index)    { Val value; value.tag = T_ADDR;   value.data = cell_index; return value; }
+static Val make_mark(void)              { Val value; value.tag = T_MARK;   value.data = 0; return value; }
 
-#define MEMSZ    32768
-#define NAMEPOOL 8192
-#define DSTACK   256
-#define RSTACK   256
-#define MAXOBJS  1024
-#define INBUFSZ  16384
-#define SOURCEPOOL 32768
+/* Static footprint. Sized generously — total cost is around 10 MB,
+ * irrelevant on modern hardware, but it leaves headroom for workloads
+ * that compile, run, and discard large numbers of definitions. */
+#define MEMSZ      1048576    /* dictionary cells (8 MB at 8 bytes each) */
+#define NAMEPOOL   32768      /* word-name bytes                          */
+#define DSTACK     256        /* data stack depth (Forth tradition: shallow) */
+#define RSTACK     256        /* return stack depth                       */
+#define MAXOBJS    65536      /* live string/set/array slots              */
+#define INBUFSZ    16384      /* max source bytes per single `:`…`;`      */
+#define SOURCEPOOL 1048576    /* total captured body-source storage (1 MB) */
 
 
 /* ---- universe of state ----------------------------------------------- */
 
-/* mem[]: the dictionary. A flat cell array growing upward. It holds word
+/* dict[]: the dictionary. A flat cell array growing upward. It holds word
  * headers, code-field function pointers, and the bodies of colon
  * definitions. `here` is the next free cell index. */
-static cell mem[MEMSZ];
+static cell dict[MEMSZ];
 static int  here = 0;
 
 /* Word names live separately in a packed byte pool. Headers store an
@@ -283,24 +301,26 @@ static int  sources_here = 1;
 static int  compiling_src_start = 0;
 
 /* The outer interpreter's input buffer. The REPL appends fgets'd lines
- * here and `process()` walks through them token by token. Declared up
+ * here and `run_outer()` walks through them token by token. Declared up
  * here (rather than down beside the tokenizer) so the colon/semi pair
- * can reference inp directly when capturing body source. See "input
+ * can reference inbuf_pos directly when capturing body source. See "input
  * buffer and tokeniser" further down for the rest of the machinery. */
 static char inbuf[INBUFSZ];
 static int  inbuf_len = 0;
-static int  inp = 0;
+static int  inbuf_pos = 0;
 static int  need_more = 0;
 
 /* The data stack. All arithmetic, comparison, I/O, and the immediate-
  * word back-patching mechanism push and pop tagged Vals from here. */
-static Val ds[DSTACK]; static int dsp = 0;
+static Val data_stack[DSTACK]; 
+static int dsp = 0;
 
 /* The return stack. The inner interpreter uses it to remember where to
  * resume after a colon definition finishes. The user can also push to it
  * via >r and pop back via r>. These two roles share one stack by Forth
  * tradition; the user must keep >r and r> balanced within a word. */
-static Val rs[RSTACK]; static int rsp = 0;
+static Val return_stack[RSTACK]; 
+static int rsp = 0;
 
 /* The instruction pointer used by the inner interpreter. It always points
  * at the NEXT body cell to be processed. Modified by `docol`, `p_exit`,
@@ -313,7 +333,7 @@ static int  latest_cfa = 0;
 static int  compiling = 0;
 
 /* Sticky error flag; reset at the top of each input chunk. */
-static int  err = 0;
+static int  error_flag = 0;
 
 /* Cleared by the EXIT primitive when it sees an empty return stack; this
  * breaks the inner-interpreter loop and returns control to the outer. */
@@ -325,42 +345,54 @@ static int  running = 0;
  * index — bumping the size constant in create_header — and updating
  * FORGET and the GC's dictionary walker to keep their body-boundary
  * arithmetic in sync. */
-#define LINK(c)    mem[(c) - 4]
-#define FLAGS(c)   mem[(c) - 3]
-#define NAMEIDX(c) mem[(c) - 2]
-#define SRCIDX(c)  mem[(c) - 1]
+#define LINK(c)    dict[(c) - 4]
+#define FLAGS(c)   dict[(c) - 3]
+#define NAMEIDX(c) dict[(c) - 2]
+#define SRCIDX(c)  dict[(c) - 1]
 #define IS_IMM(c)  (FLAGS(c) & 1)
 
 
 /* ---- object registry -------------------------------------------------- */
 /* Strings, sets, and arrays don't fit in a single 8-byte cell, so they
- * live in heap-allocated Obj structs. The stack carries small integer
- * handles (indices into objs[]). This separation lets the dictionary
+ * live in heap-allocated Object structs. The stack carries small integer
+ * handles (indices into objects[]). This separation lets the dictionary
  * remain a uniform cell array while permitting variable-size first-class
  * compound values.
  *
- * Strings are immutable byte arrays. Arrays are immutable in size but
- * mutable in contents. Sets are fully mutable: `add` modifies them in
- * place, so two stack copies of the same set handle refer to the same
- * underlying storage. */
+ * Strings, arrays, and sets are all value-semantic from the user's
+ * perspective: no exposed word mutates an existing collection. Every
+ * operation that appears to "change" a set or string — concatenation,
+ * union, intersection, difference, map — builds a fresh Object and
+ * returns its handle. The internal helpers (set_add, set_member,
+ * realloc on items growth) do mutate, but they're only invoked while
+ * constructing a brand-new collection that no other handle yet refers
+ * to. Two stack copies of the same handle therefore always observe the
+ * same contents over their entire lifetime. */
 
-typedef enum { OBJ_STR, OBJ_SET, OBJ_ARR } ObjKind;
+typedef enum { OBJECT_STRING, OBJECT_SET, OBJECT_ARRAY } ObjectKind;
 typedef struct {
-    ObjKind kind;
+    ObjectKind kind;
     int len, cap;
-    char *bytes;     /* OBJ_STR */
-    Val  *items;     /* OBJ_SET, OBJ_ARR */
-} Obj;
+    /* A tagged union: exactly one of the storage pointers is live at a
+     * time, selected by `kind`. The anonymous-union form (C11) keeps
+     * existing access syntax — `o->bytes` for OBJECT_STRING, `o->items` for
+     * OBJECT_SET/OBJECT_ARRAY — while making it explicit at the type level that
+     * the two pointers share storage and only one is meaningful. */
+    union {
+        char *bytes;     /* OBJECT_STRING */
+        Val  *items;     /* OBJECT_SET, OBJECT_ARRAY */
+    };
+} Object;
 
-static Obj *objs[MAXOBJS];
-static int  nobjs = 0;
+static Object *objects[MAXOBJS];
+static int  n_objects = 0;
 
 /* GC roots beyond the two stacks and the dictionary: a small fixed stack
  * that C-level primitives use to keep heap objects alive across calls
  * that might trigger collection. `map` is the canonical example — it
  * allocates an intermediate result set whose handle is only held in a C
  * local; without rooting, a GC triggered by the user's xt would free the
- * partially-built result and leave us writing into a dangling Obj. */
+ * partially-built result and leave us writing into a dangling Object. */
 #define GC_ROOTS_MAX 16
 static Val gc_roots[GC_ROOTS_MAX];
 static int n_gc_roots = 0;
@@ -375,57 +407,90 @@ static void gc_root_pop(void) { if (n_gc_roots > 0) n_gc_roots--; }
  * bodies, and their CFAs are declared after this section. */
 static void gc(void);
 
-/* Pick a slot in objs[]. Fast path: extend nobjs upward. If the array is
- * full, look for a NULL hole left by a previous sweep. Only when no hole
- * is available do we actually run the collector, then look again. A
- * return of -1 means every slot is genuinely reachable. */
-static int obj_alloc_slot(void) {
-    if (nobjs < MAXOBJS) return nobjs++;
-    for (int i = 0; i < MAXOBJS; i++) if (objs[i] == NULL) return i;
+/* Pick a slot in objects[]. Three tiers, cheapest first:
+ *
+ *   1. The high-water mark `n_objects` hasn't hit MAXOBJS yet — just take
+ *      the next slot. O(1), the common case.
+ *
+ *   2. n_objects is at the cap, but a previous sweep left NULL holes. Scan
+ *      to find one. O(MAXOBJS), but no GC churn.
+ *
+ *   3. No holes either — only now do we actually run the collector,
+ *      then re-scan. GC is the last resort because it's stop-the-world:
+ *      it walks the data stack, return stack, gc_roots, every header,
+ *      and every reachable Object. We don't want to pay that cost while
+ *      slots are still freely available.
+ *
+ * A return of -1 means every slot is genuinely reachable and there's
+ * nothing more we can do — the caller turns this into the sticky error_flag
+ * flag. */
+static int object_alloc_slot(void) {
+    if (n_objects < MAXOBJS) return n_objects++;
+    
+    for (int i = 0; i < MAXOBJS; i++) if (objects[i] == NULL) return i;
     gc();
-    for (int i = 0; i < MAXOBJS; i++) if (objs[i] == NULL) return i;
+    
+    for (int i = 0; i < MAXOBJS; i++) if (objects[i] == NULL) return i;
     return -1;
 }
 
-static int obj_new_str(const char *s, int n) {
-    int idx = obj_alloc_slot();
-    if (idx < 0) { err = 1; return 0; }
-    Obj *o = calloc(1, sizeof(*o));
-    o->kind = OBJ_STR; o->len = n; o->cap = n;
-    o->bytes = malloc((size_t)n + 1);
-    memcpy(o->bytes, s, (size_t)n); o->bytes[n] = 0;
-    objs[idx] = o;
+static int object_new_string(const char *bytes, int length) {
+    int idx = object_alloc_slot();
+    if (idx < 0) { error_flag = 1; return 0; }
+
+    Object *o = calloc(1, sizeof(*o));
+    o->kind = OBJECT_STRING;
+    o->len = length;
+    o->cap = length;
+    o->bytes = malloc((size_t)length + 1);
+    memcpy(o->bytes, bytes, (size_t)length); o->bytes[length] = 0;
+
+    objects[idx] = o;
     return idx;
 }
-static int obj_new_set(void) {
-    int idx = obj_alloc_slot();
-    if (idx < 0) { err = 1; return 0; }
-    Obj *o = calloc(1, sizeof(*o));
-    o->kind = OBJ_SET; o->cap = 4;
+
+/* Starting capacity for a freshly-built set's items array. Small enough
+ * to avoid wasting memory on sets that stay tiny; the doubling growth
+ * in set_add (cap *= 2 on overflow) takes over from there. */
+#define SET_INITIAL_CAPACITY 4
+
+static int object_new_set(void) {
+    int idx = object_alloc_slot();
+    if (idx < 0) { error_flag = 1; return 0; }
+
+    Object *o = calloc(1, sizeof(*o));
+    o->kind = OBJECT_SET;
+    o->cap = SET_INITIAL_CAPACITY;
     o->items = malloc(sizeof(Val) * (size_t)o->cap);
-    objs[idx] = o;
+
+    objects[idx] = o;
     return idx;
 }
-static int obj_new_arr(int n) {
-    int idx = obj_alloc_slot();
-    if (idx < 0) { err = 1; return 0; }
-    Obj *o = calloc(1, sizeof(*o));
-    o->kind = OBJ_ARR; o->len = n; o->cap = n;
-    o->items = malloc(sizeof(Val) * (size_t)(n > 0 ? n : 1));
-    objs[idx] = o;
+
+static int object_new_array(int num_elements) {
+    int idx = object_alloc_slot();
+    if (idx < 0) { error_flag = 1; return 0; }
+
+    Object *o = calloc(1, sizeof(*o));
+    o->kind = OBJECT_ARRAY;
+    o->len = num_elements;
+    o->cap = num_elements;
+    o->items = malloc(sizeof(Val) * (size_t)(num_elements > 0 ? num_elements : 1));
+
+    objects[idx] = o;
     return idx;
 }
 
 
 /* ---- stack helpers ---------------------------------------------------- */
 /* Bounds-checked push and pop. Errors are sticky: a single bad operation
- * sets `err`, the outer interpreter notices, and the current input is
+ * sets `error_flag`, the outer interpreter notices, and the current input is
  * abandoned. */
 
-static void push(Val x)  { if (dsp < DSTACK) ds[dsp++] = x; else err = 1; }
-static Val  pop(void)    { if (dsp > 0) return ds[--dsp]; err = 1; Val z = {T_NONE,0}; return z; }
-static void rpush(Val x) { if (rsp < RSTACK) rs[rsp++] = x; else err = 1; }
-static Val  rpop(void)   { if (rsp > 0) return rs[--rsp]; err = 1; Val z = {T_NONE,0}; return z; }
+static void push(Val x)  { if (dsp < DSTACK) data_stack[dsp++] = x; else error_flag = 1; }
+static Val  pop(void)    { if (dsp > 0) return data_stack[--dsp]; error_flag = 1; Val z = {T_NONE,0}; return z; }
+static void rpush(Val x) { if (rsp < RSTACK) return_stack[rsp++] = x; else error_flag = 1; }
+static Val  rpop(void)   { if (rsp > 0) return return_stack[--rsp]; error_flag = 1; Val z = {T_NONE,0}; return z; }
 
 
 /* ---- value comparison ------------------------------------------------- */
@@ -436,30 +501,50 @@ static Val  rpop(void)   { if (rsp > 0) return rs[--rsp]; err = 1; Val z = {T_NO
  * the binary-search invariants in set_add and set_member. */
 
 static int val_cmp(Val a, Val b) {
+    /* Cross-type tie-breaker: order by tag value (see the Tag enum
+     * for the chosen sequence). Never zero here, since tags differ. */
     if (a.tag != b.tag) return (int)a.tag - (int)b.tag;
+
     switch (a.tag) {
         case T_FLOAT: {
-            double da = val_f(a), db = val_f(b);
-            return da < db ? -1 : (da > db ? 1 : 0);
+            double a_value = unpack_float(a);
+            double b_value = unpack_float(b);
+            if (a_value < b_value) return -1;
+            if (a_value > b_value) return  1;
+            return 0;
         }
         case T_SYM: case T_XT: case T_ADDR:
-            return a.v < b.v ? -1 : (a.v > b.v ? 1 : 0);
-        case T_STR: {
-            Obj *oa = objs[a.v], *ob = objs[b.v];
-            int n = oa->len < ob->len ? oa->len : ob->len;
-            int c = memcmp(oa->bytes, ob->bytes, (size_t)n);
-            if (c) return c;
-            return oa->len - ob->len;
+            /* Compare by identity / index — for symbols, by the CFA of
+             * the defining word; for xt, by the target word's CFA; for
+             * addr, by the dict[] cell index. */
+            if (a.data < b.data) return -1;
+            if (a.data > b.data) return  1;
+            return 0;
+        case T_STRING: {
+            Object *string_a = objects[a.data];
+            Object *string_b = objects[b.data];
+            int compare_length = string_a->len < string_b->len
+                               ? string_a->len : string_b->len;
+            int byte_diff = memcmp(string_a->bytes, string_b->bytes,
+                                   (size_t)compare_length);
+            if (byte_diff) return byte_diff;
+            /* Same prefix — shorter string sorts first. */
+            return string_a->len - string_b->len;
         }
-        case T_SET: case T_ARR: {
-            Obj *oa = objs[a.v], *ob = objs[b.v];
-            int n = oa->len < ob->len ? oa->len : ob->len;
-            for (int i = 0; i < n; i++) {
-                int c = val_cmp(oa->items[i], ob->items[i]);
-                if (c) return c;
+        case T_SET: case T_ARRAY: {
+            Object *collection_a = objects[a.data];
+            Object *collection_b = objects[b.data];
+            int compare_length = collection_a->len < collection_b->len
+                               ? collection_a->len : collection_b->len;
+            for (int i = 0; i < compare_length; i++) {
+                int element_cmp = val_cmp(collection_a->items[i],
+                                          collection_b->items[i]);
+                if (element_cmp) return element_cmp;
             }
-            return oa->len - ob->len;
+            /* All compared elements equal — shorter collection sorts first. */
+            return collection_a->len - collection_b->len;
         }
+        
         default: return 0;
     }
 }
@@ -471,56 +556,83 @@ static int val_cmp(Val a, Val b) {
  * (silent dedup). Union, intersection, and difference all build new sets
  * by walking the sorted backing arrays. */
 
-static void set_add(int h, Val v) {
-    Obj *s = objs[h];
-    int lo = 0, hi = s->len;
-    while (lo < hi) {
-        int mid = (lo + hi) / 2;
-        int c = val_cmp(s->items[mid], v);
-        if (c == 0) return;
-        if (c < 0) lo = mid + 1; else hi = mid;
+static void set_add(int set_handle, Val value) {
+    Object *set = objects[set_handle];
+    
+    /* Binary search for the insertion point. The set is kept sorted by
+     * val_cmp, so a hit on `value` means it's already a member — skip. */
+    int low = 0, high = set->len;
+    while (low < high) {
+        int mid = (low + high) / 2;
+        int cmp = val_cmp(set->items[mid], value);
+        
+        if (cmp == 0) return;                /* already present, no-op */
+        if (cmp < 0) low = mid + 1;
+        else         high = mid;
     }
-    if (s->len >= s->cap) {
-        s->cap *= 2;
-        s->items = realloc(s->items, sizeof(Val) * (size_t)s->cap);
+    
+    /* Insertion point is `low`. Grow the items array if full. */
+    if (set->len >= set->cap) {
+        set->cap *= 2;
+        set->items = realloc(set->items, sizeof(Val) * (size_t)set->cap);
     }
-    memmove(&s->items[lo + 1], &s->items[lo], sizeof(Val) * (size_t)(s->len - lo));
-    s->items[lo] = v;
-    s->len++;
+    
+    /* Slide [low..end) right by one slot to open the gap, then drop in. */
+    memmove(&set->items[low + 1], &set->items[low],
+            sizeof(Val) * (size_t)(set->len - low));
+    set->items[low] = value;
+    set->len++;
 }
 
-static int set_member(int h, Val v) {
-    Obj *s = objs[h];
-    int lo = 0, hi = s->len;
-    while (lo < hi) {
-        int mid = (lo + hi) / 2;
-        int c = val_cmp(s->items[mid], v);
-        if (c == 0) return 1;
-        if (c < 0) lo = mid + 1; else hi = mid;
+static int set_member(int set_handle, Val value) {
+    Object *set = objects[set_handle];
+    
+    int low = 0, high = set->len;
+    while (low < high) {
+        int mid = (low + high) / 2;
+        int cmp = val_cmp(set->items[mid], value);
+        if (cmp == 0) return 1;
+        if (cmp < 0) low = mid + 1;
+        else         high = mid;
     }
     return 0;
 }
 
-static int set_union(int a, int b) {
-    int h = obj_new_set();
-    Obj *oa = objs[a], *ob = objs[b];
-    for (int i = 0; i < oa->len; i++) set_add(h, oa->items[i]);
-    for (int i = 0; i < ob->len; i++) set_add(h, ob->items[i]);
-    return h;
+/* The three set-set operations all build a fresh result by walking the
+ * inputs and selectively adding to a new set. Dedup falls out of
+ * set_add's "already present" early-return. */
+
+static int set_union(int handle_a, int handle_b) {
+    int union_handle = object_new_set();
+    Object *set_a = objects[handle_a];
+    Object *set_b = objects[handle_b];
+
+    for (int i = 0; i < set_a->len; i++) set_add(union_handle, set_a->items[i]);
+    for (int i = 0; i < set_b->len; i++) set_add(union_handle, set_b->items[i]);
+
+    return union_handle;
 }
-static int set_intersect(int a, int b) {
-    int h = obj_new_set();
-    Obj *oa = objs[a];
-    for (int i = 0; i < oa->len; i++)
-        if (set_member(b, oa->items[i])) set_add(h, oa->items[i]);
-    return h;
+
+static int set_intersect(int handle_a, int handle_b) {
+    int intersection_handle = object_new_set();
+    Object *set_a = objects[handle_a];
+    
+    for (int i = 0; i < set_a->len; i++)
+        if (set_member(handle_b, set_a->items[i]))
+            set_add(intersection_handle, set_a->items[i]);
+            
+    return intersection_handle;
 }
-static int set_diff(int a, int b) {
-    int h = obj_new_set();
-    Obj *oa = objs[a];
-    for (int i = 0; i < oa->len; i++)
-        if (!set_member(b, oa->items[i])) set_add(h, oa->items[i]);
-    return h;
+
+static int set_difference(int handle_a, int handle_b) {
+    int difference_handle = object_new_set();
+    Object *set_a = objects[handle_a];
+    
+    for (int i = 0; i < set_a->len; i++)
+        if (!set_member(handle_b, set_a->items[i]))
+            set_add(difference_handle, set_a->items[i]);
+            
+    return difference_handle;
 }
 
 
@@ -530,12 +642,14 @@ static int set_diff(int a, int b) {
  * integers when they happen to be whole. */
 
 static void print_val(Val v);
+
 static void print_double(double d) {
     if (d == (double)(int64_t)d && d > -1e15 && d < 1e15)
         printf("%lld", (long long)d);
     else
         printf("%g", d);
 }
+
 /* Cap how many elements of a collection get printed. Anything longer
  * than FIRST + LAST shows the first FIRST, an ellipsis, and the last
  * LAST — that way truncation always shortens the output rather than
@@ -550,31 +664,37 @@ static void print_double(double d) {
 #define PRINT_LAST  3
 static int print_truncate = 1;
 
-static void print_items(Obj *s) {
-    int n = s->len;
-    if (!print_truncate || n <= PRINT_FIRST + PRINT_LAST) {
-        for (int i = 0; i < n; i++) { print_val(s->items[i]); putchar(' '); }
+static void print_items(Object *collection) {
+    int length = collection->len;
+    
+    if (!print_truncate || length <= PRINT_FIRST + PRINT_LAST) {
+        for (int i = 0; i < length; i++) {
+            print_val(collection->items[i]);
+            putchar(' ');
+        }
     } else {
         for (int i = 0; i < PRINT_FIRST; i++) {
-            print_val(s->items[i]); putchar(' ');
+            print_val(collection->items[i]);
+            putchar(' ');
         }
         fputs("... ", stdout);
-        for (int i = n - PRINT_LAST; i < n; i++) {
-            print_val(s->items[i]); putchar(' ');
+        for (int i = length - PRINT_LAST; i < length; i++) {
+            print_val(collection->items[i]);
+            putchar(' ');
         }
     }
 }
 
-static void print_val(Val v) {
-    switch (v.tag) {
-        case T_FLOAT: print_double(val_f(v)); break;
-        case T_SYM:   fputs(&namepool[NAMEIDX(v.v)], stdout); break;
-        case T_STR:   fputs(objs[v.v]->bytes, stdout); break;
-        case T_SET:   fputs("{ ", stdout); print_items(objs[v.v]); putchar('}'); break;
-        case T_ARR:   fputs("[ ", stdout); print_items(objs[v.v]); putchar(']'); break;
-        case T_XT:   printf("<xt %lld>",   (long long)v.v); break;
-        case T_ADDR: printf("<addr %lld>", (long long)v.v); break;
-        default:     printf("<?>"); break;
+static void print_val(Val value) {
+    switch (value.tag) {
+        case T_FLOAT:   print_double(unpack_float(value)); break;
+        case T_SYM:     fputs(&namepool[NAMEIDX(value.data)], stdout); break;
+        case T_STRING:  fputs(objects[value.data]->bytes, stdout); break;
+        case T_SET:     fputs("{ ", stdout); print_items(objects[value.data]); putchar('}'); break;
+        case T_ARRAY:   fputs("[ ", stdout); print_items(objects[value.data]); putchar(']'); break;
+        case T_XT:      printf("<xt %lld>",   (long long)value.data); break;
+        case T_ADDR:    printf("<addr %lld>", (long long)value.data); break;
+        default:        printf("<?>"); break;
     }
 }
 
@@ -617,22 +737,45 @@ static int find(const char *name) {
  * continues looping after the handler returns. */
 
 static void docol(cell *cfa) {
-    /* Save the current ip as a T_ADDR tagged Val on the return stack. We
-     * store the offset into mem[] rather than the raw pointer so the
-     * return stack contains only valid Vals. */
-    Val r; r.tag = T_ADDR; r.v = (cell)(ip - mem);
-    rpush(r);
+    /* Save the current ip as a T_ADDR tagged Val on the return stack.
+     * We store the dict[] offset rather than the raw pointer so the
+     * return stack contains only valid Vals — the same convention
+     * dovar uses for variable addresses. */
+    rpush(make_addr((int)(ip - dict)));
     ip = cfa + 1;
 }
 
-static void dosym(cell *cfa) { push(mk_sym((int)(cfa - mem))); }
-static void dovar(cell *cfa) { push(mk_addr((int)((cfa + 1) - mem))); }
+/* dosym: handler for symbol-defining words. Running a symbol's CFA
+ * pushes a T_SYM Val whose payload is the symbol's own CFA index — i.e.
+ * the offset of `cfa` within the dict[] array. That index is the
+ * symbol's identity: two references to the same defining word give
+ * Vals with the same payload, and the name is recoverable later via
+ * NAMEIDX(symbol.data). Symbols evaluate to themselves; this is how. */
+static void dosym(cell *cfa) {
+    int cfa_index = (int)(cfa - dict);
+    push(make_sym(cfa_index));
+}
+
+/* dovar: handler for variable-defining words. Running a variable's CFA
+ * pushes the dict[] index of the cell immediately after the code field
+ * — that's where the variable's two-cell storage (tag + payload) lives.
+ * The user reads through that address with `@` (p_fetch) and writes
+ * through it with `!` (p_store). */
+static void dovar(cell *cfa) {
+    int body_index = (int)((cfa + 1) - dict);
+    push(make_addr(body_index));
+}
 
 
 /* Cached CFAs of internal primitives we'll need to reference during
  * compilation, plus (stop) which is used as the trampoline terminator in
  * execute_cfa. Resolved in main() at startup. */
-static int exit_cfa = 0, lit_cfa = 0, branch_cfa = 0, zbranch_cfa = 0, dostr_cfa = 0, stop_cfa = 0;
+static int	exit_cfa = 0, 
+			lit_cfa = 0, 
+			branch_cfa = 0, 
+			zbranch_cfa = 0, 
+			dostr_cfa = 0, 
+			stop_cfa = 0;
 
 
 /* ---- the inner interpreter ------------------------------------------- */
@@ -651,13 +794,20 @@ static int exit_cfa = 0, lit_cfa = 0, branch_cfa = 0, zbranch_cfa = 0, dostr_cfa
  * modify ip itself (docol, p_exit, branches), or clear `running` to stop
  * the loop. This is "NEXT" in classical Forth terminology. */
 
-typedef void (*cfa_fn)(cell *cfa);
+typedef void (*cfa_handler)(cell *cfa);
 
 static void run_inner(void) {
-    while (running && !err) {
-        cell *cfa = (cell *)*ip++;
-        cfa_fn fn = (cfa_fn)*cfa;
-        fn(cfa);
+    while (running && !error_flag) {
+        /* Read the next body cell — it's the dict[] index of some
+         * word's CFA — advance past it, look up the handler in dict[],
+         * and call it. The handler still receives the CFA *pointer*
+         * (`&dict[index]`) so docol/dovar can compute their body
+         * locations the same way. This is "NEXT" — one dispatch step
+         * in classical Forth terminology, here in index-threaded form
+         * (one indexed-load per step rather than two derefs). */
+        int cfa_index         = (int)*ip++;
+        cfa_handler handler   = (cfa_handler)dict[cfa_index];
+        handler(&dict[cfa_index]);
     }
 }
 
@@ -675,7 +825,7 @@ static void run_inner(void) {
  * separate terminator: when execute_cfa is called reentrantly — for
  * example by `map` from inside a colon definition that's itself inside
  * another colon definition — the enclosing words' return markers are
- * already on rs, and we must not consume them. An EXIT-as-terminator
+ * already on return_stack, and we must not consume them. An EXIT-as-terminator
  * would walk right up the stack, prematurely returning from words that
  * have plenty left to do.
  *
@@ -687,15 +837,18 @@ static void run_inner(void) {
 static cell trampoline[2];
 
 static void execute_cfa(int cfa) {
-    cfa_fn fn = (cfa_fn)mem[cfa];
-    if (fn != &docol) { fn(&mem[cfa]); return; }
+    cfa_handler handler = (cfa_handler)dict[cfa];
+    if (handler != &docol) { handler(&dict[cfa]); return; }
+    
     cell *saved_ip = ip;
     int saved_running = running;
-    trampoline[0] = (cell)&mem[cfa];
-    trampoline[1] = (cell)&mem[stop_cfa];
+    trampoline[0] = (cell)cfa;
+    trampoline[1] = (cell)stop_cfa;
     ip = trampoline;
     running = 1;
+    
     run_inner();
+    
     running = saved_running;
     ip = saved_ip;
 }
@@ -720,34 +873,34 @@ static void execute_cfa(int cfa) {
 
 static int alloc_name(const char *s) {
     int len = (int)strlen(s) + 1;
-    if (names_here + len > NAMEPOOL) { err = 1; return 0; }
+    if (names_here + len > NAMEPOOL) { error_flag = 1; return 0; }
     int idx = names_here;
     memcpy(&namepool[names_here], s, (size_t)len);
     names_here += len;
     return idx;
 }
 static int create_header(const char *name, int immediate) {
-    if (here + 4 >= MEMSZ) { err = 1; return 0; }
+    if (here + 4 >= MEMSZ) { error_flag = 1; return 0; }
     int link = latest_cfa;
     int n = alloc_name(name);
-    mem[here++] = link;
-    mem[here++] = immediate ? 1 : 0;
-    mem[here++] = n;
-    mem[here++] = 0;            /* SRCIDX — filled in later by `;` if any */
+    dict[here++] = link;
+    dict[here++] = immediate ? 1 : 0;
+    dict[here++] = n;
+    dict[here++] = 0;            /* SRCIDX — filled in later by `;` if any */
     int cfa = here;
     latest_cfa = cfa;
     return cfa;
 }
-static int def_prim(const char *name, cfa_fn fn, int immediate) {
+static int def_prim(const char *name, cfa_handler handler, int immediate) {
     int cfa = create_header(name, immediate);
-    if (here < MEMSZ) mem[here++] = (cell)fn; else err = 1;
+    if (here < MEMSZ) dict[here++] = (cell)handler; else error_flag = 1;
     return cfa;
 }
 
 /* `emit` appends a single raw cell to the dictionary at `here`. Used
  * during compilation of colon definitions and for inline data (literals
  * and branch offsets). */
-static void emit(cell x) { if (here < MEMSZ) mem[here++] = x; else err = 1; }
+static void emit(cell x) { if (here < MEMSZ) dict[here++] = x; else error_flag = 1; }
 
 /* Compiling a tagged literal: we emit a (lit) reference, then two raw
  * cells encoding the Val (tag, then payload). At runtime (lit) reads
@@ -758,15 +911,15 @@ static void emit(cell x) { if (here < MEMSZ) mem[here++] = x; else err = 1; }
  * after a (lit) reference are inline data. The inner interpreter never
  * sees them as separate dispatch steps — (lit)'s handler consumes them. */
 static void emit_val_literal(Val v) {
-    emit((cell)&mem[lit_cfa]);
+    emit((cell)lit_cfa);
     emit((cell)v.tag);
-    emit(v.v);
+    emit(v.data);
 }
 
 
 /* ---- core primitives -------------------------------------------------- */
 /* The primitives below implement the basic Forth-level operations. Each
- * one is a C function matching the cfa_fn signature. They ignore the
+ * one is a C function matching the cfa_handler signature. They ignore the
  * cfa argument unless they're a handler for a kind of word (docol,
  * dosym, dovar already covered).
  *
@@ -774,7 +927,7 @@ static void emit_val_literal(Val v) {
  * machinery that makes colon definitions work, then move outward to the
  * user-visible operations. */
 
-static void type_err(const char *op) { printf("? type error in %s\n", op); err = 1; }
+static void type_err(const char *op) { printf("? type error in %s\n", op); error_flag = 1; }
 
 /* EXIT: pop the saved instruction pointer from the return stack and jump
  * to it. When the return stack is empty, we're at the top level; clear
@@ -782,8 +935,8 @@ static void type_err(const char *op) { printf("? type error in %s\n", op); err =
 static void p_exit(cell *c) {
     (void)c;
     if (rsp <= 0) { running = 0; return; }
-    Val r = rs[--rsp];
-    ip = (cell *)(mem + r.v);
+    Val saved_ip = return_stack[--rsp];
+    ip = (cell *)(dict + saved_ip.data);
 }
 
 /* (stop): used only as the second cell of execute_cfa's trampoline. The
@@ -807,15 +960,17 @@ static void p_stop(cell *c) { (void)c; running = 0; }
  * time. */
 static void p_lit(cell *c) {
     (void)c;
-    Val r; r.tag = (Tag)*ip++; r.v = *ip++;
-    push(r);
+    Val literal;
+    literal.tag  = (Tag)*ip++;
+    literal.data = *ip++;
+    push(literal);
 }
 static void p_branch(cell *c)  { (void)c; ip += *ip; }
 static void p_0branch(cell *c) {
     (void)c;
     cell o = *ip++;
     Val v = pop();
-    int zero = (v.tag == T_FLOAT) ? (val_f(v) == 0.0) : (v.v == 0);
+    int zero = (v.tag == T_FLOAT) ? (unpack_float(v) == 0.0) : (v.data == 0);
     if (zero) ip += o - 1;
 }
 
@@ -829,7 +984,7 @@ static void p_dostr(cell *c) {
     (void)c;
     int h = (int)*ip++;
     int r = interpolate(h);
-    push(mk_str(r));
+    push(make_string(r));
 }
 
 
@@ -843,57 +998,57 @@ static void p_dostr(cell *c) {
  * falls out for free. */
 
 static int string_concat(int a, int b) {
-    Obj *oa = objs[a], *ob = objs[b];
+    Object *oa = objects[a], *ob = objects[b];
     int total = oa->len + ob->len;
     char *buf = malloc((size_t)total + 1);
     memcpy(buf, oa->bytes, (size_t)oa->len);
     memcpy(buf + oa->len, ob->bytes, (size_t)ob->len);
-    int h = obj_new_str(buf, total);
+    int h = object_new_string(buf, total);
     free(buf);
     return h;
 }
 
 static void p_add(cell *c) {
     (void)c; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT)  push(mk_float(val_f(a) + val_f(b)));
-    else if (a.tag == T_STR && b.tag == T_STR) push(mk_str(string_concat((int)a.v, (int)b.v)));
-    else if (a.tag == T_SET && b.tag == T_SET) push(mk_set(set_union((int)a.v, (int)b.v)));
+    if (a.tag == T_FLOAT && b.tag == T_FLOAT)  push(make_float(unpack_float(a) + unpack_float(b)));
+    else if (a.tag == T_STRING && b.tag == T_STRING) push(make_string(string_concat((int)a.data, (int)b.data)));
+    else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_union((int)a.data, (int)b.data)));
     else type_err("+");
 }
 static void p_sub(cell *c) {
     (void)c; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(mk_float(val_f(a) - val_f(b)));
-    else if (a.tag == T_SET && b.tag == T_SET) push(mk_set(set_diff((int)a.v, (int)b.v)));
+    if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(make_float(unpack_float(a) - unpack_float(b)));
+    else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_difference((int)a.data, (int)b.data)));
     else type_err("-");
 }
 static void p_mul(cell *c) {
     (void)c; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(mk_float(val_f(a) * val_f(b)));
-    else if (a.tag == T_SET && b.tag == T_SET) push(mk_set(set_intersect((int)a.v, (int)b.v)));
+    if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(make_float(unpack_float(a) * unpack_float(b)));
+    else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_intersect((int)a.data, (int)b.data)));
     else type_err("*");
 }
 static void p_div(cell *c) {
     (void)c; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT && val_f(b) != 0.0)
-        push(mk_float(val_f(a) / val_f(b)));
+    if (a.tag == T_FLOAT && b.tag == T_FLOAT && unpack_float(b) != 0.0)
+        push(make_float(unpack_float(a) / unpack_float(b)));
     else type_err("/");
 }
 static void p_neg(cell *c) {
     (void)c; Val a = pop();
-    if (a.tag == T_FLOAT) push(mk_float(-val_f(a)));
+    if (a.tag == T_FLOAT) push(make_float(-unpack_float(a)));
     else type_err("negate");
 }
 
 /* Booleans live in T_FLOAT: -1.0 is true, 0.0 is false. The choice of
  * -1 over 1 follows Forth tradition — bitwise AND on flag values then
  * coincides with logical AND. */
-static Val mk_bool(int t) { return mk_float(t ? -1.0 : 0.0); }
-static int truthy(Val v)  { return (v.tag == T_FLOAT) ? (val_f(v) != 0.0) : (v.v != 0); }
+static Val make_bool(int t) { return make_float(t ? -1.0 : 0.0); }
+static int truthy(Val v)  { return (v.tag == T_FLOAT) ? (unpack_float(v) != 0.0) : (v.data != 0); }
 
-static void p_eq(cell *c)  { (void)c; Val b = pop(), a = pop(); push(mk_bool(val_cmp(a, b) == 0)); }
-static void p_lt(cell *c)  { (void)c; Val b = pop(), a = pop(); push(mk_bool(val_cmp(a, b) <  0)); }
-static void p_gt(cell *c)  { (void)c; Val b = pop(), a = pop(); push(mk_bool(val_cmp(a, b) >  0)); }
-static void p_zeq(cell *c) { (void)c; Val a = pop(); push(mk_bool(!truthy(a))); }
+static void p_eq(cell *c)  { (void)c; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) == 0)); }
+static void p_lt(cell *c)  { (void)c; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) <  0)); }
+static void p_gt(cell *c)  { (void)c; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) >  0)); }
+static void p_zeq(cell *c) { (void)c; Val a = pop(); push(make_bool(!truthy(a))); }
 
 
 /* ---- stack manipulation, I/O, return-stack access -------------------- */
@@ -905,6 +1060,13 @@ static void p_over(cell *c) { (void)c; Val b = pop(), a = pop(); push(a); push(b
 static void p_rot(cell *c)  { (void)c; Val z = pop(), y = pop(), x = pop(); push(y); push(z); push(x); }
 
 static void p_dot(cell *c)  { (void)c; print_val(pop()); putchar(' '); fflush(stdout); }
+
+/* `.a`: print one value with truncation disabled — useful when the
+ * caller actually wants to see a huge set or array. The save/clear/
+ * restore dance preserves whatever `print_truncate` was before, so
+ * nested calls don't get permanently flipped (and any concurrent
+ * printing during the call, e.g. from a side effect, also runs
+ * un-truncated). The truncation rule itself lives in print_items. */
 static void p_dot_all(cell *c) {
     (void)c;
     int saved = print_truncate;
@@ -917,20 +1079,20 @@ static void p_dot_all(cell *c) {
 static void p_cr(cell *c)   { (void)c; putchar('\n'); fflush(stdout); }
 static void p_emit_(cell *c){
     (void)c; Val a = pop();
-    if (a.tag == T_FLOAT) { putchar((int)val_f(a)); fflush(stdout); }
+    if (a.tag == T_FLOAT) { putchar((int)unpack_float(a)); fflush(stdout); }
     else type_err("emit");
 }
 static void p_dots(cell *c) {
     (void)c;
     printf("<%d> ", dsp);
-    for (int i = 0; i < dsp; i++) { print_val(ds[i]); putchar(' '); }
+    for (int i = 0; i < dsp; i++) { print_val(data_stack[i]); putchar(' '); }
     fflush(stdout);
 }
 static void p_bye(cell *c) { (void)c; exit(0); }
 
 static void p_tor(cell *c)    { (void)c; rpush(pop()); }
 static void p_rfrom(cell *c)  { (void)c; push(rpop()); }
-static void p_rfetch(cell *c) { (void)c; if (rsp > 0) push(rs[rsp - 1]); else err = 1; }
+static void p_rfetch(cell *c) { (void)c; if (rsp > 0) push(return_stack[rsp - 1]); else error_flag = 1; }
 
 
 /* ---- variables: @ and ! ---------------------------------------------- */
@@ -940,18 +1102,20 @@ static void p_rfetch(cell *c) { (void)c; if (rsp > 0) push(rs[rsp - 1]); else er
  * write the two-cell pair. */
 
 static void p_fetch(cell *c) {
-    (void)c; Val a = pop();
-    if (a.tag != T_ADDR) { type_err("@"); return; }
-    int idx = (int)a.v;
-    Val r; r.tag = (Tag)mem[idx]; r.v = mem[idx + 1];
-    push(r);
+    (void)c; Val address = pop();
+    if (address.tag != T_ADDR) { type_err("@"); return; }
+    int cell_index = (int)address.data;
+    Val loaded;
+    loaded.tag  = (Tag)dict[cell_index];
+    loaded.data = dict[cell_index + 1];
+    push(loaded);
 }
 static void p_store(cell *c) {
     (void)c; Val addr = pop(), v = pop();
     if (addr.tag != T_ADDR) { type_err("!"); return; }
-    int idx = (int)addr.v;
-    mem[idx] = (cell)v.tag;
-    mem[idx + 1] = v.v;
+    int idx = (int)addr.data;
+    dict[idx] = (cell)v.tag;
+    dict[idx + 1] = v.data;
 }
 
 
@@ -968,28 +1132,28 @@ static void p_store(cell *c) {
  * mark, the compiled element literals push themselves, and `}` collects
  * — exactly the same mechanism, just deferred to run time. */
 
-static void p_setopen(cell *c)  { (void)c; push(mk_mark()); }
+static void p_setopen(cell *c)  { (void)c; push(make_mark()); }
 static void p_setclose(cell *c) {
     (void)c;
     int base = dsp;
-    while (base > 0 && ds[base - 1].tag != T_MARK) base--;
+    while (base > 0 && data_stack[base - 1].tag != T_MARK) base--;
     if (base == 0) { type_err("}"); return; }
-    int h = obj_new_set();
-    for (int i = base; i < dsp; i++) set_add(h, ds[i]);
+    int h = object_new_set();
+    for (int i = base; i < dsp; i++) set_add(h, data_stack[i]);
     dsp = base - 1;
-    push(mk_set(h));
+    push(make_set(h));
 }
-static void p_arropen(cell *c)  { (void)c; push(mk_mark()); }
-static void p_arrclose(cell *c) {
+static void p_array_open(cell *c)  { (void)c; push(make_mark()); }
+static void p_array_close(cell *c) {
     (void)c;
     int base = dsp;
-    while (base > 0 && ds[base - 1].tag != T_MARK) base--;
+    while (base > 0 && data_stack[base - 1].tag != T_MARK) base--;
     if (base == 0) { type_err("]"); return; }
     int n = dsp - base;
-    int h = obj_new_arr(n);
-    for (int i = 0; i < n; i++) objs[h]->items[i] = ds[base + i];
+    int h = object_new_array(n);
+    for (int i = 0; i < n; i++) objects[h]->items[i] = data_stack[base + i];
     dsp = base - 1;
-    push(mk_arr(h));
+    push(make_array(h));
 }
 
 
@@ -997,53 +1161,57 @@ static void p_arrclose(cell *c) {
 
 static void p_cardinality(cell *c) {
     (void)c; Val a = pop();
-    if (a.tag == T_SET || a.tag == T_ARR || a.tag == T_STR)
-        push(mk_float((double)objs[a.v]->len));
+    if (a.tag == T_SET || a.tag == T_ARRAY || a.tag == T_STRING)
+        push(make_float((double)objects[a.data]->len));
     else type_err("cardinality");
 }
 static void p_member(cell *c) {
     (void)c; Val v = pop(), s = pop();
     if (s.tag != T_SET) { type_err("member?"); return; }
-    push(mk_bool(set_member((int)s.v, v)));
+    push(make_bool(set_member((int)s.data, v)));
 }
 static void p_at(cell *c) {
     (void)c; Val iv = pop(), av = pop();
-    if (av.tag != T_ARR || iv.tag != T_FLOAT) { type_err("at"); return; }
-    Obj *o = objs[av.v];
-    int i = (int)val_f(iv);
+    if (av.tag != T_ARRAY || iv.tag != T_FLOAT) { type_err("at"); return; }
+    Object *o = objects[av.data];
+    int i = (int)unpack_float(iv);
     if (i < 0 || i >= o->len) { type_err("at: out of bounds"); return; }
     push(o->items[i]);
 }
 /* set: ( v1 v2 ... vN N -- set ) build a set from the top N stack items.
- * The count goes on top so the items can be pushed in their natural left-
- * to-right order: `1 2 3 4 3 set` consumes 2 3 4 and leaves 1 below. */
+ * The count goes on top so the items can be pushed in their natural
+ * left-to-right order: `1 2 3 4 3 set` consumes 2 3 4 and leaves 1
+ * below. Duplicates (by val_cmp) are silently dropped — set_add bails
+ * on a hit, so `5 5 6 3 set` yields the two-element set `{ 5 6 }`. This
+ * is intentional set semantics, but it can surprise: `dup 2 set` on any
+ * single value produces a one-element set, not a two-element one. */
 static void p_set(cell *c) {
     (void)c; Val nv = pop();
     if (nv.tag != T_FLOAT) { type_err("set"); return; }
-    int n = (int)val_f(nv);
+    int n = (int)unpack_float(nv);
     if (n < 0 || n > dsp) { type_err("set"); return; }
-    int h = obj_new_set();
-    if (err) return;
+    int h = object_new_set();
+    if (error_flag) return;
     int base = dsp - n;
-    for (int i = 0; i < n; i++) set_add(h, ds[base + i]);
+    for (int i = 0; i < n; i++) set_add(h, data_stack[base + i]);
     dsp = base;
-    push(mk_set(h));
+    push(make_set(h));
 }
 
 static void p_union(cell *c) {
     (void)c; Val b = pop(), a = pop();
     if (a.tag != T_SET || b.tag != T_SET) { type_err("union"); return; }
-    push(mk_set(set_union((int)a.v, (int)b.v)));
+    push(make_set(set_union((int)a.data, (int)b.data)));
 }
 static void p_intersect(cell *c) {
     (void)c; Val b = pop(), a = pop();
     if (a.tag != T_SET || b.tag != T_SET) { type_err("intersection"); return; }
-    push(mk_set(set_intersect((int)a.v, (int)b.v)));
+    push(make_set(set_intersect((int)a.data, (int)b.data)));
 }
 static void p_difference(cell *c) {
     (void)c; Val b = pop(), a = pop();
     if (a.tag != T_SET || b.tag != T_SET) { type_err("difference"); return; }
-    push(mk_set(set_diff((int)a.v, (int)b.v)));
+    push(make_set(set_difference((int)a.data, (int)b.data)));
 }
 
 /* `execute` takes an execution token (xt) — the handle for a word — and
@@ -1052,7 +1220,7 @@ static void p_difference(cell *c) {
 static void p_execute(cell *c) {
     (void)c; Val v = pop();
     if (v.tag != T_XT) { type_err("execute"); return; }
-    execute_cfa((int)v.v);
+    execute_cfa((int)v.data);
 }
 
 /* `map`: apply an xt to each element of a set or array, collect the
@@ -1069,35 +1237,35 @@ static void p_execute(cell *c) {
  * is no longer on the data stack and whose items we read from across xt
  * calls; and the partially-built result array, whose handle is only held
  * in a C local until we push it at the end. We also zero-initialize the
- * array's items[] before the loop, because obj_new_arr leaves them
+ * array's items[] before the loop, because object_new_array leaves them
  * uninitialized — and a GC triggered mid-loop would walk those slots as
  * Vals during marking. Zero bytes deserialize as `{T_NONE, 0}`, which
  * mark_val ignores. */
 static void p_map(cell *c) {
     (void)c; Val xt = pop(), sv = pop();
-    if (xt.tag != T_XT || (sv.tag != T_SET && sv.tag != T_ARR)) {
+    if (xt.tag != T_XT || (sv.tag != T_SET && sv.tag != T_ARRAY)) {
         type_err("map"); return;
     }
-    Obj *s = objs[sv.v];
+    Object *s = objects[sv.data];
     int srclen = s->len;
     Val *src = malloc(sizeof(Val) * (size_t)(srclen > 0 ? srclen : 1));
     memcpy(src, s->items, sizeof(Val) * (size_t)srclen);
     gc_root_push(sv);
-    int h = obj_new_arr(srclen);
-    if (err) { gc_root_pop(); free(src); return; }
-    Obj *result = objs[h];
+    int h = object_new_array(srclen);
+    if (error_flag) { gc_root_pop(); free(src); return; }
+    Object *result = objects[h];
     memset(result->items, 0, sizeof(Val) * (size_t)(srclen > 0 ? srclen : 1));
-    gc_root_push(mk_arr(h));
-    for (int i = 0; i < srclen && !err; i++) {
+    gc_root_push(make_array(h));
+    for (int i = 0; i < srclen && !error_flag; i++) {
         push(src[i]);
-        execute_cfa((int)xt.v);
-        if (err) break;
+        execute_cfa((int)xt.data);
+        if (error_flag) break;
         result->items[i] = pop();
     }
     gc_root_pop();
     gc_root_pop();
     free(src);
-    push(mk_arr(h));
+    push(make_array(h));
 }
 
 /* `mapn`: n-ary zip-map. ( arr1 arr2 ... arrN xt N -- result )
@@ -1107,16 +1275,24 @@ static void p_map(cell *c) {
  * top of the data stack; the xt is expected to consume those N values
  * and leave one result, which becomes result[i].
  *
- * The source arrays stay on the data stack throughout the loop — that's
- * what keeps them rooted across xt calls that might trigger GC. We
- * push the per-row inputs ABOVE the source arrays, call xt, and pop
- * exactly one result. After the loop the sources are dropped and the
- * result array is pushed. */
+ * Rooting strategy: the source arrays stay on the data stack for the
+ * duration of the loop, and that's what keeps them alive across xt
+ * calls that might trigger GC. We push the per-row inputs ABOVE the
+ * sources, call xt, pop exactly one result. After the loop the sources
+ * are dropped and the result array is pushed.
+ *
+ * This is a deliberately different strategy from p_map, which snapshots
+ * its single source into a malloc'd C buffer and uses an explicit
+ * gc_root_push for the source set. Either approach works; the choice
+ * here is that mapn might have many sources (N is user-controlled), and
+ * gc_roots[] has a fixed small capacity (GC_ROOTS_MAX), so pinning them
+ * all via gc_root_push would risk overflow. The data stack has plenty
+ * of room and is already a GC root by construction. */
 static void p_mapn(cell *c) {
     (void)c;
     Val nv = pop();
     if (nv.tag != T_FLOAT) { type_err("mapn"); return; }
-    int n = (int)val_f(nv);
+    int n = (int)unpack_float(nv);
     if (n < 1) { type_err("mapn"); return; }
     Val xt = pop();
     if (xt.tag != T_XT)     { type_err("mapn"); return; }
@@ -1125,34 +1301,34 @@ static void p_mapn(cell *c) {
     int base = dsp - n;
     int len = -1;
     for (int i = 0; i < n; i++) {
-        if (ds[base + i].tag != T_ARR) { type_err("mapn"); return; }
-        Obj *a = objs[ds[base + i].v];
+        if (data_stack[base + i].tag != T_ARRAY) { type_err("mapn"); return; }
+        Object *a = objects[data_stack[base + i].data];
         if (len < 0) len = a->len;
         else if (a->len != len) { type_err("mapn"); return; }
     }
 
-    int h = obj_new_arr(len);
-    if (err) return;
-    Obj *result = objs[h];
+    int h = object_new_array(len);
+    if (error_flag) return;
+    Object *result = objects[h];
     memset(result->items, 0, sizeof(Val) * (size_t)(len > 0 ? len : 1));
-    gc_root_push(mk_arr(h));
+    gc_root_push(make_array(h));
 
-    for (int i = 0; i < len && !err; i++) {
+    for (int i = 0; i < len && !error_flag; i++) {
         int dsp_before = dsp;
         for (int k = 0; k < n; k++) {
-            Obj *a = objs[ds[base + k].v];
+            Object *a = objects[data_stack[base + k].data];
             push(a->items[i]);
         }
-        execute_cfa((int)xt.v);
-        if (err) break;
+        execute_cfa((int)xt.data);
+        if (error_flag) break;
         if (dsp != dsp_before + 1) { type_err("mapn"); break; }
         result->items[i] = pop();
     }
     gc_root_pop();
 
-    if (!err) {
+    if (!error_flag) {
         dsp = base;
-        push(mk_arr(h));
+        push(make_array(h));
     }
 }
 
@@ -1167,6 +1343,57 @@ static void p_words(cell *c) {
         if (++cnt % 8 == 0) putchar('\n');
     }
     if (cnt % 8) putchar('\n');
+    fflush(stdout);
+}
+
+/* `see`: print a word's definition. Takes an xt off the stack, so the
+ * natural usage is `' foo see` — same pattern as `' foo execute` or
+ * `' f map`. The output form depends on the kind of word:
+ *
+ *   · Colon definitions: the captured body source (see p_semi), printed
+ *     in the same `: name <body> ;` form that `save` uses.
+ *   · Variables: `variable <name>` plus a comment with the current
+ *     value, since the value isn't part of the declaration itself.
+ *   · Symbols: just `symbol <name>`.
+ *   · Primitives: a note that the word is built-in — there's no source
+ *     to show because the implementation is in C.
+ *   · Anonymous xt (from a top-level `[: ... :]`): no name to resolve,
+ *     so we can only flag that the body is unnamed.
+ *
+ * For colon defs the source is exactly what the user typed, comments
+ * and whitespace included. */
+static void p_see(cell *c) {
+    (void)c; Val xt = pop();
+    if (xt.tag != T_XT) { type_err("see"); return; }
+    int cfa = (int)xt.data;
+    /* Walk the chain to find the name for this CFA; if we don't find
+     * one, the xt is an anonymous quotation. */
+    const char *name = NULL;
+    for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
+        if (cf == cfa) { name = &namepool[NAMEIDX(cf)]; break; }
+    }
+    cfa_handler handler = (cfa_handler)dict[cfa];
+    if (handler == docol) {
+        if (!name) {
+            /* Anonymous quotation. No header means no SRCIDX field —
+             * dict[cfa-1] is whatever happened to be there, not a valid
+             * source-pool offset, so we don't try to read it. */
+            printf("[: ... :]  \\ anonymous, no source\n");
+        } else {
+            int src_idx = (int)SRCIDX(cfa);
+            if (src_idx > 0) printf(": %s%s;\n", name, &source_pool[src_idx]);
+            else             printf(": %s ... ;  \\ no source captured\n", name);
+        }
+    } else if (handler == dovar) {
+        Val val; val.tag = (Tag)dict[cfa + 1]; val.data = dict[cfa + 2];
+        printf("variable %s  \\ current value: ", name ? name : "?");
+        print_val(val);
+        putchar('\n');
+    } else if (handler == dosym) {
+        printf("symbol %s\n", name ? name : "?");
+    } else {
+        printf("%s is a primitive\n", name ? name : "?");
+    }
     fflush(stdout);
 }
 
@@ -1197,10 +1424,10 @@ static void p_words(cell *c) {
  * text and stores it for image save.
  *
  * The capture works because the outer interpreter has just consumed the
- * `;` token: `inp` points at the first whitespace after `;`, so the
- * `;` itself lives at `inp - 1` in inbuf. The body source spans from
+ * `;` token: `inbuf_pos` points at the first whitespace after `;`, so the
+ * `;` itself lives at `inbuf_pos - 1` in inbuf. The body source spans from
  * `compiling_src_start` (set by `:` right after the name was read) up
- * to but not including `inp - 1`. We copy those bytes verbatim into
+ * to but not including `inbuf_pos - 1`. We copy those bytes verbatim into
  * `source_pool` and record the offset in the new word's SRCIDX header
  * cell. `latest_cfa` still refers to the word being closed — the body
  * compilation didn't create any new headers (anon quotations don't have
@@ -1212,14 +1439,14 @@ static void p_words(cell *c) {
  * slice is contiguous. */
 static void p_semi(cell *c) {
     (void)c;
-    emit((cell)&mem[exit_cfa]);
+    emit((cell)exit_cfa);
     if (compiling_src_start > 0 && latest_cfa != 0) {
-        int src_end = inp - 1;                  /* position of the ';' */
+        int src_end = inbuf_pos - 1;                  /* position of the ';' */
         int src_len = src_end - compiling_src_start;
         if (src_len < 0) src_len = 0;
         if (sources_here + src_len + 1 > SOURCEPOOL) {
             printf("? source pool full\n");
-            err = 1;
+            error_flag = 1;
         } else {
             int idx = sources_here;
             memcpy(&source_pool[sources_here],
@@ -1233,27 +1460,27 @@ static void p_semi(cell *c) {
     compiling = 0;
     compiling_src_start = 0;
 }
-static void p_if(cell *c)    { (void)c; emit((cell)&mem[zbranch_cfa]); push(mk_float((double)here)); emit(0); }
+static void p_if(cell *c)    { (void)c; emit((cell)zbranch_cfa); push(make_float((double)here)); emit(0); }
 static void p_then(cell *c)  {
-    (void)c; int slot = (int)val_f(pop());
-    mem[slot] = (here - slot);
+    (void)c; int slot = (int)unpack_float(pop());
+    dict[slot] = (here - slot);
 }
 static void p_else(cell *c)  {
-    (void)c; int slot = (int)val_f(pop());
-    emit((cell)&mem[branch_cfa]);
-    push(mk_float((double)here));
+    (void)c; int slot = (int)unpack_float(pop());
+    emit((cell)branch_cfa);
+    push(make_float((double)here));
     emit(0);
-    mem[slot] = (here - slot);
+    dict[slot] = (here - slot);
 }
-static void p_begin(cell *c) { (void)c; push(mk_float((double)here)); }
+static void p_begin(cell *c) { (void)c; push(make_float((double)here)); }
 static void p_until(cell *c) {
-    (void)c; int back = (int)val_f(pop());
-    emit((cell)&mem[zbranch_cfa]);
+    (void)c; int back = (int)unpack_float(pop());
+    emit((cell)zbranch_cfa);
     emit(back - here);
 }
 static void p_again(cell *c) {
-    (void)c; int back = (int)val_f(pop());
-    emit((cell)&mem[branch_cfa]);
+    (void)c; int back = (int)unpack_float(pop());
+    emit((cell)branch_cfa);
     emit(back - here);
 }
 
@@ -1277,32 +1504,39 @@ static void p_again(cell *c) {
  * Top-level case: there's no enclosing body to skip past, so we just
  * lay down the anon. The compile-time data stack still carries the
  * anon's CFA; the slot field is -1 as a flag meaning "no patch needed,
- * push the xt for the user instead of compiling a literal." */
+ * push the xt for the user instead of compiling a literal."
+ *
+ * Trade-off worth knowing about: because anons have no header, they
+ * also have no SRCIDX, which means `save` can't preserve them as xt
+ * values on the data stack. An anon embedded inside a named definition
+ * round-trips fine (its source is part of the enclosing word's captured
+ * body), but a bare `[: ... :]` left on the stack at save time has no
+ * recoverable identity. See p_save for how that case is flagged. */
 static void p_qcolon(cell *c) {
     (void)c;
     int branch_slot = -1;
     if (compiling) {
-        emit((cell)&mem[branch_cfa]);
+        emit((cell)branch_cfa);
         branch_slot = here;
         emit(0);
     }
     int anon_cfa = here;
     emit((cell)&docol);
     compiling = 1;
-    push(mk_float((double)anon_cfa));
-    push(mk_float((double)branch_slot));
+    push(make_float((double)anon_cfa));
+    push(make_float((double)branch_slot));
 }
 static void p_qsemi(cell *c) {
     (void)c;
-    emit((cell)&mem[exit_cfa]);
-    int branch_slot = (int)val_f(pop());
-    int anon_cfa    = (int)val_f(pop());
+    emit((cell)exit_cfa);
+    int branch_slot = (int)unpack_float(pop());
+    int anon_cfa    = (int)unpack_float(pop());
     if (branch_slot < 0) {
         compiling = 0;
-        push(mk_xt(anon_cfa));
+        push(make_xt(anon_cfa));
     } else {
-        mem[branch_slot] = (here - branch_slot);
-        emit_val_literal(mk_xt(anon_cfa));
+        dict[branch_slot] = (here - branch_slot);
+        emit_val_literal(make_xt(anon_cfa));
     }
 }
 
@@ -1327,26 +1561,26 @@ static void p_tick(cell *c) {
     char *t = next_token();
     if (!t) { type_err("'"); return; }
     int cf = find(t);
-    if (!cf) { printf("? %s\n", t); err = 1; return; }
-    Val v = mk_xt(cf);
+    if (!cf) { printf("? %s\n", t); error_flag = 1; return; }
+    Val v = make_xt(cf);
     if (compiling) emit_val_literal(v);
     else push(v);
 }
 
 static void p_colon(cell *c) {
     (void)c; char *t = next_token();
-    if (!t) { printf("? : needs a name\n"); err = 1; return; }
+    if (!t) { printf("? : needs a name\n"); error_flag = 1; return; }
     create_header(t, 0);
     emit((cell)&docol);
     compiling = 1;
     /* Remember where in inbuf the body source starts so `;` can copy it
-     * out. `inp` here is the inbuf position just past the name token,
+     * out. `inbuf_pos` here is the inbuf position just past the name token,
      * which is exactly where we want the captured source to begin. */
-    compiling_src_start = inp;
+    compiling_src_start = inbuf_pos;
 }
 static void p_variable(cell *c) {
     (void)c; char *t = next_token();
-    if (!t) { printf("? variable needs a name\n"); err = 1; return; }
+    if (!t) { printf("? variable needs a name\n"); error_flag = 1; return; }
     create_header(t, 0);
     emit((cell)&dovar);
     emit((cell)T_FLOAT);
@@ -1355,7 +1589,7 @@ static void p_variable(cell *c) {
 }
 static void p_symbol(cell *c) {
     (void)c; char *t = next_token();
-    if (!t) { printf("? symbol needs a name\n"); err = 1; return; }
+    if (!t) { printf("? symbol needs a name\n"); error_flag = 1; return; }
     create_header(t, 0);
     emit((cell)&dosym);
 }
@@ -1365,7 +1599,7 @@ static void p_symbol(cell *c) {
  * names_here (so the name pool reclaims any names of forgotten words),
  * latest_cfa (so the linked list's head moves back), and sources_here
  * (so any captured body sources for forgotten colon defs are dropped).
- * Objects in the object registry that were referenced only from
+ * Objectects in the object registry that were referenced only from
  * forgotten code are no longer reachable from any root, so the next
  * GC will sweep them up.
  *
@@ -1376,9 +1610,9 @@ static void p_symbol(cell *c) {
  * without a stored source (SRCIDX == 0) are skipped. */
 static void p_forget(cell *c) {
     (void)c; char *t = next_token();
-    if (!t) { printf("? forget needs a name\n"); err = 1; return; }
+    if (!t) { printf("? forget needs a name\n"); error_flag = 1; return; }
     int target = find(t);
-    if (!target) { printf("? %s\n", t); err = 1; return; }
+    if (!target) { printf("? %s\n", t); error_flag = 1; return; }
     here       = target - 4;
     names_here = (int)NAMEIDX(target);
     latest_cfa = (int)LINK(target);
@@ -1397,7 +1631,7 @@ static void p_forget(cell *c) {
 
 /* ---- input buffer and tokeniser -------------------------------------- */
 /* The outer interpreter reads lines and accumulates them in `inbuf`. A
- * pointer `inp` walks through the buffer producing tokens. Most tokens
+ * pointer `inbuf_pos` walks through the buffer producing tokens. Most tokens
  * are whitespace-delimited and trivial. Two situations need special
  * handling:
  *
@@ -1410,32 +1644,32 @@ static void p_forget(cell *c) {
  *     `)`, line comments end at newline. These are handled inline by the
  *     dispatcher rather than the tokenizer.
  *
- * The buffer itself (`inbuf`, `inbuf_len`, `inp`, `need_more`) is
+ * The buffer itself (`inbuf`, `inbuf_len`, `inbuf_pos`, `need_more`) is
  * declared up in the "universe of state" section because `:` and `;`
- * need to read inp during source capture. */
+ * need to read inbuf_pos during source capture. */
 
-static void inbuf_reset(void) { inbuf_len = 0; inp = 0; inbuf[0] = 0; need_more = 0; }
+static void inbuf_reset(void) { inbuf_len = 0; inbuf_pos = 0; inbuf[0] = 0; need_more = 0; }
 
 static char tokbuf[INBUFSZ];
 
 static int read_string_literal(void) {
-    int start = inp + 1;
+    int start = inbuf_pos + 1;
     int i = start;
     while (i < inbuf_len && inbuf[i] != '"') i++;
     if (i >= inbuf_len) { need_more = 1; return -1; }
     int n = i - start;
     memcpy(tokbuf, inbuf + start, (size_t)n);
     tokbuf[n] = 0;
-    inp = i + 1;
+    inbuf_pos = i + 1;
     return n;
 }
 
 static char *next_token(void) {
-    while (inp < inbuf_len && isspace((unsigned char)inbuf[inp])) inp++;
-    if (inp >= inbuf_len) return NULL;
-    int start = inp;
-    while (inp < inbuf_len && !isspace((unsigned char)inbuf[inp])) inp++;
-    int n = inp - start;
+    while (inbuf_pos < inbuf_len && isspace((unsigned char)inbuf[inbuf_pos])) inbuf_pos++;
+    if (inbuf_pos >= inbuf_len) return NULL;
+    int start = inbuf_pos;
+    while (inbuf_pos < inbuf_len && !isspace((unsigned char)inbuf[inbuf_pos])) inbuf_pos++;
+    int n = inbuf_pos - start;
     if (n >= (int)sizeof(tokbuf)) n = sizeof(tokbuf) - 1;
     memcpy(tokbuf, inbuf + start, (size_t)n);
     tokbuf[n] = 0;
@@ -1465,7 +1699,7 @@ static int parse_float(const char *s, double *out) {
  * an empty string. */
 
 static int interpolate(int template_handle) {
-    Obj *tmpl = objs[template_handle];
+    Object *tmpl = objects[template_handle];
     int maxref = -1, seen_any = 0;
     for (int i = 0; i < tmpl->len; ) {
         if (tmpl->bytes[i] == '{') {
@@ -1495,14 +1729,14 @@ static int interpolate(int template_handle) {
                 if (idx < 0) {
                     type_err("string interpolation: stack too shallow");
                     free(out);
-                    return obj_new_str("", 0);
+                    return object_new_string("", 0);
                 }
                 char render[256];
                 int rlen = 0;
-                Val v = ds[idx];
+                Val v = data_stack[idx];
                 switch (v.tag) {
                     case T_FLOAT: {
-                        double d = val_f(v);
+                        double d = unpack_float(v);
                         if (d == (double)(int64_t)d && d > -1e15 && d < 1e15)
                             rlen = snprintf(render, sizeof(render), "%lld", (long long)d);
                         else
@@ -1510,10 +1744,10 @@ static int interpolate(int template_handle) {
                         break;
                     }
                     case T_SYM:
-                        rlen = snprintf(render, sizeof(render), "%s", &namepool[NAMEIDX(v.v)]);
+                        rlen = snprintf(render, sizeof(render), "%s", &namepool[NAMEIDX(v.data)]);
                         break;
-                    case T_STR: {
-                        Obj *so = objs[v.v];
+                    case T_STRING: {
+                        Object *so = objects[v.data];
                         int copy = so->len < (int)sizeof(render) - 1 ? so->len : (int)sizeof(render) - 1;
                         memcpy(render, so->bytes, (size_t)copy);
                         render[copy] = 0;
@@ -1537,7 +1771,7 @@ static int interpolate(int template_handle) {
         if (to_drop > dsp) to_drop = dsp;
         dsp -= to_drop;
     }
-    int h = obj_new_str(out, olen);
+    int h = object_new_string(out, olen);
     free(out);
     return h;
 }
@@ -1561,50 +1795,50 @@ static int interpolate(int template_handle) {
  *
  *   · Anything else: report and abort the current input. */
 
-static void process(void) {
-    while (!err) {
-        while (inp < inbuf_len && isspace((unsigned char)inbuf[inp])) inp++;
-        if (inp >= inbuf_len) return;
-        char ch = inbuf[inp];
+static void run_outer(void) {
+    while (!error_flag) {
+        while (inbuf_pos < inbuf_len && isspace((unsigned char)inbuf[inbuf_pos])) inbuf_pos++;
+        if (inbuf_pos >= inbuf_len) return;
+        char ch = inbuf[inbuf_pos];
         if (ch == '"') {
             int n = read_string_literal();
             if (n < 0) return;
-            int h = obj_new_str(tokbuf, n);
+            int h = object_new_string(tokbuf, n);
             if (compiling) {
-                emit((cell)&mem[dostr_cfa]);
+                emit((cell)dostr_cfa);
                 emit((cell)h);
             } else {
                 int r = interpolate(h);
-                push(mk_str(r));
+                push(make_string(r));
             }
             continue;
         }
-        if (ch == '(' && (inp + 1 >= inbuf_len || isspace((unsigned char)inbuf[inp + 1]))) {
-            while (inp < inbuf_len && inbuf[inp] != ')') inp++;
-            if (inp < inbuf_len) inp++;
+        if (ch == '(' && (inbuf_pos + 1 >= inbuf_len || isspace((unsigned char)inbuf[inbuf_pos + 1]))) {
+            while (inbuf_pos < inbuf_len && inbuf[inbuf_pos] != ')') inbuf_pos++;
+            if (inbuf_pos < inbuf_len) inbuf_pos++;
             continue;
         }
-        if (ch == '\\' && (inp + 1 >= inbuf_len || isspace((unsigned char)inbuf[inp + 1]))) {
-            while (inp < inbuf_len && inbuf[inp] != '\n') inp++;
+        if (ch == '\\' && (inbuf_pos + 1 >= inbuf_len || isspace((unsigned char)inbuf[inbuf_pos + 1]))) {
+            while (inbuf_pos < inbuf_len && inbuf[inbuf_pos] != '\n') inbuf_pos++;
             continue;
         }
         char *tok = next_token();
         if (!tok) return;
         int cf = find(tok);
         if (cf) {
-            if (compiling && !IS_IMM(cf)) emit((cell)&mem[cf]);
+            if (compiling && !IS_IMM(cf)) emit((cell)cf);
             else execute_cfa(cf);
             continue;
         }
         double dv;
         if (parse_float(tok, &dv)) {
-            Val v = mk_float(dv);
+            Val v = make_float(dv);
             if (compiling) emit_val_literal(v);
             else push(v);
             continue;
         }
         printf("? %s\n", tok);
-        err = 1;
+        error_flag = 1;
         return;
     }
 }
@@ -1612,12 +1846,12 @@ static void process(void) {
 
 /* ---- load: process a source file as if typed at the REPL ------------- */
 /* `load` takes a filename as a string on the stack and runs the file's
- * contents through process() as if the user had typed them.
+ * contents through run_outer() as if the user had typed them.
  *
  * The implementation swaps inbuf to hold the file's contents while
  * processing, then restores the previous input state. Nested loads
  * stack naturally — each call saves its predecessor's buffer. Errors
- * inside the loaded file propagate to the caller via the global `err`,
+ * inside the loaded file propagate to the caller via the global `error_flag`,
  * which main() handles by clearing the stacks and compile state.
  *
  * Two structural problems specific to file input are caught explicitly:
@@ -1629,14 +1863,14 @@ static void process(void) {
 static void p_load(cell *c) {
     (void)c;
     Val v = pop();
-    if (v.tag != T_STR) { type_err("load"); return; }
+    if (v.tag != T_STRING) { type_err("load"); return; }
     gc_root_push(v);
-    const char *filename = objs[v.v]->bytes;
+    const char *filename = objects[v.data]->bytes;
 
     FILE *f = fopen(filename, "r");
     if (!f) {
         printf("? cannot open %s\n", filename);
-        err = 1;
+        error_flag = 1;
         gc_root_pop();
         return;
     }
@@ -1647,7 +1881,7 @@ static void p_load(cell *c) {
     if (fsize < 0 || fsize >= INBUFSZ) {
         printf("? %s too large or invalid (%ld bytes, max %d)\n",
                filename, fsize, INBUFSZ - 1);
-        err = 1;
+        error_flag = 1;
         fclose(f);
         gc_root_pop();
         return;
@@ -1656,32 +1890,32 @@ static void p_load(cell *c) {
     char *saved_buf = malloc((size_t)inbuf_len + 1);
     memcpy(saved_buf, inbuf, (size_t)inbuf_len);
     int saved_inbuf_len   = inbuf_len;
-    int saved_inp         = inp;
+    int saved_inp         = inbuf_pos;
     int saved_need_more   = need_more;
 
     size_t n = fread(inbuf, 1, (size_t)fsize, f);
     fclose(f);
     inbuf[n] = 0;
     inbuf_len = (int)n;
-    inp = 0;
+    inbuf_pos = 0;
     need_more = 0;
 
-    process();
+    run_outer();
 
-    if (!err && need_more) {
+    if (!error_flag && need_more) {
         printf("? %s: unterminated string literal\n", filename);
-        err = 1;
+        error_flag = 1;
     }
-    if (!err && compiling) {
+    if (!error_flag && compiling) {
         printf("? %s: unterminated definition\n", filename);
-        err = 1;
+        error_flag = 1;
         compiling = 0;
     }
 
     memcpy(inbuf, saved_buf, (size_t)saved_inbuf_len);
     inbuf[saved_inbuf_len] = 0;
     inbuf_len = saved_inbuf_len;
-    inp       = saved_inp;
+    inbuf_pos       = saved_inp;
     need_more = saved_need_more;
     free(saved_buf);
 
@@ -1690,11 +1924,11 @@ static void p_load(cell *c) {
 
 
 /* ---- garbage collection: mark and sweep ------------------------------ */
-/* Strings, sets, and arrays accumulate in objs[] as side effects of
+/* Strings, sets, and arrays accumulate in objects[] as side effects of
  * normal execution — every `+` on strings, every set operation, every
- * `map` registers new Objs. Without reclamation the array fills and
+ * `map` registers new Objects. Without reclamation the array fills and
  * allocation fails. We run a stop-the-world mark-and-sweep when
- * obj_alloc_slot can't find a free slot.
+ * object_alloc_slot can't find a free slot.
  *
  * Roots are everywhere a live handle can hide:
  *
@@ -1718,15 +1952,15 @@ static void p_load(cell *c) {
  * which is why we collect the dictionary's CFAs in ascending order
  * before walking. The latest word's body extends up to `here`. */
 
-static int obj_mark[MAXOBJS];
+static int object_mark[MAXOBJS];
 
 static void mark_val(Val v) {
-    if (v.tag != T_STR && v.tag != T_SET && v.tag != T_ARR) return;
-    int h = (int)v.v;
-    if (h < 0 || h >= MAXOBJS || !objs[h] || obj_mark[h]) return;
-    obj_mark[h] = 1;
-    Obj *o = objs[h];
-    if (o->kind == OBJ_SET || o->kind == OBJ_ARR) {
+    if (v.tag != T_STRING && v.tag != T_SET && v.tag != T_ARRAY) return;
+    int h = (int)v.data;
+    if (h < 0 || h >= MAXOBJS || !objects[h] || object_mark[h]) return;
+    object_mark[h] = 1;
+    Object *o = objects[h];
+    if (o->kind == OBJECT_SET || o->kind == OBJECT_ARRAY) {
         for (int i = 0; i < o->len; i++) mark_val(o->items[i]);
     }
 }
@@ -1734,18 +1968,18 @@ static void mark_val(Val v) {
 static void mark_body(int start, int end) {
     int i = start;
     while (i < end) {
-        cell ref = mem[i];
-        if (ref == (cell)&mem[lit_cfa] && i + 2 < end) {
-            Tag t = (Tag)mem[i + 1];
-            Val v; v.tag = t; v.v = mem[i + 2];
+        cell ref = dict[i];
+        if (ref == (cell)lit_cfa && i + 2 < end) {
+            Tag t = (Tag)dict[i + 1];
+            Val v; v.tag = t; v.data = dict[i + 2];
             mark_val(v);
             i += 3;
-        } else if (ref == (cell)&mem[dostr_cfa] && i + 1 < end) {
-            Val v; v.tag = T_STR; v.v = mem[i + 1];
+        } else if (ref == (cell)dostr_cfa && i + 1 < end) {
+            Val v; v.tag = T_STRING; v.data = dict[i + 1];
             mark_val(v);
             i += 2;
-        } else if ((ref == (cell)&mem[branch_cfa]
-                 || ref == (cell)&mem[zbranch_cfa]) && i + 1 < end) {
+        } else if ((ref == (cell)branch_cfa
+                 || ref == (cell)zbranch_cfa) && i + 1 < end) {
             i += 2;
         } else {
             i++;
@@ -1754,10 +1988,10 @@ static void mark_body(int start, int end) {
 }
 
 static void gc(void) {
-    memset(obj_mark, 0, sizeof(obj_mark));
+    memset(object_mark, 0, sizeof(object_mark));
 
-    for (int i = 0; i < dsp; i++)         mark_val(ds[i]);
-    for (int i = 0; i < rsp; i++)         mark_val(rs[i]);
+    for (int i = 0; i < dsp; i++)         mark_val(data_stack[i]);
+    for (int i = 0; i < rsp; i++)         mark_val(return_stack[i]);
     for (int i = 0; i < n_gc_roots; i++)  mark_val(gc_roots[i]);
 
     /* Collect CFAs into ascending order so we know each body's end. */
@@ -1775,22 +2009,22 @@ static void gc(void) {
         int cfa = cfas[i];
         int body_start = cfa + 1;
         int body_end = (i + 1 < ncfas) ? cfas[i + 1] - 4 : here;
-        cfa_fn fn = (cfa_fn)mem[cfa];
-        if (fn == docol) {
+        cfa_handler handler = (cfa_handler)dict[cfa];
+        if (handler == docol) {
             mark_body(body_start, body_end);
-        } else if (fn == dovar && body_start + 1 < body_end) {
-            Val v; v.tag = (Tag)mem[body_start]; v.v = mem[body_start + 1];
+        } else if (handler == dovar && body_start + 1 < body_end) {
+            Val v; v.tag = (Tag)dict[body_start]; v.data = dict[body_start + 1];
             mark_val(v);
         }
         /* primitives, dosym: no body to scan */
     }
 
-    for (int h = 0; h < nobjs; h++) {
-        if (objs[h] && !obj_mark[h]) {
-            if (objs[h]->bytes) free(objs[h]->bytes);
-            if (objs[h]->items) free(objs[h]->items);
-            free(objs[h]);
-            objs[h] = NULL;
+    for (int h = 0; h < n_objects; h++) {
+        if (objects[h] && !object_mark[h]) {
+            if (objects[h]->bytes) free(objects[h]->bytes);
+            if (objects[h]->items) free(objects[h]->items);
+            free(objects[h]);
+            objects[h] = NULL;
         }
     }
 }
@@ -1805,9 +2039,9 @@ static void gc(void) {
  *
  * Why source rather than a binary image:
  *
- *   · No pointer relocation. mem[] is full of process-specific addresses
+ *   · No pointer relocation. dict[] is full of process-specific addresses
  *     — code field cells point at C handler functions, body cells point
- *     into mem itself — and a binary save would have to translate every
+ *     into dict itself — and a binary save would have to translate every
  *     one of them. Source dodges the whole problem.
  *
  *   · No decompilation. Reconstructing `if/then/else` and `begin/until`
@@ -1856,7 +2090,7 @@ static void gc(void) {
  *     whichever version is latest at load time. With no shadowing — the
  *     overwhelmingly common case — this distinction never matters.
  *
- * Object lifetime around the file write: the filename Val is rooted via
+ * Objectect lifetime around the file write: the filename Val is rooted via
  * gc_root_push before fopen, even though nothing in `save` itself
  * triggers allocation. It's defensive — write_val_literal recurses
  * through sets and arrays, and there's no harm in pinning the input
@@ -1867,19 +2101,19 @@ static void write_val_literal(FILE *f, Val v);
 static void write_val_literal(FILE *f, Val v) {
     switch (v.tag) {
         case T_FLOAT: {
-            double d = val_f(v);
+            double d = unpack_float(v);
             if (d == (double)(int64_t)d && d > -1e15 && d < 1e15)
                 fprintf(f, "%lld", (long long)d);
             else
                 fprintf(f, "%.17g", d);   /* high-precision for round trip */
             break;
         }
-        case T_STR: {
+        case T_STRING: {
             /* Our string syntax has no escapes, so an embedded `"`
              * would terminate the literal early. Write a placeholder
              * and a comment for now — adding escapes is a separate
              * piece of work in the tokenizer. */
-            const char *s = objs[v.v]->bytes;
+            const char *s = objects[v.data]->bytes;
             if (strchr(s, '"')) {
                 fputs("\"\" \\ unsavable string (contains quote)", f);
             } else {
@@ -1890,7 +2124,7 @@ static void write_val_literal(FILE *f, Val v) {
             break;
         }
         case T_SET: {
-            Obj *s = objs[v.v];
+            Object *s = objects[v.data];
             fputs("{ ", f);
             for (int i = 0; i < s->len; i++) {
                 write_val_literal(f, s->items[i]);
@@ -1899,8 +2133,8 @@ static void write_val_literal(FILE *f, Val v) {
             fputc('}', f);
             break;
         }
-        case T_ARR: {
-            Obj *s = objs[v.v];
+        case T_ARRAY: {
+            Object *s = objects[v.data];
             fputs("[ ", f);
             for (int i = 0; i < s->len; i++) {
                 write_val_literal(f, s->items[i]);
@@ -1910,7 +2144,7 @@ static void write_val_literal(FILE *f, Val v) {
             break;
         }
         case T_SYM: {
-            fputs(&namepool[NAMEIDX(v.v)], f);
+            fputs(&namepool[NAMEIDX(v.data)], f);
             break;
         }
         case T_XT: {
@@ -1919,7 +2153,7 @@ static void write_val_literal(FILE *f, Val v) {
              * REPL with `[: ... :]` have no dictionary entry and can't
              * be reproduced this way — we flag them and emit something
              * that at least parses. */
-            int target = (int)v.v;
+            int target = (int)v.data;
             int found = 0;
             for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
                 if (cf == target) { found = 1; break; }
@@ -1940,14 +2174,14 @@ static void write_val_literal(FILE *f, Val v) {
 static void p_save(cell *c) {
     (void)c;
     Val v = pop();
-    if (v.tag != T_STR) { type_err("save"); return; }
+    if (v.tag != T_STRING) { type_err("save"); return; }
     gc_root_push(v);
-    const char *filename = objs[v.v]->bytes;
+    const char *filename = objects[v.data]->bytes;
 
     FILE *f = fopen(filename, "w");
     if (!f) {
         printf("? cannot create %s\n", filename);
-        err = 1;
+        error_flag = 1;
         gc_root_pop();
         return;
     }
@@ -1970,24 +2204,24 @@ static void p_save(cell *c) {
     for (int i = n - 1; i >= 0; i--) {
         int cfa = cfas[i];
         const char *name = &namepool[NAMEIDX(cfa)];
-        cfa_fn fn = (cfa_fn)mem[cfa];
+        cfa_handler handler = (cfa_handler)dict[cfa];
 
-        if (fn == docol) {
+        if (handler == docol) {
             int src_idx = (int)SRCIDX(cfa);
             const char *src = (src_idx > 0) ? &source_pool[src_idx] : "";
             fprintf(f, ": %s%s;\n", name, src);
-        } else if (fn == dovar) {
+        } else if (handler == dovar) {
             /* Body layout: [tag, payload]. Read the current value back
              * out as a Val so we can write it through write_val_literal.
              * The dovar handler stores tag and payload separately in
              * the two body cells; reassembling them here is symmetric. */
             fprintf(f, "variable %s\n", name);
             Val val;
-            val.tag = (Tag)mem[cfa + 1];
-            val.v   = mem[cfa + 2];
+            val.tag = (Tag)dict[cfa + 1];
+            val.data   = dict[cfa + 2];
             write_val_literal(f, val);
             fprintf(f, " %s !\n", name);
-        } else if (fn == dosym) {
+        } else if (handler == dosym) {
             fprintf(f, "symbol %s\n", name);
         }
         /* Primitives have no on-disk representation — they come back
@@ -1997,7 +2231,7 @@ static void p_save(cell *c) {
     if (dsp > 0) {
         fprintf(f, "\n\\ data stack (bottom to top)\n");
         for (int i = 0; i < dsp; i++) {
-            write_val_literal(f, ds[i]);
+            write_val_literal(f, data_stack[i]);
             fputc('\n', f);
         }
     }
@@ -2044,8 +2278,8 @@ int main(void) {
 
     def_prim("{",      p_setopen,  0);
     def_prim("}",      p_setclose, 0);
-    def_prim("[",      p_arropen,  0);
-    def_prim("]",      p_arrclose, 0);
+    def_prim("[",      p_array_open,  0);
+    def_prim("]",      p_array_close, 0);
 
     def_prim("cardinality",  p_cardinality, 0);
     def_prim("member?",      p_member,      0);
@@ -2058,6 +2292,7 @@ int main(void) {
     def_prim("map",          p_map,         0);
     def_prim("mapn",         p_mapn,        0);
     def_prim("words",        p_words,       0);
+    def_prim("see",          p_see,         0);
 
     exit_cfa    = def_prim("exit",      p_exit,    0);
     lit_cfa     = def_prim("(lit)",     p_lit,     0);
@@ -2106,18 +2341,18 @@ int main(void) {
             memcpy(inbuf + inbuf_len, line, (size_t)line_len + 1);
             inbuf_len += line_len;
         }
-        err = 0;
+        error_flag = 0;
         need_more = 0;
-        process();
+        run_outer();
         if (need_more) continue;
-        if (err) {
+        if (error_flag) {
             compiling = 0;
             dsp = 0;
             rsp = 0;
             compiling_src_start = 0;
         }
         if (compiling) continue;
-        if (!err) { printf("ok\n"); fflush(stdout); }
+        if (!error_flag) { printf("ok\n"); fflush(stdout); }
         inbuf_reset();
     }
     return 0;

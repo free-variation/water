@@ -1,0 +1,18 @@
+logicforth
+ok
+ok
+ok
+ok
+ok
+: double 2 * ;
+ok
+: square dup * ;
+ok
+variable counter  \ current value: 42
+ok
+symbol red
+ok
++ is a primitive
+ok
+[: ... :]  \ anonymous, no source
+ok
