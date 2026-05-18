@@ -203,6 +203,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <stdint.h>
+#include <stdarg.h>
 
 /* A raw dictionary cell. 64-bit because we want to store function
  * pointers, doubles, and indices without size-related hand-wringing. */
@@ -351,6 +352,12 @@ static int  running = 0;
 #define SRCIDX(c)  dict[(c) - 1]
 #define IS_IMM(c)  (FLAGS(c) & 1)
 
+/* Forward decl: `fail` reports an error message and sets the sticky
+ * error_flag. Defined alongside type_err down with the other
+ * error-reporting helpers, but used much earlier (in object allocators,
+ * stack push/pop, dictionary growth checks). printf-style formatting. */
+static void fail(const char *fmt, ...);
+
 
 /* ---- object registry -------------------------------------------------- */
 /* Strings, sets, and arrays don't fit in a single 8-byte cell, so they
@@ -435,8 +442,8 @@ static int object_alloc_slot(void) {
 }
 
 static int object_new_string(const char *bytes, int length) {
-    int idx = object_alloc_slot();
-    if (idx < 0) { error_flag = 1; return 0; }
+    int slot = object_alloc_slot();
+    if (slot < 0) { fail("object registry full"); return 0; }
 
     Object *o = calloc(1, sizeof(*o));
     o->kind = OBJECT_STRING;
@@ -445,8 +452,8 @@ static int object_new_string(const char *bytes, int length) {
     o->bytes = malloc((size_t)length + 1);
     memcpy(o->bytes, bytes, (size_t)length); o->bytes[length] = 0;
 
-    objects[idx] = o;
-    return idx;
+    objects[slot] = o;
+    return slot;
 }
 
 /* Starting capacity for a freshly-built set's items array. Small enough
@@ -455,21 +462,21 @@ static int object_new_string(const char *bytes, int length) {
 #define SET_INITIAL_CAPACITY 4
 
 static int object_new_set(void) {
-    int idx = object_alloc_slot();
-    if (idx < 0) { error_flag = 1; return 0; }
+    int slot = object_alloc_slot();
+    if (slot < 0) { fail("object registry full"); return 0; }
 
     Object *o = calloc(1, sizeof(*o));
     o->kind = OBJECT_SET;
     o->cap = SET_INITIAL_CAPACITY;
     o->items = malloc(sizeof(Val) * (size_t)o->cap);
 
-    objects[idx] = o;
-    return idx;
+    objects[slot] = o;
+    return slot;
 }
 
 static int object_new_array(int num_elements) {
-    int idx = object_alloc_slot();
-    if (idx < 0) { error_flag = 1; return 0; }
+    int slot = object_alloc_slot();
+    if (slot < 0) { fail("object registry full"); return 0; }
 
     Object *o = calloc(1, sizeof(*o));
     o->kind = OBJECT_ARRAY;
@@ -477,8 +484,8 @@ static int object_new_array(int num_elements) {
     o->cap = num_elements;
     o->items = malloc(sizeof(Val) * (size_t)(num_elements > 0 ? num_elements : 1));
 
-    objects[idx] = o;
-    return idx;
+    objects[slot] = o;
+    return slot;
 }
 
 
@@ -487,10 +494,10 @@ static int object_new_array(int num_elements) {
  * sets `error_flag`, the outer interpreter notices, and the current input is
  * abandoned. */
 
-static void push(Val x)  { if (dsp < DSTACK) data_stack[dsp++] = x; else error_flag = 1; }
-static Val  pop(void)    { if (dsp > 0) return data_stack[--dsp]; error_flag = 1; Val z = {T_NONE,0}; return z; }
-static void rpush(Val x) { if (rsp < RSTACK) return_stack[rsp++] = x; else error_flag = 1; }
-static Val  rpop(void)   { if (rsp > 0) return return_stack[--rsp]; error_flag = 1; Val z = {T_NONE,0}; return z; }
+static void push(Val x)  { if (dsp < DSTACK) data_stack[dsp++] = x; else fail("data stack overflow"); }
+static Val  pop(void)    { if (dsp > 0) return data_stack[--dsp]; fail("data stack underflow"); Val z = {T_NONE,0}; return z; }
+static void rpush(Val x) { if (rsp < RSTACK) return_stack[rsp++] = x; else fail("return stack overflow"); }
+static Val  rpop(void)   { if (rsp > 0) return return_stack[--rsp]; fail("return stack underflow"); Val z = {T_NONE,0}; return z; }
 
 
 /* ---- value comparison ------------------------------------------------- */
@@ -866,41 +873,49 @@ static void execute_cfa(int cfa) {
  * body source text and stashes it in source_pool[] for image save. For
  * everything else (primitives, variables, symbols) it stays at 0.
  *
- * def_prim is the convenience wrapper that does both: create a header,
+ * define_primitive is the convenience wrapper that does both: create a header,
  * then write a function pointer into the code field. Returns the CFA so
  * we can cache it for internal primitives we reference during
  * compilation. */
 
-static int alloc_name(const char *s) {
-    int len = (int)strlen(s) + 1;
-    if (names_here + len > NAMEPOOL) { error_flag = 1; return 0; }
-    int idx = names_here;
-    memcpy(&namepool[names_here], s, (size_t)len);
-    names_here += len;
-    return idx;
+static int alloc_name(const char *name) {
+    int length = (int)strlen(name) + 1;
+    if (names_here + length > NAMEPOOL) { fail("name pool full"); return 0; }
+
+    int name_offset = names_here;
+    memcpy(&namepool[names_here], name, (size_t)length);
+    names_here += length;
+
+    return name_offset;
 }
 static int create_header(const char *name, int immediate) {
-    if (here + 4 >= MEMSZ) { error_flag = 1; return 0; }
-    int link = latest_cfa;
-    int n = alloc_name(name);
-    dict[here++] = link;
+    if (here + 4 >= MEMSZ) { fail("dictionary full"); return 0; }
+    
+    int previous_latest = latest_cfa;
+    int name_offset     = alloc_name(name);
+    dict[here++] = previous_latest;
     dict[here++] = immediate ? 1 : 0;
-    dict[here++] = n;
+    dict[here++] = name_offset;
     dict[here++] = 0;            /* SRCIDX — filled in later by `;` if any */
-    int cfa = here;
-    latest_cfa = cfa;
-    return cfa;
+
+    /* The CFA cell is at `here` — record it as the new latest and
+     * return it. The caller will fill it in with the handler. */
+    latest_cfa = here;
+    return latest_cfa;
 }
-static int def_prim(const char *name, cfa_handler handler, int immediate) {
+
+static int define_primitive(const char *name, cfa_handler handler, int immediate) {
     int cfa = create_header(name, immediate);
-    if (here < MEMSZ) dict[here++] = (cell)handler; else error_flag = 1;
+    
+    if (here < MEMSZ) dict[here++] = (cell)handler; else fail("dictionary full");
+    
     return cfa;
 }
 
 /* `emit` appends a single raw cell to the dictionary at `here`. Used
  * during compilation of colon definitions and for inline data (literals
  * and branch offsets). */
-static void emit(cell x) { if (here < MEMSZ) dict[here++] = x; else error_flag = 1; }
+static void emit(cell x) { if (here < MEMSZ) dict[here++] = x; else fail("dictionary full"); }
 
 /* Compiling a tagged literal: we emit a (lit) reference, then two raw
  * cells encoding the Val (tag, then payload). At runtime (lit) reads
@@ -927,14 +942,34 @@ static void emit_val_literal(Val v) {
  * machinery that makes colon definitions work, then move outward to the
  * user-visible operations. */
 
-static void type_err(const char *op) { printf("? type error in %s\n", op); error_flag = 1; }
+/* Report an error and raise the sticky error_flag. The REPL catches
+ * the flag at the top of the next outer-loop iteration and resets
+ * state. Variadic so call sites can format detail directly. */
+static void fail(const char *fmt, ...) {
+    va_list args;
+    
+    va_start(args, fmt);
+    
+    fputs("? ", stdout);
+    vprintf(fmt, args);
+    putchar('\n');
+    
+    va_end(args);
+    error_flag = 1;
+}
+static void type_err(const char *op) { fail("type error in %s", op); }
 
 /* EXIT: pop the saved instruction pointer from the return stack and jump
  * to it. When the return stack is empty, we're at the top level; clear
  * `running` and let the inner-interpreter loop terminate cleanly. */
-static void p_exit(cell *c) {
-    (void)c;
-    if (rsp <= 0) { running = 0; return; }
+static void p_exit(cell *cfa) {
+    (void)cfa;
+    
+    if (rsp <= 0) {
+    	running = 0; 
+    	return; 
+    }
+    
     Val saved_ip = return_stack[--rsp];
     ip = (cell *)(dict + saved_ip.data);
 }
@@ -944,7 +979,7 @@ static void p_exit(cell *c) {
  * runs to its EXIT, EXIT pops its own saved ip and lands on (stop), and
  * (stop) breaks the inner loop without touching the return stack. See
  * execute_cfa for why a different terminator from EXIT is necessary. */
-static void p_stop(cell *c) { (void)c; running = 0; }
+static void p_stop(cell *cfa) { (void)cfa; running = 0; }
 
 /* The "inline data" primitives. Each one reads cell(s) from the ip
  * stream, advancing ip past them, and uses what it read:
@@ -958,16 +993,16 @@ static void p_stop(cell *c) { (void)c; running = 0; }
  * Offsets are stored as cell-counts relative to the offset cell itself,
  * which lets the compiler compute them with simple arithmetic at compile
  * time. */
-static void p_lit(cell *c) {
-    (void)c;
+static void p_lit(cell *cfa) {
+    (void)cfa;
     Val literal;
     literal.tag  = (Tag)*ip++;
     literal.data = *ip++;
     push(literal);
 }
-static void p_branch(cell *c)  { (void)c; ip += *ip; }
-static void p_0branch(cell *c) {
-    (void)c;
+static void p_branch(cell *cfa)  { (void)cfa; ip += *ip; }
+static void p_0branch(cell *cfa) {
+    (void)cfa;
     cell o = *ip++;
     Val v = pop();
     int zero = (v.tag == T_FLOAT) ? (unpack_float(v) == 0.0) : (v.data == 0);
@@ -980,8 +1015,8 @@ static void p_0branch(cell *c) {
  * resulting string, and advance past the handle. */
 static int interpolate(int template_handle);   /* forward                  */
 
-static void p_dostr(cell *c) {
-    (void)c;
+static void p_dostr(cell *cfa) {
+    (void)cfa;
     int h = (int)*ip++;
     int r = interpolate(h);
     push(make_string(r));
@@ -1008,33 +1043,33 @@ static int string_concat(int a, int b) {
     return h;
 }
 
-static void p_add(cell *c) {
-    (void)c; Val b = pop(), a = pop();
+static void p_add(cell *cfa) {
+    (void)cfa; Val b = pop(), a = pop();
     if (a.tag == T_FLOAT && b.tag == T_FLOAT)  push(make_float(unpack_float(a) + unpack_float(b)));
     else if (a.tag == T_STRING && b.tag == T_STRING) push(make_string(string_concat((int)a.data, (int)b.data)));
     else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_union((int)a.data, (int)b.data)));
     else type_err("+");
 }
-static void p_sub(cell *c) {
-    (void)c; Val b = pop(), a = pop();
+static void p_sub(cell *cfa) {
+    (void)cfa; Val b = pop(), a = pop();
     if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(make_float(unpack_float(a) - unpack_float(b)));
     else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_difference((int)a.data, (int)b.data)));
     else type_err("-");
 }
-static void p_mul(cell *c) {
-    (void)c; Val b = pop(), a = pop();
+static void p_mul(cell *cfa) {
+    (void)cfa; Val b = pop(), a = pop();
     if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(make_float(unpack_float(a) * unpack_float(b)));
     else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_intersect((int)a.data, (int)b.data)));
     else type_err("*");
 }
-static void p_div(cell *c) {
-    (void)c; Val b = pop(), a = pop();
+static void p_div(cell *cfa) {
+    (void)cfa; Val b = pop(), a = pop();
     if (a.tag == T_FLOAT && b.tag == T_FLOAT && unpack_float(b) != 0.0)
         push(make_float(unpack_float(a) / unpack_float(b)));
     else type_err("/");
 }
-static void p_neg(cell *c) {
-    (void)c; Val a = pop();
+static void p_neg(cell *cfa) {
+    (void)cfa; Val a = pop();
     if (a.tag == T_FLOAT) push(make_float(-unpack_float(a)));
     else type_err("negate");
 }
@@ -1045,21 +1080,21 @@ static void p_neg(cell *c) {
 static Val make_bool(int t) { return make_float(t ? -1.0 : 0.0); }
 static int truthy(Val v)  { return (v.tag == T_FLOAT) ? (unpack_float(v) != 0.0) : (v.data != 0); }
 
-static void p_eq(cell *c)  { (void)c; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) == 0)); }
-static void p_lt(cell *c)  { (void)c; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) <  0)); }
-static void p_gt(cell *c)  { (void)c; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) >  0)); }
-static void p_zeq(cell *c) { (void)c; Val a = pop(); push(make_bool(!truthy(a))); }
+static void p_eq(cell *cfa)  { (void)cfa; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) == 0)); }
+static void p_lt(cell *cfa)  { (void)cfa; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) <  0)); }
+static void p_gt(cell *cfa)  { (void)cfa; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) >  0)); }
+static void p_zeq(cell *cfa) { (void)cfa; Val a = pop(); push(make_bool(!truthy(a))); }
 
 
 /* ---- stack manipulation, I/O, return-stack access -------------------- */
 
-static void p_dup(cell *c)  { (void)c; Val a = pop(); push(a); push(a); }
-static void p_drop(cell *c) { (void)c; (void)pop(); }
-static void p_swap(cell *c) { (void)c; Val b = pop(), a = pop(); push(b); push(a); }
-static void p_over(cell *c) { (void)c; Val b = pop(), a = pop(); push(a); push(b); push(a); }
-static void p_rot(cell *c)  { (void)c; Val z = pop(), y = pop(), x = pop(); push(y); push(z); push(x); }
+static void p_dup(cell *cfa)  { (void)cfa; Val a = pop(); push(a); push(a); }
+static void p_drop(cell *cfa) { (void)cfa; (void)pop(); }
+static void p_swap(cell *cfa) { (void)cfa; Val b = pop(), a = pop(); push(b); push(a); }
+static void p_over(cell *cfa) { (void)cfa; Val b = pop(), a = pop(); push(a); push(b); push(a); }
+static void p_rot(cell *cfa)  { (void)cfa; Val z = pop(), y = pop(), x = pop(); push(y); push(z); push(x); }
 
-static void p_dot(cell *c)  { (void)c; print_val(pop()); putchar(' '); fflush(stdout); }
+static void p_dot(cell *cfa)  { (void)cfa; print_val(pop()); putchar(' '); fflush(stdout); }
 
 /* `.a`: print one value with truncation disabled — useful when the
  * caller actually wants to see a huge set or array. The save/clear/
@@ -1067,8 +1102,8 @@ static void p_dot(cell *c)  { (void)c; print_val(pop()); putchar(' '); fflush(st
  * nested calls don't get permanently flipped (and any concurrent
  * printing during the call, e.g. from a side effect, also runs
  * un-truncated). The truncation rule itself lives in print_items. */
-static void p_dot_all(cell *c) {
-    (void)c;
+static void p_dot_all(cell *cfa) {
+    (void)cfa;
     int saved = print_truncate;
     print_truncate = 0;
     print_val(pop());
@@ -1076,23 +1111,23 @@ static void p_dot_all(cell *c) {
     fflush(stdout);
     print_truncate = saved;
 }
-static void p_cr(cell *c)   { (void)c; putchar('\n'); fflush(stdout); }
-static void p_emit_(cell *c){
-    (void)c; Val a = pop();
+static void p_cr(cell *cfa)   { (void)cfa; putchar('\n'); fflush(stdout); }
+static void p_emit_(cell *cfa){
+    (void)cfa; Val a = pop();
     if (a.tag == T_FLOAT) { putchar((int)unpack_float(a)); fflush(stdout); }
     else type_err("emit");
 }
-static void p_dots(cell *c) {
-    (void)c;
+static void p_dots(cell *cfa) {
+    (void)cfa;
     printf("<%d> ", dsp);
     for (int i = 0; i < dsp; i++) { print_val(data_stack[i]); putchar(' '); }
     fflush(stdout);
 }
-static void p_bye(cell *c) { (void)c; exit(0); }
+static void p_bye(cell *cfa) { (void)cfa; exit(0); }
 
-static void p_tor(cell *c)    { (void)c; rpush(pop()); }
-static void p_rfrom(cell *c)  { (void)c; push(rpop()); }
-static void p_rfetch(cell *c) { (void)c; if (rsp > 0) push(return_stack[rsp - 1]); else error_flag = 1; }
+static void p_tor(cell *cfa)    { (void)cfa; rpush(pop()); }
+static void p_rfrom(cell *cfa)  { (void)cfa; push(rpop()); }
+static void p_rfetch(cell *cfa) { (void)cfa; if (rsp > 0) push(return_stack[rsp - 1]); else fail("return stack empty"); }
 
 
 /* ---- variables: @ and ! ---------------------------------------------- */
@@ -1101,8 +1136,8 @@ static void p_rfetch(cell *c) { (void)c; if (rsp > 0) push(return_stack[rsp - 1]
  * cell. The user accesses the stored value via @ and !, which read and
  * write the two-cell pair. */
 
-static void p_fetch(cell *c) {
-    (void)c; Val address = pop();
+static void p_fetch(cell *cfa) {
+    (void)cfa; Val address = pop();
     if (address.tag != T_ADDR) { type_err("@"); return; }
     int cell_index = (int)address.data;
     Val loaded;
@@ -1110,12 +1145,12 @@ static void p_fetch(cell *c) {
     loaded.data = dict[cell_index + 1];
     push(loaded);
 }
-static void p_store(cell *c) {
-    (void)c; Val addr = pop(), v = pop();
+static void p_store(cell *cfa) {
+    (void)cfa; Val addr = pop(), v = pop();
     if (addr.tag != T_ADDR) { type_err("!"); return; }
-    int idx = (int)addr.data;
-    dict[idx] = (cell)v.tag;
-    dict[idx + 1] = v.data;
+    int cell_index = (int)addr.data;
+    dict[cell_index]     = (cell)v.tag;
+    dict[cell_index + 1] = v.data;
 }
 
 
@@ -1132,9 +1167,9 @@ static void p_store(cell *c) {
  * mark, the compiled element literals push themselves, and `}` collects
  * — exactly the same mechanism, just deferred to run time. */
 
-static void p_setopen(cell *c)  { (void)c; push(make_mark()); }
-static void p_setclose(cell *c) {
-    (void)c;
+static void p_setopen(cell *cfa)  { (void)cfa; push(make_mark()); }
+static void p_setclose(cell *cfa) {
+    (void)cfa;
     int base = dsp;
     while (base > 0 && data_stack[base - 1].tag != T_MARK) base--;
     if (base == 0) { type_err("}"); return; }
@@ -1143,9 +1178,9 @@ static void p_setclose(cell *c) {
     dsp = base - 1;
     push(make_set(h));
 }
-static void p_array_open(cell *c)  { (void)c; push(make_mark()); }
-static void p_array_close(cell *c) {
-    (void)c;
+static void p_array_open(cell *cfa)  { (void)cfa; push(make_mark()); }
+static void p_array_close(cell *cfa) {
+    (void)cfa;
     int base = dsp;
     while (base > 0 && data_stack[base - 1].tag != T_MARK) base--;
     if (base == 0) { type_err("]"); return; }
@@ -1159,19 +1194,19 @@ static void p_array_close(cell *c) {
 
 /* ---- set, array, and higher-order operations ------------------------- */
 
-static void p_cardinality(cell *c) {
-    (void)c; Val a = pop();
+static void p_cardinality(cell *cfa) {
+    (void)cfa; Val a = pop();
     if (a.tag == T_SET || a.tag == T_ARRAY || a.tag == T_STRING)
         push(make_float((double)objects[a.data]->len));
     else type_err("cardinality");
 }
-static void p_member(cell *c) {
-    (void)c; Val v = pop(), s = pop();
+static void p_member(cell *cfa) {
+    (void)cfa; Val v = pop(), s = pop();
     if (s.tag != T_SET) { type_err("member?"); return; }
     push(make_bool(set_member((int)s.data, v)));
 }
-static void p_at(cell *c) {
-    (void)c; Val iv = pop(), av = pop();
+static void p_at(cell *cfa) {
+    (void)cfa; Val iv = pop(), av = pop();
     if (av.tag != T_ARRAY || iv.tag != T_FLOAT) { type_err("at"); return; }
     Object *o = objects[av.data];
     int i = (int)unpack_float(iv);
@@ -1185,8 +1220,8 @@ static void p_at(cell *c) {
  * on a hit, so `5 5 6 3 set` yields the two-element set `{ 5 6 }`. This
  * is intentional set semantics, but it can surprise: `dup 2 set` on any
  * single value produces a one-element set, not a two-element one. */
-static void p_set(cell *c) {
-    (void)c; Val nv = pop();
+static void p_set(cell *cfa) {
+    (void)cfa; Val nv = pop();
     if (nv.tag != T_FLOAT) { type_err("set"); return; }
     int n = (int)unpack_float(nv);
     if (n < 0 || n > dsp) { type_err("set"); return; }
@@ -1198,18 +1233,18 @@ static void p_set(cell *c) {
     push(make_set(h));
 }
 
-static void p_union(cell *c) {
-    (void)c; Val b = pop(), a = pop();
+static void p_union(cell *cfa) {
+    (void)cfa; Val b = pop(), a = pop();
     if (a.tag != T_SET || b.tag != T_SET) { type_err("union"); return; }
     push(make_set(set_union((int)a.data, (int)b.data)));
 }
-static void p_intersect(cell *c) {
-    (void)c; Val b = pop(), a = pop();
+static void p_intersect(cell *cfa) {
+    (void)cfa; Val b = pop(), a = pop();
     if (a.tag != T_SET || b.tag != T_SET) { type_err("intersection"); return; }
     push(make_set(set_intersect((int)a.data, (int)b.data)));
 }
-static void p_difference(cell *c) {
-    (void)c; Val b = pop(), a = pop();
+static void p_difference(cell *cfa) {
+    (void)cfa; Val b = pop(), a = pop();
     if (a.tag != T_SET || b.tag != T_SET) { type_err("difference"); return; }
     push(make_set(set_difference((int)a.data, (int)b.data)));
 }
@@ -1217,8 +1252,8 @@ static void p_difference(cell *c) {
 /* `execute` takes an execution token (xt) — the handle for a word — and
  * runs it. Together with `'` (tick), this gives us higher-order
  * operations: a word that takes a word as data. */
-static void p_execute(cell *c) {
-    (void)c; Val v = pop();
+static void p_execute(cell *cfa) {
+    (void)cfa; Val v = pop();
     if (v.tag != T_XT) { type_err("execute"); return; }
     execute_cfa((int)v.data);
 }
@@ -1241,8 +1276,8 @@ static void p_execute(cell *c) {
  * uninitialized — and a GC triggered mid-loop would walk those slots as
  * Vals during marking. Zero bytes deserialize as `{T_NONE, 0}`, which
  * mark_val ignores. */
-static void p_map(cell *c) {
-    (void)c; Val xt = pop(), sv = pop();
+static void p_map(cell *cfa) {
+    (void)cfa; Val xt = pop(), sv = pop();
     if (xt.tag != T_XT || (sv.tag != T_SET && sv.tag != T_ARRAY)) {
         type_err("map"); return;
     }
@@ -1288,8 +1323,8 @@ static void p_map(cell *c) {
  * gc_roots[] has a fixed small capacity (GC_ROOTS_MAX), so pinning them
  * all via gc_root_push would risk overflow. The data stack has plenty
  * of room and is already a GC root by construction. */
-static void p_mapn(cell *c) {
-    (void)c;
+static void p_mapn(cell *cfa) {
+    (void)cfa;
     Val nv = pop();
     if (nv.tag != T_FLOAT) { type_err("mapn"); return; }
     int n = (int)unpack_float(nv);
@@ -1334,8 +1369,8 @@ static void p_mapn(cell *c) {
 
 /* `words`: list every name in the dictionary. Walks the linked list
  * newest-to-oldest. */
-static void p_words(cell *c) {
-    (void)c;
+static void p_words(cell *cfa) {
+    (void)cfa;
     int cnt = 0;
     for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
         fputs(&namepool[NAMEIDX(cf)], stdout);
@@ -1362,17 +1397,17 @@ static void p_words(cell *c) {
  *
  * For colon defs the source is exactly what the user typed, comments
  * and whitespace included. */
-static void p_see(cell *c) {
-    (void)c; Val xt = pop();
+static void p_see(cell *cfa) {
+    (void)cfa; Val xt = pop();
     if (xt.tag != T_XT) { type_err("see"); return; }
-    int cfa = (int)xt.data;
+    int target_cfa = (int)xt.data;
     /* Walk the chain to find the name for this CFA; if we don't find
      * one, the xt is an anonymous quotation. */
     const char *name = NULL;
     for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
-        if (cf == cfa) { name = &namepool[NAMEIDX(cf)]; break; }
+        if (cf == target_cfa) { name = &namepool[NAMEIDX(cf)]; break; }
     }
-    cfa_handler handler = (cfa_handler)dict[cfa];
+    cfa_handler handler = (cfa_handler)dict[target_cfa];
     if (handler == docol) {
         if (!name) {
             /* Anonymous quotation. No header means no SRCIDX field —
@@ -1380,12 +1415,12 @@ static void p_see(cell *c) {
              * source-pool offset, so we don't try to read it. */
             printf("[: ... :]  \\ anonymous, no source\n");
         } else {
-            int src_idx = (int)SRCIDX(cfa);
+            int src_idx = (int)SRCIDX(target_cfa);
             if (src_idx > 0) printf(": %s%s;\n", name, &source_pool[src_idx]);
             else             printf(": %s ... ;  \\ no source captured\n", name);
         }
     } else if (handler == dovar) {
-        Val val; val.tag = (Tag)dict[cfa + 1]; val.data = dict[cfa + 2];
+        Val val; val.tag = (Tag)dict[target_cfa + 1]; val.data = dict[target_cfa + 2];
         printf("variable %s  \\ current value: ", name ? name : "?");
         print_val(val);
         putchar('\n');
@@ -1437,49 +1472,48 @@ static void p_see(cell *c) {
  * reset inbuf between lines. See the "outer REPL loop" code at the
  * bottom of main: while `compiling` is set, inbuf accumulates so this
  * slice is contiguous. */
-static void p_semi(cell *c) {
-    (void)c;
+static void p_semi(cell *cfa) {
+    (void)cfa;
     emit((cell)exit_cfa);
     if (compiling_src_start > 0 && latest_cfa != 0) {
         int src_end = inbuf_pos - 1;                  /* position of the ';' */
         int src_len = src_end - compiling_src_start;
         if (src_len < 0) src_len = 0;
         if (sources_here + src_len + 1 > SOURCEPOOL) {
-            printf("? source pool full\n");
-            error_flag = 1;
+            fail("source pool full");
         } else {
-            int idx = sources_here;
+            int source_offset = sources_here;
             memcpy(&source_pool[sources_here],
                    &inbuf[compiling_src_start],
                    (size_t)src_len);
             source_pool[sources_here + src_len] = 0;
             sources_here += src_len + 1;
-            SRCIDX(latest_cfa) = idx;
+            SRCIDX(latest_cfa) = source_offset;
         }
     }
     compiling = 0;
     compiling_src_start = 0;
 }
-static void p_if(cell *c)    { (void)c; emit((cell)zbranch_cfa); push(make_float((double)here)); emit(0); }
-static void p_then(cell *c)  {
-    (void)c; int slot = (int)unpack_float(pop());
+static void p_if(cell *cfa)    { (void)cfa; emit((cell)zbranch_cfa); push(make_float((double)here)); emit(0); }
+static void p_then(cell *cfa)  {
+    (void)cfa; int slot = (int)unpack_float(pop());
     dict[slot] = (here - slot);
 }
-static void p_else(cell *c)  {
-    (void)c; int slot = (int)unpack_float(pop());
+static void p_else(cell *cfa)  {
+    (void)cfa; int slot = (int)unpack_float(pop());
     emit((cell)branch_cfa);
     push(make_float((double)here));
     emit(0);
     dict[slot] = (here - slot);
 }
-static void p_begin(cell *c) { (void)c; push(make_float((double)here)); }
-static void p_until(cell *c) {
-    (void)c; int back = (int)unpack_float(pop());
+static void p_begin(cell *cfa) { (void)cfa; push(make_float((double)here)); }
+static void p_until(cell *cfa) {
+    (void)cfa; int back = (int)unpack_float(pop());
     emit((cell)zbranch_cfa);
     emit(back - here);
 }
-static void p_again(cell *c) {
-    (void)c; int back = (int)unpack_float(pop());
+static void p_again(cell *cfa) {
+    (void)cfa; int back = (int)unpack_float(pop());
     emit((cell)branch_cfa);
     emit(back - here);
 }
@@ -1512,8 +1546,8 @@ static void p_again(cell *c) {
  * round-trips fine (its source is part of the enclosing word's captured
  * body), but a bare `[: ... :]` left on the stack at save time has no
  * recoverable identity. See p_save for how that case is flagged. */
-static void p_qcolon(cell *c) {
-    (void)c;
+static void p_qcolon(cell *cfa) {
+    (void)cfa;
     int branch_slot = -1;
     if (compiling) {
         emit((cell)branch_cfa);
@@ -1526,8 +1560,8 @@ static void p_qcolon(cell *c) {
     push(make_float((double)anon_cfa));
     push(make_float((double)branch_slot));
 }
-static void p_qsemi(cell *c) {
-    (void)c;
+static void p_qsemi(cell *cfa) {
+    (void)cfa;
     emit((cell)exit_cfa);
     int branch_slot = (int)unpack_float(pop());
     int anon_cfa    = (int)unpack_float(pop());
@@ -1556,20 +1590,20 @@ static void p_qsemi(cell *c) {
 
 static char *next_token(void);
 
-static void p_tick(cell *c) {
-    (void)c;
+static void p_tick(cell *cfa) {
+    (void)cfa;
     char *t = next_token();
     if (!t) { type_err("'"); return; }
     int cf = find(t);
-    if (!cf) { printf("? %s\n", t); error_flag = 1; return; }
+    if (!cf) { fail("%s", t); return; }
     Val v = make_xt(cf);
     if (compiling) emit_val_literal(v);
     else push(v);
 }
 
-static void p_colon(cell *c) {
-    (void)c; char *t = next_token();
-    if (!t) { printf("? : needs a name\n"); error_flag = 1; return; }
+static void p_colon(cell *cfa) {
+    (void)cfa; char *t = next_token();
+    if (!t) { fail(": needs a name"); return; }
     create_header(t, 0);
     emit((cell)&docol);
     compiling = 1;
@@ -1578,18 +1612,18 @@ static void p_colon(cell *c) {
      * which is exactly where we want the captured source to begin. */
     compiling_src_start = inbuf_pos;
 }
-static void p_variable(cell *c) {
-    (void)c; char *t = next_token();
-    if (!t) { printf("? variable needs a name\n"); error_flag = 1; return; }
+static void p_variable(cell *cfa) {
+    (void)cfa; char *t = next_token();
+    if (!t) { fail("variable needs a name"); return; }
     create_header(t, 0);
     emit((cell)&dovar);
     emit((cell)T_FLOAT);
     double zero = 0.0; cell zb; memcpy(&zb, &zero, 8);
     emit(zb);
 }
-static void p_symbol(cell *c) {
-    (void)c; char *t = next_token();
-    if (!t) { printf("? symbol needs a name\n"); error_flag = 1; return; }
+static void p_symbol(cell *cfa) {
+    (void)cfa; char *t = next_token();
+    if (!t) { fail("symbol needs a name"); return; }
     create_header(t, 0);
     emit((cell)&dosym);
 }
@@ -1608,11 +1642,11 @@ static void p_symbol(cell *c) {
  * source_pool, so we walk the surviving dictionary chain to find the
  * highest used source-pool extent, and set sources_here there. Words
  * without a stored source (SRCIDX == 0) are skipped. */
-static void p_forget(cell *c) {
-    (void)c; char *t = next_token();
-    if (!t) { printf("? forget needs a name\n"); error_flag = 1; return; }
+static void p_forget(cell *cfa) {
+    (void)cfa; char *t = next_token();
+    if (!t) { fail("forget needs a name"); return; }
     int target = find(t);
-    if (!target) { printf("? %s\n", t); error_flag = 1; return; }
+    if (!target) { fail("%s", t); return; }
     here       = target - 4;
     names_here = (int)NAMEIDX(target);
     latest_cfa = (int)LINK(target);
@@ -1725,15 +1759,15 @@ static int interpolate(int template_handle) {
                 n = n * 10 + (tmpl->bytes[j] - '0'); j++; any = 1;
             }
             if (any && j < tmpl->len && tmpl->bytes[j] == '}') {
-                int idx = dsp - 1 - n;
-                if (idx < 0) {
+                int stack_index = dsp - 1 - n;
+                if (stack_index < 0) {
                     type_err("string interpolation: stack too shallow");
                     free(out);
                     return object_new_string("", 0);
                 }
                 char render[256];
                 int rlen = 0;
-                Val v = data_stack[idx];
+                Val v = data_stack[stack_index];
                 switch (v.tag) {
                     case T_FLOAT: {
                         double d = unpack_float(v);
@@ -1837,8 +1871,7 @@ static void run_outer(void) {
             else push(v);
             continue;
         }
-        printf("? %s\n", tok);
-        error_flag = 1;
+        fail("%s", tok);
         return;
     }
 }
@@ -1860,8 +1893,8 @@ static void run_outer(void) {
  * the way there is from stdin); and a colon definition with no `;`
  * would leave the system in compile mode after load returns. Both
  * become errors here. */
-static void p_load(cell *c) {
-    (void)c;
+static void p_load(cell *cfa) {
+    (void)cfa;
     Val v = pop();
     if (v.tag != T_STRING) { type_err("load"); return; }
     gc_root_push(v);
@@ -1869,8 +1902,7 @@ static void p_load(cell *c) {
 
     FILE *f = fopen(filename, "r");
     if (!f) {
-        printf("? cannot open %s\n", filename);
-        error_flag = 1;
+        fail("cannot open %s", filename);
         gc_root_pop();
         return;
     }
@@ -1879,9 +1911,8 @@ static void p_load(cell *c) {
     long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
     if (fsize < 0 || fsize >= INBUFSZ) {
-        printf("? %s too large or invalid (%ld bytes, max %d)\n",
-               filename, fsize, INBUFSZ - 1);
-        error_flag = 1;
+        fail("%s too large or invalid (%ld bytes, max %d)",
+             filename, fsize, INBUFSZ - 1);
         fclose(f);
         gc_root_pop();
         return;
@@ -1903,12 +1934,10 @@ static void p_load(cell *c) {
     run_outer();
 
     if (!error_flag && need_more) {
-        printf("? %s: unterminated string literal\n", filename);
-        error_flag = 1;
+        fail("%s: unterminated string literal", filename);
     }
     if (!error_flag && compiling) {
-        printf("? %s: unterminated definition\n", filename);
-        error_flag = 1;
+        fail("%s: unterminated definition", filename);
         compiling = 0;
     }
 
@@ -2171,8 +2200,8 @@ static void write_val_literal(FILE *f, Val v) {
     }
 }
 
-static void p_save(cell *c) {
-    (void)c;
+static void p_save(cell *cfa) {
+    (void)cfa;
     Val v = pop();
     if (v.tag != T_STRING) { type_err("save"); return; }
     gc_root_push(v);
@@ -2180,8 +2209,7 @@ static void p_save(cell *c) {
 
     FILE *f = fopen(filename, "w");
     if (!f) {
-        printf("? cannot create %s\n", filename);
-        error_flag = 1;
+        fail("cannot create %s", filename);
         gc_root_pop();
         return;
     }
@@ -2248,74 +2276,74 @@ static void p_save(cell *c) {
  * them, since those references are resolved at definition time. */
 
 int main(void) {
-    def_prim("+",      p_add,   0);
-    def_prim("-",      p_sub,   0);
-    def_prim("*",      p_mul,   0);
-    def_prim("/",      p_div,   0);
-    def_prim("negate", p_neg,   0);
-    def_prim("dup",    p_dup,   0);
-    def_prim("drop",   p_drop,  0);
-    def_prim("swap",   p_swap,  0);
-    def_prim("over",   p_over,  0);
-    def_prim("rot",    p_rot,   0);
-    def_prim("=",      p_eq,    0);
-    def_prim("<",      p_lt,    0);
-    def_prim(">",      p_gt,    0);
-    def_prim("0=",     p_zeq,   0);
-    def_prim(".",      p_dot,   0);
-    def_prim(".a",     p_dot_all, 0);
-    def_prim("cr",     p_cr,    0);
-    def_prim("emit",   p_emit_, 0);
-    def_prim(".s",     p_dots,  0);
-    def_prim("bye",    p_bye,   0);
-    def_prim("load",   p_load,  0);
-    def_prim("save",   p_save,  0);
-    def_prim(">r",     p_tor,    0);
-    def_prim("r>",     p_rfrom,  0);
-    def_prim("r@",     p_rfetch, 0);
-    def_prim("@",      p_fetch, 0);
-    def_prim("!",      p_store, 0);
+    define_primitive("+",      p_add,   0);
+    define_primitive("-",      p_sub,   0);
+    define_primitive("*",      p_mul,   0);
+    define_primitive("/",      p_div,   0);
+    define_primitive("negate", p_neg,   0);
+    define_primitive("dup",    p_dup,   0);
+    define_primitive("drop",   p_drop,  0);
+    define_primitive("swap",   p_swap,  0);
+    define_primitive("over",   p_over,  0);
+    define_primitive("rot",    p_rot,   0);
+    define_primitive("=",      p_eq,    0);
+    define_primitive("<",      p_lt,    0);
+    define_primitive(">",      p_gt,    0);
+    define_primitive("0=",     p_zeq,   0);
+    define_primitive(".",      p_dot,   0);
+    define_primitive(".a",     p_dot_all, 0);
+    define_primitive("cr",     p_cr,    0);
+    define_primitive("emit",   p_emit_, 0);
+    define_primitive(".s",     p_dots,  0);
+    define_primitive("bye",    p_bye,   0);
+    define_primitive("load",   p_load,  0);
+    define_primitive("save",   p_save,  0);
+    define_primitive(">r",     p_tor,    0);
+    define_primitive("r>",     p_rfrom,  0);
+    define_primitive("r@",     p_rfetch, 0);
+    define_primitive("@",      p_fetch, 0);
+    define_primitive("!",      p_store, 0);
 
-    def_prim("{",      p_setopen,  0);
-    def_prim("}",      p_setclose, 0);
-    def_prim("[",      p_array_open,  0);
-    def_prim("]",      p_array_close, 0);
+    define_primitive("{",      p_setopen,  0);
+    define_primitive("}",      p_setclose, 0);
+    define_primitive("[",      p_array_open,  0);
+    define_primitive("]",      p_array_close, 0);
 
-    def_prim("cardinality",  p_cardinality, 0);
-    def_prim("member?",      p_member,      0);
-    def_prim("set",          p_set,         0);
-    def_prim("union",        p_union,       0);
-    def_prim("intersection", p_intersect,   0);
-    def_prim("difference",   p_difference,  0);
-    def_prim("at",           p_at,          0);
-    def_prim("execute",      p_execute,     0);
-    def_prim("map",          p_map,         0);
-    def_prim("mapn",         p_mapn,        0);
-    def_prim("words",        p_words,       0);
-    def_prim("see",          p_see,         0);
+    define_primitive("cardinality",  p_cardinality, 0);
+    define_primitive("member?",      p_member,      0);
+    define_primitive("set",          p_set,         0);
+    define_primitive("union",        p_union,       0);
+    define_primitive("intersection", p_intersect,   0);
+    define_primitive("difference",   p_difference,  0);
+    define_primitive("at",           p_at,          0);
+    define_primitive("execute",      p_execute,     0);
+    define_primitive("map",          p_map,         0);
+    define_primitive("mapn",         p_mapn,        0);
+    define_primitive("words",        p_words,       0);
+    define_primitive("see",          p_see,         0);
 
-    exit_cfa    = def_prim("exit",      p_exit,    0);
-    lit_cfa     = def_prim("(lit)",     p_lit,     0);
-    branch_cfa  = def_prim("(branch)",  p_branch,  0);
-    zbranch_cfa = def_prim("(0branch)", p_0branch, 0);
-    dostr_cfa   = def_prim("(dostr)",   p_dostr,   0);
-    stop_cfa    = def_prim("(stop)",    p_stop,    0);
+    exit_cfa    = define_primitive("exit",      p_exit,    0);
+    lit_cfa     = define_primitive("(lit)",     p_lit,     0);
+    branch_cfa  = define_primitive("(branch)",  p_branch,  0);
+    zbranch_cfa = define_primitive("(0branch)", p_0branch, 0);
+    dostr_cfa   = define_primitive("(dostr)",   p_dostr,   0);
+    stop_cfa    = define_primitive("(stop)",    p_stop,    0);
 
-    def_prim(":",        p_colon,    0);
-    def_prim("variable", p_variable, 0);
-    def_prim("symbol",   p_symbol,   0);
-    def_prim("forget",   p_forget,   0);
-    def_prim("'",        p_tick,     1);
+    define_primitive(":",        p_colon,    0);
+    define_primitive("variable", p_variable, 0);
+    define_primitive("symbol",   p_symbol,   0);
+    define_primitive("forget",   p_forget,   0);
+    define_primitive("'",        p_tick,     1);
 
-    def_prim(";",     p_semi,  1);
-    def_prim("if",    p_if,    1);
-    def_prim("then",  p_then,  1);
-    def_prim("else",  p_else,  1);
-    def_prim("begin", p_begin, 1);
-    def_prim("until", p_until, 1);
-    def_prim("again", p_again, 1);
-    def_prim("[:",    p_qcolon, 1);
-    def_prim(":]",    p_qsemi,  1);
+    define_primitive(";",     p_semi,  1);
+    define_primitive("if",    p_if,    1);
+    define_primitive("then",  p_then,  1);
+    define_primitive("else",  p_else,  1);
+    define_primitive("begin", p_begin, 1);
+    define_primitive("until", p_until, 1);
+    define_primitive("again", p_again, 1);
+    define_primitive("[:",    p_qcolon, 1);
+    define_primitive(":]",    p_qsemi,  1);
 
     printf("logicforth\n");
     char line[1024];
