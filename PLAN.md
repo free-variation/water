@@ -249,3 +249,50 @@ back," which works but isn't free).
 Recommended order: build the matrix type, get a greyscale MNIST
 classifier working end-to-end, *then* decide whether color/tensor
 work is worth the investment.
+
+## Help system
+
+A `help` word that shows a one-line description of any word — colon
+definition, variable, symbol, or primitive.
+
+**Design:**
+
+- **Storage**: reuse the existing `SRCIDX` header field, no new
+  header cell. Primitives' SRCIDX points to a doc string. Colon
+  defs' SRCIDX still points to body source; `help` extracts the
+  first `( ... )` paren-comment as the doc.
+- **Entry — primitives**: extend `define_primitive` to take a doc
+  string parameter. All ~60 primitives get short stack-effect-style
+  docs at registration time (e.g. `( n -- n*n )  square the top`).
+- **Entry — colon defs**: convention is the first `( ... )` after
+  the name, Forth-style: `: square ( n -- n*n ) dup * ;`. No new
+  syntax. Words without a paren-comment have no help text.
+- **Entry — variables, symbols**: no doc by default. `help` shows
+  just the kind and name.
+- **Lookup**: `' foo help`. xt-style, consistent with `see`, `execute`,
+  `map`. `help` dispatches on the handler: `docol` → extract from
+  body source; `dovar`/`dosym` → kind + name; otherwise (primitive)
+  → print the stored doc string directly.
+
+**Why this shape:**
+
+- One field handles both kinds with minimal machinery.
+- Colon-def docs need zero extra work from the user beyond writing
+  the conventional stack-effect comment.
+- `help` complements `see`: `see` shows the full definition, `help`
+  shows the short doc.
+
+**Cost:**
+
+- One signature change to `define_primitive` (touches ~60 call sites
+  but mechanically — add a doc string each).
+- ~600 bytes of static doc strings.
+- About a dozen lines for `p_help`.
+
+**Open questions:**
+
+- Should `help` with no argument print a list of all words with a
+  short doc each, sorted? Could be a separate `apropos` word later.
+- Variable/symbol docs are uncovered. If they need them, we'd add
+  `( comment )` parsing in `p_variable` / `p_symbol` to capture a
+  doc string from the input stream after the name.

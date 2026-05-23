@@ -240,8 +240,8 @@ typedef enum {
 
 typedef struct { Tag tag; int64_t data; } Val;
 
-static double unpack_float(Val packed)  { double d; memcpy(&d, &packed.data, 8); return d; }
-static Val make_float(double d)         { Val value; value.tag = T_FLOAT;  memcpy(&value.data, &d, 8); return value; }
+static double unpack_float(Val packed)  { double number; memcpy(&number, &packed.data, 8); return number; }
+static Val make_float(double number)    { Val value; value.tag = T_FLOAT;  memcpy(&value.data, &number, 8); return value; }
 static Val make_sym(int cfa)            { Val value; value.tag = T_SYM;    value.data = cfa; return value; }
 static Val make_string(int handle)      { Val value; value.tag = T_STRING; value.data = handle; return value; }
 static Val make_set(int handle)         { Val value; value.tag = T_SET;    value.data = handle; return value; }
@@ -346,11 +346,11 @@ static int  running = 0;
  * index — bumping the size constant in create_header — and updating
  * FORGET and the GC's dictionary walker to keep their body-boundary
  * arithmetic in sync. */
-#define LINK(c)    dict[(c) - 4]
-#define FLAGS(c)   dict[(c) - 3]
-#define NAMEIDX(c) dict[(c) - 2]
-#define SRCIDX(c)  dict[(c) - 1]
-#define IS_IMM(c)  (FLAGS(c) & 1)
+#define LINK(cfa)    dict[(cfa) - 4]
+#define FLAGS(cfa)   dict[(cfa) - 3]
+#define NAMEIDX(cfa) dict[(cfa) - 2]
+#define SRCIDX(cfa)  dict[(cfa) - 1]
+#define IS_IMM(cfa)  (FLAGS(cfa) & 1)
 
 /* Forward decl: `fail` reports an error message and sets the sticky
  * error_flag. Defined alongside type_err down with the other
@@ -382,7 +382,7 @@ typedef struct {
     int len, cap;
     /* A tagged union: exactly one of the storage pointers is live at a
      * time, selected by `kind`. The anonymous-union form (C11) keeps
-     * existing access syntax — `o->bytes` for OBJECT_STRING, `o->items` for
+     * existing access syntax — `obj->bytes` for OBJECT_STRING, `obj->items` for
      * OBJECT_SET/OBJECT_ARRAY — while making it explicit at the type level that
      * the two pointers share storage and only one is meaningful. */
     union {
@@ -404,8 +404,8 @@ static int  n_objects = 0;
 static Val gc_roots[GC_ROOTS_MAX];
 static int n_gc_roots = 0;
 
-static void gc_root_push(Val v) {
-    if (n_gc_roots < GC_ROOTS_MAX) gc_roots[n_gc_roots++] = v;
+static void gc_root_push(Val value) {
+    if (n_gc_roots < GC_ROOTS_MAX) gc_roots[n_gc_roots++] = value;
 }
 static void gc_root_pop(void) { if (n_gc_roots > 0) n_gc_roots--; }
 
@@ -445,14 +445,14 @@ static int object_new_string(const char *bytes, int length) {
     int slot = object_alloc_slot();
     if (slot < 0) { fail("object registry full"); return 0; }
 
-    Object *o = calloc(1, sizeof(*o));
-    o->kind = OBJECT_STRING;
-    o->len = length;
-    o->cap = length;
-    o->bytes = malloc((size_t)length + 1);
-    memcpy(o->bytes, bytes, (size_t)length); o->bytes[length] = 0;
+    Object *obj = calloc(1, sizeof(*obj));
+    obj->kind = OBJECT_STRING;
+    obj->len = length;
+    obj->cap = length;
+    obj->bytes = malloc((size_t)length + 1);
+    memcpy(obj->bytes, bytes, (size_t)length); obj->bytes[length] = 0;
 
-    objects[slot] = o;
+    objects[slot] = obj;
     return slot;
 }
 
@@ -465,12 +465,12 @@ static int object_new_set(void) {
     int slot = object_alloc_slot();
     if (slot < 0) { fail("object registry full"); return 0; }
 
-    Object *o = calloc(1, sizeof(*o));
-    o->kind = OBJECT_SET;
-    o->cap = SET_INITIAL_CAPACITY;
-    o->items = malloc(sizeof(Val) * (size_t)o->cap);
+    Object *obj = calloc(1, sizeof(*obj));
+    obj->kind = OBJECT_SET;
+    obj->cap = SET_INITIAL_CAPACITY;
+    obj->items = malloc(sizeof(Val) * (size_t)obj->cap);
 
-    objects[slot] = o;
+    objects[slot] = obj;
     return slot;
 }
 
@@ -478,13 +478,13 @@ static int object_new_array(int num_elements) {
     int slot = object_alloc_slot();
     if (slot < 0) { fail("object registry full"); return 0; }
 
-    Object *o = calloc(1, sizeof(*o));
-    o->kind = OBJECT_ARRAY;
-    o->len = num_elements;
-    o->cap = num_elements;
-    o->items = malloc(sizeof(Val) * (size_t)(num_elements > 0 ? num_elements : 1));
+    Object *obj = calloc(1, sizeof(*obj));
+    obj->kind = OBJECT_ARRAY;
+    obj->len = num_elements;
+    obj->cap = num_elements;
+    obj->items = malloc(sizeof(Val) * (size_t)(num_elements > 0 ? num_elements : 1));
 
-    objects[slot] = o;
+    objects[slot] = obj;
     return slot;
 }
 
@@ -494,10 +494,10 @@ static int object_new_array(int num_elements) {
  * sets `error_flag`, the outer interpreter notices, and the current input is
  * abandoned. */
 
-static void push(Val x)  { if (dsp < DSTACK) data_stack[dsp++] = x; else fail("data stack overflow"); }
-static Val  pop(void)    { if (dsp > 0) return data_stack[--dsp]; fail("data stack underflow"); Val z = {T_NONE,0}; return z; }
-static void rpush(Val x) { if (rsp < RSTACK) return_stack[rsp++] = x; else fail("return stack overflow"); }
-static Val  rpop(void)   { if (rsp > 0) return return_stack[--rsp]; fail("return stack underflow"); Val z = {T_NONE,0}; return z; }
+static void push(Val value)  { if (dsp < DSTACK) data_stack[dsp++] = value; else fail("data stack overflow"); }
+static Val  pop(void)        { if (dsp > 0) return data_stack[--dsp]; fail("data stack underflow"); Val none = {T_NONE,0}; return none; }
+static void rpush(Val value) { if (rsp < RSTACK) return_stack[rsp++] = value; else fail("return stack overflow"); }
+static Val  rpop(void)       { if (rsp > 0) return return_stack[--rsp]; fail("return stack underflow"); Val none = {T_NONE,0}; return none; }
 
 
 /* ---- value comparison ------------------------------------------------- */
@@ -507,49 +507,49 @@ static Val  rpop(void)   { if (rsp > 0) return return_stack[--rsp]; fail("return
  * applies. This lets sets contain heterogeneous values without breaking
  * the binary-search invariants in set_add and set_member. */
 
-static int val_cmp(Val a, Val b) {
+static int val_cmp(Val left, Val right) {
     /* Cross-type tie-breaker: order by tag value (see the Tag enum
      * for the chosen sequence). Never zero here, since tags differ. */
-    if (a.tag != b.tag) return (int)a.tag - (int)b.tag;
+    if (left.tag != right.tag) return (int)left.tag - (int)right.tag;
 
-    switch (a.tag) {
+    switch (left.tag) {
         case T_FLOAT: {
-            double a_value = unpack_float(a);
-            double b_value = unpack_float(b);
-            if (a_value < b_value) return -1;
-            if (a_value > b_value) return  1;
+            double left_value  = unpack_float(left);
+            double right_value = unpack_float(right);
+            if (left_value < right_value) return -1;
+            if (left_value > right_value) return  1;
             return 0;
         }
         case T_SYM: case T_XT: case T_ADDR:
             /* Compare by identity / index — for symbols, by the CFA of
              * the defining word; for xt, by the target word's CFA; for
              * addr, by the dict[] cell index. */
-            if (a.data < b.data) return -1;
-            if (a.data > b.data) return  1;
+            if (left.data < right.data) return -1;
+            if (left.data > right.data) return  1;
             return 0;
         case T_STRING: {
-            Object *string_a = objects[a.data];
-            Object *string_b = objects[b.data];
-            int compare_length = string_a->len < string_b->len
-                               ? string_a->len : string_b->len;
-            int byte_diff = memcmp(string_a->bytes, string_b->bytes,
+            Object *left_string  = objects[left.data];
+            Object *right_string = objects[right.data];
+            int compare_length = left_string->len < right_string->len
+                               ? left_string->len : right_string->len;
+            int byte_diff = memcmp(left_string->bytes, right_string->bytes,
                                    (size_t)compare_length);
             if (byte_diff) return byte_diff;
             /* Same prefix — shorter string sorts first. */
-            return string_a->len - string_b->len;
+            return left_string->len - right_string->len;
         }
         case T_SET: case T_ARRAY: {
-            Object *collection_a = objects[a.data];
-            Object *collection_b = objects[b.data];
-            int compare_length = collection_a->len < collection_b->len
-                               ? collection_a->len : collection_b->len;
+            Object *left_collection  = objects[left.data];
+            Object *right_collection = objects[right.data];
+            int compare_length = left_collection->len < right_collection->len
+                               ? left_collection->len : right_collection->len;
             for (int i = 0; i < compare_length; i++) {
-                int element_cmp = val_cmp(collection_a->items[i],
-                                          collection_b->items[i]);
+                int element_cmp = val_cmp(left_collection->items[i],
+                                          right_collection->items[i]);
                 if (element_cmp) return element_cmp;
             }
             /* All compared elements equal — shorter collection sorts first. */
-            return collection_a->len - collection_b->len;
+            return left_collection->len - right_collection->len;
         }
         
         default: return 0;
@@ -648,13 +648,13 @@ static int set_difference(int handle_a, int handle_b) {
  * names, sets and arrays in their literal form, integers-as-floats as
  * integers when they happen to be whole. */
 
-static void print_val(Val v);
+static void print_val(Val value);
 
-static void print_double(double d) {
-    if (d == (double)(int64_t)d && d > -1e15 && d < 1e15)
-        printf("%lld", (long long)d);
+static void print_double(double number) {
+    if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
+        printf("%lld", (long long)number);
     else
-        printf("%g", d);
+        printf("%g", number);
 }
 
 /* Cap how many elements of a collection get printed. Anything longer
@@ -714,10 +714,10 @@ static void print_val(Val value) {
  * time to a specific CFA index, not to a name. */
 
 static int find(const char *name) {
-    int c = latest_cfa;
-    while (c != 0) {
-        if (strcmp(&namepool[NAMEIDX(c)], name) == 0) return c;
-        c = (int)LINK(c);
+    int cfa = latest_cfa;
+    while (cfa != 0) {
+        if (strcmp(&namepool[NAMEIDX(cfa)], name) == 0) return cfa;
+        cfa = (int)LINK(cfa);
     }
     return 0;
 }
@@ -778,7 +778,7 @@ static void dovar(cell *cfa) {
  * compilation, plus (stop) which is used as the trampoline terminator in
  * execute_cfa. Resolved in main() at startup. */
 static int	exit_cfa = 0, 
-			lit_cfa = 0, 
+			literal_cfa = 0, 
 			branch_cfa = 0, 
 			zbranch_cfa = 0, 
 			dostr_cfa = 0, 
@@ -915,7 +915,7 @@ static int define_primitive(const char *name, cfa_handler handler, int immediate
 /* `emit` appends a single raw cell to the dictionary at `here`. Used
  * during compilation of colon definitions and for inline data (literals
  * and branch offsets). */
-static void emit(cell x) { if (here < MEMSZ) dict[here++] = x; else fail("dictionary full"); }
+static void emit(cell value) { if (here < MEMSZ) dict[here++] = value; else fail("dictionary full"); }
 
 /* Compiling a tagged literal: we emit a (lit) reference, then two raw
  * cells encoding the Val (tag, then payload). At runtime (lit) reads
@@ -925,18 +925,26 @@ static void emit(cell x) { if (here < MEMSZ) dict[here++] = x; else fail("dictio
  * something other than CFA references: the two raw cells immediately
  * after a (lit) reference are inline data. The inner interpreter never
  * sees them as separate dispatch steps — (lit)'s handler consumes them. */
-static void emit_val_literal(Val v) {
-    emit((cell)lit_cfa);
-    emit((cell)v.tag);
-    emit(v.data);
+static void emit_val_literal(Val value) {
+    emit((cell)literal_cfa);
+    emit((cell)value.tag);
+    emit(value.data);
 }
 
 
 /* ---- core primitives -------------------------------------------------- */
-/* The primitives below implement the basic Forth-level operations. Each
- * one is a C function matching the cfa_handler signature. They ignore the
- * cfa argument unless they're a handler for a kind of word (docol,
- * dosym, dovar already covered).
+/* Naming convention: every C function whose name begins `p_` is a
+ * *primitive* — the C implementation of a Forth-level word, invoked by
+ * the inner interpreter through the cfa_handler typedef. So `p_add`
+ * is the body of the `+` word, `p_dup` is `dup`, and so on. The
+ * mapping between word names and primitive functions lives in main(),
+ * where each primitive is registered via `define_primitive`.
+ *
+ * Each primitive matches the cfa_handler signature, taking a `cell *cfa`
+ * argument. Most primitives ignore that argument — they get their
+ * inputs from the data stack via pop() and leave outputs there via
+ * push(). The cfa parameter is only meaningful to handlers for kinds
+ * of words (docol, dosym, dovar — already covered above).
  *
  * We start with EXIT and the inline-data primitives, which are the
  * machinery that makes colon definitions work, then move outward to the
@@ -947,7 +955,6 @@ static void emit_val_literal(Val v) {
  * state. Variadic so call sites can format detail directly. */
 static void fail(const char *fmt, ...) {
     va_list args;
-    
     va_start(args, fmt);
     
     fputs("? ", stdout);
@@ -993,20 +1000,27 @@ static void p_stop(cell *cfa) { (void)cfa; running = 0; }
  * Offsets are stored as cell-counts relative to the offset cell itself,
  * which lets the compiler compute them with simple arithmetic at compile
  * time. */
-static void p_lit(cell *cfa) {
+static void p_literal(cell *cfa) {
     (void)cfa;
     Val literal;
+    
     literal.tag  = (Tag)*ip++;
     literal.data = *ip++;
+    
     push(literal);
 }
-static void p_branch(cell *cfa)  { (void)cfa; ip += *ip; }
+static void p_branch(cell *cfa)  {
+	(void)cfa; 
+	ip += *ip; 
+}
+
 static void p_0branch(cell *cfa) {
     (void)cfa;
-    cell o = *ip++;
-    Val v = pop();
-    int zero = (v.tag == T_FLOAT) ? (unpack_float(v) == 0.0) : (v.data == 0);
-    if (zero) ip += o - 1;
+    cell offset = *ip++;
+    Val condition = pop();
+    int is_false = (condition.tag == T_FLOAT) ? (unpack_float(condition) == 0.0)
+                                              : (condition.data == 0);
+    if (is_false) ip += offset - 1;
 }
 
 /* (dostr): string-literal handler. The cell immediately after this in
@@ -1017,9 +1031,9 @@ static int interpolate(int template_handle);   /* forward                  */
 
 static void p_dostr(cell *cfa) {
     (void)cfa;
-    int h = (int)*ip++;
-    int r = interpolate(h);
-    push(make_string(r));
+    
+    int template_handle = (int)*ip++;
+    push(make_string(interpolate(template_handle)));
 }
 
 
@@ -1032,67 +1046,83 @@ static void p_dostr(cell *cfa) {
  * Equality is universal: val_cmp gives us a total ordering and equality
  * falls out for free. */
 
-static int string_concat(int a, int b) {
-    Object *oa = objects[a], *ob = objects[b];
-    int total = oa->len + ob->len;
-    char *buf = malloc((size_t)total + 1);
-    memcpy(buf, oa->bytes, (size_t)oa->len);
-    memcpy(buf + oa->len, ob->bytes, (size_t)ob->len);
-    int h = object_new_string(buf, total);
-    free(buf);
-    return h;
+static int string_concat(int left_handle, int right_handle) {
+    Object *left  = objects[left_handle];
+    Object *right = objects[right_handle];
+    int combined_length = left->len + right->len;
+    
+    char *buffer = malloc((size_t)combined_length + 1);
+    memcpy(buffer,             left->bytes,  (size_t)left->len);
+    memcpy(buffer + left->len, right->bytes, (size_t)right->len);
+    int result_handle = object_new_string(buffer, combined_length);
+    free(buffer);
+    
+    return result_handle;
 }
 
 static void p_add(cell *cfa) {
-    (void)cfa; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT)  push(make_float(unpack_float(a) + unpack_float(b)));
-    else if (a.tag == T_STRING && b.tag == T_STRING) push(make_string(string_concat((int)a.data, (int)b.data)));
-    else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_union((int)a.data, (int)b.data)));
+    (void)cfa;
+    Val right = pop(), left = pop();
+    
+    if (left.tag == T_FLOAT && right.tag == T_FLOAT)
+        push(make_float(unpack_float(left) + unpack_float(right)));
+    else if (left.tag == T_STRING && right.tag == T_STRING)
+        push(make_string(string_concat((int)left.data, (int)right.data)));
+    else if (left.tag == T_SET && right.tag == T_SET)
+        push(make_set(set_union((int)left.data, (int)right.data)));
     else type_err("+");
 }
 static void p_sub(cell *cfa) {
-    (void)cfa; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(make_float(unpack_float(a) - unpack_float(b)));
-    else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_difference((int)a.data, (int)b.data)));
+    (void)cfa;
+    Val right = pop(), left = pop();
+    
+    if (left.tag == T_FLOAT && right.tag == T_FLOAT)
+        push(make_float(unpack_float(left) - unpack_float(right)));
+    else if (left.tag == T_SET && right.tag == T_SET)
+        push(make_set(set_difference((int)left.data, (int)right.data)));
     else type_err("-");
 }
 static void p_mul(cell *cfa) {
-    (void)cfa; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT) push(make_float(unpack_float(a) * unpack_float(b)));
-    else if (a.tag == T_SET && b.tag == T_SET) push(make_set(set_intersect((int)a.data, (int)b.data)));
+    (void)cfa; 
+    Val right = pop(), left = pop();
+    
+    if (left.tag == T_FLOAT && right.tag == T_FLOAT)
+        push(make_float(unpack_float(left) * unpack_float(right)));
+    else if (left.tag == T_SET && right.tag == T_SET)
+        push(make_set(set_intersect((int)left.data, (int)right.data)));
     else type_err("*");
 }
 static void p_div(cell *cfa) {
-    (void)cfa; Val b = pop(), a = pop();
-    if (a.tag == T_FLOAT && b.tag == T_FLOAT && unpack_float(b) != 0.0)
-        push(make_float(unpack_float(a) / unpack_float(b)));
+    (void)cfa; Val right = pop(), left = pop();
+    if (left.tag == T_FLOAT && right.tag == T_FLOAT && unpack_float(right) != 0.0)
+        push(make_float(unpack_float(left) / unpack_float(right)));
     else type_err("/");
 }
 static void p_neg(cell *cfa) {
-    (void)cfa; Val a = pop();
-    if (a.tag == T_FLOAT) push(make_float(-unpack_float(a)));
+    (void)cfa; Val operand = pop();
+    if (operand.tag == T_FLOAT) push(make_float(-unpack_float(operand)));
     else type_err("negate");
 }
 
 /* Booleans live in T_FLOAT: -1.0 is true, 0.0 is false. The choice of
  * -1 over 1 follows Forth tradition — bitwise AND on flag values then
  * coincides with logical AND. */
-static Val make_bool(int t) { return make_float(t ? -1.0 : 0.0); }
-static int truthy(Val v)  { return (v.tag == T_FLOAT) ? (unpack_float(v) != 0.0) : (v.data != 0); }
+static Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
+static int truthy(Val value)  { return (value.tag == T_FLOAT) ? (unpack_float(value) != 0.0) : (value.data != 0); }
 
-static void p_eq(cell *cfa)  { (void)cfa; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) == 0)); }
-static void p_lt(cell *cfa)  { (void)cfa; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) <  0)); }
-static void p_gt(cell *cfa)  { (void)cfa; Val b = pop(), a = pop(); push(make_bool(val_cmp(a, b) >  0)); }
-static void p_zeq(cell *cfa) { (void)cfa; Val a = pop(); push(make_bool(!truthy(a))); }
+static void p_eq(cell *cfa)  { (void)cfa; Val right = pop(), left = pop(); push(make_bool(val_cmp(left, right) == 0)); }
+static void p_lt(cell *cfa)  { (void)cfa; Val right = pop(), left = pop(); push(make_bool(val_cmp(left, right) <  0)); }
+static void p_gt(cell *cfa)  { (void)cfa; Val right = pop(), left = pop(); push(make_bool(val_cmp(left, right) >  0)); }
+static void p_zeq(cell *cfa) { (void)cfa; Val operand = pop(); push(make_bool(!truthy(operand))); }
 
 
 /* ---- stack manipulation, I/O, return-stack access -------------------- */
 
-static void p_dup(cell *cfa)  { (void)cfa; Val a = pop(); push(a); push(a); }
+static void p_dup(cell *cfa)  { (void)cfa; Val top = pop(); push(top); push(top); }
 static void p_drop(cell *cfa) { (void)cfa; (void)pop(); }
-static void p_swap(cell *cfa) { (void)cfa; Val b = pop(), a = pop(); push(b); push(a); }
-static void p_over(cell *cfa) { (void)cfa; Val b = pop(), a = pop(); push(a); push(b); push(a); }
-static void p_rot(cell *cfa)  { (void)cfa; Val z = pop(), y = pop(), x = pop(); push(y); push(z); push(x); }
+static void p_swap(cell *cfa) { (void)cfa; Val top = pop(), second = pop(); push(top); push(second); }
+static void p_over(cell *cfa) { (void)cfa; Val top = pop(), second = pop(); push(second); push(top); push(second); }
+static void p_rot(cell *cfa)  { (void)cfa; Val top = pop(), middle = pop(), bottom = pop(); push(middle); push(top); push(bottom); }
 
 static void p_dot(cell *cfa)  { (void)cfa; print_val(pop()); putchar(' '); fflush(stdout); }
 
@@ -1112,10 +1142,12 @@ static void p_dot_all(cell *cfa) {
     print_truncate = saved;
 }
 static void p_cr(cell *cfa)   { (void)cfa; putchar('\n'); fflush(stdout); }
-static void p_emit_(cell *cfa){
-    (void)cfa; Val a = pop();
-    if (a.tag == T_FLOAT) { putchar((int)unpack_float(a)); fflush(stdout); }
-    else type_err("emit");
+static void p_emit_(cell *cfa) {
+    (void)cfa; Val character = pop();
+    if (character.tag == T_FLOAT) {
+        putchar((int)unpack_float(character));
+        fflush(stdout);
+    } else type_err("emit");
 }
 static void p_dots(cell *cfa) {
     (void)cfa;
@@ -1146,11 +1178,11 @@ static void p_fetch(cell *cfa) {
     push(loaded);
 }
 static void p_store(cell *cfa) {
-    (void)cfa; Val addr = pop(), v = pop();
+    (void)cfa; Val addr = pop(), value = pop();
     if (addr.tag != T_ADDR) { type_err("!"); return; }
     int cell_index = (int)addr.data;
-    dict[cell_index]     = (cell)v.tag;
-    dict[cell_index + 1] = v.data;
+    dict[cell_index]     = (cell)value.tag;
+    dict[cell_index + 1] = value.data;
 }
 
 
@@ -1170,48 +1202,53 @@ static void p_store(cell *cfa) {
 static void p_setopen(cell *cfa)  { (void)cfa; push(make_mark()); }
 static void p_setclose(cell *cfa) {
     (void)cfa;
-    int base = dsp;
-    while (base > 0 && data_stack[base - 1].tag != T_MARK) base--;
-    if (base == 0) { type_err("}"); return; }
-    int h = object_new_set();
-    for (int i = base; i < dsp; i++) set_add(h, data_stack[i]);
-    dsp = base - 1;
-    push(make_set(h));
+    /* Find the matching mark on the stack: scan downward until we hit one. */
+    int mark_index = dsp;
+    while (mark_index > 0 && data_stack[mark_index - 1].tag != T_MARK) mark_index--;
+    if (mark_index == 0) { type_err("}"); return; }
+    int set_handle = object_new_set();
+    for (int i = mark_index; i < dsp; i++) set_add(set_handle, data_stack[i]);
+    dsp = mark_index - 1;       /* drop everything from the mark up */
+    push(make_set(set_handle));
 }
+
 static void p_array_open(cell *cfa)  { (void)cfa; push(make_mark()); }
 static void p_array_close(cell *cfa) {
     (void)cfa;
-    int base = dsp;
-    while (base > 0 && data_stack[base - 1].tag != T_MARK) base--;
-    if (base == 0) { type_err("]"); return; }
-    int n = dsp - base;
-    int h = object_new_array(n);
-    for (int i = 0; i < n; i++) objects[h]->items[i] = data_stack[base + i];
-    dsp = base - 1;
-    push(make_array(h));
+    int mark_index = dsp;
+    while (mark_index > 0 && data_stack[mark_index - 1].tag != T_MARK) mark_index--;
+    if (mark_index == 0) { type_err("]"); return; }
+    int num_elements = dsp - mark_index;
+    int array_handle = object_new_array(num_elements);
+    for (int i = 0; i < num_elements; i++)
+        objects[array_handle]->items[i] = data_stack[mark_index + i];
+    dsp = mark_index - 1;
+    push(make_array(array_handle));
 }
 
 
 /* ---- set, array, and higher-order operations ------------------------- */
 
 static void p_cardinality(cell *cfa) {
-    (void)cfa; Val a = pop();
-    if (a.tag == T_SET || a.tag == T_ARRAY || a.tag == T_STRING)
-        push(make_float((double)objects[a.data]->len));
+    (void)cfa; Val collection = pop();
+    if (collection.tag == T_SET || collection.tag == T_ARRAY || collection.tag == T_STRING)
+        push(make_float((double)objects[collection.data]->len));
     else type_err("cardinality");
 }
 static void p_member(cell *cfa) {
-    (void)cfa; Val v = pop(), s = pop();
-    if (s.tag != T_SET) { type_err("member?"); return; }
-    push(make_bool(set_member((int)s.data, v)));
+    (void)cfa; Val value = pop(), set_value = pop();
+    if (set_value.tag != T_SET) { type_err("member?"); return; }
+    push(make_bool(set_member((int)set_value.data, value)));
 }
 static void p_at(cell *cfa) {
-    (void)cfa; Val iv = pop(), av = pop();
-    if (av.tag != T_ARRAY || iv.tag != T_FLOAT) { type_err("at"); return; }
-    Object *o = objects[av.data];
-    int i = (int)unpack_float(iv);
-    if (i < 0 || i >= o->len) { type_err("at: out of bounds"); return; }
-    push(o->items[i]);
+    (void)cfa; Val index_value = pop(), array_value = pop();
+    if (array_value.tag != T_ARRAY || index_value.tag != T_FLOAT) {
+        type_err("at"); return;
+    }
+    Object *array = objects[array_value.data];
+    int index = (int)unpack_float(index_value);
+    if (index < 0 || index >= array->len) { type_err("at: out of bounds"); return; }
+    push(array->items[index]);
 }
 /* set: ( v1 v2 ... vN N -- set ) build a set from the top N stack items.
  * The count goes on top so the items can be pushed in their natural
@@ -1221,41 +1258,41 @@ static void p_at(cell *cfa) {
  * is intentional set semantics, but it can surprise: `dup 2 set` on any
  * single value produces a one-element set, not a two-element one. */
 static void p_set(cell *cfa) {
-    (void)cfa; Val nv = pop();
-    if (nv.tag != T_FLOAT) { type_err("set"); return; }
-    int n = (int)unpack_float(nv);
-    if (n < 0 || n > dsp) { type_err("set"); return; }
-    int h = object_new_set();
+    (void)cfa; Val count_value = pop();
+    if (count_value.tag != T_FLOAT) { type_err("set"); return; }
+    int count = (int)unpack_float(count_value);
+    if (count < 0 || count > dsp) { type_err("set"); return; }
+    int set_handle = object_new_set();
     if (error_flag) return;
-    int base = dsp - n;
-    for (int i = 0; i < n; i++) set_add(h, data_stack[base + i]);
-    dsp = base;
-    push(make_set(h));
+    int first_item = dsp - count;
+    for (int i = 0; i < count; i++) set_add(set_handle, data_stack[first_item + i]);
+    dsp = first_item;
+    push(make_set(set_handle));
 }
 
 static void p_union(cell *cfa) {
-    (void)cfa; Val b = pop(), a = pop();
-    if (a.tag != T_SET || b.tag != T_SET) { type_err("union"); return; }
-    push(make_set(set_union((int)a.data, (int)b.data)));
+    (void)cfa; Val right = pop(), left = pop();
+    if (left.tag != T_SET || right.tag != T_SET) { type_err("union"); return; }
+    push(make_set(set_union((int)left.data, (int)right.data)));
 }
 static void p_intersect(cell *cfa) {
-    (void)cfa; Val b = pop(), a = pop();
-    if (a.tag != T_SET || b.tag != T_SET) { type_err("intersection"); return; }
-    push(make_set(set_intersect((int)a.data, (int)b.data)));
+    (void)cfa; Val right = pop(), left = pop();
+    if (left.tag != T_SET || right.tag != T_SET) { type_err("intersection"); return; }
+    push(make_set(set_intersect((int)left.data, (int)right.data)));
 }
 static void p_difference(cell *cfa) {
-    (void)cfa; Val b = pop(), a = pop();
-    if (a.tag != T_SET || b.tag != T_SET) { type_err("difference"); return; }
-    push(make_set(set_difference((int)a.data, (int)b.data)));
+    (void)cfa; Val right = pop(), left = pop();
+    if (left.tag != T_SET || right.tag != T_SET) { type_err("difference"); return; }
+    push(make_set(set_difference((int)left.data, (int)right.data)));
 }
 
 /* `execute` takes an execution token (xt) — the handle for a word — and
  * runs it. Together with `'` (tick), this gives us higher-order
  * operations: a word that takes a word as data. */
 static void p_execute(cell *cfa) {
-    (void)cfa; Val v = pop();
-    if (v.tag != T_XT) { type_err("execute"); return; }
-    execute_cfa((int)v.data);
+    (void)cfa; Val value = pop();
+    if (value.tag != T_XT) { type_err("execute"); return; }
+    execute_cfa((int)value.data);
 }
 
 /* `map`: apply an xt to each element of a set or array, collect the
@@ -1277,30 +1314,30 @@ static void p_execute(cell *cfa) {
  * Vals during marking. Zero bytes deserialize as `{T_NONE, 0}`, which
  * mark_val ignores. */
 static void p_map(cell *cfa) {
-    (void)cfa; Val xt = pop(), sv = pop();
-    if (xt.tag != T_XT || (sv.tag != T_SET && sv.tag != T_ARRAY)) {
+    (void)cfa; Val xt = pop(), source_value = pop();
+    if (xt.tag != T_XT || (source_value.tag != T_SET && source_value.tag != T_ARRAY)) {
         type_err("map"); return;
     }
-    Object *s = objects[sv.data];
-    int srclen = s->len;
-    Val *src = malloc(sizeof(Val) * (size_t)(srclen > 0 ? srclen : 1));
-    memcpy(src, s->items, sizeof(Val) * (size_t)srclen);
-    gc_root_push(sv);
-    int h = object_new_array(srclen);
-    if (error_flag) { gc_root_pop(); free(src); return; }
-    Object *result = objects[h];
-    memset(result->items, 0, sizeof(Val) * (size_t)(srclen > 0 ? srclen : 1));
-    gc_root_push(make_array(h));
-    for (int i = 0; i < srclen && !error_flag; i++) {
-        push(src[i]);
+    Object *source = objects[source_value.data];
+    int source_length = source->len;
+    Val *snapshot = malloc(sizeof(Val) * (size_t)(source_length > 0 ? source_length : 1));
+    memcpy(snapshot, source->items, sizeof(Val) * (size_t)source_length);
+    gc_root_push(source_value);
+    int result_handle = object_new_array(source_length);
+    if (error_flag) { gc_root_pop(); free(snapshot); return; }
+    Object *result = objects[result_handle];
+    memset(result->items, 0, sizeof(Val) * (size_t)(source_length > 0 ? source_length : 1));
+    gc_root_push(make_array(result_handle));
+    for (int i = 0; i < source_length && !error_flag; i++) {
+        push(snapshot[i]);
         execute_cfa((int)xt.data);
         if (error_flag) break;
         result->items[i] = pop();
     }
     gc_root_pop();
     gc_root_pop();
-    free(src);
-    push(make_array(h));
+    free(snapshot);
+    push(make_array(result_handle));
 }
 
 /* `mapn`: n-ary zip-map. ( arr1 arr2 ... arrN xt N -- result )
@@ -1325,45 +1362,46 @@ static void p_map(cell *cfa) {
  * of room and is already a GC root by construction. */
 static void p_mapn(cell *cfa) {
     (void)cfa;
-    Val nv = pop();
-    if (nv.tag != T_FLOAT) { type_err("mapn"); return; }
-    int n = (int)unpack_float(nv);
-    if (n < 1) { type_err("mapn"); return; }
+    Val arity_value = pop();
+    if (arity_value.tag != T_FLOAT) { type_err("mapn"); return; }
+    int arity = (int)unpack_float(arity_value);
+    if (arity < 1) { type_err("mapn"); return; }
     Val xt = pop();
-    if (xt.tag != T_XT)     { type_err("mapn"); return; }
-    if (n > dsp)            { type_err("mapn"); return; }
+    if (xt.tag != T_XT)   { type_err("mapn"); return; }
+    if (arity > dsp)      { type_err("mapn"); return; }
 
-    int base = dsp - n;
-    int len = -1;
-    for (int i = 0; i < n; i++) {
-        if (data_stack[base + i].tag != T_ARRAY) { type_err("mapn"); return; }
-        Object *a = objects[data_stack[base + i].data];
-        if (len < 0) len = a->len;
-        else if (a->len != len) { type_err("mapn"); return; }
+    /* The N source arrays sit at data_stack[first_source .. dsp-1]. */
+    int first_source = dsp - arity;
+    int row_count = -1;
+    for (int i = 0; i < arity; i++) {
+        if (data_stack[first_source + i].tag != T_ARRAY) { type_err("mapn"); return; }
+        Object *source = objects[data_stack[first_source + i].data];
+        if (row_count < 0) row_count = source->len;
+        else if (source->len != row_count) { type_err("mapn"); return; }
     }
 
-    int h = object_new_array(len);
+    int result_handle = object_new_array(row_count);
     if (error_flag) return;
-    Object *result = objects[h];
-    memset(result->items, 0, sizeof(Val) * (size_t)(len > 0 ? len : 1));
-    gc_root_push(make_array(h));
+    Object *result = objects[result_handle];
+    memset(result->items, 0, sizeof(Val) * (size_t)(row_count > 0 ? row_count : 1));
+    gc_root_push(make_array(result_handle));
 
-    for (int i = 0; i < len && !error_flag; i++) {
+    for (int row = 0; row < row_count && !error_flag; row++) {
         int dsp_before = dsp;
-        for (int k = 0; k < n; k++) {
-            Object *a = objects[data_stack[base + k].data];
-            push(a->items[i]);
+        for (int source_index = 0; source_index < arity; source_index++) {
+            Object *source = objects[data_stack[first_source + source_index].data];
+            push(source->items[row]);
         }
         execute_cfa((int)xt.data);
         if (error_flag) break;
         if (dsp != dsp_before + 1) { type_err("mapn"); break; }
-        result->items[i] = pop();
+        result->items[row] = pop();
     }
     gc_root_pop();
 
     if (!error_flag) {
-        dsp = base;
-        push(make_array(h));
+        dsp = first_source;
+        push(make_array(result_handle));
     }
 }
 
@@ -1592,19 +1630,19 @@ static char *next_token(void);
 
 static void p_tick(cell *cfa) {
     (void)cfa;
-    char *t = next_token();
-    if (!t) { type_err("'"); return; }
-    int cf = find(t);
-    if (!cf) { fail("%s", t); return; }
-    Val v = make_xt(cf);
-    if (compiling) emit_val_literal(v);
-    else push(v);
+    char *token = next_token();
+    if (!token) { type_err("'"); return; }
+    int target_cfa = find(token);
+    if (!target_cfa) { fail("%s", token); return; }
+    Val value = make_xt(target_cfa);
+    if (compiling) emit_val_literal(value);
+    else push(value);
 }
 
 static void p_colon(cell *cfa) {
-    (void)cfa; char *t = next_token();
-    if (!t) { fail(": needs a name"); return; }
-    create_header(t, 0);
+    (void)cfa; char *token = next_token();
+    if (!token) { fail(": needs a name"); return; }
+    create_header(token, 0);
     emit((cell)&docol);
     compiling = 1;
     /* Remember where in inbuf the body source starts so `;` can copy it
@@ -1613,18 +1651,22 @@ static void p_colon(cell *cfa) {
     compiling_src_start = inbuf_pos;
 }
 static void p_variable(cell *cfa) {
-    (void)cfa; char *t = next_token();
-    if (!t) { fail("variable needs a name"); return; }
-    create_header(t, 0);
+    (void)cfa; char *token = next_token();
+    if (!token) { fail("variable needs a name"); return; }
+    create_header(token, 0);
     emit((cell)&dovar);
     emit((cell)T_FLOAT);
-    double zero = 0.0; cell zb; memcpy(&zb, &zero, 8);
-    emit(zb);
+    /* Initial value 0.0 — emit the IEEE-754 bit pattern of zero, via a
+     * cell-sized temporary so the float bits land in the int64 cell. */
+    double zero_value = 0.0;
+    cell   zero_bits;
+    memcpy(&zero_bits, &zero_value, 8);
+    emit(zero_bits);
 }
 static void p_symbol(cell *cfa) {
-    (void)cfa; char *t = next_token();
-    if (!t) { fail("symbol needs a name"); return; }
-    create_header(t, 0);
+    (void)cfa; char *token = next_token();
+    if (!token) { fail("symbol needs a name"); return; }
+    create_header(token, 0);
     emit((cell)&dosym);
 }
 
@@ -1633,7 +1675,7 @@ static void p_symbol(cell *cfa) {
  * names_here (so the name pool reclaims any names of forgotten words),
  * latest_cfa (so the linked list's head moves back), and sources_here
  * (so any captured body sources for forgotten colon defs are dropped).
- * Objectects in the object registry that were referenced only from
+ * Objects in the object registry that were referenced only from
  * forgotten code are no longer reachable from any root, so the next
  * GC will sweep them up.
  *
@@ -1643,20 +1685,20 @@ static void p_symbol(cell *cfa) {
  * highest used source-pool extent, and set sources_here there. Words
  * without a stored source (SRCIDX == 0) are skipped. */
 static void p_forget(cell *cfa) {
-    (void)cfa; char *t = next_token();
-    if (!t) { fail("forget needs a name"); return; }
-    int target = find(t);
-    if (!target) { fail("%s", t); return; }
-    here       = target - 4;
-    names_here = (int)NAMEIDX(target);
-    latest_cfa = (int)LINK(target);
+    (void)cfa; char *token = next_token();
+    if (!token) { fail("forget needs a name"); return; }
+    int target_cfa = find(token);
+    if (!target_cfa) { fail("%s", token); return; }
+    here       = target_cfa - 4;
+    names_here = (int)NAMEIDX(target_cfa);
+    latest_cfa = (int)LINK(target_cfa);
 
     int max_src_end = 1;  /* offset 0 is reserved as "no source" sentinel */
-    for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
-        int s = (int)SRCIDX(cf);
-        if (s > 0) {
-            int end = s + (int)strlen(&source_pool[s]) + 1;
-            if (end > max_src_end) max_src_end = end;
+    for (int surviving_cfa = latest_cfa; surviving_cfa != 0; surviving_cfa = (int)LINK(surviving_cfa)) {
+        int src_offset = (int)SRCIDX(surviving_cfa);
+        if (src_offset > 0) {
+            int src_end = src_offset + (int)strlen(&source_pool[src_offset]) + 1;
+            if (src_end > max_src_end) max_src_end = src_end;
         }
     }
     sources_here = max_src_end;
@@ -1687,15 +1729,15 @@ static void inbuf_reset(void) { inbuf_len = 0; inbuf_pos = 0; inbuf[0] = 0; need
 static char tokbuf[INBUFSZ];
 
 static int read_string_literal(void) {
-    int start = inbuf_pos + 1;
-    int i = start;
-    while (i < inbuf_len && inbuf[i] != '"') i++;
-    if (i >= inbuf_len) { need_more = 1; return -1; }
-    int n = i - start;
-    memcpy(tokbuf, inbuf + start, (size_t)n);
-    tokbuf[n] = 0;
-    inbuf_pos = i + 1;
-    return n;
+    int start = inbuf_pos + 1;          /* skip the opening " */
+    int cursor = start;
+    while (cursor < inbuf_len && inbuf[cursor] != '"') cursor++;
+    if (cursor >= inbuf_len) { need_more = 1; return -1; }
+    int length = cursor - start;
+    memcpy(tokbuf, inbuf + start, (size_t)length);
+    tokbuf[length] = 0;
+    inbuf_pos = cursor + 1;             /* skip the closing " */
+    return length;
 }
 
 static char *next_token(void) {
@@ -1703,19 +1745,19 @@ static char *next_token(void) {
     if (inbuf_pos >= inbuf_len) return NULL;
     int start = inbuf_pos;
     while (inbuf_pos < inbuf_len && !isspace((unsigned char)inbuf[inbuf_pos])) inbuf_pos++;
-    int n = inbuf_pos - start;
-    if (n >= (int)sizeof(tokbuf)) n = sizeof(tokbuf) - 1;
-    memcpy(tokbuf, inbuf + start, (size_t)n);
-    tokbuf[n] = 0;
+    int length = inbuf_pos - start;
+    if (length >= (int)sizeof(tokbuf)) length = sizeof(tokbuf) - 1;
+    memcpy(tokbuf, inbuf + start, (size_t)length);
+    tokbuf[length] = 0;
     return tokbuf;
 }
 
-static int parse_float(const char *s, double *out) {
-    if (!*s) return 0;
-    char *end;
-    double v = strtod(s, &end);
-    if (*end != 0) return 0;
-    *out = v;
+static int parse_float(const char *text, double *out) {
+    if (!*text) return 0;
+    char *end_of_number;
+    double value = strtod(text, &end_of_number);
+    if (*end_of_number != 0) return 0;
+    *out = value;
     return 1;
 }
 
@@ -1733,81 +1775,96 @@ static int parse_float(const char *s, double *out) {
  * an empty string. */
 
 static int interpolate(int template_handle) {
-    Object *tmpl = objects[template_handle];
-    int maxref = -1, seen_any = 0;
-    for (int i = 0; i < tmpl->len; ) {
-        if (tmpl->bytes[i] == '{') {
-            int j = i + 1, n = 0, any = 0;
-            while (j < tmpl->len && isdigit((unsigned char)tmpl->bytes[j])) {
-                n = n * 10 + (tmpl->bytes[j] - '0'); j++; any = 1;
+    Object *template = objects[template_handle];
+
+    /* First pass: scan for `{n}` placeholders, track the highest stack
+     * index referenced (so we know how many to drop at the end). */
+    int max_ref = -1, any_placeholders = 0;
+    for (int cursor = 0; cursor < template->len; ) {
+        if (template->bytes[cursor] == '{') {
+            int scan = cursor + 1, digit_value = 0, saw_digit = 0;
+            while (scan < template->len && isdigit((unsigned char)template->bytes[scan])) {
+                digit_value = digit_value * 10 + (template->bytes[scan] - '0');
+                scan++;
+                saw_digit = 1;
             }
-            if (any && j < tmpl->len && tmpl->bytes[j] == '}') {
-                if (n > maxref) maxref = n;
-                seen_any = 1;
-                i = j + 1;
+            if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
+                if (digit_value > max_ref) max_ref = digit_value;
+                any_placeholders = 1;
+                cursor = scan + 1;
                 continue;
             }
         }
-        i++;
+        cursor++;
     }
-    char *out = malloc((size_t)tmpl->len * 4 + 64);
-    int olen = 0;
-    for (int i = 0; i < tmpl->len; ) {
-        if (tmpl->bytes[i] == '{') {
-            int j = i + 1, n = 0, any = 0;
-            while (j < tmpl->len && isdigit((unsigned char)tmpl->bytes[j])) {
-                n = n * 10 + (tmpl->bytes[j] - '0'); j++; any = 1;
+
+    /* Second pass: emit, substituting `{n}` with the rendered value at
+     * stack position n (0 = top). */
+    char *out_buffer = malloc((size_t)template->len * 4 + 64);
+    int out_length = 0;
+    for (int cursor = 0; cursor < template->len; ) {
+        if (template->bytes[cursor] == '{') {
+            int scan = cursor + 1, digit_value = 0, saw_digit = 0;
+            while (scan < template->len && isdigit((unsigned char)template->bytes[scan])) {
+                digit_value = digit_value * 10 + (template->bytes[scan] - '0');
+                scan++;
+                saw_digit = 1;
             }
-            if (any && j < tmpl->len && tmpl->bytes[j] == '}') {
-                int stack_index = dsp - 1 - n;
+            if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
+                int stack_index = dsp - 1 - digit_value;
                 if (stack_index < 0) {
                     type_err("string interpolation: stack too shallow");
-                    free(out);
+                    free(out_buffer);
                     return object_new_string("", 0);
                 }
-                char render[256];
-                int rlen = 0;
-                Val v = data_stack[stack_index];
-                switch (v.tag) {
+                char rendered[256];
+                int rendered_length = 0;
+                Val value = data_stack[stack_index];
+                switch (value.tag) {
                     case T_FLOAT: {
-                        double d = unpack_float(v);
-                        if (d == (double)(int64_t)d && d > -1e15 && d < 1e15)
-                            rlen = snprintf(render, sizeof(render), "%lld", (long long)d);
+                        double number = unpack_float(value);
+                        if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
+                            rendered_length = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
                         else
-                            rlen = snprintf(render, sizeof(render), "%g", d);
+                            rendered_length = snprintf(rendered, sizeof(rendered), "%g", number);
                         break;
                     }
                     case T_SYM:
-                        rlen = snprintf(render, sizeof(render), "%s", &namepool[NAMEIDX(v.data)]);
+                        rendered_length = snprintf(rendered, sizeof(rendered),
+                                                   "%s", &namepool[NAMEIDX(value.data)]);
                         break;
                     case T_STRING: {
-                        Object *so = objects[v.data];
-                        int copy = so->len < (int)sizeof(render) - 1 ? so->len : (int)sizeof(render) - 1;
-                        memcpy(render, so->bytes, (size_t)copy);
-                        render[copy] = 0;
-                        rlen = copy;
+                        Object *string_obj = objects[value.data];
+                        int copy_length = string_obj->len < (int)sizeof(rendered) - 1
+                                        ? string_obj->len : (int)sizeof(rendered) - 1;
+                        memcpy(rendered, string_obj->bytes, (size_t)copy_length);
+                        rendered[copy_length] = 0;
+                        rendered_length = copy_length;
                         break;
                     }
                     default:
-                        rlen = snprintf(render, sizeof(render), "<?>");
+                        rendered_length = snprintf(rendered, sizeof(rendered), "<?>");
                         break;
                 }
-                memcpy(out + olen, render, (size_t)rlen);
-                olen += rlen;
-                i = j + 1;
+                memcpy(out_buffer + out_length, rendered, (size_t)rendered_length);
+                out_length += rendered_length;
+                cursor = scan + 1;
                 continue;
             }
         }
-        out[olen++] = tmpl->bytes[i++];
+        out_buffer[out_length++] = template->bytes[cursor++];
     }
-    if (seen_any && maxref >= 0) {
-        int to_drop = maxref + 1;
-        if (to_drop > dsp) to_drop = dsp;
-        dsp -= to_drop;
+
+    /* Drop the referenced stack positions in one go. */
+    if (any_placeholders && max_ref >= 0) {
+        int items_to_drop = max_ref + 1;
+        if (items_to_drop > dsp) items_to_drop = dsp;
+        dsp -= items_to_drop;
     }
-    int h = object_new_string(out, olen);
-    free(out);
-    return h;
+
+    int result_handle = object_new_string(out_buffer, out_length);
+    free(out_buffer);
+    return result_handle;
 }
 
 
@@ -1837,12 +1894,12 @@ static void run_outer(void) {
         if (ch == '"') {
             int n = read_string_literal();
             if (n < 0) return;
-            int h = object_new_string(tokbuf, n);
+            int handle = object_new_string(tokbuf, n);
             if (compiling) {
                 emit((cell)dostr_cfa);
-                emit((cell)h);
+                emit((cell)handle);
             } else {
-                int r = interpolate(h);
+                int r = interpolate(handle);
                 push(make_string(r));
             }
             continue;
@@ -1866,9 +1923,9 @@ static void run_outer(void) {
         }
         double dv;
         if (parse_float(tok, &dv)) {
-            Val v = make_float(dv);
-            if (compiling) emit_val_literal(v);
-            else push(v);
+            Val value = make_float(dv);
+            if (compiling) emit_val_literal(value);
+            else push(value);
             continue;
         }
         fail("%s", tok);
@@ -1895,39 +1952,39 @@ static void run_outer(void) {
  * become errors here. */
 static void p_load(cell *cfa) {
     (void)cfa;
-    Val v = pop();
-    if (v.tag != T_STRING) { type_err("load"); return; }
-    gc_root_push(v);
-    const char *filename = objects[v.data]->bytes;
+    Val value = pop();
+    if (value.tag != T_STRING) { type_err("load"); return; }
+    gc_root_push(value);
+    const char *filename = objects[value.data]->bytes;
 
-    FILE *f = fopen(filename, "r");
-    if (!f) {
+    FILE *file = fopen(filename, "r");
+    if (!file) {
         fail("cannot open %s", filename);
         gc_root_pop();
         return;
     }
 
-    fseek(f, 0, SEEK_END);
-    long fsize = ftell(f);
-    fseek(f, 0, SEEK_SET);
-    if (fsize < 0 || fsize >= INBUFSZ) {
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    if (file_size < 0 || file_size >= INBUFSZ) {
         fail("%s too large or invalid (%ld bytes, max %d)",
-             filename, fsize, INBUFSZ - 1);
-        fclose(f);
+             filename, file_size, INBUFSZ - 1);
+        fclose(file);
         gc_root_pop();
         return;
     }
 
-    char *saved_buf = malloc((size_t)inbuf_len + 1);
-    memcpy(saved_buf, inbuf, (size_t)inbuf_len);
-    int saved_inbuf_len   = inbuf_len;
-    int saved_inp         = inbuf_pos;
-    int saved_need_more   = need_more;
+    char *saved_inbuf_contents = malloc((size_t)inbuf_len + 1);
+    memcpy(saved_inbuf_contents, inbuf, (size_t)inbuf_len);
+    int saved_inbuf_len       = inbuf_len;
+    int saved_inbuf_pos       = inbuf_pos;
+    int saved_need_more       = need_more;
 
-    size_t n = fread(inbuf, 1, (size_t)fsize, f);
-    fclose(f);
-    inbuf[n] = 0;
-    inbuf_len = (int)n;
+    size_t bytes_read = fread(inbuf, 1, (size_t)file_size, file);
+    fclose(file);
+    inbuf[bytes_read] = 0;
+    inbuf_len = (int)bytes_read;
     inbuf_pos = 0;
     need_more = 0;
 
@@ -1941,12 +1998,12 @@ static void p_load(cell *cfa) {
         compiling = 0;
     }
 
-    memcpy(inbuf, saved_buf, (size_t)saved_inbuf_len);
+    memcpy(inbuf, saved_inbuf_contents, (size_t)saved_inbuf_len);
     inbuf[saved_inbuf_len] = 0;
     inbuf_len = saved_inbuf_len;
-    inbuf_pos       = saved_inp;
+    inbuf_pos = saved_inbuf_pos;
     need_more = saved_need_more;
-    free(saved_buf);
+    free(saved_inbuf_contents);
 
     gc_root_pop();
 }
@@ -1983,35 +2040,35 @@ static void p_load(cell *cfa) {
 
 static int object_mark[MAXOBJS];
 
-static void mark_val(Val v) {
-    if (v.tag != T_STRING && v.tag != T_SET && v.tag != T_ARRAY) return;
-    int h = (int)v.data;
-    if (h < 0 || h >= MAXOBJS || !objects[h] || object_mark[h]) return;
-    object_mark[h] = 1;
-    Object *o = objects[h];
-    if (o->kind == OBJECT_SET || o->kind == OBJECT_ARRAY) {
-        for (int i = 0; i < o->len; i++) mark_val(o->items[i]);
+static void mark_val(Val value) {
+    if (value.tag != T_STRING && value.tag != T_SET && value.tag != T_ARRAY) return;
+    int handle = (int)value.data;
+    if (handle < 0 || handle >= MAXOBJS || !objects[handle] || object_mark[handle]) return;
+    object_mark[handle] = 1;
+    Object *obj = objects[handle];
+    if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
+        for (int i = 0; i < obj->len; i++) mark_val(obj->items[i]);
     }
 }
 
-static void mark_body(int start, int end) {
-    int i = start;
-    while (i < end) {
-        cell ref = dict[i];
-        if (ref == (cell)lit_cfa && i + 2 < end) {
-            Tag t = (Tag)dict[i + 1];
-            Val v; v.tag = t; v.data = dict[i + 2];
-            mark_val(v);
-            i += 3;
-        } else if (ref == (cell)dostr_cfa && i + 1 < end) {
-            Val v; v.tag = T_STRING; v.data = dict[i + 1];
-            mark_val(v);
-            i += 2;
+static void mark_body(int body_start, int body_end) {
+    int cursor = body_start;
+    while (cursor < body_end) {
+        cell ref = dict[cursor];
+        if (ref == (cell)literal_cfa && cursor + 2 < body_end) {
+            Tag tag = (Tag)dict[cursor + 1];
+            Val value; value.tag = tag; value.data = dict[cursor + 2];
+            mark_val(value);
+            cursor += 3;
+        } else if (ref == (cell)dostr_cfa && cursor + 1 < body_end) {
+            Val value; value.tag = T_STRING; value.data = dict[cursor + 1];
+            mark_val(value);
+            cursor += 2;
         } else if ((ref == (cell)branch_cfa
-                 || ref == (cell)zbranch_cfa) && i + 1 < end) {
-            i += 2;
+                 || ref == (cell)zbranch_cfa) && cursor + 1 < body_end) {
+            cursor += 2;
         } else {
-            i++;
+            cursor++;
         }
     }
 }
@@ -2019,41 +2076,55 @@ static void mark_body(int start, int end) {
 static void gc(void) {
     memset(object_mark, 0, sizeof(object_mark));
 
-    for (int i = 0; i < dsp; i++)         mark_val(data_stack[i]);
-    for (int i = 0; i < rsp; i++)         mark_val(return_stack[i]);
-    for (int i = 0; i < n_gc_roots; i++)  mark_val(gc_roots[i]);
+    for (int i = 0; i < dsp; i++)        mark_val(data_stack[i]);
+    for (int i = 0; i < rsp; i++)        mark_val(return_stack[i]);
+    for (int i = 0; i < n_gc_roots; i++) mark_val(gc_roots[i]);
 
-    /* Collect CFAs into ascending order so we know each body's end. */
-    static int cfas[MEMSZ / 4];
-    int ncfas = 0;
-    for (int c = latest_cfa; c != 0; c = (int)LINK(c)) {
-        if (ncfas < (int)(sizeof cfas / sizeof cfas[0])) cfas[ncfas++] = c;
+    /* Collect every word's CFA into ascending order so we know where
+     * each body ends — body_end of word N is (CFA of word N+1) − 4
+     * (skipping the next word's 4-cell header). The last (highest-CFA)
+     * word's body runs to `here`. */
+    static int sorted_cfas[MEMSZ / 4];
+    int num_cfas = 0;
+    for (int cfa = latest_cfa; cfa != 0; cfa = (int)LINK(cfa)) {
+        if (num_cfas < (int)(sizeof sorted_cfas / sizeof sorted_cfas[0]))
+            sorted_cfas[num_cfas++] = cfa;
     }
-    for (int i = 1; i < ncfas; i++) {
-        int x = cfas[i], j = i - 1;
-        while (j >= 0 && cfas[j] > x) { cfas[j + 1] = cfas[j]; j--; }
-        cfas[j + 1] = x;
+    /* Insertion sort — fine for the sizes we expect; the dictionary
+     * chain is short relative to MEMSZ. */
+    for (int i = 1; i < num_cfas; i++) {
+        int current = sorted_cfas[i];
+        int slot = i - 1;
+        while (slot >= 0 && sorted_cfas[slot] > current) {
+            sorted_cfas[slot + 1] = sorted_cfas[slot];
+            slot--;
+        }
+        sorted_cfas[slot + 1] = current;
     }
-    for (int i = 0; i < ncfas; i++) {
-        int cfa = cfas[i];
+
+    for (int i = 0; i < num_cfas; i++) {
+        int cfa = sorted_cfas[i];
         int body_start = cfa + 1;
-        int body_end = (i + 1 < ncfas) ? cfas[i + 1] - 4 : here;
+        int body_end   = (i + 1 < num_cfas) ? sorted_cfas[i + 1] - 4 : here;
         cfa_handler handler = (cfa_handler)dict[cfa];
         if (handler == docol) {
             mark_body(body_start, body_end);
         } else if (handler == dovar && body_start + 1 < body_end) {
-            Val v; v.tag = (Tag)dict[body_start]; v.data = dict[body_start + 1];
-            mark_val(v);
+            Val value;
+            value.tag  = (Tag)dict[body_start];
+            value.data = dict[body_start + 1];
+            mark_val(value);
         }
         /* primitives, dosym: no body to scan */
     }
 
-    for (int h = 0; h < n_objects; h++) {
-        if (objects[h] && !object_mark[h]) {
-            if (objects[h]->bytes) free(objects[h]->bytes);
-            if (objects[h]->items) free(objects[h]->items);
-            free(objects[h]);
-            objects[h] = NULL;
+    /* Sweep — free anything unmarked. */
+    for (int handle = 0; handle < n_objects; handle++) {
+        if (objects[handle] && !object_mark[handle]) {
+            if (objects[handle]->bytes) free(objects[handle]->bytes);
+            if (objects[handle]->items) free(objects[handle]->items);
+            free(objects[handle]);
+            objects[handle] = NULL;
         }
     }
 }
@@ -2119,22 +2190,22 @@ static void gc(void) {
  *     whichever version is latest at load time. With no shadowing — the
  *     overwhelmingly common case — this distinction never matters.
  *
- * Objectect lifetime around the file write: the filename Val is rooted via
+ * Object lifetime around the file write: the filename Val is rooted via
  * gc_root_push before fopen, even though nothing in `save` itself
  * triggers allocation. It's defensive — write_val_literal recurses
  * through sets and arrays, and there's no harm in pinning the input
  * string for the duration. */
 
-static void write_val_literal(FILE *f, Val v);
+static void write_val_literal(FILE *file, Val value);
 
-static void write_val_literal(FILE *f, Val v) {
-    switch (v.tag) {
+static void write_val_literal(FILE *file, Val value) {
+    switch (value.tag) {
         case T_FLOAT: {
-            double d = unpack_float(v);
-            if (d == (double)(int64_t)d && d > -1e15 && d < 1e15)
-                fprintf(f, "%lld", (long long)d);
+            double number = unpack_float(value);
+            if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
+                fprintf(file, "%lld", (long long)number);
             else
-                fprintf(f, "%.17g", d);   /* high-precision for round trip */
+                fprintf(file, "%.17g", number);   /* high-precision for round trip */
             break;
         }
         case T_STRING: {
@@ -2142,38 +2213,38 @@ static void write_val_literal(FILE *f, Val v) {
              * would terminate the literal early. Write a placeholder
              * and a comment for now — adding escapes is a separate
              * piece of work in the tokenizer. */
-            const char *s = objects[v.data]->bytes;
-            if (strchr(s, '"')) {
-                fputs("\"\" \\ unsavable string (contains quote)", f);
+            const char *bytes = objects[value.data]->bytes;
+            if (strchr(bytes, '"')) {
+                fputs("\"\" \\ unsavable string (contains quote)", file);
             } else {
-                fputc('"', f);
-                fputs(s, f);
-                fputc('"', f);
+                fputc('"', file);
+                fputs(bytes, file);
+                fputc('"', file);
             }
             break;
         }
         case T_SET: {
-            Object *s = objects[v.data];
-            fputs("{ ", f);
-            for (int i = 0; i < s->len; i++) {
-                write_val_literal(f, s->items[i]);
-                fputc(' ', f);
+            Object *set = objects[value.data];
+            fputs("{ ", file);
+            for (int i = 0; i < set->len; i++) {
+                write_val_literal(file, set->items[i]);
+                fputc(' ', file);
             }
-            fputc('}', f);
+            fputc('}', file);
             break;
         }
         case T_ARRAY: {
-            Object *s = objects[v.data];
-            fputs("[ ", f);
-            for (int i = 0; i < s->len; i++) {
-                write_val_literal(f, s->items[i]);
-                fputc(' ', f);
+            Object *array = objects[value.data];
+            fputs("[ ", file);
+            for (int i = 0; i < array->len; i++) {
+                write_val_literal(file, array->items[i]);
+                fputc(' ', file);
             }
-            fputc(']', f);
+            fputc(']', file);
             break;
         }
         case T_SYM: {
-            fputs(&namepool[NAMEIDX(v.data)], f);
+            fputs(&namepool[NAMEIDX(value.data)], file);
             break;
         }
         case T_XT: {
@@ -2182,33 +2253,33 @@ static void write_val_literal(FILE *f, Val v) {
              * REPL with `[: ... :]` have no dictionary entry and can't
              * be reproduced this way — we flag them and emit something
              * that at least parses. */
-            int target = (int)v.data;
+            int target_cfa = (int)value.data;
             int found = 0;
-            for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
-                if (cf == target) { found = 1; break; }
+            for (int chain_cfa = latest_cfa; chain_cfa != 0; chain_cfa = (int)LINK(chain_cfa)) {
+                if (chain_cfa == target_cfa) { found = 1; break; }
             }
             if (found) {
-                fprintf(f, "' %s", &namepool[NAMEIDX(target)]);
+                fprintf(file, "' %s", &namepool[NAMEIDX(target_cfa)]);
             } else {
-                fputs("0 \\ anonymous xt — cannot be saved", f);
+                fputs("0 \\ anonymous xt — cannot be saved", file);
             }
             break;
         }
         default:
-            fprintf(f, "0 \\ unsupported tag %d", (int)v.tag);
+            fprintf(file, "0 \\ unsupported tag %d", (int)value.tag);
             break;
     }
 }
 
 static void p_save(cell *cfa) {
     (void)cfa;
-    Val v = pop();
-    if (v.tag != T_STRING) { type_err("save"); return; }
-    gc_root_push(v);
-    const char *filename = objects[v.data]->bytes;
+    Val value = pop();
+    if (value.tag != T_STRING) { type_err("save"); return; }
+    gc_root_push(value);
+    const char *filename = objects[value.data]->bytes;
 
-    FILE *f = fopen(filename, "w");
-    if (!f) {
+    FILE *file = fopen(filename, "w");
+    if (!file) {
         fail("cannot create %s", filename);
         gc_root_pop();
         return;
@@ -2221,50 +2292,50 @@ static void p_save(cell *cfa) {
      *
      * Stack allocation is fine: a header is at minimum 5 cells, so the
      * upper bound on CFAs is MEMSZ/5 ≈ 6500, well within the C stack. */
-    int cfas[MEMSZ];
-    int n = 0;
-    for (int cf = latest_cfa; cf != 0; cf = (int)LINK(cf)) {
-        if (n < MEMSZ) cfas[n++] = cf;
+    int collected_cfas[MEMSZ];
+    int num_cfas = 0;
+    for (int cfa = latest_cfa; cfa != 0; cfa = (int)LINK(cfa)) {
+        if (num_cfas < MEMSZ) collected_cfas[num_cfas++] = cfa;
     }
 
-    fprintf(f, "\\ logicforth image\n\n");
+    fprintf(file, "\\ logicforth image\n\n");
 
-    for (int i = n - 1; i >= 0; i--) {
-        int cfa = cfas[i];
+    for (int i = num_cfas - 1; i >= 0; i--) {
+        int cfa = collected_cfas[i];
         const char *name = &namepool[NAMEIDX(cfa)];
         cfa_handler handler = (cfa_handler)dict[cfa];
 
         if (handler == docol) {
-            int src_idx = (int)SRCIDX(cfa);
-            const char *src = (src_idx > 0) ? &source_pool[src_idx] : "";
-            fprintf(f, ": %s%s;\n", name, src);
+            int src_offset = (int)SRCIDX(cfa);
+            const char *body_source = (src_offset > 0) ? &source_pool[src_offset] : "";
+            fprintf(file, ": %s%s;\n", name, body_source);
         } else if (handler == dovar) {
             /* Body layout: [tag, payload]. Read the current value back
              * out as a Val so we can write it through write_val_literal.
              * The dovar handler stores tag and payload separately in
              * the two body cells; reassembling them here is symmetric. */
-            fprintf(f, "variable %s\n", name);
-            Val val;
-            val.tag = (Tag)dict[cfa + 1];
-            val.data   = dict[cfa + 2];
-            write_val_literal(f, val);
-            fprintf(f, " %s !\n", name);
+            fprintf(file, "variable %s\n", name);
+            Val current_value;
+            current_value.tag  = (Tag)dict[cfa + 1];
+            current_value.data = dict[cfa + 2];
+            write_val_literal(file, current_value);
+            fprintf(file, " %s !\n", name);
         } else if (handler == dosym) {
-            fprintf(f, "symbol %s\n", name);
+            fprintf(file, "symbol %s\n", name);
         }
         /* Primitives have no on-disk representation — they come back
          * automatically when main() re-registers them at startup. */
     }
 
     if (dsp > 0) {
-        fprintf(f, "\n\\ data stack (bottom to top)\n");
+        fprintf(file, "\n\\ data stack (bottom to top)\n");
         for (int i = 0; i < dsp; i++) {
-            write_val_literal(f, data_stack[i]);
-            fputc('\n', f);
+            write_val_literal(file, data_stack[i]);
+            fputc('\n', file);
         }
     }
 
-    fclose(f);
+    fclose(file);
     gc_root_pop();
 }
 
@@ -2323,7 +2394,7 @@ int main(void) {
     define_primitive("see",          p_see,         0);
 
     exit_cfa    = define_primitive("exit",      p_exit,    0);
-    lit_cfa     = define_primitive("(lit)",     p_lit,     0);
+    literal_cfa     = define_primitive("(lit)",     p_literal,     0);
     branch_cfa  = define_primitive("(branch)",  p_branch,  0);
     zbranch_cfa = define_primitive("(0branch)", p_0branch, 0);
     dostr_cfa   = define_primitive("(dostr)",   p_dostr,   0);
