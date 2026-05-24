@@ -233,6 +233,7 @@ typedef enum {
     T_STRING,     /* string; payload = index into objects[]                */
     T_SET,        /* set; payload = index into objects[]                   */
     T_ARRAY,      /* array; payload = index into objects[]                 */
+    T_MATRIX,	  /* matrix: payload = index into objects[]				  */
     T_XT,         /* execution token; payload = CFA                        */
     T_ADDR,       /* dictionary address; payload = cell index into dict[]  */
     T_MARK        /* internal marker used by `{` `}` and `[` `]` collection */
@@ -246,6 +247,7 @@ static Val make_sym(int cfa)            { Val value; value.tag = T_SYM;    value
 static Val make_string(int handle)      { Val value; value.tag = T_STRING; value.data = handle; return value; }
 static Val make_set(int handle)         { Val value; value.tag = T_SET;    value.data = handle; return value; }
 static Val make_array(int handle)       { Val value; value.tag = T_ARRAY;  value.data = handle; return value; }
+static Val make_matrix(int handle)      { Val value; value.tag = T_MATRIX; value.data = handle; return value; }
 static Val make_xt(int cfa)             { Val value; value.tag = T_XT;     value.data = cfa; return value; }
 static Val make_addr(int cell_index)    { Val value; value.tag = T_ADDR;   value.data = cell_index; return value; }
 static Val make_mark(void)              { Val value; value.tag = T_MARK;   value.data = 0; return value; }
@@ -257,7 +259,7 @@ static Val make_mark(void)              { Val value; value.tag = T_MARK;   value
 #define NAMEPOOL   32768      /* word-name bytes                          */
 #define DSTACK     256        /* data stack depth (Forth tradition: shallow) */
 #define RSTACK     256        /* return stack depth                       */
-#define MAXOBJS    65536      /* live string/set/array slots              */
+#define MAXOBJS    65536      /* live string/set/array/matrix slots              */
 #define INBUFSZ    16384      /* max source bytes per single `:`…`;`      */
 #define SOURCEPOOL 1048576    /* total captured body-source storage (1 MB) */
 
@@ -376,7 +378,7 @@ static void fail(const char *fmt, ...);
  * to. Two stack copies of the same handle therefore always observe the
  * same contents over their entire lifetime. */
 
-typedef enum { OBJECT_STRING, OBJECT_SET, OBJECT_ARRAY } ObjectKind;
+typedef enum { OBJECT_STRING, OBJECT_SET, OBJECT_ARRAY, OBJECT_MATRIX } ObjectKind;
 typedef struct {
     ObjectKind kind;
     int len, cap;
@@ -388,6 +390,11 @@ typedef struct {
     union {
         char *bytes;     /* OBJECT_STRING */
         Val  *items;     /* OBJECT_SET, OBJECT_ARRAY */
+		struct {
+			int rows;
+			int columns;
+			double *elements;
+		} matrix;
     };
 } Object;
 
@@ -486,6 +493,22 @@ static int object_new_array(int num_elements) {
 
     objects[slot] = obj;
     return slot;
+}
+
+static int object_new_matrix(int num_rows, int num_columns) {
+    int slot = object_alloc_slot();
+    if (slot < 0) { fail("object registry full"); return 0;}
+    
+    Object *obj = calloc(1, sizeof(*obj));
+    obj->kind = OBJECT_MATRIX;
+    obj->matrix.rows = num_rows;
+    obj->matrix.columns = num_columns;
+	size_t num_elements = (size_t)(num_rows * num_columns);
+    obj->matrix.elements = calloc(num_elements, sizeof(double));
+	memset(obj->matrix.elements, 0, num_elements);
+    
+    objects[slot] = obj;
+    return slot; 
 }
 
 
@@ -692,6 +715,31 @@ static void print_items(Object *collection) {
     }
 }
 
+static void print_corners(Object *matrix) {
+    double *elements = matrix->matrix.elements;
+    int n = matrix->matrix.rows * matrix->matrix.columns;
+
+    if (!print_truncate || n <= PRINT_FIRST + PRINT_LAST) {
+        for (int i = 0; i < n; i++) {
+			putchar(' '); 
+			print_double(elements[i]); 
+		}
+    } else {
+        for (int i = 0; i < PRINT_FIRST; i++) {
+			putchar(' '); 
+			print_double(elements[i]);
+		}
+		
+        fputs(" ...", stdout);
+        
+		for (int i = n - PRINT_LAST; i < n; i++) {
+			putchar(' '); 
+			print_double(elements[i]);
+		}
+    }
+}
+
+
 static void print_val(Val value) {
     switch (value.tag) {
         case T_FLOAT:   print_double(unpack_float(value)); break;
@@ -701,6 +749,13 @@ static void print_val(Val value) {
         case T_ARRAY:   fputs("[ ", stdout); print_items(objects[value.data]); putchar(']'); break;
         case T_XT:      printf("<xt %lld>",   (long long)value.data); break;
         case T_ADDR:    printf("<addr %lld>", (long long)value.data); break;
+		case T_MATRIX: {
+			Object *matrix = objects[value.data];
+			printf("<matrix %dx%d: ", matrix->matrix.rows, matrix->matrix.columns);
+			print_corners(matrix);
+			putchar('>');
+			break;
+		}
         default:        printf("<?>"); break;
     }
 }
@@ -1060,6 +1115,34 @@ static int string_concat(int left_handle, int right_handle) {
     return result_handle;
 }
 
+typedef double (*scalar_operator)(double, double);
+static double scalar_add(double a, double b) { return a + b; }
+static double scalar_subtract(double a, double b) { return a - b; }
+static double scalar_multiply(double a, double b) { return a * b; }
+static double scalar_divide(double a, double b) { return a / b; }
+
+static int matrix_scalar_op(Val left_val, Val right_val, scalar_operator op) {
+	Object *left = objects[left_val.data];
+	Object *right = objects[right_val.data];
+	
+	if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) {
+		type_err("matrix shapes");
+		return -1;
+	}
+	
+	int rows = left->matrix.rows;
+	int columns = right->matrix.columns;
+	int target_handle = object_new_matrix(rows, columns);
+	if (error_flag) return -1;
+	
+	Object *target = objects[target_handle];
+	for (int i = 0; i < rows * columns; i++) {
+		target->matrix.elements[i] = op(left->matrix.elements[i], right->matrix.elements[i]);
+	}
+	
+	return target_handle;
+}
+
 static void p_add(cell *cfa) {
     (void)cfa;
     Val right = pop(), left = pop();
@@ -1070,6 +1153,11 @@ static void p_add(cell *cfa) {
         push(make_string(string_concat((int)left.data, (int)right.data)));
     else if (left.tag == T_SET && right.tag == T_SET)
         push(make_set(set_union((int)left.data, (int)right.data)));
+	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+		int target_handle = matrix_scalar_op(left, right, scalar_add);
+        if (target_handle < 0) return;
+        push(make_matrix(target_handle));
+	}
     else type_err("+");
 }
 static void p_sub(cell *cfa) {
@@ -1080,6 +1168,11 @@ static void p_sub(cell *cfa) {
         push(make_float(unpack_float(left) - unpack_float(right)));
     else if (left.tag == T_SET && right.tag == T_SET)
         push(make_set(set_difference((int)left.data, (int)right.data)));
+	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+		int target_handle = matrix_scalar_op(left, right, scalar_subtract);
+        if (target_handle < 0) return;
+        push(make_matrix(target_handle));
+	}
     else type_err("-");
 }
 static void p_mul(cell *cfa) {
@@ -1090,12 +1183,22 @@ static void p_mul(cell *cfa) {
         push(make_float(unpack_float(left) * unpack_float(right)));
     else if (left.tag == T_SET && right.tag == T_SET)
         push(make_set(set_intersect((int)left.data, (int)right.data)));
+	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+		int target_handle = matrix_scalar_op(left, right, scalar_multiply);
+        if (target_handle < 0) return;
+        push(make_matrix(target_handle));
+	}
     else type_err("*");
 }
 static void p_div(cell *cfa) {
     (void)cfa; Val right = pop(), left = pop();
     if (left.tag == T_FLOAT && right.tag == T_FLOAT && unpack_float(right) != 0.0)
         push(make_float(unpack_float(left) / unpack_float(right)));
+	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+		int target_handle = matrix_scalar_op(left, right, scalar_divide);
+        if (target_handle < 0) return;
+        push(make_matrix(target_handle));
+	}
     else type_err("/");
 }
 static void p_neg(cell *cfa) {
@@ -1258,15 +1361,20 @@ static void p_at(cell *cfa) {
  * is intentional set semantics, but it can surprise: `dup 2 set` on any
  * single value produces a one-element set, not a two-element one. */
 static void p_set(cell *cfa) {
-    (void)cfa; Val count_value = pop();
+    (void)cfa; 
+    Val count_value = pop();
     if (count_value.tag != T_FLOAT) { type_err("set"); return; }
+    
     int count = (int)unpack_float(count_value);
     if (count < 0 || count > dsp) { type_err("set"); return; }
+    
     int set_handle = object_new_set();
     if (error_flag) return;
+    
     int first_item = dsp - count;
     for (int i = 0; i < count; i++) set_add(set_handle, data_stack[first_item + i]);
     dsp = first_item;
+    
     push(make_set(set_handle));
 }
 
@@ -2041,7 +2149,7 @@ static void p_load(cell *cfa) {
 static int object_mark[MAXOBJS];
 
 static void mark_val(Val value) {
-    if (value.tag != T_STRING && value.tag != T_SET && value.tag != T_ARRAY) return;
+    if (value.tag != T_STRING && value.tag != T_SET && value.tag != T_ARRAY && value.tag != T_MATRIX) return;
     int handle = (int)value.data;
     if (handle < 0 || handle >= MAXOBJS || !objects[handle] || object_mark[handle]) return;
     object_mark[handle] = 1;
@@ -2120,13 +2228,30 @@ static void gc(void) {
 
     /* Sweep — free anything unmarked. */
     for (int handle = 0; handle < n_objects; handle++) {
-        if (objects[handle] && !object_mark[handle]) {
-            if (objects[handle]->bytes) free(objects[handle]->bytes);
-            if (objects[handle]->items) free(objects[handle]->items);
-            free(objects[handle]);
-            objects[handle] = NULL;
+        Object *obj = objects[handle];
+        if (!obj || object_mark[handle]) continue;
+        
+        switch (obj->kind) {
+            case OBJECT_STRING: free(obj->bytes); break;
+            case OBJECT_SET:
+            case OBJECT_ARRAY: free(obj->items); break;
+            case OBJECT_MATRIX: free(obj->matrix.elements); break;
         }
+        free(objects[handle]);
+        objects[handle] = NULL;
     }
+}
+
+static void p_gc(cell *cfa) {
+	(void)cfa;
+	
+	gc();
+}
+
+static void p_clear(cell *cfa) {
+	(void)cfa; 
+	
+	dsp = 0;
 }
 
 
@@ -2339,6 +2464,105 @@ static void p_save(cell *cfa) {
     gc_root_pop();
 }
 
+/* ---- matrix functions -------------------- */
+static int create_matrix() {
+    Val right = pop(), left = pop();
+    if (left.tag != T_FLOAT || right.tag != T_FLOAT) {
+        type_err("matrix dimensions");
+        return -1;
+    }
+    
+    int num_rows = (int)(unpack_float(left));
+    int num_columns = (int)(unpack_float(right));
+    if (num_rows < 0 || num_columns < 0) {
+        type_err("matrix dimensions");
+        return -1;
+    }
+    
+   return object_new_matrix(num_rows, num_columns);
+    
+}
+
+static void p_0_matrix(cell *cfa) {
+	(void)cfa;
+	
+	int matrix_handle = create_matrix();
+	if (error_flag) return;
+	push(make_matrix(matrix_handle));
+}
+
+static void p_matrix(cell *cfa) {
+	(void)cfa;
+	int i;
+	
+	int matrix_handle = create_matrix();
+	if (error_flag) return;
+	
+	Val array_val = pop();
+	if (error_flag) return;
+	if (array_val.tag != T_ARRAY) {
+		type_err("matrix needs array");
+		return;
+	}
+	
+	Object *matrix = objects[matrix_handle];
+	Object *input_array = objects[array_val.data];
+	int num_elements = matrix->matrix.rows * matrix->matrix.columns;
+	if (input_array->len != num_elements) {
+		type_err("matrix array length");
+		return;
+	}
+	
+	for (i = 0; i < num_elements; i++) {
+		if (input_array->items[i].tag != T_FLOAT) {
+			type_err("matrix array element");
+			return;
+		}
+		matrix->matrix.elements[i] = unpack_float(input_array->items[i]);
+	}
+	
+	push(make_matrix(matrix_handle));
+}
+
+static void p_dim(cell *cfa) {
+	(void)cfa;
+	
+	Val matrix_val = pop();
+	if (error_flag) return;
+	if (matrix_val.tag != T_MATRIX) {
+		type_err("dim needs matrix");
+		return;
+	}
+	
+	Object *matrix = objects[matrix_val.data];
+	push(make_float(matrix->matrix.rows));
+	push(make_float(matrix->matrix.columns));
+}
+
+static void p_array(cell *cfa) {
+	(void)cfa;
+	
+	Val size_val = pop();
+	if (error_flag) return;
+	if (size_val.tag != T_FLOAT) {
+		type_err("array length");
+		return;
+	}
+	
+	Val init_val = pop();
+	if (error_flag) return;
+	
+	int array_len = (int)(unpack_float(size_val));
+	int array_handle = object_new_array(array_len);
+	if (error_flag) return;
+	
+	Object *array = objects[array_handle];
+	for (int i = 0; i < array_len; i++) {
+		array->items[i] = init_val;
+	}
+	
+	push(make_array(array_handle));
+}
 
 /* ---- main: bootstrap the dictionary, run the REPL -------------------- */
 /* We install every primitive into the dictionary. Ordering matters only
@@ -2367,6 +2591,8 @@ int main(void) {
     define_primitive("emit",   p_emit_, 0);
     define_primitive(".s",     p_dots,  0);
     define_primitive("bye",    p_bye,   0);
+	define_primitive("clear",  p_clear, 0);
+	define_primitive("gc",	   p_gc,    0);
     define_primitive("load",   p_load,  0);
     define_primitive("save",   p_save,  0);
     define_primitive(">r",     p_tor,    0);
@@ -2415,6 +2641,19 @@ int main(void) {
     define_primitive("again", p_again, 1);
     define_primitive("[:",    p_qcolon, 1);
     define_primitive(":]",    p_qsemi,  1);
+    
+    define_primitive("0-matrix",	p_0_matrix, 0);
+	define_primitive("matrix",		p_matrix, 0);
+	define_primitive("dim",			p_dim, 0);
+	define_primitive("array",		p_array, 0);
+	
+	/* load the standard library */
+	push(make_string(object_new_string("src/forth/lib.l4", 16)));
+	p_load(NULL);
+	if (error_flag) {
+		printf("lib.l4 load error\n");
+		return 1;
+	}
 
     printf("logicforth\n");
     char line[1024];

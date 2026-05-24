@@ -1,0 +1,9 @@
+( a b -- a b a b )
+: 2dup over over ;
+
+
+\ matrix words
+
+\ add a scalar to all elements of a matrix
+( m s -- m + s )
+\ : scalar+ over dim * array 
