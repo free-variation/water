@@ -1,4 +1,4 @@
-CC     = cc
+CC     = clang
 CFLAGS = -O2 -Wall -Wextra
 
 logicforth: src/c/logicforth.c
