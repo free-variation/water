@@ -8,5 +8,5 @@ logicforth
 1 ok
 15 ok
 45 ok
-? type error in sum: not a matrix
-? type error in sum: not a matrix
+? type error in sum
+? type error in sum

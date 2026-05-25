@@ -204,6 +204,7 @@
 #include <ctype.h>
 #include <stdint.h>
 #include <stdarg.h>
+#include <math.h>
 
 /* A raw dictionary cell. 64-bit because we want to store function
  * pointers, doubles, and indices without size-related hand-wringing. */
@@ -741,27 +742,71 @@ static void print_items(Object *collection) {
     }
 }
 
+/* Inline one-line form used by `print_val` (which `.s` and string
+ * interpolation route through). Walks the flat element array; truncates
+ * with a single `...` when total elements exceed the threshold. */
 static void print_corners(Object *matrix) {
     double *elements = matrix->matrix.elements;
     int n = matrix->matrix.rows * matrix->matrix.columns;
 
     if (!print_truncate || n <= PRINT_FIRST + PRINT_LAST) {
         for (int i = 0; i < n; i++) {
-			putchar(' '); 
-			print_double(elements[i]); 
-		}
+            putchar(' ');
+            print_double(elements[i]);
+        }
     } else {
         for (int i = 0; i < PRINT_FIRST; i++) {
-			putchar(' '); 
-			print_double(elements[i]);
-		}
-		
+            putchar(' ');
+            print_double(elements[i]);
+        }
         fputs(" ...", stdout);
-        
-		for (int i = n - PRINT_LAST; i < n; i++) {
-			putchar(' '); 
-			print_double(elements[i]);
-		}
+        for (int i = n - PRINT_LAST; i < n; i++) {
+            putchar(' ');
+            print_double(elements[i]);
+        }
+    }
+}
+
+/* 2D grid layout used by `.` (single-value print). One row per source
+ * row, fixed-width cells, scientific notation for values that don't
+ * fit comfortably as fixed. Truncates independently on each axis —
+ * worst case shows the four corners with row- and column-ellipses
+ * between. Disabled by `print_truncate` (used by `.a` to dump full). */
+#define MATRIX_DISP_FIRST_ROWS 5
+#define MATRIX_DISP_LAST_ROWS  3
+#define MATRIX_DISP_FIRST_COLS 5
+#define MATRIX_DISP_LAST_COLS  3
+
+static void print_matrix_cell(double value) {
+    printf(" %10.4g", value);   /* leading space + 10-wide field */
+}
+
+static void print_matrix_grid(Object *m) {
+    int rows = m->matrix.rows;
+    int cols = m->matrix.columns;
+    int rows_trunc = print_truncate
+                   && rows > MATRIX_DISP_FIRST_ROWS + MATRIX_DISP_LAST_ROWS;
+    int cols_trunc = print_truncate
+                   && cols > MATRIX_DISP_FIRST_COLS + MATRIX_DISP_LAST_COLS;
+
+    printf("<matrix %dx%d>\n", rows, cols);
+
+    for (int i = 0; i < rows; i++) {
+        if (rows_trunc) {
+            if (i == MATRIX_DISP_FIRST_ROWS) fputs(" ...\n", stdout);
+            if (i >= MATRIX_DISP_FIRST_ROWS && i < rows - MATRIX_DISP_LAST_ROWS)
+                continue;
+        }
+
+        for (int j = 0; j < cols; j++) {
+            if (cols_trunc) {
+                if (j == MATRIX_DISP_FIRST_COLS) printf(" %10s", "...");
+                if (j >= MATRIX_DISP_FIRST_COLS && j < cols - MATRIX_DISP_LAST_COLS)
+                    continue;
+            }
+            print_matrix_cell(MAT(m, i, j));
+        }
+        putchar('\n');
     }
 }
 
@@ -1272,7 +1317,17 @@ static void p_swap(cell *cfa) { (void)cfa; Val top = pop(), second = pop(); push
 static void p_over(cell *cfa) { (void)cfa; Val top = pop(), second = pop(); push(second); push(top); push(second); }
 static void p_rot(cell *cfa)  { (void)cfa; Val top = pop(), middle = pop(), bottom = pop(); push(middle); push(top); push(bottom); }
 
-static void p_dot(cell *cfa)  { (void)cfa; print_val(pop()); putchar(' '); fflush(stdout); }
+static void p_dot(cell *cfa) {
+    (void)cfa;
+    Val value = pop();
+    if (value.tag == T_MATRIX) {
+        print_matrix_grid(objects[value.data]);
+    } else {
+        print_val(value);
+        putchar(' ');
+    }
+    fflush(stdout);
+}
 
 /* `.a`: print one value with truncation disabled — useful when the
  * caller actually wants to see a huge set or array. The save/clear/
@@ -1284,8 +1339,13 @@ static void p_dot_all(cell *cfa) {
     (void)cfa;
     int saved = print_truncate;
     print_truncate = 0;
-    print_val(pop());
-    putchar(' ');
+    Val value = pop();
+    if (value.tag == T_MATRIX) {
+        print_matrix_grid(objects[value.data]);
+    } else {
+        print_val(value);
+        putchar(' ');
+    }
     fflush(stdout);
     print_truncate = saved;
 }
@@ -1603,75 +1663,91 @@ static void p_dgemm_tn(cell *cfa) { (void)cfa; p_dgemm_helper(1, 0); }
 static void p_dgemm_nt(cell *cfa) { (void)cfa; p_dgemm_helper(0, 1); }
 static void p_dgemm_tt(cell *cfa) { (void)cfa; p_dgemm_helper(1, 1); }
 
-static void p_sum(cell *cfa) {
-	(void)cfa;
-	
-	Val source_val = pop();
-	if (source_val.tag != T_MATRIX) {
-		type_error("sum: not a matrix");
-		return;
-	}
-	
-	Object *source = objects[source_val.data];
-	double sum = 0;
-	int num_elements = source->matrix.rows * source->matrix.columns;
-	for (int i = 0; i < num_elements; i++)
-		sum += source->matrix.elements[i];
+/* Matrix reductions: sum, max, min, each across the whole matrix and
+ * along each axis. Three helpers parameterized by a `(accumulator,
+ * element) -> accumulator` function and an identity value cover all
+ * nine variants. */
+typedef double (*reducer)(double accumulator, double element);
+static double reduce_add(double accumulator, double element) { return accumulator + element; }
+static double reduce_max(double accumulator, double element) { return accumulator > element ? accumulator : element; }
+static double reduce_min(double accumulator, double element) { return accumulator < element ? accumulator : element; }
 
-	push(make_float(sum));
+static double matrix_reduce_overall(Object *source, reducer fn, double identity) {
+	int num_elements = source->matrix.rows * source->matrix.columns;
+	double accumulator = identity;
+	for (int i = 0; i < num_elements; i++)
+		accumulator = fn(accumulator, source->matrix.elements[i]);
+	return accumulator;
 }
 
-/* ( m -- Nx1 )  sum of each row */
-static void p_row_sums(cell *cfa) {
-	(void)cfa;
-
-	Val source_val = pop();
-	if (source_val.tag != T_MATRIX) {
-		type_error("row-sums: not a matrix");
-		return;
-	}
-
-	Object *source = objects[source_val.data];
+static int matrix_reduce_rows(Object *source, reducer fn, double identity) {
 	int rows = source->matrix.rows;
 	int cols = source->matrix.columns;
 	int target_handle = object_new_matrix(rows, 1);
-	if (error_flag) return;
+	if (error_flag) return -1;
 	Object *target = objects[target_handle];
-
 	for (int i = 0; i < rows; i++) {
-		double row_sum = 0.0;
-		for (int j = 0; j < cols; j++) row_sum += MAT(source, i, j);
-		MAT(target, i, 0) = row_sum;
+		double accumulator = identity;
+		for (int j = 0; j < cols; j++)
+			accumulator = fn(accumulator, MAT(source, i, j));
+		MAT(target, i, 0) = accumulator;
 	}
-
-	push(make_matrix(target_handle));
+	return target_handle;
 }
 
-/* ( m -- 1xN )  sum of each column. Loop order is i,j (not j,i) so
- * reads of `source` and writes to `target` are both stride-1 through
- * memory; the target row is zero-initialized by object_new_matrix. */
-static void p_column_sums(cell *cfa) {
-	(void)cfa;
-
-	Val source_val = pop();
-	if (source_val.tag != T_MATRIX) {
-		type_error("column-sums: not a matrix");
-		return;
-	}
-
-	Object *source = objects[source_val.data];
+/* Loop order is i,j (not j,i) so source reads and target writes are
+ * both stride-1; target row is seeded with `identity` before the walk. */
+static int matrix_reduce_columns(Object *source, reducer fn, double identity) {
 	int rows = source->matrix.rows;
 	int cols = source->matrix.columns;
 	int target_handle = object_new_matrix(1, cols);
-	if (error_flag) return;
+	if (error_flag) return -1;
 	Object *target = objects[target_handle];
-
+	for (int j = 0; j < cols; j++) MAT(target, 0, j) = identity;
 	for (int i = 0; i < rows; i++)
 		for (int j = 0; j < cols; j++)
-			MAT(target, 0, j) += MAT(source, i, j);
-
-	push(make_matrix(target_handle));
+			MAT(target, 0, j) = fn(MAT(target, 0, j), MAT(source, i, j));
+	return target_handle;
 }
+
+#define REDUCE_OVERALL(primitive_name, word_name, fn, identity)                 \
+	static void primitive_name(cell *cfa) {                                     \
+		(void)cfa;                                                              \
+		Val source_val = pop();                                                 \
+		if (source_val.tag != T_MATRIX) { type_error(word_name); return; }      \
+		push(make_float(matrix_reduce_overall(objects[source_val.data],         \
+		                                      fn, identity)));                  \
+	}
+
+#define REDUCE_ROWS(primitive_name, word_name, fn, identity)                    \
+	static void primitive_name(cell *cfa) {                                     \
+		(void)cfa;                                                              \
+		Val source_val = pop();                                                 \
+		if (source_val.tag != T_MATRIX) { type_error(word_name); return; }      \
+		int target_handle = matrix_reduce_rows(objects[source_val.data],        \
+		                                       fn, identity);                   \
+		if (!error_flag) push(make_matrix(target_handle));                      \
+	}
+
+#define REDUCE_COLUMNS(primitive_name, word_name, fn, identity)                 \
+	static void primitive_name(cell *cfa) {                                     \
+		(void)cfa;                                                              \
+		Val source_val = pop();                                                 \
+		if (source_val.tag != T_MATRIX) { type_error(word_name); return; }      \
+		int target_handle = matrix_reduce_columns(objects[source_val.data],     \
+		                                          fn, identity);                \
+		if (!error_flag) push(make_matrix(target_handle));                      \
+	}
+
+REDUCE_OVERALL(p_sum,           "sum",           reduce_add,  0.0)
+REDUCE_OVERALL(p_max,           "max",           reduce_max, -INFINITY)
+REDUCE_OVERALL(p_min,           "min",           reduce_min,  INFINITY)
+REDUCE_ROWS   (p_row_sums,      "row-sums",      reduce_add,  0.0)
+REDUCE_ROWS   (p_row_maxes,     "row-maxes",     reduce_max, -INFINITY)
+REDUCE_ROWS   (p_row_mins,      "row-mins",      reduce_min,  INFINITY)
+REDUCE_COLUMNS(p_column_sums,   "column-sums",   reduce_add,  0.0)
+REDUCE_COLUMNS(p_column_maxes,  "column-maxes",  reduce_max, -INFINITY)
+REDUCE_COLUMNS(p_column_mins,   "column-mins",   reduce_min,  INFINITY)
 
 /* set: ( v1 v2 ... vN N -- set ) build a set from the top N stack items.
  * The count goes on top so the items can be pushed in their natural
@@ -2993,6 +3069,35 @@ static void p_transpose(cell *cfa) {
 	push(make_matrix(target_handle));
 }
 
+static void unary_op(Val operand, double (*function)(double), const char *name) {
+	if (operand.tag == T_FLOAT) {
+		push(make_float(function(unpack_float(operand))));
+	} else if (operand.tag == T_MATRIX) {
+		Object *source = objects[operand.data];
+		int target_handle = object_new_matrix(source->matrix.rows, source->matrix.columns);
+		if (error_flag) return;
+		
+		Object *target = objects[target_handle];
+		int num_elements = source->matrix.rows * source->matrix.columns;
+		for (int i = 0; i < num_elements; i++)
+			target->matrix.elements[i] = function(source->matrix.elements[i]);
+			
+		push(make_matrix(target_handle));
+	} else {
+		type_error(name);
+	}
+}
+
+static void p_abs(cell *cfa)  { (void)cfa; unary_op(pop(), fabs,  "abs"); }
+static void p_sqrt(cell *cfa) { (void)cfa; unary_op(pop(), sqrt,  "sqrt"); }
+static void p_exp(cell *cfa)  { (void)cfa; unary_op(pop(), exp,   "exp"); }
+static void p_log(cell *cfa)  { (void)cfa; unary_op(pop(), log,   "log"); }
+static void p_sin(cell *cfa)  { (void)cfa; unary_op(pop(), sin,   "sin"); }
+static void p_cos(cell *cfa)  { (void)cfa; unary_op(pop(), cos,   "cos"); }
+static void p_tan(cell *cfa)  { (void)cfa; unary_op(pop(), tan,   "tan"); }
+static void p_tanh(cell *cfa) { (void)cfa; unary_op(pop(), tanh,  "tan"); }
+
+
 /* ---- main: bootstrap the dictionary, run the REPL -------------------- */
 /* We install every primitive into the dictionary. Ordering matters only
  * for the cached CFAs (exit, lit, branch, 0branch, dostr, stop) — they
@@ -3084,11 +3189,26 @@ int main(void) {
 	define_primitive("sum",				p_sum, 0);
 	define_primitive("row-sums",		p_row_sums, 0);
 	define_primitive("column-sums",		p_column_sums, 0);
+	define_primitive("max",				p_max, 0);
+	define_primitive("min",				p_min, 0);
+	define_primitive("row-maxes",		p_row_maxes, 0);
+	define_primitive("row-mins",		p_row_mins, 0);
+	define_primitive("column-maxes",	p_column_maxes, 0);
+	define_primitive("column-mins",		p_column_mins, 0);
 
 	define_primitive("dgemm-nn",     	p_dgemm_nn, 0);
 	define_primitive("dgemm-tn",     	p_dgemm_tn, 0);
 	define_primitive("dgemm-nt",     	p_dgemm_nt, 0);
 	define_primitive("dgemm-tt",     	p_dgemm_tt, 0);
+	
+	define_primitive("abs",		p_abs, 0);
+	define_primitive("sqrt",	p_sqrt, 0);
+	define_primitive("exp",		p_exp, 0);
+	define_primitive("log",		p_log, 0);
+	define_primitive("sin",		p_sin, 0);
+	define_primitive("cos",		p_cos, 0);
+	define_primitive("tan",		p_tan, 0);
+	define_primitive("tanh",	p_tanh, 0);
 	
 	/* load the standard library */
 	push(make_string(object_new_string("src/forth/lib.l4", 16)));

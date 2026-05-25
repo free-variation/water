@@ -1,3 +1,6 @@
+( -- pi )
+: pi 3.141592653589793 ;
+
 ( a b -- a b a b )
 : 2dup over over ;
 
