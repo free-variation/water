@@ -1,0 +1,11 @@
+variable x
+x @ .
+42 x !
+x @ .
+99 x !
+x @ .
+variable y
+"hello" y !
+y @ .
+{ 1 2 3 } y !
+y @ .

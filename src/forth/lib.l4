@@ -4,6 +4,17 @@
 
 \ matrix words
 
-\ add a scalar to all elements of a matrix
-( m s -- m + s )
-\ : scalar+ over dim * array 
+\ broadcast a scalar to the dimension of the preceding matrix
+( m scalar -- m broadcast-scalar )
+: scalar-op
+	over dim * array
+	over dim matrix
+;
+
+: scalar+ scalar-op + ;
+: scalar- scalar-op - ;
+: scalar* scalar-op * ;
+: scalar/ scalar-op / ;
+
+: identity-matrix 1 swap diagonal-matrix ;
+ 

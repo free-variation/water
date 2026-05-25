@@ -1,0 +1,6 @@
+: dup-via-rs >r r@ r> ;
+7 dup-via-rs . .
+: store-fetch >r r> ;
+42 store-fetch .
+: peek-twice >r r@ r@ r> ;
+9 peek-twice . . .

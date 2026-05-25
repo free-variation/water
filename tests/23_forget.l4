@@ -1,0 +1,7 @@
+: foo 1 ;
+: bar 2 ;
+foo . bar . cr
+forget bar
+foo . cr
+: bar 99 ;
+foo . bar . cr

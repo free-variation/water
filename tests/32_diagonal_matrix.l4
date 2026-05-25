@@ -1,0 +1,6 @@
+5 3 diagonal-matrix .
+1 4 diagonal-matrix .
+0 2 diagonal-matrix .
+7 1 diagonal-matrix .
+3 3 diagonal-matrix transpose .
+1 3 diagonal-matrix dim . . cr

@@ -1,0 +1,5 @@
+[ 1 2 3 4 5 6 ] 2 3 matrix transpose .
+[ 1 2 3 4 5 6 ] 3 2 matrix transpose .
+[ 1 2 3 4 ] 2 2 matrix transpose .
+[ 7 ] 1 1 matrix transpose .
+[ 1 2 3 4 ] 2 2 matrix transpose transpose .

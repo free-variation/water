@@ -1,0 +1,8 @@
+symbol red
+symbol green
+symbol blue
+red red = .
+red green = .
+red . cr
+green . cr
+red blue green . . . cr

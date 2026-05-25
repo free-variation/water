@@ -1,0 +1,5 @@
+1 dup . .
+1 2 swap . .
+1 2 over . . .
+1 2 3 rot . . .
+99 88 drop .s

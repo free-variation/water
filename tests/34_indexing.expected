@@ -1,0 +1,12 @@
+logicforth
+10 ok
+30 ok
+<matrix 1x3:  1 2 3> ok
+<matrix 1x3:  4 5 6> ok
+<matrix 2x1:  1 4> ok
+<matrix 2x1:  3 6> ok
+1 ok
+6 ok
+7 ok
+1 ok
+0 ok

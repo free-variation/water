@@ -1,0 +1,8 @@
+: classify dup 0 > if "+" . else dup 0 < if "-" . else "z" . then then drop ;
+5 classify cr
+-5 classify cr
+0 classify cr
+: countdown 0 begin 1 + dup . dup 3 = until drop cr ;
+countdown
+: tagged 0 begin 1 + dup . dup 4 = if drop exit then again ;
+tagged cr

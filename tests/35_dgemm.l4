@@ -1,0 +1,76 @@
+\ ---- dgemm-nn: A * B, no transposes -------------------------
+
+\ basic 2x3 * 3x2 -> 2x2
+1 [ 1 2 3 4 5 6 ] 2 3 matrix [ 7 8 9 10 11 12 ] 3 2 matrix 0 2 2 0-matrix dgemm-nn .
+
+\ dot product: 1x3 * 3x1 -> 1x1
+1 [ 1 2 3 ] 1 3 matrix [ 4 5 6 ] 3 1 matrix 0 1 1 0-matrix dgemm-nn .
+
+\ outer product: 3x1 * 1x3 -> 3x3
+1 [ 1 2 3 ] 3 1 matrix [ 4 5 6 ] 1 3 matrix 0 3 3 0-matrix dgemm-nn .
+
+\ square: 2x2 * 2x2
+1 [ 1 2 3 4 ] 2 2 matrix [ 5 6 7 8 ] 2 2 matrix 0 2 2 0-matrix dgemm-nn .
+
+\ A * I = A
+1 [ 1 2 3 4 ] 2 2 matrix 2 identity-matrix 0 2 2 0-matrix dgemm-nn .
+
+\ I * A = A
+1 2 identity-matrix [ 1 2 3 4 ] 2 2 matrix 0 2 2 0-matrix dgemm-nn .
+
+\ ---- alpha and beta variations -----------------------------
+
+\ alpha=0 -> result is beta * C
+0 [ 1 2 3 4 ] 2 2 matrix [ 5 6 7 8 ] 2 2 matrix 1 [ 100 200 300 400 ] 2 2 matrix dgemm-nn .
+
+\ beta=0 -> result is alpha * A * B
+3 [ 1 2 3 4 ] 2 2 matrix 2 identity-matrix 0 2 2 0-matrix dgemm-nn .
+
+\ alpha=2, beta=-1: 2 * A * I - C
+2 [ 1 2 3 4 ] 2 2 matrix 2 identity-matrix -1 [ 1 1 1 1 ] 2 2 matrix dgemm-nn .
+
+\ alpha=0, beta=0 -> zero result regardless of A, B, C
+0 [ 1 2 3 4 ] 2 2 matrix [ 5 6 7 8 ] 2 2 matrix 0 [ 99 99 99 99 ] 2 2 matrix dgemm-nn .
+
+\ ---- dgemm-tn: A^T * B -------------------------------------
+
+\ A^T * A for A = [[1,2],[3,4]] -> [[10,14],[14,20]]
+1 [ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 ] 2 2 matrix 0 2 2 0-matrix dgemm-tn .
+
+\ A is 3x2, A^T is 2x3, B is 3x2 -> result 2x2
+1 [ 1 2 3 4 5 6 ] 3 2 matrix [ 7 8 9 10 11 12 ] 3 2 matrix 0 2 2 0-matrix dgemm-tn .
+
+\ ---- dgemm-nt: A * B^T -------------------------------------
+
+\ A is 2x3, B is 2x3, B^T is 3x2 -> result 2x2
+1 [ 1 2 3 4 5 6 ] 2 3 matrix [ 1 2 3 4 5 6 ] 2 3 matrix 0 2 2 0-matrix dgemm-nt .
+
+\ ---- dgemm-tt: A^T * B^T -----------------------------------
+
+\ A is 2x3 -> A^T is 3x2; B is 3x2 -> B^T is 2x3; product is 3x3
+1 [ 1 2 3 4 5 6 ] 2 3 matrix [ 7 8 9 10 11 12 ] 3 2 matrix 0 3 3 0-matrix dgemm-tt .
+
+\ ---- failure: inner dimension mismatch ---------------------
+
+\ A 2x3 * B 2x2: A's cols (3) != B's rows (2)
+1 [ 1 2 3 4 5 6 ] 2 3 matrix [ 7 8 9 10 ] 2 2 matrix 0 2 2 0-matrix dgemm-nn
+
+\ same shapes, but with -tn: A^T is 3x2, cols 2, vs B's rows 2 -- this DOES match;
+\ try one that genuinely fails: A 2x3, B 3x3, -tn means A^T is 3x2, cols 2 vs B rows 3 -- mismatch
+1 [ 1 2 3 4 5 6 ] 2 3 matrix [ 1 2 3 4 5 6 7 8 9 ] 3 3 matrix 0 2 3 0-matrix dgemm-tn
+
+\ ---- failure: C wrong shape --------------------------------
+
+\ A*B should be 1x1 but C is 3x3
+1 [ 1 2 ] 1 2 matrix [ 3 4 ] 2 1 matrix 0 3 3 0-matrix dgemm-nn
+
+\ ---- failure: wrong types ----------------------------------
+
+\ alpha is a string
+"hi" [ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 ] 2 2 matrix 0 2 2 0-matrix dgemm-nn
+
+\ A is a number
+1 99 [ 1 2 3 4 ] 2 2 matrix 0 2 2 0-matrix dgemm-nn
+
+\ C is a string
+1 [ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 ] 2 2 matrix 0 "C" dgemm-nn

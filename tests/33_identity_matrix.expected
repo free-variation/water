@@ -1,0 +1,8 @@
+logicforth
+<matrix 3x3:  1 0 0 0 1 0 0 0 1> ok
+<matrix 1x1:  1> ok
+<matrix 5x5:  1 0 0 0 0 0 1 0 0 0 ... 0 0 1> ok
+<matrix 4x4:  1 0 0 0 0 1 0 0 0 0 ... 0 0 1> ok
+3 3 
+ok
+<matrix 2x2:  1 0 0 4> ok

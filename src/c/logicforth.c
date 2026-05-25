@@ -355,7 +355,7 @@ static int  running = 0;
 #define IS_IMM(cfa)  (FLAGS(cfa) & 1)
 
 /* Forward decl: `fail` reports an error message and sets the sticky
- * error_flag. Defined alongside type_err down with the other
+ * error_flag. Defined alongside type_error down with the other
  * error-reporting helpers, but used much earlier (in object allocators,
  * stack push/pop, dictionary growth checks). printf-style formatting. */
 static void fail(const char *fmt, ...);
@@ -397,6 +397,18 @@ typedef struct {
 		} matrix;
     };
 } Object;
+
+/* Element access for OBJECT_MATRIX. Both macros take an Object* (not a
+ * handle) — the caller is expected to have dereferenced once already.
+ * Row-major layout: element (i, j) lives at elements[i * columns + j].
+ *
+ * MAT(m, i, j) is an lvalue — usable on both sides of `=`:
+ *     double x      = MAT(m, i, j);
+ *     MAT(m, i, j)  = 1.0;
+ *
+ * No bounds checking — these are tight inner-loop helpers. Caller must
+ * have validated indices. */
+#define MAT(m, i, j) ((m)->matrix.elements[(i) * (m)->matrix.columns + (j)])
 
 static Object *objects[MAXOBJS];
 static int  n_objects = 0;
@@ -1019,7 +1031,7 @@ static void fail(const char *fmt, ...) {
     va_end(args);
     error_flag = 1;
 }
-static void type_err(const char *op) { fail("type error in %s", op); }
+static void type_error(const char *op) { fail("type error in %s", op); }
 
 /* EXIT: pop the saved instruction pointer from the return stack and jump
  * to it. When the return stack is empty, we're at the top level; clear
@@ -1126,7 +1138,7 @@ static int matrix_scalar_op(Val left_val, Val right_val, scalar_operator op) {
 	Object *right = objects[right_val.data];
 	
 	if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) {
-		type_err("matrix shapes");
+		type_error("matrix shapes");
 		return -1;
 	}
 	
@@ -1158,7 +1170,7 @@ static void p_add(cell *cfa) {
         if (target_handle < 0) return;
         push(make_matrix(target_handle));
 	}
-    else type_err("+");
+    else type_error("+");
 }
 static void p_sub(cell *cfa) {
     (void)cfa;
@@ -1173,7 +1185,7 @@ static void p_sub(cell *cfa) {
         if (target_handle < 0) return;
         push(make_matrix(target_handle));
 	}
-    else type_err("-");
+    else type_error("-");
 }
 static void p_mul(cell *cfa) {
     (void)cfa; 
@@ -1188,7 +1200,7 @@ static void p_mul(cell *cfa) {
         if (target_handle < 0) return;
         push(make_matrix(target_handle));
 	}
-    else type_err("*");
+    else type_error("*");
 }
 static void p_div(cell *cfa) {
     (void)cfa; Val right = pop(), left = pop();
@@ -1199,12 +1211,12 @@ static void p_div(cell *cfa) {
         if (target_handle < 0) return;
         push(make_matrix(target_handle));
 	}
-    else type_err("/");
+    else type_error("/");
 }
 static void p_neg(cell *cfa) {
     (void)cfa; Val operand = pop();
     if (operand.tag == T_FLOAT) push(make_float(-unpack_float(operand)));
-    else type_err("negate");
+    else type_error("negate");
 }
 
 /* Booleans live in T_FLOAT: -1.0 is true, 0.0 is false. The choice of
@@ -1250,7 +1262,7 @@ static void p_emit_(cell *cfa) {
     if (character.tag == T_FLOAT) {
         putchar((int)unpack_float(character));
         fflush(stdout);
-    } else type_err("emit");
+    } else type_error("emit");
 }
 static void p_dots(cell *cfa) {
     (void)cfa;
@@ -1273,7 +1285,7 @@ static void p_rfetch(cell *cfa) { (void)cfa; if (rsp > 0) push(return_stack[rsp 
 
 static void p_fetch(cell *cfa) {
     (void)cfa; Val address = pop();
-    if (address.tag != T_ADDR) { type_err("@"); return; }
+    if (address.tag != T_ADDR) { type_error("@"); return; }
     int cell_index = (int)address.data;
     Val loaded;
     loaded.tag  = (Tag)dict[cell_index];
@@ -1282,7 +1294,7 @@ static void p_fetch(cell *cfa) {
 }
 static void p_store(cell *cfa) {
     (void)cfa; Val addr = pop(), value = pop();
-    if (addr.tag != T_ADDR) { type_err("!"); return; }
+    if (addr.tag != T_ADDR) { type_error("!"); return; }
     int cell_index = (int)addr.data;
     dict[cell_index]     = (cell)value.tag;
     dict[cell_index + 1] = value.data;
@@ -1308,7 +1320,7 @@ static void p_setclose(cell *cfa) {
     /* Find the matching mark on the stack: scan downward until we hit one. */
     int mark_index = dsp;
     while (mark_index > 0 && data_stack[mark_index - 1].tag != T_MARK) mark_index--;
-    if (mark_index == 0) { type_err("}"); return; }
+    if (mark_index == 0) { type_error("}"); return; }
     int set_handle = object_new_set();
     for (int i = mark_index; i < dsp; i++) set_add(set_handle, data_stack[i]);
     dsp = mark_index - 1;       /* drop everything from the mark up */
@@ -1320,7 +1332,7 @@ static void p_array_close(cell *cfa) {
     (void)cfa;
     int mark_index = dsp;
     while (mark_index > 0 && data_stack[mark_index - 1].tag != T_MARK) mark_index--;
-    if (mark_index == 0) { type_err("]"); return; }
+    if (mark_index == 0) { type_error("]"); return; }
     int num_elements = dsp - mark_index;
     int array_handle = object_new_array(num_elements);
     for (int i = 0; i < num_elements; i++)
@@ -1336,23 +1348,205 @@ static void p_cardinality(cell *cfa) {
     (void)cfa; Val collection = pop();
     if (collection.tag == T_SET || collection.tag == T_ARRAY || collection.tag == T_STRING)
         push(make_float((double)objects[collection.data]->len));
-    else type_err("cardinality");
+    else type_error("cardinality");
 }
 static void p_member(cell *cfa) {
     (void)cfa; Val value = pop(), set_value = pop();
-    if (set_value.tag != T_SET) { type_err("member?"); return; }
+    if (set_value.tag != T_SET) { type_error("member?"); return; }
     push(make_bool(set_member((int)set_value.data, value)));
 }
-static void p_at(cell *cfa) {
-    (void)cfa; Val index_value = pop(), array_value = pop();
-    if (array_value.tag != T_ARRAY || index_value.tag != T_FLOAT) {
-        type_err("at"); return;
+static void p_at_i(cell *cfa) {
+    (void)cfa; 
+   
+    Val index_value = pop();
+    if (index_value.tag != T_FLOAT) {
+        type_error("@i index"); 
+        return;
     }
-    Object *array = objects[array_value.data];
     int index = (int)unpack_float(index_value);
-    if (index < 0 || index >= array->len) { type_err("at: out of bounds"); return; }
-    push(array->items[index]);
+    
+    Val source_val = pop();
+    if (source_val.tag == T_ARRAY) {
+    	Object *array = objects[source_val.data];
+    	if (index < 0 || index >= array->len) { 
+    		type_error("@i: array index out of bounds"); 
+    		return; 
+    	}
+    
+    	push(array->items[index]);
+    } else if (source_val.tag == T_MATRIX) {
+    	Object *source = objects[source_val.data];
+    	if (index < 0 || index >= source->matrix.rows) { 
+    		type_error("@i: row index out of bounds"); 
+    		return; 
+    	}
+    	
+    	int num_columns = source->matrix.columns;
+    	int row_handle = object_new_matrix(1, num_columns);
+    	if (error_flag) return;
+    	
+    	Object *row = objects[row_handle];
+    	for (int j = 0; j < num_columns; j++)
+    		MAT(row, 0, j) = MAT(source, index, j);
+    		
+    	push(make_matrix(row_handle));
+    } else {
+    	type_error("@i: needs array or matrix");
+    }
 }
+
+static void p_at_j(cell *cfa) {
+    (void)cfa;
+
+    Val index_value = pop();
+    if (index_value.tag != T_FLOAT) {
+        type_error("@j index");
+        return;
+    }
+    int index = (int)unpack_float(index_value);
+
+    Val source_val = pop();
+    if (source_val.tag != T_MATRIX) {
+        type_error("@j: needs matrix");
+        return;
+    }
+
+    Object *source = objects[source_val.data];
+    if (index < 0 || index >= source->matrix.columns) {
+        type_error("@j: column index out of bounds");
+        return;
+    }
+
+    int num_rows = source->matrix.rows;
+    int col_handle = object_new_matrix(num_rows, 1);
+    if (error_flag) return;
+
+    Object *col = objects[col_handle];
+    for (int i = 0; i < num_rows; i++)
+    	MAT(col, i, 0) = MAT(source, i, index);
+
+    push(make_matrix(col_handle));
+}
+
+static void p_at_ij(cell *cfa) {
+    (void)cfa;
+
+    Val j_value = pop();
+    if (j_value.tag != T_FLOAT) {
+        type_error("@i,j column index");
+        return;
+    }
+    int j = (int)unpack_float(j_value);
+
+    Val i_value = pop();
+    if (i_value.tag != T_FLOAT) {
+        type_error("@i,j row index");
+        return;
+    }
+    int i = (int)unpack_float(i_value);
+
+    Val source_val = pop();
+    if (source_val.tag != T_MATRIX) {
+        type_error("@i,j: needs matrix");
+        return;
+    }
+
+    Object *source = objects[source_val.data];
+    if (i < 0 || i >= source->matrix.rows) {
+        type_error("@i,j: row index out of bounds");
+        return;
+    }
+    if (j < 0 || j >= source->matrix.columns) {
+        type_error("@i,j: column index out of bounds");
+        return;
+    }
+
+    push(make_float(MAT(source, i, j)));
+}
+
+static int dgemm_kernel(int transpose_a, int transpose_b,
+						double alpha,
+						int a_handle, int b_handle,
+						double beta, int c_handle) {
+	Object *A = objects[a_handle];
+	Object *B = objects[b_handle];
+	Object *C = objects[c_handle];
+
+	int op_a_rows = transpose_a ? A->matrix.columns : A->matrix.rows;
+	int op_a_cols = transpose_a ? A->matrix.rows    : A->matrix.columns;
+	int op_b_rows = transpose_b ? B->matrix.columns : B->matrix.rows;
+	int op_b_cols = transpose_b ? B->matrix.rows    : B->matrix.columns;
+
+	if (op_a_cols != op_b_rows) {
+		type_error("dgemm: inner dimensions must match");
+		return -1;
+	}
+
+	if (C->matrix.rows != op_a_rows || C->matrix.columns != op_b_cols) {
+		type_error("dgemm: C shape must match the product shape");
+		return -1;
+	}
+	
+	int m = op_a_rows;
+	int n = op_b_cols;
+	int k = op_a_cols;
+	
+	int matmult_handle = object_new_matrix(m, n);
+	if (error_flag) return -1;
+	Object *matmult = objects[matmult_handle];
+	
+	for (int i = 0; i < m; i++) {
+		for (int j = 0; j < n; j++) {
+			double sum = 0.0;
+			for (int p = 0; p < k; p++) {
+				double a_val = transpose_a ? MAT(A, p, i) : MAT(A, i, p);
+				double b_val = transpose_b ? MAT(B, j, p) : MAT(B, p, j);
+				sum += a_val * b_val;
+			}
+			MAT(matmult, i, j) = alpha * sum + beta * MAT(C, i, j);
+		}
+	}
+	
+	return matmult_handle;
+}
+
+/* Shared body for the four DGEMM variants. Pops the five operands in
+ * the stack-effect order ( alpha A B beta C -- result ), validates
+ * types, calls the kernel with the right transpose flags, pushes the
+ * resulting matrix. */
+static void p_dgemm_helper(int transpose_a, int transpose_b) {
+	Val c_val = pop();
+	Val beta_val = pop();
+	Val b_val = pop();
+	Val a_val = pop();
+	Val alpha_val = pop();
+
+	if (alpha_val.tag != T_FLOAT || beta_val.tag != T_FLOAT) {
+		type_error("dgemm: alpha and beta must be floats");
+		return;
+	}
+	if (a_val.tag != T_MATRIX || b_val.tag != T_MATRIX || c_val.tag != T_MATRIX) {
+		type_error("dgemm: A, B, C must be matrices");
+		return;
+	}
+
+	int matmult_handle = dgemm_kernel(transpose_a, transpose_b,
+	                                  unpack_float(alpha_val),
+	                                  (int)a_val.data, (int)b_val.data,
+	                                  unpack_float(beta_val),
+	                                  (int)c_val.data);
+	if (error_flag) return;
+	push(make_matrix(matmult_handle));
+}
+
+/* The four permuted variants. Each computes alpha * op_A(A) * op_B(B)
+ * + beta * C, where op_A and op_B are either identity or transpose,
+ * chosen by the n/t suffixes (first letter for A, second for B). */
+static void p_dgemm_nn(cell *cfa) { (void)cfa; p_dgemm_helper(0, 0); }
+static void p_dgemm_tn(cell *cfa) { (void)cfa; p_dgemm_helper(1, 0); }
+static void p_dgemm_nt(cell *cfa) { (void)cfa; p_dgemm_helper(0, 1); }
+static void p_dgemm_tt(cell *cfa) { (void)cfa; p_dgemm_helper(1, 1); }
+
 /* set: ( v1 v2 ... vN N -- set ) build a set from the top N stack items.
  * The count goes on top so the items can be pushed in their natural
  * left-to-right order: `1 2 3 4 3 set` consumes 2 3 4 and leaves 1
@@ -1363,10 +1557,10 @@ static void p_at(cell *cfa) {
 static void p_set(cell *cfa) {
     (void)cfa; 
     Val count_value = pop();
-    if (count_value.tag != T_FLOAT) { type_err("set"); return; }
+    if (count_value.tag != T_FLOAT) { type_error("set"); return; }
     
     int count = (int)unpack_float(count_value);
-    if (count < 0 || count > dsp) { type_err("set"); return; }
+    if (count < 0 || count > dsp) { type_error("set"); return; }
     
     int set_handle = object_new_set();
     if (error_flag) return;
@@ -1380,17 +1574,17 @@ static void p_set(cell *cfa) {
 
 static void p_union(cell *cfa) {
     (void)cfa; Val right = pop(), left = pop();
-    if (left.tag != T_SET || right.tag != T_SET) { type_err("union"); return; }
+    if (left.tag != T_SET || right.tag != T_SET) { type_error("union"); return; }
     push(make_set(set_union((int)left.data, (int)right.data)));
 }
 static void p_intersect(cell *cfa) {
     (void)cfa; Val right = pop(), left = pop();
-    if (left.tag != T_SET || right.tag != T_SET) { type_err("intersection"); return; }
+    if (left.tag != T_SET || right.tag != T_SET) { type_error("intersection"); return; }
     push(make_set(set_intersect((int)left.data, (int)right.data)));
 }
 static void p_difference(cell *cfa) {
     (void)cfa; Val right = pop(), left = pop();
-    if (left.tag != T_SET || right.tag != T_SET) { type_err("difference"); return; }
+    if (left.tag != T_SET || right.tag != T_SET) { type_error("difference"); return; }
     push(make_set(set_difference((int)left.data, (int)right.data)));
 }
 
@@ -1399,7 +1593,7 @@ static void p_difference(cell *cfa) {
  * operations: a word that takes a word as data. */
 static void p_execute(cell *cfa) {
     (void)cfa; Val value = pop();
-    if (value.tag != T_XT) { type_err("execute"); return; }
+    if (value.tag != T_XT) { type_error("execute"); return; }
     execute_cfa((int)value.data);
 }
 
@@ -1424,7 +1618,7 @@ static void p_execute(cell *cfa) {
 static void p_map(cell *cfa) {
     (void)cfa; Val xt = pop(), source_value = pop();
     if (xt.tag != T_XT || (source_value.tag != T_SET && source_value.tag != T_ARRAY)) {
-        type_err("map"); return;
+        type_error("map"); return;
     }
     Object *source = objects[source_value.data];
     int source_length = source->len;
@@ -1471,21 +1665,21 @@ static void p_map(cell *cfa) {
 static void p_mapn(cell *cfa) {
     (void)cfa;
     Val arity_value = pop();
-    if (arity_value.tag != T_FLOAT) { type_err("mapn"); return; }
+    if (arity_value.tag != T_FLOAT) { type_error("mapn"); return; }
     int arity = (int)unpack_float(arity_value);
-    if (arity < 1) { type_err("mapn"); return; }
+    if (arity < 1) { type_error("mapn"); return; }
     Val xt = pop();
-    if (xt.tag != T_XT)   { type_err("mapn"); return; }
-    if (arity > dsp)      { type_err("mapn"); return; }
+    if (xt.tag != T_XT)   { type_error("mapn"); return; }
+    if (arity > dsp)      { type_error("mapn"); return; }
 
     /* The N source arrays sit at data_stack[first_source .. dsp-1]. */
     int first_source = dsp - arity;
     int row_count = -1;
     for (int i = 0; i < arity; i++) {
-        if (data_stack[first_source + i].tag != T_ARRAY) { type_err("mapn"); return; }
+        if (data_stack[first_source + i].tag != T_ARRAY) { type_error("mapn"); return; }
         Object *source = objects[data_stack[first_source + i].data];
         if (row_count < 0) row_count = source->len;
-        else if (source->len != row_count) { type_err("mapn"); return; }
+        else if (source->len != row_count) { type_error("mapn"); return; }
     }
 
     int result_handle = object_new_array(row_count);
@@ -1502,7 +1696,7 @@ static void p_mapn(cell *cfa) {
         }
         execute_cfa((int)xt.data);
         if (error_flag) break;
-        if (dsp != dsp_before + 1) { type_err("mapn"); break; }
+        if (dsp != dsp_before + 1) { type_error("mapn"); break; }
         result->items[row] = pop();
     }
     gc_root_pop();
@@ -1545,7 +1739,7 @@ static void p_words(cell *cfa) {
  * and whitespace included. */
 static void p_see(cell *cfa) {
     (void)cfa; Val xt = pop();
-    if (xt.tag != T_XT) { type_err("see"); return; }
+    if (xt.tag != T_XT) { type_error("see"); return; }
     int target_cfa = (int)xt.data;
     /* Walk the chain to find the name for this CFA; if we don't find
      * one, the xt is an anonymous quotation. */
@@ -1739,7 +1933,7 @@ static char *next_token(void);
 static void p_tick(cell *cfa) {
     (void)cfa;
     char *token = next_token();
-    if (!token) { type_err("'"); return; }
+    if (!token) { type_error("'"); return; }
     int target_cfa = find(token);
     if (!target_cfa) { fail("%s", token); return; }
     Val value = make_xt(target_cfa);
@@ -1921,7 +2115,7 @@ static int interpolate(int template_handle) {
             if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
                 int stack_index = dsp - 1 - digit_value;
                 if (stack_index < 0) {
-                    type_err("string interpolation: stack too shallow");
+                    type_error("string interpolation: stack too shallow");
                     free(out_buffer);
                     return object_new_string("", 0);
                 }
@@ -2061,7 +2255,7 @@ static void run_outer(void) {
 static void p_load(cell *cfa) {
     (void)cfa;
     Val value = pop();
-    if (value.tag != T_STRING) { type_err("load"); return; }
+    if (value.tag != T_STRING) { type_error("load"); return; }
     gc_root_push(value);
     const char *filename = objects[value.data]->bytes;
 
@@ -2249,8 +2443,8 @@ static void p_gc(cell *cfa) {
 }
 
 static void p_clear(cell *cfa) {
-	(void)cfa; 
-	
+	(void)cfa;
+
 	dsp = 0;
 }
 
@@ -2399,7 +2593,7 @@ static void write_val_literal(FILE *file, Val value) {
 static void p_save(cell *cfa) {
     (void)cfa;
     Val value = pop();
-    if (value.tag != T_STRING) { type_err("save"); return; }
+    if (value.tag != T_STRING) { type_error("save"); return; }
     gc_root_push(value);
     const char *filename = objects[value.data]->bytes;
 
@@ -2468,14 +2662,14 @@ static void p_save(cell *cfa) {
 static int create_matrix() {
     Val right = pop(), left = pop();
     if (left.tag != T_FLOAT || right.tag != T_FLOAT) {
-        type_err("matrix dimensions");
+        type_error("matrix dimensions");
         return -1;
     }
     
     int num_rows = (int)(unpack_float(left));
     int num_columns = (int)(unpack_float(right));
     if (num_rows < 0 || num_columns < 0) {
-        type_err("matrix dimensions");
+        type_error("matrix dimensions");
         return -1;
     }
     
@@ -2491,6 +2685,29 @@ static void p_0_matrix(cell *cfa) {
 	push(make_matrix(matrix_handle));
 }
 
+static void p_diagonal_matrix(cell *cfa) {
+	(void)cfa;
+	
+	p_dup(NULL);
+	int diag_matrix_handle = create_matrix();
+	if (error_flag) return;
+	
+	Val diag_val = pop();
+	if (error_flag) return;
+	if (diag_val.tag != T_FLOAT) {
+		type_error("diagonal matrix scalar");
+		return;
+	}
+	
+	Object *diag_matrix = objects[diag_matrix_handle];
+	double diag_element = unpack_float(diag_val);
+	for (int i = 0; i < diag_matrix->matrix.rows; i++) {
+		MAT(diag_matrix, i, i) = diag_element;
+	}
+	
+	push(make_matrix(diag_matrix_handle));
+}
+
 static void p_matrix(cell *cfa) {
 	(void)cfa;
 	int i;
@@ -2501,7 +2718,7 @@ static void p_matrix(cell *cfa) {
 	Val array_val = pop();
 	if (error_flag) return;
 	if (array_val.tag != T_ARRAY) {
-		type_err("matrix needs array");
+		type_error("matrix needs array");
 		return;
 	}
 	
@@ -2509,13 +2726,13 @@ static void p_matrix(cell *cfa) {
 	Object *input_array = objects[array_val.data];
 	int num_elements = matrix->matrix.rows * matrix->matrix.columns;
 	if (input_array->len != num_elements) {
-		type_err("matrix array length");
+		type_error("matrix array length");
 		return;
 	}
 	
 	for (i = 0; i < num_elements; i++) {
 		if (input_array->items[i].tag != T_FLOAT) {
-			type_err("matrix array element");
+			type_error("matrix array element");
 			return;
 		}
 		matrix->matrix.elements[i] = unpack_float(input_array->items[i]);
@@ -2530,7 +2747,7 @@ static void p_dim(cell *cfa) {
 	Val matrix_val = pop();
 	if (error_flag) return;
 	if (matrix_val.tag != T_MATRIX) {
-		type_err("dim needs matrix");
+		type_error("dim needs matrix");
 		return;
 	}
 	
@@ -2545,7 +2762,7 @@ static void p_array(cell *cfa) {
 	Val size_val = pop();
 	if (error_flag) return;
 	if (size_val.tag != T_FLOAT) {
-		type_err("array length");
+		type_error("array length");
 		return;
 	}
 	
@@ -2562,6 +2779,27 @@ static void p_array(cell *cfa) {
 	}
 	
 	push(make_array(array_handle));
+}
+
+static void p_transpose(cell *cfa) {
+	(void)cfa;
+	
+	Val matrix_val = pop();
+	if (error_flag) return;
+	if (matrix_val.tag != T_MATRIX) {
+		type_error("transpose matrix");
+		return;
+	}
+	
+	Object *source = objects[matrix_val.data];
+	int target_handle = object_new_matrix(source->matrix.columns, source->matrix.rows);
+	if (error_flag) return;
+	Object *target = objects[target_handle];
+	for (int i = 0; i < source->matrix.rows; i++)
+		for (int j = 0; j < source->matrix.columns; j++)
+			MAT(target, j, i) = MAT(source, i, j);
+			
+	push(make_matrix(target_handle));
 }
 
 /* ---- main: bootstrap the dictionary, run the REPL -------------------- */
@@ -2612,7 +2850,6 @@ int main(void) {
     define_primitive("union",        p_union,       0);
     define_primitive("intersection", p_intersect,   0);
     define_primitive("difference",   p_difference,  0);
-    define_primitive("at",           p_at,          0);
     define_primitive("execute",      p_execute,     0);
     define_primitive("map",          p_map,         0);
     define_primitive("mapn",         p_mapn,        0);
@@ -2642,10 +2879,20 @@ int main(void) {
     define_primitive("[:",    p_qcolon, 1);
     define_primitive(":]",    p_qsemi,  1);
     
-    define_primitive("0-matrix",	p_0_matrix, 0);
-	define_primitive("matrix",		p_matrix, 0);
-	define_primitive("dim",			p_dim, 0);
-	define_primitive("array",		p_array, 0);
+    define_primitive("0-matrix",		p_0_matrix, 0);
+	define_primitive("matrix",			p_matrix, 0);
+	define_primitive("dim",				p_dim, 0);
+	define_primitive("array",			p_array, 0);
+	define_primitive("transpose",		p_transpose, 0);
+	define_primitive("diagonal-matrix",	p_diagonal_matrix, 0);
+	define_primitive("@i",           	p_at_i,  0);
+	define_primitive("@j",           	p_at_j,  0);
+	define_primitive("@i,j",         	p_at_ij, 0);
+
+	define_primitive("dgemm-nn",     	p_dgemm_nn, 0);
+	define_primitive("dgemm-tn",     	p_dgemm_tn, 0);
+	define_primitive("dgemm-nt",     	p_dgemm_nt, 0);
+	define_primitive("dgemm-tt",     	p_dgemm_tt, 0);
 	
 	/* load the standard library */
 	push(make_string(object_new_string("src/forth/lib.l4", 16)));

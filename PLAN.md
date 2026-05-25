@@ -1,7 +1,9 @@
 # logicforth — deferred work
 
-Items that have been discussed and shelved for later, not implementation tasks
-in flight. Each entry: what to build, why, rough scope.
+Tracks work that's planned, in progress, or recently shipped. Each entry
+says what's done, what's left, and the design decisions made along the way.
+
+---
 
 ## Numeric matrix type (2D)
 
@@ -9,74 +11,122 @@ A first-class fixed-size 2D matrix of `double`s, stored row-major in one
 contiguous block. Separate from nested arrays, which stay as the way to
 express type-free / ragged / heterogeneous compound data.
 
-**Why:** Nested arrays work for structural use but are wrong for numeric
-workloads — too many heap objects, two indirections per cell, no contiguous
-storage for vectorization. A `double *cells` matrix is half the memory per
-element, cache-friendly, and pairs cleanly with DGEMM-style algorithms
-(which are strictly 2D anyway).
+### Done
 
-**Sketch:**
-- New tag `T_MATRIX`, new `ObjectKind` `OBJECT_MATRIX`.
-- `Object` gains a third arm in the anonymous union (or a small struct of
-  `int rows; int cols; double *cells;`).
-- Constructor: `rows cols matrix` for a zero-filled matrix. Possibly also
-  a from-array builder.
-- Index/update: `m i j m@`, `value m i j m!`.
-- 2D-aware printer.
-- GC mark function (touch the Object only; no Vals inside).
-- Core operations (required, not optional). All dispatched on operand
-  types via the same mechanism `+`/`-`/`*` already use to switch
-  between float, string, and set behavior — no new word names:
-  - **Element-wise arithmetic**: `+`, `-`, `*`, `/` extended so that
-    matrix-matrix operands produce an element-wise matrix result. Shape
-    constraint: same-shape operands; mismatch is a type error.
-  - **Transpose**: a new word, e.g. `transpose`. Out-of-place copy
-    returning a new matrix. (Lazy/view-based transpose is a possible
-    future optimization but not needed for first cut.)
-  - **`*` for matrices means DGEMM**, not element-wise: the standard
-    convention in `numpy`-style libraries is to keep `*` element-wise
-    and use a separate `@` (or `matmul`) for general multiply. The
-    cleanest call here is probably to reserve `*` for element-wise (so
-    the scalar/matrix overload story stays simple) and give DGEMM its
-    own word — `dot` or `@` or `matmul`. Decide at implementation
-    time; the dispatch mechanism is the same either way.
-  - **Diag**: a single word `diag` that dispatches on operand shape.
-    On a 1×N or N×1 matrix (vector), builds a square matrix with the
-    operand on the main diagonal and zeros elsewhere. On an N×N matrix,
-    extracts the main diagonal as a vector. On other shapes, type error.
-  - **SVD**: singular value decomposition. ( M -- U S Vt ) — an m×n
-    matrix decomposes into U (m×m orthogonal), S (vector of length
-    min(m,n) with singular values in descending order), and Vt (n×n
-    orthogonal), satisfying M = U · diag(S) · Vt. Convention: return
-    S as a 1D vector, not a matrix; the caller can `diag` it if they
-    want a full Σ.
+- `T_MATRIX` tag in the Tag enum (slotted between `T_ARRAY` and `T_XT`).
+- `OBJECT_MATRIX` in `ObjectKind`.
+- `Object` union grew a third arm: `struct { int rows; int columns; double *elements; }`.
+- `object_new_matrix(rows, cols)` allocates a zero-filled matrix.
+- `make_matrix(handle)` Val constructor.
+- GC `mark_val` treats `T_MATRIX` as a heap-rooted value; sweep frees the
+  `elements` block.
+- 2D-aware printer: `<matrix RxC: first10 ... last3>` using the same
+  truncation rule as arrays (via a new `print_corners` helper).
+- Element-wise arithmetic via polymorphic dispatch in `p_add`, `p_sub`,
+  `p_mul`, `p_div`. Shape mismatch is a type error. Helper:
+  `matrix_scalar_op` walks both inputs and applies a `scalar_operator`
+  function pointer (`scalar_add`, `scalar_subtract`, `scalar_multiply`,
+  `scalar_divide`).
+- Constructor primitives:
+  - `rows cols 0-matrix` → zero-filled.
+  - `array rows cols matrix` → matrix initialized from a flat array of
+    floats (length must equal rows*cols).
+  - `m dim` → pushes rows then columns (two floats).
 
-    **No LAPACK available.** This has to be hand-rolled. Realistic
-    options, roughly ordered by code volume vs. quality:
+### Decision points settled
 
-    - **One-sided Jacobi** on `M`: rotate column pairs until off-
-      diagonals shrink below a tolerance. Code is short (~50–100 lines),
-      O(m·n²) per sweep with several sweeps to converge, numerically
-      robust. Best starting point — clear, correct, slow on large
-      matrices but plenty fast for the sizes a Forth toy will actually
-      see.
-    - **Two-sided Jacobi**: similar idea, rotates both sides. Marginally
-      more code, same complexity. No real reason to prefer it for our
-      use case.
-    - **Golub–Reinsch** (Householder bidiagonalization → implicit-QR on
-      bidiagonal). The textbook fast SVD. Standard but lengthy —
-      probably 300–500 lines done well, with subtle numerical edge cases
-      (shift selection, deflation). Worth it only when one-sided Jacobi
-      becomes a bottleneck on real workloads.
+- `*` is element-wise multiplication for matrices, **not** DGEMM. The
+  numpy-style split holds: `*` is element-wise, a separate word will be
+  used for DGEMM (`dot` / `@` / `matmul` — name still TBD when DGEMM is
+  written).
 
-    Start with one-sided Jacobi. Upgrade later if needed.
+### Open / not yet done
 
-No automatic conversion between matrices and nested arrays — if you want
-to do math on a nested array, you write a word to copy it.
+- **Transpose** — a new `transpose` word, out-of-place copy.
+- **Indexing** — `m i j m@`, `value m i j m!`. Currently no element
+  read/write.
+- **DGEMM** — general matrix-matrix multiply, hand-rolled triple loop.
+  Will be wired as a new word (not `*`).
+- **`diag`** — bidirectional, dispatches on shape: vector → square
+  diagonal matrix; matrix → diagonal vector.
+- **SVD** — start with **one-sided Jacobi** (~50–100 lines). Upgrade to
+  Golub–Reinsch later if one-sided Jacobi proves a bottleneck. No LAPACK
+  available, so hand-rolling is the only option.
+- **`val_cmp` for matrices** — currently falls through to `default:
+  return 0`, so any two matrices compare as equal regardless of contents.
+  Either implement proper element-wise comparison or make matrices a
+  non-orderable type (rejected in comparison primitives).
+- **`save` for matrices** — `write_val_literal` has no `T_MATRIX` case,
+  so saving a stack that contains a matrix silently emits the unsupported
+  fallback. Decide: serialize as `[ ... ] rows cols matrix` reconstruction,
+  or error.
+- **Tests** — no matrix tests yet. The arithmetic, constructor, and
+  `dim` paths are all untested in the suite.
 
-For higher-rank tensors (3D+), the standard pattern is "reshape/permute,
-call DGEMM, reshape back." That belongs in a separate future tool, not in
-the matrix type itself.
+### Style nits noted in code
+
+- The helper `matrix_scalar_op` is misnamed — it does element-wise
+  matrix-matrix ops, not matrix-scalar. Rename when more matrix code
+  lands.
+- The matrix section uses tab indentation while the rest of the file uses
+  4-space indentation. Normalize when convenient.
+
+---
+
+## Standard library mechanism (`src/forth/lib.l4`)
+
+A user-facing logicforth source file is loaded at startup, after all C
+primitives are registered. Lives at `src/forth/lib.l4`. The bootstrap
+code in `main` pushes the path and calls `p_load` directly before
+entering the REPL; any error halts startup.
+
+**Current contents:** `2dup` (with stack-effect comment), plus a stub
+sketch of `scalar+` for matrix scalar addition.
+
+**Implications:**
+
+- Anything defined in `lib.l4` is part of every session, no user action
+  required.
+- Library words appear in `words` and are dumped by `save` like any
+  other user definition (see the regression below).
+
+### Known regression: save+forget+load and lib.l4 interaction
+
+`tests/13_save_load.l4` currently fails. The cause: `save` dumps **all**
+user-defined words, including those from `lib.l4` (e.g. `2dup`). When the
+test does `forget double` followed by a reload, the saved file
+re-creates `2dup` first, shifting every subsequent CFA. The pre-forget
+`red` symbol value on the data stack still carries its original CFA,
+which now points at a *different* word in the rebuilt dictionary —
+hence the printed output shows `+` where `red` was expected.
+
+**Options to fix:**
+
+1. **Mark library defs and skip them in `save`** — add a header flag
+   bit so library words don't appear in dumps. Cleanest but adds a
+   header field semantic.
+2. **Re-resolve symbol/xt Vals through name on save**, then re-resolve
+   by name on load. Requires symbols/xts to remember their name, not
+   just their CFA — currently they remember CFA only.
+3. **Document the limitation** and update the test expectation.
+
+Option 2 is the right long-term answer because CFA values were never
+portable across save/load anyway; only word *names* are. Option 1 is a
+cheap patch.
+
+---
+
+## New primitives added (not previously in this plan)
+
+- **`gc`** — manually trigger a garbage collection sweep. Useful for
+  testing, profiling, and forcing reclamation before snapshotting.
+- **`clear`** — empty the data stack in one call. Equivalent to repeated
+  `drop` but constant-time.
+- **`array`** — `init-value length array` builds an array of `length`
+  filled with `init-value`. Complements the existing literal-collection
+  `[ ... ]` syntax.
+
+---
 
 ## TSV file I/O
 
@@ -105,6 +155,7 @@ that model (escaping tabs, fixing newlines in fields) is the user's
 problem before the file gets to logicforth, not the interpreter's.
 
 **Sketch:**
+
 - Reader: `"file.tsv" read-tsv` → array of arrays. Each row is an array
   of cells. Numeric-looking cells become `T_FLOAT`; everything else stays
   a string. Caller can post-process if they want stricter typing.
@@ -115,16 +166,21 @@ problem before the file gets to logicforth, not the interpreter's.
   Higher-level "give me a named-column table" can be a user-level word
   built on top.
 
+**Status:** not started.
+
 **Open questions for later:**
+
 - What about Vals that don't have a clean TSV representation — sets, arrays,
-  xt's? Probably emit a sentinel or error; don't silently lossy-encode.
+  xt's, matrices? Probably emit a sentinel or error; don't silently lossy-encode.
 - Should there be a streaming reader for large files, or always load whole?
   Whole-file is fine for the sizes we're likely to hit.
 
+---
+
 ## File organization (when to split logicforth.c)
 
-The source is currently one file (~2200 lines). Adding the matrix type
-will push it toward 3000+. Resist the urge to pre-split.
+The source is currently 2697 lines — single file, growing. Resist the
+urge to pre-split.
 
 **Why not split speculatively:**
 
@@ -143,26 +199,28 @@ across what's supposed to be a boundary.
 
 **Where the seam actually is:**
 
-The matrix *primitives* (`p_matrix_add`, `p_transpose`, `p_diag`, etc.)
+The matrix *primitives* (`p_add`'s matrix arm, `p_dim`, `p_matrix`, etc.)
 are tightly tied to the interpreter — pop, type-check, error, push.
 They belong with the other `p_*` functions. The thing that's actually
 self-contained is the *pure numeric kernels*: a `dgemm()` over plain
 `double *` arrays, a `transpose()` that takes (`double *src, double
 *dst, int rows, int cols`), an `svd_jacobi()` — none of which touch
-Val, the stack, or `error_flag`.
+Val, the stack, or `error_flag`. The current `scalar_add`/`scalar_multiply`
+helpers are a microscopic seed of this kernel layer.
 
-When matrix code exists and its shape is clear, factor out a
-**`linalg.c`** containing those pure kernels. The `p_*` wrappers stay
-in `logicforth.c`. This split:
+When DGEMM / transpose / SVD exist and their shape is clear, factor
+out a **`linalg.c`** containing those pure kernels. The `p_*` wrappers
+stay in `logicforth.c`. This split:
 
 - Keeps the interpreter's narrative intact.
 - Cleanly separates "language" from "math."
-- Makes the eventual BLAS/LAPACK substitution local to one file.
 - Doesn't require exposing language internals.
 
-Until the matrix code is written and its shape is visible, splitting
-is premature optimization based on speculation. File size by itself
+Until the bigger linear-algebra primitives exist and their shape is
+visible, splitting is premature optimization. File size by itself
 isn't a forcing function.
+
+---
 
 ## HIGHLY SPECULATIVE — convolutional nets on greyscale images
 
@@ -170,8 +228,8 @@ Notes on what it would take to train a CNN in logicforth, if we ever
 went there. Recording the gap honestly so the matrix-type plan above
 doesn't get read as "we're 90% of the way there."
 
-The linalg ops above (arithmetic, transpose, DGEMM, diag, SVD) are
-maybe 30% of what's needed. The other 70% breaks into four piles:
+The linalg ops planned above (transpose, DGEMM, diag, SVD) are maybe
+30% of what's needed. The other 70% breaks into four piles:
 
 **More math primitives.** Element-wise nonlinear functions, applied
 to whole matrices: `exp` (softmax, sigmoid), `log` (cross-entropy),
@@ -215,9 +273,10 @@ For a first CNN, hand-derived gradients per layer is the right move.
 parameter. Adam/RMSprop add a few moving averages.
 
 **Approximate ordering if we ever pursue this:**
+
 1. Math primitives (`exp`, `log`, `sqrt`, etc.) on matrices.
 2. Reductions (`sum`, `max`, `mean` with optional axis arg).
-3. `im2col` and `col2im` as pure-numeric kernels in linalg.c.
+3. `im2col` and `col2im` as pure-numeric kernels in `linalg.c`.
 4. Layer words: `conv-forward`, `conv-backward`, `relu`, `relu-grad`,
    `maxpool-forward`, `maxpool-backward`, `softmax`, `cross-entropy`,
    `fc-forward`, `fc-backward`.
@@ -250,10 +309,14 @@ Recommended order: build the matrix type, get a greyscale MNIST
 classifier working end-to-end, *then* decide whether color/tensor
 work is worth the investment.
 
+---
+
 ## Help system
 
 A `help` word that shows a one-line description of any word — colon
 definition, variable, symbol, or primitive.
+
+**Status:** not started.
 
 **Design:**
 

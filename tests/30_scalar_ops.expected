@@ -1,0 +1,7 @@
+logicforth
+<matrix 2x2:  11 12 13 14> ok
+<matrix 2x2:  5 15 25 35> ok
+<matrix 2x2:  3 6 9 12> ok
+<matrix 2x2:  1 2 3 4> ok
+<matrix 1x2:  1 2> ok
+<matrix 1x3:  0 0 0> ok
