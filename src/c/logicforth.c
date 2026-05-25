@@ -262,6 +262,7 @@ static Val make_mark(void)              { Val value; value.tag = T_MARK;   value
 #define MAXOBJS    65536      /* live string/set/array/matrix slots              */
 #define INBUFSZ    16384      /* max source bytes per single `:`…`;`      */
 #define SOURCEPOOL 1048576    /* total captured body-source storage (1 MB) */
+#define SYMBOLPOOL 32768      /* interned symbol names — never rolled back  */
 
 
 /* ---- universe of state ----------------------------------------------- */
@@ -292,6 +293,18 @@ static int  names_here = 0;
  * without any decompilation. */
 static char source_pool[SOURCEPOOL];
 static int  sources_here = 1;
+
+/* Interned symbol names. Unlike namepool and source_pool, this pool is
+ * NEVER rolled back by `forget` — symbol identity needs to survive
+ * dictionary churn so that a T_SYM value created before a forget still
+ * compares equal to a fresh `symbol foo` defined after.
+ *
+ * `intern_symbol(name)` returns the offset of an existing entry with
+ * the same bytes if one exists, otherwise appends and returns the new
+ * offset. Two `symbol foo` declarations therefore produce the same
+ * T_SYM payload. */
+static char symbol_pool[SYMBOLPOOL];
+static int  symbol_pool_here = 0;
 
 /* While compiling a colon definition, this holds the inbuf offset at
  * which the body source begins — set by `:` (p_colon) right after the
@@ -410,6 +423,9 @@ typedef struct {
  * have validated indices. */
 #define MAT(m, i, j) ((m)->matrix.elements[(i) * (m)->matrix.columns + (j)])
 
+#define MIN(a, b) ((a) < (b) ? (a) : (b))
+#define MAX(a, b) ((a) > (b) ? (a) : (b))
+
 static Object *objects[MAXOBJS];
 static int  n_objects = 0;
 
@@ -501,7 +517,7 @@ static int object_new_array(int num_elements) {
     obj->kind = OBJECT_ARRAY;
     obj->len = num_elements;
     obj->cap = num_elements;
-    obj->items = malloc(sizeof(Val) * (size_t)(num_elements > 0 ? num_elements : 1));
+    obj->items = malloc(sizeof(Val) * (size_t)MAX(num_elements, 1));
 
     objects[slot] = obj;
     return slot;
@@ -565,8 +581,7 @@ static int val_cmp(Val left, Val right) {
         case T_STRING: {
             Object *left_string  = objects[left.data];
             Object *right_string = objects[right.data];
-            int compare_length = left_string->len < right_string->len
-                               ? left_string->len : right_string->len;
+            int compare_length = MIN(left_string->len, right_string->len);
             int byte_diff = memcmp(left_string->bytes, right_string->bytes,
                                    (size_t)compare_length);
             if (byte_diff) return byte_diff;
@@ -576,8 +591,7 @@ static int val_cmp(Val left, Val right) {
         case T_SET: case T_ARRAY: {
             Object *left_collection  = objects[left.data];
             Object *right_collection = objects[right.data];
-            int compare_length = left_collection->len < right_collection->len
-                               ? left_collection->len : right_collection->len;
+            int compare_length = MIN(left_collection->len, right_collection->len);
             for (int i = 0; i < compare_length; i++) {
                 int element_cmp = val_cmp(left_collection->items[i],
                                           right_collection->items[i]);
@@ -755,7 +769,7 @@ static void print_corners(Object *matrix) {
 static void print_val(Val value) {
     switch (value.tag) {
         case T_FLOAT:   print_double(unpack_float(value)); break;
-        case T_SYM:     fputs(&namepool[NAMEIDX(value.data)], stdout); break;
+        case T_SYM:     fputs(&symbol_pool[value.data], stdout); break;
         case T_STRING:  fputs(objects[value.data]->bytes, stdout); break;
         case T_SET:     fputs("{ ", stdout); print_items(objects[value.data]); putchar('}'); break;
         case T_ARRAY:   fputs("[ ", stdout); print_items(objects[value.data]); putchar(']'); break;
@@ -819,15 +833,15 @@ static void docol(cell *cfa) {
     ip = cfa + 1;
 }
 
-/* dosym: handler for symbol-defining words. Running a symbol's CFA
- * pushes a T_SYM Val whose payload is the symbol's own CFA index — i.e.
- * the offset of `cfa` within the dict[] array. That index is the
- * symbol's identity: two references to the same defining word give
- * Vals with the same payload, and the name is recoverable later via
- * NAMEIDX(symbol.data). Symbols evaluate to themselves; this is how. */
+/* dosym: handler for symbol-defining words. The defining word's body
+ * holds a single cell: the symbol's offset in symbol_pool, stashed
+ * there by p_symbol at definition time. Running it just pushes a
+ * T_SYM Val whose payload is that offset. Two `symbol foo` declar-
+ * ations get the same offset (intern), so they're equal. The offset
+ * survives `forget` because symbol_pool is never rolled back. */
 static void dosym(cell *cfa) {
-    int cfa_index = (int)(cfa - dict);
-    push(make_sym(cfa_index));
+    int symbol_offset = (int)cfa[1];
+    push(make_sym(symbol_offset));
 }
 
 /* dovar: handler for variable-defining words. Running a variable's CFA
@@ -954,6 +968,25 @@ static int alloc_name(const char *name) {
     names_here += length;
 
     return name_offset;
+}
+
+/* Look up `name` in the symbol pool. If a matching entry exists, return
+ * its offset; otherwise append and return the new offset. Linear scan
+ * is fine — the pool is small and symbol churn is low. */
+static int intern_symbol(const char *name) {
+    for (int i = 0; i < symbol_pool_here; ) {
+        if (strcmp(&symbol_pool[i], name) == 0) return i;
+        i += (int)strlen(&symbol_pool[i]) + 1;
+    }
+    int length = (int)strlen(name) + 1;
+    if (symbol_pool_here + length > SYMBOLPOOL) {
+        fail("symbol pool full");
+        return 0;
+    }
+    int offset = symbol_pool_here;
+    memcpy(&symbol_pool[symbol_pool_here], name, (size_t)length);
+    symbol_pool_here += length;
+    return offset;
 }
 static int create_header(const char *name, int immediate) {
     if (here + 4 >= MEMSZ) { fail("dictionary full"); return 0; }
@@ -1468,6 +1501,8 @@ static int dgemm_kernel(int transpose_a, int transpose_b,
 						double alpha,
 						int a_handle, int b_handle,
 						double beta, int c_handle) {
+	int i, j, k, m, n, p;
+	
 	Object *A = objects[a_handle];
 	Object *B = objects[b_handle];
 	Object *C = objects[c_handle];
@@ -1487,23 +1522,44 @@ static int dgemm_kernel(int transpose_a, int transpose_b,
 		return -1;
 	}
 	
-	int m = op_a_rows;
-	int n = op_b_cols;
-	int k = op_a_cols;
+	m = op_a_rows;
+	n = op_b_cols;
+	k = op_a_cols;
 	
 	int matmult_handle = object_new_matrix(m, n);
 	if (error_flag) return -1;
 	Object *matmult = objects[matmult_handle];
 	
-	for (int i = 0; i < m; i++) {
-		for (int j = 0; j < n; j++) {
-			double sum = 0.0;
-			for (int p = 0; p < k; p++) {
-				double a_val = transpose_a ? MAT(A, p, i) : MAT(A, i, p);
-				double b_val = transpose_b ? MAT(B, j, p) : MAT(B, p, j);
-				sum += a_val * b_val;
+	if (!transpose_a && !transpose_b) {
+		double * restrict out_elements = matmult->matrix.elements;
+		const double * restrict a_elements = A->matrix.elements;
+		const double * restrict b_elements = B->matrix.elements;
+		const double * restrict c_elements = C->matrix.elements;
+		
+		for (i = 0; i < m; i++) 
+			for (j = 0; j < n; j++)
+				out_elements[i * n + j] = beta * c_elements[i * n + j];
+				
+		for (i = 0; i < m; i++) {
+			for (p = 0; p < k; p++) {
+				double a_val = alpha * a_elements[i * k + p];
+				const double *b_row = &b_elements[p * n];
+				double *out_row = &out_elements[i * n];
+				for (j = 0; j < n; j++)
+					out_row[j] += a_val * b_row[j];
 			}
-			MAT(matmult, i, j) = alpha * sum + beta * MAT(C, i, j);
+		}
+	} else {
+		for (i = 0; i < m; i++) {
+			for (j = 0; j < n; j++) {
+				double sum = 0.0;
+				for (p = 0; p < k; p++) {
+					double a_val = transpose_a ? MAT(A, p, i) : MAT(A, i, p);
+					double b_val = transpose_b ? MAT(B, j, p) : MAT(B, p, j);
+					sum += a_val * b_val;
+				}
+				MAT(matmult, i, j) = alpha * sum + beta * MAT(C, i, j);
+			}
 		}
 	}
 	
@@ -1546,6 +1602,76 @@ static void p_dgemm_nn(cell *cfa) { (void)cfa; p_dgemm_helper(0, 0); }
 static void p_dgemm_tn(cell *cfa) { (void)cfa; p_dgemm_helper(1, 0); }
 static void p_dgemm_nt(cell *cfa) { (void)cfa; p_dgemm_helper(0, 1); }
 static void p_dgemm_tt(cell *cfa) { (void)cfa; p_dgemm_helper(1, 1); }
+
+static void p_sum(cell *cfa) {
+	(void)cfa;
+	
+	Val source_val = pop();
+	if (source_val.tag != T_MATRIX) {
+		type_error("sum: not a matrix");
+		return;
+	}
+	
+	Object *source = objects[source_val.data];
+	double sum = 0;
+	int num_elements = source->matrix.rows * source->matrix.columns;
+	for (int i = 0; i < num_elements; i++)
+		sum += source->matrix.elements[i];
+
+	push(make_float(sum));
+}
+
+/* ( m -- Nx1 )  sum of each row */
+static void p_row_sums(cell *cfa) {
+	(void)cfa;
+
+	Val source_val = pop();
+	if (source_val.tag != T_MATRIX) {
+		type_error("row-sums: not a matrix");
+		return;
+	}
+
+	Object *source = objects[source_val.data];
+	int rows = source->matrix.rows;
+	int cols = source->matrix.columns;
+	int target_handle = object_new_matrix(rows, 1);
+	if (error_flag) return;
+	Object *target = objects[target_handle];
+
+	for (int i = 0; i < rows; i++) {
+		double row_sum = 0.0;
+		for (int j = 0; j < cols; j++) row_sum += MAT(source, i, j);
+		MAT(target, i, 0) = row_sum;
+	}
+
+	push(make_matrix(target_handle));
+}
+
+/* ( m -- 1xN )  sum of each column. Loop order is i,j (not j,i) so
+ * reads of `source` and writes to `target` are both stride-1 through
+ * memory; the target row is zero-initialized by object_new_matrix. */
+static void p_column_sums(cell *cfa) {
+	(void)cfa;
+
+	Val source_val = pop();
+	if (source_val.tag != T_MATRIX) {
+		type_error("column-sums: not a matrix");
+		return;
+	}
+
+	Object *source = objects[source_val.data];
+	int rows = source->matrix.rows;
+	int cols = source->matrix.columns;
+	int target_handle = object_new_matrix(1, cols);
+	if (error_flag) return;
+	Object *target = objects[target_handle];
+
+	for (int i = 0; i < rows; i++)
+		for (int j = 0; j < cols; j++)
+			MAT(target, 0, j) += MAT(source, i, j);
+
+	push(make_matrix(target_handle));
+}
 
 /* set: ( v1 v2 ... vN N -- set ) build a set from the top N stack items.
  * The count goes on top so the items can be pushed in their natural
@@ -1622,13 +1748,13 @@ static void p_map(cell *cfa) {
     }
     Object *source = objects[source_value.data];
     int source_length = source->len;
-    Val *snapshot = malloc(sizeof(Val) * (size_t)(source_length > 0 ? source_length : 1));
+    Val *snapshot = malloc(sizeof(Val) * (size_t)MAX(source_length, 1));
     memcpy(snapshot, source->items, sizeof(Val) * (size_t)source_length);
     gc_root_push(source_value);
     int result_handle = object_new_array(source_length);
     if (error_flag) { gc_root_pop(); free(snapshot); return; }
     Object *result = objects[result_handle];
-    memset(result->items, 0, sizeof(Val) * (size_t)(source_length > 0 ? source_length : 1));
+    memset(result->items, 0, sizeof(Val) * (size_t)MAX(source_length, 1));
     gc_root_push(make_array(result_handle));
     for (int i = 0; i < source_length && !error_flag; i++) {
         push(snapshot[i]);
@@ -1685,7 +1811,7 @@ static void p_mapn(cell *cfa) {
     int result_handle = object_new_array(row_count);
     if (error_flag) return;
     Object *result = objects[result_handle];
-    memset(result->items, 0, sizeof(Val) * (size_t)(row_count > 0 ? row_count : 1));
+    memset(result->items, 0, sizeof(Val) * (size_t)MAX(row_count, 1));
     gc_root_push(make_array(result_handle));
 
     for (int row = 0; row < row_count && !error_flag; row++) {
@@ -1970,6 +2096,8 @@ static void p_symbol(cell *cfa) {
     if (!token) { fail("symbol needs a name"); return; }
     create_header(token, 0);
     emit((cell)&dosym);
+    /* Body cell: the symbol's interned offset. dosym reads cfa[1]. */
+    emit((cell)intern_symbol(token));
 }
 
 /* forget: discard the named word and everything defined after it. We
@@ -2133,12 +2261,11 @@ static int interpolate(int template_handle) {
                     }
                     case T_SYM:
                         rendered_length = snprintf(rendered, sizeof(rendered),
-                                                   "%s", &namepool[NAMEIDX(value.data)]);
+                                                   "%s", &symbol_pool[value.data]);
                         break;
                     case T_STRING: {
                         Object *string_obj = objects[value.data];
-                        int copy_length = string_obj->len < (int)sizeof(rendered) - 1
-                                        ? string_obj->len : (int)sizeof(rendered) - 1;
+                        int copy_length = MIN(string_obj->len, (int)sizeof(rendered) - 1);
                         memcpy(rendered, string_obj->bytes, (size_t)copy_length);
                         rendered[copy_length] = 0;
                         rendered_length = copy_length;
@@ -2563,7 +2690,7 @@ static void write_val_literal(FILE *file, Val value) {
             break;
         }
         case T_SYM: {
-            fputs(&namepool[NAMEIDX(value.data)], file);
+            fputs(&symbol_pool[value.data], file);
             break;
         }
         case T_XT: {
@@ -2706,6 +2833,70 @@ static void p_diagonal_matrix(cell *cfa) {
 	}
 	
 	push(make_matrix(diag_matrix_handle));
+}
+
+static void p_diagonal(cell *cfa) {
+	(void)cfa;
+	
+	Val source_val = pop();
+	if (source_val.tag != T_MATRIX) {
+		type_error("diagonal requires matrix");
+		return;
+	}
+
+	Object *source = objects[source_val.data];
+	int diag_len = MIN(source->matrix.rows, source->matrix.columns);
+	int diag_handle = object_new_matrix(1, diag_len);
+	if (error_flag) return;
+	Object *diagonal = objects[diag_handle];
+	
+	for (int i = 0; i < diag_len; i++)
+		diagonal->matrix.elements[i] = MAT(source, i, i);
+
+	push(make_matrix(diag_handle));
+}
+
+/* reshape: ( matrix rows cols -- new-matrix )
+ * Same row-major elements, new dimensions. rows*cols must equal the
+ * source's total element count. */
+static void p_reshape(cell *cfa) {
+	(void)cfa;
+
+	Val cols_val = pop();
+	if (cols_val.tag != T_FLOAT) {
+		type_error("reshape cols");
+		return;
+	}
+	int new_cols = (int)unpack_float(cols_val);
+
+	Val rows_val = pop();
+	if (rows_val.tag != T_FLOAT) {
+		type_error("reshape rows");
+		return;
+	}
+	int new_rows = (int)unpack_float(rows_val);
+
+	Val source_val = pop();
+	if (source_val.tag != T_MATRIX) {
+		type_error("reshape needs matrix");
+		return;
+	}
+
+	Object *source = objects[source_val.data];
+	int total = source->matrix.rows * source->matrix.columns;
+	if (new_rows * new_cols != total) {
+		type_error("reshape: element count must match");
+		return;
+	}
+
+	int target_handle = object_new_matrix(new_rows, new_cols);
+	if (error_flag) return;
+	Object *target = objects[target_handle];
+
+	memcpy(target->matrix.elements, source->matrix.elements,
+	       (size_t)total * sizeof(double));
+
+	push(make_matrix(target_handle));
 }
 
 static void p_matrix(cell *cfa) {
@@ -2888,6 +3079,11 @@ int main(void) {
 	define_primitive("@i",           	p_at_i,  0);
 	define_primitive("@j",           	p_at_j,  0);
 	define_primitive("@i,j",         	p_at_ij, 0);
+	define_primitive("diagonal",		p_diagonal, 0);
+	define_primitive("reshape",			p_reshape, 0);
+	define_primitive("sum",				p_sum, 0);
+	define_primitive("row-sums",		p_row_sums, 0);
+	define_primitive("column-sums",		p_column_sums, 0);
 
 	define_primitive("dgemm-nn",     	p_dgemm_nn, 0);
 	define_primitive("dgemm-tn",     	p_dgemm_tn, 0);
