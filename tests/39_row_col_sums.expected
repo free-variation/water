@@ -1,0 +1,36 @@
+logicforth
+ok
+<matrix 2x1:  6 15> ok
+<matrix 3x1:  3 7 11> ok
+<matrix 2x1:  3 7> ok
+<matrix 1x1:  7> ok
+<matrix 3x1:  1 1 1> ok
+<matrix 4x1:  0 0 0 0> ok
+<matrix 1x1:  6> ok
+ok
+ok
+<matrix 1x3:  5 7 9> ok
+<matrix 1x2:  9 12> ok
+<matrix 1x2:  4 6> ok
+<matrix 1x1:  7> ok
+<matrix 1x3:  1 1 1> ok
+<matrix 1x4:  0 0 0 0> ok
+<matrix 1x1:  6> ok
+ok
+ok
+<matrix 2x1:  6 15> 
+<matrix 1x2:  6 15> 
+ok
+ok
+ok
+2.5 ok
+2 ok
+7 ok
+0 ok
+0.333333 ok
+5 ok
+ok
+ok
+? type error in row-sums: not a matrix
+? type error in column-sums: not a matrix
+? type error in column-sums: not a matrix

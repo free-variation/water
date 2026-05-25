@@ -16,5 +16,21 @@
 : scalar* scalar-op * ;
 : scalar/ scalar-op / ;
 
+( s -- sxs-identity-matrix )
 : identity-matrix 1 swap diagonal-matrix ;
+
+( m -- 1xN-matrix )
+: flatten dup dim * 1 swap reshape ;
+
+( m -- num-elements )
+: num-elements dim * ;
+
+( m -- mean )
+: mean dup num-elements swap sum swap / ;
+
+( m -- row-means )  \ each row's sum divided by the number of columns
+: row-means dup dim swap drop swap row-sums swap scalar/ ;
+
+( m -- column-means )  \ each column's sum divided by the number of rows
+: column-means dup dim drop swap column-sums swap scalar/ ;
  

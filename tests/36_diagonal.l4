@@ -1,0 +1,9 @@
+[ 1 2 3 4 ] 2 2 matrix diagonal .
+[ 1 2 3 4 5 6 7 8 9 ] 3 3 matrix diagonal .
+[ 1 2 3 4 5 6 ] 2 3 matrix diagonal .
+[ 1 2 3 4 5 6 ] 3 2 matrix diagonal .
+[ 7 ] 1 1 matrix diagonal .
+3 identity-matrix diagonal .
+5 4 0-matrix diagonal .
+[ 1 2 3 4 ] 2 2 matrix transpose diagonal .
+3 3 diagonal-matrix diagonal .
