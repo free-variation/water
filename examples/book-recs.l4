@@ -1,0 +1,125 @@
+\ book-recs.l4 — top-N book recommendations via truncated SVD.
+\ exercises: SQLite, dicts, matrix+SVD, sort, throw/catch,
+\ regex, time, stdin and env, quotations.
+
+\ NOTE: this is a forward-looking example. Several primitives used
+\ here are planned (see PLAN.md) and not yet implemented: dicts,
+\ throw/catch, regex match, stdin read-line, env, sql/sql-matrix,
+\ svd-truncated, sort-with, time now, and a few helpers.
+
+\ ---- env-driven config ----
+
+: env-default ( var default -- s )
+    swap env dup length 0 = if drop else nip then ;
+
+: db-path     "BOOKDB_PATH" "./books.db" env-default ;
+: k-factors   "K_FACTORS"   "16"          env-default parse-int ;
+: top-n       "TOP_N"       "10"          env-default parse-int ;
+
+\ ---- small utilities ----
+
+: pair    ( a b -- arr )   2 array tuck 1 swap @i! tuck 0 swap @i! ;
+: empty?  ( a -- bool )    length 0 = ;
+: die     ( s -- )         throw ;
+
+\ ---- DB plumbing ----
+
+variable db
+: connect    db-path db-open db ! ;
+: disconnect db @ db-close ;
+: run        ( q -- rows )    db @ swap sql ;
+: run-matrix ( q -- matrix )  db @ swap sql-matrix ;
+
+\ ---- load ratings into a dense matrix ----
+
+variable n-users   variable n-books
+
+: load-shape
+    "SELECT MAX(user_id)+1, MAX(book_id)+1 FROM ratings" run-matrix
+    dup 0 0 @i,j n-users !
+        0 1 @i,j n-books ! ;
+
+: scatter ( m triple -- m )
+    dup 0 at  swap dup 1 at  swap 2 at  @i,j! ;
+
+: load-ratings ( -- M )
+    load-shape
+    n-users @ n-books @ 0-matrix
+    "SELECT user_id, book_id, rating FROM ratings" run
+    [: scatter :] each ;
+
+\ ---- titles lookup ----
+
+: load-titles ( -- dict )
+    {} "SELECT id, title FROM books" run
+    [: dup 0 at swap 1 at rot ! :] each ;
+
+\ ---- factor model ----
+
+variable U   variable S   variable Vt
+
+: factorize
+    load-ratings k-factors svd-truncated
+    Vt ! S ! U ! ;
+
+: predict-row ( u -- scores )           \ U[u,:] · diag(S) · Vt
+    U @ swap row
+    S @ diagonal-matrix *
+    Vt @ * ;
+
+: seen-books ( u -- idxs )
+    "SELECT book_id FROM ratings WHERE user_id = {0}" interp run
+    [: 0 at :] map ;
+
+: mask ( scores idxs -- scores )
+    [: 0 swap @j! :] each ;
+
+: rank ( scores -- pairs )              \ (book-idx, score), desc
+    dup length 0 [: dup over @i pair :] times
+    swap drop
+    [: 1 at swap 1 at > :] sort-with ;
+
+: pick ( pairs -- idxs )
+    top-n take [: 0 at :] map ;
+
+: recommend-for ( u -- idxs )
+    dup predict-row
+    over seen-books mask
+    rank pick
+    nip ;
+
+\ ---- output ----
+
+variable titles
+
+: show-title ( idx -- )   titles @ swap at . ;
+: show-list  ( idxs -- )  [: show-title cr :] each ;
+
+\ ---- input ----
+
+: read-user ( -- u )
+    "Enter user id: " . read-line
+    "^[[:digit:]]+$" match dup empty?
+    if "invalid user id" die then
+    1 at parse-int ;
+
+\ ---- top level ----
+
+: banner ( u -- u )
+    "BookRec: top-" . top-n . " for user " . dup . cr ;
+
+: report-time ( t0 -- )
+    now swap - "elapsed " . . " s" . cr ;
+
+: main
+    [
+        now
+        connect factorize
+        load-titles titles !
+        read-user banner
+        recommend-for show-list
+        disconnect
+        report-time
+    ] catch dup 0 = if drop else "fatal: " . . cr then ;
+
+main

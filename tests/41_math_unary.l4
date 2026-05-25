@@ -1,0 +1,35 @@
+\ ---- scalar cases ----
+5 abs .
+-5 abs .
+0 abs .
+-3.14 abs .
+4 sqrt .
+9 sqrt .
+0 sqrt .
+1 sqrt .
+0 exp .
+1 exp .
+1 log .
+0 sin .
+0 cos .
+0 tan .
+0 tanh .
+
+\ ---- matrix cases (element-wise) ----
+[ -1 2 -3 4 ] 2 2 matrix abs .
+[ 1 4 9 16 ] 2 2 matrix sqrt .
+[ 0 1 ] 1 2 matrix exp .
+[ 1 ] 1 1 matrix log .
+[ 0 0 0 0 ] 2 2 matrix sin .
+[ 0 0 0 0 ] 2 2 matrix cos .
+[ 0 0 ] 1 2 matrix tanh .
+
+\ ---- compositions ----
+4 sqrt 2 = .
+1 exp log .
+[ 1 4 9 16 25 ] 1 5 matrix sqrt .
+
+\ ---- failures ----
+"x" abs
+"x" sqrt
+{ 1 2 } exp

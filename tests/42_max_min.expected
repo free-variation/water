@@ -1,0 +1,67 @@
+logicforth
+ok
+9 ok
+1 ok
+-1 ok
+-9 ok
+7 ok
+7 ok
+0 ok
+0 ok
+1 ok
+0 ok
+ok
+ok
+<matrix 3x1>
+          4
+          9
+          8
+ok
+<matrix 3x1>
+          1
+          2
+          3
+ok
+<matrix 3x1>
+         -1
+          0
+          1
+ok
+<matrix 3x1>
+         -1
+          0
+          1
+ok
+ok
+ok
+<matrix 1x4>
+          5          9          5          8
+ok
+<matrix 1x4>
+          3          1          2          1
+ok
+<matrix 1x3>
+          1          2          3
+ok
+<matrix 1x3>
+          1          2          3
+ok
+ok
+ok
+<matrix 3x1>
+          4
+          9
+          8
+
+<matrix 1x3>
+          4          9          8
+
+ok
+ok
+ok
+-1 ok
+ok
+ok
+? type error in max
+? type error in min
+? type error in row-maxes

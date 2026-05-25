@@ -1,19 +1,55 @@
 logicforth
 ok
-<matrix 3x2:  1 2 3 4 5 6> ok
-<matrix 6x1:  1 2 3 4 5 6> ok
-<matrix 1x6:  1 2 3 4 5 6> ok
-<matrix 1x1:  7> ok
-<matrix 2x4:  1 2 3 4 5 6 7 8> ok
-<matrix 8x1:  1 2 3 4 5 6 7 8> ok
+<matrix 3x2>
+          1          2
+          3          4
+          5          6
+ok
+<matrix 6x1>
+          1
+          2
+          3
+          4
+          5
+          6
+ok
+<matrix 1x6>
+          1          2          3          4          5          6
+ok
+<matrix 1x1>
+          7
+ok
+<matrix 2x4>
+          1          2          3          4
+          5          6          7          8
+ok
+<matrix 8x1>
+          1
+          2
+          3
+          4
+          5
+          6
+          7
+          8
 ok
 ok
-<matrix 1x6:  1 2 3 4 5 6> ok
-<matrix 1x3:  1 2 3> ok
-<matrix 1x9:  1 0 0 0 1 0 0 0 1> ok
+ok
+<matrix 1x6>
+          1          2          3          4          5          6
+ok
+<matrix 1x3>
+          1          2          3
+ok
+<matrix 1x9>
+          1          0          0          0          1        ...          0          0          1
 ok
 ok
-<matrix 2x3:  1 2 3 4 5 6> ok
+ok
+<matrix 2x3>
+          1          2          3
+          4          5          6
+ok
 ok
 ok
 ? type error in reshape: element count must match
