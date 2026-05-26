@@ -61,62 +61,6 @@ Six straightforward primitives mirroring `sum`/`row-sums`/`column-sums`.
   element-wise via the `elements` array. Same pattern as the existing
   `T_STRING` and `T_SET`/`T_ARRAY` cases.
 
-- **Binary image format** — replace the current text-based `save` /
-  `load` entirely with a single binary file. The text form was nice
-  for inspection, but it can't handle large matrices (the
-  `[ e1 ... eN ] rows cols matrix` reload would exceed `DSTACK`
-  almost immediately) and is roughly 2× larger than raw doubles for
-  numeric content. REPL history is handled by `rlwrap` externally, so
-  the "readable transcript" virtue of text save isn't load-bearing.
-
-  **Format sketch.** One file, sectioned:
-
-  - Magic + version header.
-  - Sizes for each section: user-added bytes/cells in `dict[]`,
-    `namepool`, `source_pool`, `symbol_pool`; `dsp`; object count.
-  - Raw bytes of each pool (just the user-added slice — primitives
-    get recreated by `main()` at startup, so we don't save them).
-  - User-added `dict[]` slice, with code-field cells (CFAs) replaced
-    by a 1-byte handler tag (`docol` / `dovar` / `dosym`) — the only
-    handler kinds a user-area CFA can hold, since users can't define
-    new C primitives.
-  - Data stack: `dsp` Vals, raw bytes.
-  - Object table: for each live object referenced from the dict or
-    data stack, its `kind` + dimensions + raw element bytes. Matrices
-    just dump their `double *elements` block verbatim.
-
-  **Load sequence:**
-
-  1. Verify magic/version.
-  2. Append the user-area pool slices to the live state (the
-     pre-existing primitives stay in place, then user state appends).
-  3. Walk the user dict and fix up each handler tag back into the
-     live function-pointer for `docol`/`dovar`/`dosym`.
-  4. Read objects, register them in `objects[]`, return new handles.
-     Rewrite Val payloads on the dict and data stack to use the new
-     handles (since on-disk handles aren't valid in the running
-     process). This is the one piece of relocation work needed.
-  5. Restore `dsp`.
-
-  **Why this works:**
-
-  - Body cells already use index-threaded references (CFA indices,
-    not pointers), so they round-trip as-is — no fixup needed beyond
-    the handler tags.
-  - Primitive CFAs are deterministic (same registration order in
-    `main`), so absolute indices in the saved user dict stay valid.
-  - Matrix elements survive byte-for-byte. No DSTACK pressure on
-    reload. No parsing.
-
-  **Trade-offs accepted:**
-
-  - Not portable across architectures with different endianness.
-    Same machine in / same machine out is the only supported case.
-  - Not human-readable. `rlwrap` covers REPL transcript needs.
-  - No graceful upgrade across logicforth versions — embed a version
-    in the header and refuse to load mismatches. Matches what every
-    binary image format does.
-
 ### Beyond core
 
 Deferred until there's a specific use case:
@@ -293,20 +237,68 @@ than `rand()`).
 - `seed seed!` — set the RNG seed for reproducibility.
 - `array shuffle` — permute in place (Fisher-Yates).
 
-### Error handling — `throw` / `catch`
+### Delimited continuations — `reset` / `shift`
 
-Forth-style. Lets user code recover from errors instead of always
-aborting back to the REPL.
+The unifying control primitive. Throw/catch, coroutines, backtracking,
+and cooperative scheduling all derive from it. Building throw/catch
+alone and trying to extend it later doesn't work — the architectural
+commitments are different — so we commit to the bigger thing up front.
 
-- `[ ... ] catch` — runs the quotation; pushes `0` on clean completion,
-  or the thrown error code on failure. Data-stack state is restored to
-  the pre-`catch` height regardless.
-- `code throw` — abort with the given integer code. Unwinds to the
-  nearest enclosing `catch`, or to the REPL if none.
-- The interpreter's existing `error_flag` becomes the throw mechanism;
-  primitives that currently set the flag effectively throw a built-in
-  code. User-supplied codes are integers; richer info can be encoded
-  via symbols if needed later.
+**Surface:**
+
+```
+[: ... :] reset                   \ install a delimiter, run the xt
+[: ( k -- ... ) ... :] shift      \ capture continuation up to nearest
+                                  \ reset, pass it as k to the inner xt
+```
+
+`k` is a first-class `Val` (new tag `T_CONT`). Invoke it any time,
+anywhere, any number of times via `execute`. Multi-shot: each
+invocation deep-copies the saved state, so the same `k` can be called
+repeatedly with consistent semantics.
+
+**Derived forms (in `lib.l4` or a follow-up):**
+
+```forth
+: throw  ( v -- )            [: drop :] shift ;
+: catch  ( xt -- ... 0 | v ) [: execute 0 :] reset ;
+
+\ Coroutine: yield captures, hands to scheduler; resume calls the saved k.
+\ amb/fail for backtracking. Same shape.
+```
+
+**Implementation sketch:**
+
+- New tag `T_CONT`, new object kind `OBJECT_CONT` carrying a deep-copied
+  data-stack slice, a deep-copied return-stack slice, and a saved `ip`.
+- A C-side `reset_frames[]` stack of `(saved_dsp, saved_rsp, ...)`
+  records — `reset` pushes a frame, runs the xt, pops on return.
+- `shift` walks back to the innermost reset frame, slices the stacks
+  between that frame's saved positions and the current positions,
+  packages them into an `OBJECT_CONT`, truncates the live stacks back
+  to the reset's saved positions, then calls the inner xt with the new
+  `T_CONT` on the data stack.
+- `execute` on a `T_CONT`: push the current `ip` as a normal return
+  frame (so the continuation returns to *us* when it completes), then
+  copy the captured data slice and return slice back onto the live
+  stacks, then set `ip` to the saved resume point.
+- GC marks `T_CONT` objects and walks their captured Vals (data slice
+  and return slice both contain Vals that may root heap objects).
+
+**Cost:** ~300 lines C plus a careful think-through. Worth it because
+the lib-level derived forms then cost ~10 lines each, and we never
+need to build throw/catch / coroutines / etc. as separate machinery.
+
+**Out of scope for the first cut:**
+
+- Multi-shot semantics when the captured continuation refers to state
+  that's been `forget`-ten in between invocations. Define as undefined
+  behavior; document.
+- Continuations that survive across `save-image` / `load-image`.
+  The captured `ip` is an offset into `dict[]`, which is portable
+  across image save/load, but continuations referring to forgot-and-
+  redefined words can land in a different place. First cut: don't
+  save continuations into images (treat T_CONT as session-only).
 
 ### Sort
 
@@ -564,162 +556,441 @@ optimization. File size by itself isn't a forcing function.
 
 ---
 
-## HIGHLY SPECULATIVE — convolutional nets on greyscale images
+## Unification + nondeterminism (microKanren-flavored, on continuations)
 
-Notes on what it would take to train a CNN in logicforth, if we ever
-went there. Recording the gap honestly so the matrix-type plan
-doesn't get read as "we're 90% of the way there."
+Once delimited continuations are in, a logic-programming layer becomes
+tractable: logic variables, unification, `amb` / `fail` for choice and
+backtracking. The flavor is closer to Prolog than to the faithful
+microKanren stream-of-states model — the substitution is implicit
+state (logic-var bindings + a trail), and search is driven by
+continuations rather than by mapping goals over streams. The name
+"logicforth" finally earns its second half.
 
-The linalg ops have come together — DGEMM, transpose, diag,
-reductions are all in. They're maybe 40% of what a CNN needs. The
-remaining 60%:
+**New machinery in C:**
 
-**More math primitives.** Already listed up under the matrix work —
-`exp`, `log`, `sqrt`, `abs`. CNN-relevant uses: `exp` (softmax,
-sigmoid), `log` (cross-entropy), `sqrt` (RMS-style optimizers,
-normalization). All cheap to implement.
+- `T_LOGIC_VAR` tag, `OBJECT_LOGIC_VAR` kind carrying a name (for
+  display) and a current binding (Val, or `T_NONE` if unbound).
+- `make_logic_var()` / `object_new_logic_var()`.
+- A trail stack of `(var, prior_binding)` pairs. Every binding made by
+  `unify` is recorded. Marks on the trail let `fail` undo to a known
+  point without disturbing earlier bindings.
 
-**Max/min reductions.** Already listed up under the matrix work.
-Softmax needs `max`. Pooling needs windowed `max` and `mean`.
+**Primitives:**
 
-**The nasty bits: im2col / col2im.** Convolution itself isn't basic
-linalg, but it can be reduced to DGEMM via *im2col*: unfold each
-image patch into a column, stack the columns, multiply by the
-flattened kernel. The forward pass is then one DGEMM. The backward
-pass needs the inverse (*col2im*) — scatter-add the unfolded gradient
-back onto the image's pixel positions, accumulating where patches
-overlap. Tedious in practice — striding, padding, channel handling,
-edge cases — and they're the main thing that makes "implement a
-CNN" more than a weekend of work.
+- `lvar ( -- v )` — fresh logic variable.
+- `deref ( v -- val )` — follow binding chain; returns `v` itself if
+  unbound, else the bound value (recursively dereffed).
+- `unify ( a b -- bool )` — try to unify; returns truthy on success
+  (with any new bindings trailed), falsy on failure. Atomic equality
+  via existing `val_cmp`. Arrays and hashmaps unify structurally
+  (same length / same key set, then element-wise). Sets, matrices,
+  xt's, continuations only unify by identity.
+- `trail-mark ( -- m )` and `trail-undo ( m -- )` — for managing the
+  trail across choice points. `fail` ultimately calls `trail-undo`.
 
-**Autograd or hand-derived gradients.** The real obstacle. CNN
-training needs the gradient of every forward op composed via the
-chain rule. Two paths:
+**Library words (lib.l4, built on `reset` / `shift` / `resume`):**
 
-- **Hand-derived backward per layer.** Tractable for a small fixed
-  set of layer types (conv, pool, fc, relu, softmax). No autograd
-  infrastructure, just a paired forward+backward word for each
-  layer. Cheap to write, painful to extend.
-- **Autograd tape.** Build a graph during forward, traverse it
-  backward. This is a real subsystem — node types, gradient
-  accumulation, possibly some form of garbage collection on the
-  tape. Worth the effort only if many model variants get explored.
+- `amb ( xt1 xt2 -- ... )` — try xt1; if it `fail`s, try xt2. Captures
+  a continuation at the choice point; `fail` resumes it.
+- `fail ( -- )` — undo bindings back to the last `amb`, invoke its
+  saved continuation to try the next branch. If there's no enclosing
+  `amb`, surfaces as an interpreter error.
+- `once ( xt -- )` — run xt; if it succeeds, commit (no backtracking
+  through it). Just sugar over `reset` + early exit.
+- `fresh ( xt -- ... )` — introduces a fresh logic variable and passes
+  it to xt. Sugar; `lvar swap execute` works without it.
+- `run ( xt -- result )` — convenience for "execute a goal and collect
+  the first successful state's bindings."
 
-For a first CNN, hand-derived gradients per layer is the right move.
+**Sample:**
 
-**Optimizer.** Tiny once gradients exist. SGD is one line per
-parameter. Adam/RMSprop add a few moving averages.
+```forth
+\ Sample query: pattern-match a list.
+lvar lvar lvar                       \ X Y Z
+[ 1 2 3 ] [ X Y Z ] unify  drop      \ success
+X deref . Y deref . Z deref .        \ 1 2 3
 
-**Approximate ordering if we ever pursue this:**
+\ Choice point:
+lvar  [: 1 over unify drop :]
+      [: 2 over unify drop :] amb
+      deref .                         \ 1 (first branch wins)
+\ later, fail to get 2
+```
 
-1. Element-wise math primitives (`exp`, `log`, `sqrt`, `abs`).
-2. Max/min reductions.
-3. `im2col` and `col2im` as pure-numeric kernels in `linalg.c`.
-4. Layer words: `conv-forward`, `conv-backward`, `relu`, `relu-grad`,
-   `maxpool-forward`, `maxpool-backward`, `softmax`, `cross-entropy`,
-   `fc-forward`, `fc-backward`.
-5. An SGD update word.
-6. A training loop in user-level logicforth.
+**Cost:** ~140 lines in C (logic var, trail, unify primitive) plus
+~30 lines of `lib.l4` for `amb` / `fail` / `once` / `fresh` / `run`.
+Assumes continuations are working.
 
-**Why greyscale only.** A greyscale image is 2D (H × W) and fits the
-matrix type directly. A color image is 3D (H × W × C), and a batch
-of color images is 4D (N × H × W × C). Those don't fit a 2D type —
-they'd require either:
+**Subtleties:**
 
-- Faking it by flattening (H × (W·C) or similar), which makes every
-  per-channel operation an awkward indexing exercise; or
-- Adding a real N-dimensional tensor type with shape + strides.
+- **Occur check skipped** — `X = [X]` makes a cyclic term and may
+  loop on later use. Match Prolog's default; document the gotcha.
+- **Variable keys in hashmaps not allowed** — same restriction Prolog
+  has for compound functors. Only values can be logic variables.
+- **Trail interaction with `forget`** — logic vars are objects and
+  survive `forget` like any other heap value, but their names (kept
+  as `namepool` offsets) might be invalidated. Either copy the name
+  into the object's own storage, or stop displaying names after
+  `forget` runs.
+- **Image save/load** — logic-var objects serialize like any other;
+  the trail is session state and doesn't need to persist.
 
-The latter is the right answer if CNNs become a serious goal, but
-it's a different and bigger project than the 2D matrix. The PyTorch
-/ NumPy / TensorFlow story is "tensors are the primary type,
-matrices are just rank-2 tensors" — and they pay for that with
-substantial machinery (broadcasting, strided views, advanced
-indexing, einsum-style operations).
+**Out of scope for the first cut:**
 
-Recommended order: get a greyscale MNIST classifier working
-end-to-end on the existing matrix type, *then* decide whether
-color/tensor work is worth the investment.
+- Constraint logic programming (CLP) — finite domains, intervals.
+- Tabling / memoization of goals.
+- Negation as failure (`\+`). Easy to add as a library word; defer.
+- Cut (`!`). Sugar over committing-once patterns; defer.
 
 ---
 
-## `export` — text dump of user-defined vocabulary
+## Cooperative green threads (single OS thread)
 
-A complement to the binary image, not a replacement. Writes the user
-portion of the dictionary out as a `.l4` source file that can be
-re-loaded with the existing `load`. Round-trips definitions, not
-runtime state.
-
-**Use case:** experiment in the REPL, then promote the result into a
-file under version control. Without an exporter, the user has to
-reconstruct the file by hand from `see` calls — friction enough to
-discourage exploration.
+Lightweight tasks within a single OS thread, scheduled cooperatively
+via the existing continuation machinery. Useful for interleaved I/O-
+bound work — multiple network requests, multiple SQLite queries,
+REPL-driven simulations — without OS-thread overhead and without any
+synchronization concerns (the single thread serializes everything).
 
 **API:**
 
 ```
-"mywork.l4" export
+xt spawn          ( -- )           \ schedule xt as a green task
+yield             ( -- )           \ pause this task; scheduler picks next
+run-scheduler     ( -- )           \ drive the queue until empty
 ```
 
-**What gets emitted, in dictionary order:**
+**Implementation:**
 
-- Colon def: `: name <body source> ;` — body comes straight from
-  `source_pool` via the header's `SRCIDX` field. Already there for
-  `see`, just re-used.
-- Variable: `variable name`. Current value is *not* exported — for
-  scalars we could emit `42 name !`, but for matrices / arrays / sets
-  the value can't round-trip through text in any sane way, so leave
-  every variable un-initialized to keep the rule simple.
-- Symbol: `symbol name`.
+- A scheduler queue: a per-process array of `Val`s of tag `T_CONT`,
+  each representing a paused task.
+- `spawn` captures a continuation that will execute the given xt and
+  pushes it onto the queue.
+- `yield` is `shift` under the hood: captures the current task's
+  continuation, pushes it onto the queue, then `resume`s the next
+  task in the queue.
+- `run-scheduler` drives the queue: dequeue, resume, repeat until
+  empty.
 
-**What's deliberately excluded:**
+**Cost:** ~50 lines on top of `reset` / `shift` / `resume`. Composes
+naturally with the existing continuation machinery.
 
-- Variable values, the data stack, any runtime state. Those are what
-  the binary image is for.
-- `forget`-ten definitions. The exporter walks the live dict chain.
+**Limitations:**
 
-**Cost:** ~30 lines. No interpreter changes beyond the new primitive
-— body source is already captured for `see`.
+- No parallelism. CPU-bound tasks starve siblings until they `yield`.
+- Blocking syscalls (read, sleep) block the entire scheduler.
+- Useful for I/O-bound concurrency, useless for compute-bound.
+
+**Composes with the OS-thread story below.** When path B exists, each
+OS thread has its own green-thread scheduler. Mailboxes work the same
+way whether the sender and receiver are green tasks in the same
+thread (local mailbox access, no mutex needed) or in different OS
+threads (mutex + deep-copy across).
 
 ---
 
-## `reload` — re-run loaded files
+## Interpreter refactor — `Interpreter *interp` everywhere
 
-Track every `.l4` file loaded during a session and add a `reload` word
-that re-loads them all in order. Useful during iterative development:
-edit the file in another window, type `reload` in the REPL, see the
-new definitions.
+A standalone architectural change: bundle the file-scope state into a
+struct, thread it through every function as a parameter. Independent
+of concurrency, but a prerequisite for path B below — and good
+architecture regardless of whether path B ever happens.
 
-**Mechanism:**
+**Why:**
 
-- A small fixed-size array `loaded_files[]` of filename indices into
-  `namepool` (or a dedicated string pool). Order = first-load order.
-- `load` appends to `loaded_files[]` if the filename isn't already
-  present; otherwise leaves the list unchanged (so `reload` order
-  stays stable across re-loads of the same file).
-- `lib.l4` is auto-loaded at startup the same as today and gets
-  recorded first, so `reload` re-runs it before anything else.
-- `reload`: iterate `loaded_files[]` in order, calling the existing
-  load path on each.
+- **Embeddability.** Multiple interpreter instances in the same OS
+  thread. Sandbox untrusted code in a fresh instance; give each test
+  its own clean instance; embed the language inside another program.
+- **No TLS shortcuts.** `_Thread_local` works but is uneven across
+  toolchains, has init-order issues, can't be used in some contexts.
+  Explicit `Interpreter *` works everywhere C works.
+- **Clarity.** "The interpreter" stops being implicit (a pile of
+  file-scope statics) and becomes a concrete thing with a defined
+  boundary. Easier to reason about lifetimes, easier to inspect in a
+  debugger, easier to extend.
+- **Lua model.** `lua_State *L` is what makes Lua so easy to embed.
+  Same idea here.
 
-**Open questions:**
+**What changes:**
 
-- Should `reload` clear the dictionary back to its post-startup state
-  first, then replay? Otherwise re-running a file just appends
-  duplicate definitions and overrides via the most-recent-wins lookup.
-  Cleanest is: `reload` calls something like `forget-user` to truncate
-  back to the boot snapshot, then replays. Needs `initial_here` /
-  `initial_names_here` / `initial_sources_here` / `initial_symbol_pool_here`
-  snapshots taken at the end of primitive registration (same snapshots
-  the binary image format would want).
-- What about files loaded from inside other files? Recorded too, in
-  their actual load order? Probably yes — record every distinct
-  filename `load` sees, regardless of who called it.
-- Path handling: store filenames as the user gave them (relative
-  paths resolve against CWD at reload time, same as the original
-  load). Don't try to canonicalize.
+```c
+typedef struct Interpreter {
+    cell dict[MEMSZ];
+    int  here, latest_cfa;
+    char namepool[NAMEPOOL];
+    int  names_here;
+    Val  data_stack[DSTACK];
+    int  dsp;
+    Val  return_stack[RSTACK];
+    int  rsp;
+    cell *ip;
+    int  running, error_flag, compiling;
+    char inbuf[INBUFSZ];
+    int  inbuf_len, inbuf_pos, need_more;
+    Object *objects[MAXOBJS];
+    int  n_objects;
+    Val  gc_roots[GC_ROOTS_MAX];
+    int  n_gc_roots;
+    char source_pool[SOURCEPOOL];
+    int  sources_here;
+    char symbol_pool[SYMBOLPOOL];
+    int  symbol_pool_here;
+    int  compiling_src_start;
+    int  initial_here, initial_latest_cfa,
+         initial_names_here, initial_sources_here,
+         initial_symbol_pool_here;
+    int  lib_end_latest_cfa;
+    char *loaded_files[MAX_LOADED_FILES];
+    int  n_loaded_files, load_depth;
+    cell trampoline[2];
+    int  exit_cfa, stop_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa;
+} Interpreter;
+```
 
-**Cost:** ~30 lines plus the boot-snapshot scaffold.
+Every function that touches state takes `Interpreter *interp`. The
+`cfa_handler` typedef changes:
+
+```c
+typedef void (*cfa_handler)(Interpreter *interp, cell *cfa);
+```
+
+Header-access macros (`LINK`, `FLAGS`, `NAMEIDX`, `SRCIDX`, `IS_IMM`)
+get rewritten to take `interp` or operate on a known `interp` in
+scope. Same for `POP` and any other macros that touch globals.
+
+**Cost:** ~2000 line touches, almost entirely mechanical. Most
+changes are `dsp` → `interp->dsp` style. No new logic. No new tests
+needed; existing tests should pass byte-for-byte once it builds.
+Probably a day or two of focused work. Could be scripted in large
+part.
+
+**Out of scope for this refactor specifically:**
+
+- Threading. The refactor produces a *thread-unsafe* interpreter
+  struct — only one OS thread should run on it at a time, but
+  multiple Interpreter instances can coexist in the same thread.
+  Threading is path B below, layered on top.
+
+---
+
+## OS-thread parallelism via isolated interpreters + mailboxes (path B)
+
+Real multi-core parallelism. Multiple OS threads, each owning its own
+`Interpreter` instance. No shared mutable state. Communication strictly
+via per-thread mailboxes; sending deep-copies the value across the
+boundary.
+
+The Erlang actor model.
+
+**Predicated on the Interpreter refactor above.** That's the gate.
+Without it, this devolves into TLS hacks. With it, threading is a
+small follow-on.
+
+**New primitives:**
+
+- `xt spawn-thread ( -- thread-id )` — fork a fresh `Interpreter`,
+  bootstrap it (register primitives, load lib.l4), run xt in it as
+  the body, return a handle (`T_THREAD`) for the resulting thread.
+- `thread-id join ( -- )` — wait for the thread to finish.
+- `thread-id message send ( -- )` — enqueue the message in the
+  target thread's mailbox. Non-blocking (mailbox is unbounded).
+- `receive ( -- message )` — pull the oldest message from this
+  thread's mailbox; block if the mailbox is empty.
+- `xt receive-match ( -- message )` — pull the first message
+  satisfying `xt` (an `( msg -- bool )` predicate); leaves non-
+  matching messages in the mailbox for later. Erlang's "selective
+  receive."
+- `self ( -- thread-id )` — this thread's own ID. Pass it around so
+  others can reach back.
+
+**Cross-thread value semantics:**
+
+Values that travel through mailboxes get deep-copied into the
+receiver's `objects[]`:
+
+- `T_FLOAT`, `T_SYM` (bytes; re-interned in receiver), `T_THREAD`:
+  bit-for-bit.
+- `T_STRING`, `T_ARRAY`, `T_SET`, `T_MATRIX`, `T_DICT`: deep copy.
+- `T_XT`, `T_ADDR`, `T_CONT`: *not transmissible* — they reference
+  interpreter-specific dict positions / rstack contents. Sending one
+  is a type error. Same restriction Erlang has on local PIDs and
+  function references.
+
+**Mailbox storage.** Each `Interpreter` has its own mailbox: a queue
+of Vals plus a mutex + condvar pair. No separate registry — addresses
+are thread IDs (handles from `spawn-thread`), which directly index
+into the live-thread table.
+
+**Cost:**
+
+- Mailbox + send + receive + receive-match: ~80 lines (mutex/condvar
+  dance, queue management, predicate matching for the selective
+  variant).
+- `spawn-thread` / `join` / `self`: ~80 lines (pthread wrappers,
+  fresh-instance bootstrap, ID assignment).
+- Deep-copy on send: ~100 lines, one case per object kind.
+- Symbol-pool: per-thread (each thread interns its own; on send,
+  symbols travel as their byte names and get re-interned). Simpler
+  than shared with a lock.
+- Output coordination: wrap stdout writes in a single shared mutex,
+  or have a dedicated "output thread" that serializes. Easy either
+  way.
+
+Total: ~350 lines, assuming the refactor is done.
+
+**Composes with green threads (path A):** each OS thread has its own
+green-thread scheduler. Sends from one green task to another in the
+same OS thread go through the local mailbox (the mailbox is just
+this thread's `Interpreter`); sends across OS threads take the
+mutex + deep-copy path. The send/receive surface is the same either
+way.
+
+**What you get:**
+
+- True multi-core parallelism.
+- Zero locks in user code; data races impossible by construction.
+- GC stays simple — per-thread.
+- One thread crashing doesn't take down the others.
+
+**What you don't get:**
+
+- Shared mutable state. Build a "service thread" that owns the state
+  and others reach it by `self` + `send` + `receive`. Exactly the
+  actor pattern.
+- Preemption within a thread (path A's limitation carries over).
+- Sharing large objects by reference. Sending a 1GB matrix copies it.
+- Bounded flow control. Mailboxes are unbounded by default. If a
+  producer outpaces a consumer, the consumer's mailbox grows
+  unboundedly. Erlang has the same characteristic and has lived with
+  it; a `receive` that backs off when the mailbox is large is the
+  user-level workaround.
+
+**Build order:**
+
+1. Finish continuations.
+2. Path A — green threads (~50 lines).
+3. Interpreter refactor (~2000 line touches, no new behavior).
+4. Path B — spawn-thread + mailboxes (~350 lines).
+
+Steps 1–3 each stand alone. Step 4 lights up parallelism.
+
+---
+
+## Functional primitives
+
+`map` and `mapn` are already in. Adding the rest of the standard
+higher-order toolkit. Most are short library definitions in `lib.l4`;
+a couple of hot ones get C primitives for speed on large arrays.
+
+**C primitives (perf-critical):**
+
+- **`filter`** — `arr [: pred :] filter` → array of elements matching
+  the predicate. Done in C so it walks the source array once and
+  allocates the result with the right size after a counting pass.
+  ~30 lines.
+- **`reduce`** — `arr initial [: ( acc elt -- acc ) :] reduce` → folded
+  result. Left fold. Done in C to avoid xt-call overhead on every
+  element. ~25 lines.
+
+**lib.l4 definitions (built atop map / filter / reduce / each):**
+
+- **`find`** — `arr [: pred :] find` → first matching element, or a
+  sentinel (probably `T_NONE`). Short-circuits via `shift` once we
+  have continuations.
+- **`any?`** — `arr [: pred :] any?` → boolean float (-1 / 0).
+- **`all?`** — `arr [: pred :] all?` → boolean float.
+- **`range`** — `n range` → `[ 0 1 … n-1 ]`. Two-arg form
+  `start end range` → `[ start … end-1 ]`. Sequence constructor;
+  head of most pipelines.
+- **`take`** — `arr n take` → first n elements.
+- **`drop`** — `arr n drop` → skip first n.
+- **`reverse`** — reverse an array.
+- **`concat`** — `a b concat` → joined array. (Sets and strings
+  already concatenate via `+`.)
+- **`sort-by`** — `arr [: ( elt -- key ) :] sort-by` → sorted by
+  extracted key. Cleaner than `sort-with` for the common case of
+  "sort by some field."
+- **`flat-map`** — `arr [: ( elt -- arr ) :] flat-map` → map then
+  concatenate. Monadic bind for arrays.
+- **`distinct`** — remove duplicates while preserving order. (Sets
+  already dedupe but lose order.)
+
+**Predicated on dicts being in:**
+
+- **`group-by`** — `arr [: ( elt -- key ) :] group-by` → hashmap from
+  key to array of elements with that key.
+- **`partition`** — `arr [: pred :] partition` → two arrays, matches
+  and non-matches.
+
+**Deliberately not adding** (composable in one line of user code):
+
+- `count` — `[: pred :] filter length`.
+- `min-by` / `max-by` — `reduce` with comparison.
+- `sum` / `product` — `0 [: + :] reduce` etc.
+- `for-each` — already covered by `each`.
+
+**Cost:**
+
+- C: `filter` + `reduce` → ~55 lines.
+- `lib.l4`: ~10 short definitions, ~80 lines total.
+- `group-by` and `partition` wait on dicts.
+
+Net: small. Most of the value is in committing to consistent
+stack-effect conventions across the family.
+
+---
+
+## REPL prompt — stack depth + compressed TOS
+
+The current REPL prints `ok` (or nothing on continuation lines). Useful
+but uninformative. A small upgrade: show the data-stack depth and a
+one-glance summary of the top of stack, so the user can see at a
+glance whether they've forgotten something.
+
+**Proposed format:**
+
+```
+<N|tos> ok
+```
+
+Where `N` is `dsp` and `tos` is a *highly compressed* one-token
+representation of the top value. Examples:
+
+```
+<0> ok                       \ empty stack
+<1|42> ok                    \ one float, top is 42
+<2|"hello"> ok               \ two items, top is a string
+<3|M2x3> ok                  \ top is a 2×3 matrix
+<4|{5}> ok                   \ top is a set of 5 elements
+<2|[3]> ok                   \ top is a 3-element array
+<1|red> ok                   \ top is the symbol red
+<1|'square> ok               \ top is the xt for `square`
+<2|@127> ok                  \ top is a dict address (variable cell)
+<1|k> ok                     \ top is a captured continuation
+```
+
+**One-token rules:**
+
+- `T_FLOAT` — print the number with the same `%.6g` / int-shortcut
+  rules `print_val` uses, truncated to ~10 chars.
+- `T_STRING` — `"…"` with the bytes truncated to ~10 chars; ellipsis
+  if longer.
+- `T_SYM` — bare name.
+- `T_SET` — `{N}` where N is cardinality.
+- `T_ARRAY` — `[N]` where N is length.
+- `T_MATRIX` — `MRxC` (e.g., `M2x3`).
+- `T_XT` — `'name` if the xt resolves to a named word; `'?` if
+  anonymous.
+- `T_ADDR` — `@idx`.
+- `T_CONT` — `k`.
+- `T_MARK` / `T_NONE` — shouldn't show at REPL; print `?` if seen.
+
+The whole prompt fragment caps at ~20 chars so it doesn't crowd out
+the user's next line.
+
+**Cost:** ~30 lines. A `print_tos_compact()` helper that switches on
+tag and writes to stdout, plus a small modification to the REPL loop
+to emit `<N|tos>` before `ok`.
 
 ---
 

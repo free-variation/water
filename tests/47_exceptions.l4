@@ -1,0 +1,69 @@
+\ Exceptions on the shift-with primitive: throw / catch / try-catch.
+\ catch returns (result 0) on success or (err 1) on throw. No arity
+\ restriction — the unwind cleanly bypasses any cells after `execute`
+\ in catch's body.
+
+\ -- 1: catch direct, success -> result + 0
+[: 7 :] catch . . cr                                  \ 0 7
+
+\ -- 2: catch direct, throw -> err + 1
+[: 99 throw :] catch . . cr                           \ 1 99
+
+\ -- 3: try-catch success — result surfaces, handler not run
+[: 42 :] [: drop "should not run" . cr :] try-catch . cr        \ 42
+
+\ -- 4: try-catch throw — handler runs with err
+[: 99 throw :] [: "caught " . . cr :] try-catch       \ caught 99
+
+\ -- 5: nested try-catch, inner catches its own throw
+[: [: 10 throw :] [: 100 + :] try-catch :] [: drop "outer" . cr :] try-catch
+. cr                                                  \ 110
+
+\ -- 6: nested, throw escapes inner (inner xt didn't throw), outer catches
+[: [: 7 :] [: drop "inner" . cr :] try-catch drop 88 throw :]
+[: "outer " . . cr :] try-catch                       \ outer 88
+
+\ -- 7: throw from deep call chain
+: inner-throw 50 throw ;
+: middle-call inner-throw ;
+: outer-call middle-call ;
+[: outer-call :] [: "caught " . . cr :] try-catch     \ caught 50
+
+\ -- 8: re-throw from handler — outer catches what inner re-threw
+[: [: 5 throw :] [: 10 + throw :] try-catch :] [: "outer got " . . cr :] try-catch
+                                                       \ outer got 15
+
+\ -- 9: arity-0 success works cleanly (no extra cells after catch)
+[: :] [: drop "should not run" . cr :] try-catch .s cr   \ <0>
+
+\ -- 10: arity-2 success — both results surface
+[: 1 2 :] [: drop "should not run" . cr :] try-catch . . cr   \ 2 1
+
+\ -- 11: throw of a string (non-numeric)
+[: "boom" throw :] [: "got " . . cr :] try-catch              \ got boom
+
+\ -- 12: throw of a symbol
+symbol :oops
+[: :oops throw :] [: "got " . . cr :] try-catch               \ got :oops
+
+\ -- 13: error-xt itself throws — re-throws to outer catch
+[: [: 5 throw :] [: 2 * throw :] try-catch :]
+[: "outer got " . . cr :] try-catch                            \ outer got 10
+
+\ -- 14: deeply nested try-catch (3 levels), throw caught at innermost
+[: [: [: 1 throw :] [: 10 + :] try-catch :] [: 100 + :] try-catch :]
+[: 1000 + :] try-catch . cr                                    \ 11
+
+\ -- 15: deeply nested, innermost catches the throw
+[: [: [: 7 throw :] [: drop "L2" . cr :] try-catch :]
+   [: drop "L1" . cr :] try-catch :]
+[: "L0 got " . . cr :] try-catch                              \ L2
+
+\ -- 15b: deeply nested, inner xt throws after inner-most try-catch returned
+[: [: [: 7 :] [: drop "L2" . cr :] try-catch drop
+       77 throw :]
+   [: drop "L1 inner-xt threw" . cr :] try-catch :]
+[: "L0 got " . . cr :] try-catch                              \ L1 inner-xt threw
+
+\ -- 16: throw at top-level (no catch) — surfaces as interpreter error
+42 throw

@@ -4,6 +4,19 @@
 ( a b -- a b a b )
 : 2dup over over ;
 
+( a b -- b )
+: nip swap drop ;
+
+\ Execeptions
+: throw ( exc -- ) [: drop 1 :] shift-with ;
+: catch ( xt -- result 0 | exc 1 ) reset execute 0 ;
+
+: try-catch ( normal-xt error-xt -- ... )
+	>side                    \ stash error-xt on the side stack
+	catch
+	if   side> execute       \ throw: pop handler, run with err on stack
+	else side-drop           \ success: discard saved handler, results stay
+	then ;
 
 \ matrix words
 
@@ -11,8 +24,7 @@
 ( m scalar -- m broadcast-scalar )
 : scalar-op
 	over dim * array
-	over dim matrix
-;
+	over dim matrix ;
 
 : scalar+ scalar-op + ;
 : scalar- scalar-op - ;

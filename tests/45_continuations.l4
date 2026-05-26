@@ -1,0 +1,33 @@
+\ Delimited continuations: reset / shift / resume.
+\ Exercises the mark-on-rstack design across several patterns.
+
+\ -- 1: basic resume of "2 *" with arg 5 -> 10
+: shifter shift ;
+: ex1 reset 99 shifter 2 * ;
+ex1 swap drop 5 swap resume . cr
+
+\ -- 2: drop k, no resume -> 99 (the pre-shift value, since shift unwinds
+\        out of ex1 without running 2*)
+ex1 drop . cr
+
+\ -- 3: multi-shot, two resumes of the same k
+ex1 swap drop
+dup 3 swap resume . cr
+    4 swap resume . cr
+
+\ -- 4: pre-shift value preserved on stack after unwind
+: ex2 reset 100 shifter ;
+ex2 drop . cr
+
+\ -- 5: multi-step captured slice "1 + 2 *", arg 3 -> (3+1)*2 = 8
+: ex3 reset 0 shifter 1 + 2 * ;
+ex3 swap drop 3 swap resume . cr
+
+\ -- 6: nested resets, inner shift only escapes inner
+: shifter-drop shift drop ;
+: inner-body reset 1 shifter-drop 2 + ;
+: ex4 reset 100 inner-body 1000 + ;
+ex4 .s cr
+
+\ -- 7: shift outside reset is a clean error
+shift

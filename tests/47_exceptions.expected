@@ -1,0 +1,83 @@
+logicforth
+ok
+ok
+ok
+ok
+ok
+ok
+0 7 
+ok
+ok
+ok
+1 99 
+ok
+ok
+ok
+42 
+ok
+ok
+ok
+caught  99 
+ok
+ok
+ok
+ok
+110 
+ok
+ok
+ok
+ok
+outer  88 
+ok
+ok
+ok
+ok
+ok
+ok
+caught  50 
+ok
+ok
+ok
+outer got  15 
+ok
+ok
+ok
+ok
+<0> 
+ok
+ok
+ok
+2 1 
+ok
+ok
+ok
+got  boom 
+ok
+ok
+ok
+ok
+got  :oops 
+ok
+ok
+ok
+ok
+outer got  10 
+ok
+ok
+ok
+ok
+11 
+ok
+ok
+ok
+ok
+L2 
+ok
+ok
+ok
+ok
+L1 inner-xt threw 
+ok
+ok
+ok
+? shift outside reset

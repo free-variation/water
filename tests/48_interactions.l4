@@ -1,0 +1,75 @@
+\ Interaction tests between continuations, exceptions, and side stack.
+
+\ -- 1: bare shift used as yield in a coroutine pattern.
+\        Each yield returns a value and a continuation; driver collects all.
+: yield shift ;
+: producer 1 yield 2 yield 3 ;
+: drive reset producer ;
+
+drive          \ stack: 1 k1
+swap . cr      \ prints 1, stack: k1
+0 swap resume  \ resume k1 with 0; producer continues, hits 2 yield. stack: 0 2 k2
+swap . cr      \ prints 2, stack: 0 k2
+0 swap resume  \ resume k2; producer continues to 3, body ends. stack: 0 0 3
+.s cr          \ <3> 0 0 3
+clear
+
+\ -- 2: catch inside a captured continuation. The continuation's slice
+\        contains a try-catch; resuming the continuation runs the try-catch
+\        normally.
+: shifter shift ;
+: inner-try [: 99 throw :] [: 1 + :] try-catch ;
+: capture reset 10 shifter inner-try * ;
+
+capture        \ stack: 10 k  (the "inner-try *" got captured)
+swap drop      \ leave k
+5 swap resume  \ resume k with 5: slice runs inner-try (gives 100) then * (5 * 100 = 500)
+. cr           \ 500
+
+\ -- 3: shift-with inside a try-catch's error-xt. Throw inside the handler
+\        gets caught by an outer try-catch.
+[: [: 5 throw :] [: 10 + throw :] try-catch :]
+[: "outer-caught " . . cr :] try-catch         \ outer-caught 15
+
+\ -- 4: side-stack underflow surfaces cleanly.
+side>
+
+\ -- 5: side-stack works with non-numeric values (strings, sets, etc.)
+"hello" >side
+{ 1 2 3 } >side
+side> .  cr                 \ { 1 2 3 } (the most recently pushed)
+side> .  cr                 \ hello
+
+\ -- 6: side-stack contents survive GC. Push an object, force gc, pop it.
+[ 1 2 3 4 5 ] >side
+gc
+side> .  cr                 \ [ 1 2 3 4 5 ]
+
+\ -- 7: shift-with's handler resumes the captured continuation. This is
+\        the Common Lisp restart pattern: the handler "fixes" the
+\        condition by providing a substitute value and resuming. The
+\        slice runs and shift-with's call appears to have returned that
+\        value.
+: ouch ( -- v ) [: 42 swap resume :] shift-with ;
+: recoverable reset 5 ouch + ;
+recoverable . cr            \ 47   (5 + 42, with ouch "returning" 42 via resume)
+
+\ -- 8: continuation survives multiple save/load cycles, can still be
+\        resumed (and multi-shot resumed) after each round trip.
+: shifter shift ;
+: ex2 reset 99 shifter 2 * ;
+ex2 swap drop                                       \ leaves k on stack
+"/tmp/lf-multi.image" save-image
+"/tmp/lf-multi.image" load-image
+dup 3 swap resume . cr                              \ 6
+dup 5 swap resume . cr                              \ 10
+"/tmp/lf-multi.image" save-image
+"/tmp/lf-multi.image" load-image
+7 swap resume . cr                                  \ 14
+
+\ -- 9: GC during a captured continuation's lifetime. After capture,
+\        force gc, then resume — the continuation must survive.
+: ex3 reset 99 shifter 2 * ;
+ex3 swap drop                                       \ leaves k on stack
+gc                                                  \ force collection
+3 swap resume . cr                                  \ 6 — still resumable

@@ -1,0 +1,32 @@
+\ save-image / load-image round-trips continuations.
+\ A continuation captured before save survives the cycle and can be
+\ resumed afterwards.
+
+: shifter shift ;
+: ex reset 99 shifter 2 * ;
+
+\ Capture a continuation, leave (99 k) on stack.
+ex
+.s cr                                          \ <2> 99 <k>
+
+\ Round-trip via save then load.
+"/tmp/lf-test-46.image" save-image
+"/tmp/lf-test-46.image" load-image
+
+\ Stack restored: still (99 k). Show it.
+.s cr                                          \ <2> 99 <k>
+
+\ The 99 round-tripped intact.
+over . cr                                      \ 99
+
+\ The continuation also round-tripped — resume it with 5 and get 5*2=10.
+swap drop                                      \ leaves k
+5 swap resume . cr                             \ 10
+
+\ Multi-shot still works after the round-trip cycle.
+ex
+"/tmp/lf-test-46.image" save-image
+"/tmp/lf-test-46.image" load-image
+swap drop                                      \ leaves k
+dup 3 swap resume . cr                         \ 6
+    4 swap resume . cr                         \ 8

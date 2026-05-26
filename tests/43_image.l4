@@ -1,0 +1,28 @@
+\ Round-trip test for save-image / load-image.
+\ Saves a variety of state, corrupts the live interpreter, restores from
+\ the image, and verifies everything came back.
+
+: square dup * ;
+: cube dup square * ;
+variable counter
+42 counter !
+symbol red
+{ 1 2 3 }
+"hello"
+[ 1 2 3 4 ] 2 2 matrix
+"/tmp/lf-test-43.image" save-image
+
+\ Scribble over live state — redefine square, clear stack, clobber counter.
+clear
+: square 0 ;
+0 counter !
+3 square .  cr   \ expects 0 from the clobbered version
+
+"/tmp/lf-test-43.image" load-image
+
+\ Stack and definitions should be restored.
+3 square .  cr   \ expects 9 from the original
+3 cube .    cr   \ expects 27; exercises cross-reference between user words
+counter @ . cr   \ expects 42
+red .       cr   \ expects red
+.s          cr   \ expects { 1 2 3 } hello <matrix 2x2: ...>

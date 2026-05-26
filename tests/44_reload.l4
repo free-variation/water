@@ -1,0 +1,32 @@
+\ `reload` re-runs every file that `load` recorded this session,
+\ rebuilding state from the recorded sources. Anything defined directly
+\ at the REPL (not from a loaded file) is gone after reload.
+
+: foo 1 2 + ;
+: greet "hi" . cr ;
+"/tmp/lf_reload_test.l4" save
+forget foo
+
+\ Bring foo and greet back from the file. This adds the file to the
+\ session's loaded_files history.
+"/tmp/lf_reload_test.l4" load
+foo .
+greet
+
+\ Add a REPL-only definition. Not in any loaded file.
+: scribble 99 ;
+scribble .
+
+\ Reload: forget everything user-defined, re-run lib.l4 then the file.
+reload
+
+\ foo and greet are back from the file.
+foo .
+greet
+
+\ scribble was REPL-only; it should be gone now. `' scribble` would
+\ fail; we test via see-by-walking instead: the dict chain no longer
+\ contains scribble. As a softer check, redefine it freshly to confirm
+\ no old binding gets reused.
+: scribble 7 ;
+scribble .

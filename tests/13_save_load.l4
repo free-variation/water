@@ -1,14 +1,24 @@
+\ Text save / load round-trip. `save` writes user vocabulary only
+\ (definitions, no values, no stack). `load` re-runs the file as source.
+
 : double 2 * ;
 : square dup * ;
 variable counter
 42 counter !
 symbol red
-5
-{ 1 2 3 }
-red
-"/tmp/lf_image_test.l4" save
+"/tmp/lf_save_test.l4" save
+
+\ Throw away the user vocabulary, including counter's value.
 forget double
-"/tmp/lf_image_test.l4" load
-.s
+
+\ Reload from the saved file — definitions come back, counter's slot
+\ exists again but starts uninitialized (no value emitted by save).
+"/tmp/lf_save_test.l4" load
+
+\ Definitions work.
 8 double .
+3 square .
+\ Symbol survives.
+red .
+\ Variable is reachable but its old value was not preserved.
 counter @ .
