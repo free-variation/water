@@ -1,18 +1,18 @@
 logicforth
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
 : double 2 * ;
-ok
+<0> ok
 : square dup * ;
-ok
+<0> ok
 variable counter  \ current value: 42
-ok
+<0> ok
 symbol red
-ok
+<0> ok
 + is a primitive
-ok
+<0> ok
 [: ... :]  \ anonymous, no source
-ok
+<0> ok

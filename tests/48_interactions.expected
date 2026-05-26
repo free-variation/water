@@ -1,89 +1,89 @@
 logicforth
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<2|k> ok
 1 
-ok
-ok
+<1|k> ok
+<3|k> ok
 2 
-ok
-ok
-<3> 0 0 3 
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
+<2|k> ok
+<3|3> ok
+0 0 3 
+<3|3> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<2|k> ok
+<1|k> ok
+<1|500> ok
 500 
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<1|'?> ok
 outer-caught  15 
-ok
-ok
-ok
-? side stack underflow
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0|error> side stack underflow
+<0> ok
+<0> ok
+<0> ok
+<0> ok
 { 1 2 3 } 
-ok
+<0> ok
 hello 
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
 [ 1 2 3 4 5 ] 
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
 47 
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<1|k> ok
+<1|k> ok
+<1|k> ok
 6 
-ok
+<1|k> ok
 10 
-ok
-ok
-ok
+<1|k> ok
+<1|k> ok
+<1|k> ok
 14 
-ok
-ok
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<1|k> ok
+<1|k> ok
 6 
-ok
+<0> ok

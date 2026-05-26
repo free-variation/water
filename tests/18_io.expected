@@ -1,9 +1,9 @@
 logicforth
 Hi
-ok
+<0> ok
 ABC
-ok
-.ok
-.ok
+<0> ok
+.<0> ok
+.<0> ok
 .
-ok
+<0> ok

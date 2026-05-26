@@ -926,6 +926,74 @@ static void print_val(Val value) {
 	}
 }
 
+/* Compressed one-token representation of a Val, written to stdout.
+ * Used by the REPL prompt to show the top of stack at a glance. Kept
+ * under ~12 chars so the prompt doesn't crowd out user input. */
+static void print_val_compact(Val value) {
+	switch (value.tag) {
+		case T_FLOAT: {
+			double number = unpack_float(value);
+			if (number == (double)(int64_t)number && number > -1e12 && number < 1e12)
+				printf("%lld", (long long)number);
+			else
+				printf("%.4g", number);
+			break;
+		}
+		case T_STRING: {
+			Object *obj = objects[value.data];
+			if (obj->len <= 10) printf("\"%.*s\"", obj->len, obj->bytes);
+			else                printf("\"%.9s…\"", obj->bytes);
+			break;
+		}
+		case T_SYM: {
+			const char *name = &symbol_pool[value.data];
+			int len = (int)strlen(name);
+			if (len <= 10) fputs(name, stdout);
+			else           printf("%.9s…", name);
+			break;
+		}
+		case T_SET:     printf("{%d}", objects[value.data]->len); break;
+		case T_ARRAY:   printf("[%d]", objects[value.data]->len); break;
+		case T_MATRIX: {
+			Object *m = objects[value.data];
+			printf("M%dx%d", m->matrix.rows, m->matrix.columns);
+			break;
+		}
+		case T_XT: {
+			int target = (int)value.data;
+			const char *name = NULL;
+			for (int cfa = latest_cfa; cfa != 0; cfa = (int)LINK(cfa)) {
+				if (cfa == target) { name = &namepool[NAMEIDX(cfa)]; break; }
+			}
+			if (name) {
+				int len = (int)strlen(name);
+				if (len <= 9) printf("'%s", name);
+				else          printf("'%.8s…", name);
+			} else {
+				printf("'?");
+			}
+			break;
+		}
+		case T_ADDR:    printf("@%lld", (long long)value.data); break;
+		case T_CONT:    fputs("k", stdout); break;
+		default:        fputs("?", stdout); break;
+	}
+}
+
+static void print_prompt_state(void) {
+	if (error_flag) {
+		printf("<%d|error> ", dsp);
+		return;
+	}
+	if (dsp == 0) {
+		printf("<0> ");
+		return;
+	}
+	printf("<%d|", dsp);
+	print_val_compact(data_stack[dsp - 1]);
+	printf("> ");
+}
+
 
 /* ---- dictionary search ------------------------------------------------ */
 /* FIND walks the linked list of headers, newest-first, comparing names.
@@ -1220,14 +1288,12 @@ static void emit_val_literal(Val value) {
 /* Report an error and raise the sticky error_flag. The REPL catches
  * the flag at the top of the next outer-loop iteration and resets
  * state. Variadic so call sites can format detail directly. */
+static char error_message[256];
+
 static void fail(const char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
-
-	fputs("? ", stdout);
-	vprintf(fmt, args);
-	putchar('\n');
-
+	vsnprintf(error_message, sizeof(error_message), fmt, args);
 	va_end(args);
 	error_flag = 1;
 }
@@ -1591,7 +1657,6 @@ static void p_emit_(cell *cfa) {
 static void p_dots(cell *cfa) {
 	(void)cfa;
 
-	printf("<%d> ", dsp);
 	for (int i = 0; i < dsp; i++) {
 		print_val(data_stack[i]);
 		putchar(' ');
@@ -4164,7 +4229,7 @@ int main(void) {
 	define_primitive("see",          p_see,         0);
 
 	exit_cfa    = define_primitive("exit",      p_exit,    0);
-	literal_cfa     = define_primitive("(lit)",     p_literal,     0);
+	literal_cfa = define_primitive("(lit)",     p_literal,     0);
 	branch_cfa  = define_primitive("(branch)",  p_branch,  0);
 	zbranch_cfa = define_primitive("(0branch)", p_0branch, 0);
 	dostr_cfa   = define_primitive("(dostr)",   p_dostr,   0);
@@ -4266,18 +4331,28 @@ int main(void) {
 			memcpy(inbuf + inbuf_len, line, (size_t)line_len + 1);
 			inbuf_len += line_len;
 		}
+		
 		error_flag = 0;
 		need_more = 0;
 		run_outer();
+		
 		if (need_more) continue;
+		
 		if (error_flag) {
 			compiling = 0;
 			dsp = 0;
 			rsp = 0;
 			compiling_src_start = 0;
 		}
+		
 		if (compiling) continue;
-		if (!error_flag) { printf("ok\n"); fflush(stdout); }
+
+		print_prompt_state();
+		if (error_flag) fputs(error_message, stdout);
+		else            fputs("ok", stdout);
+		putchar('\n');
+		fflush(stdout);
+
 		inbuf_reset();
 	}
 	return 0;

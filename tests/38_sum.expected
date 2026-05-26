@@ -1,12 +1,12 @@
 logicforth
-10 ok
-21 ok
-7 ok
-0 ok
-4 ok
-0 ok
-1 ok
-15 ok
-45 ok
-? type error in sum
-? type error in sum
+10 <0> ok
+21 <0> ok
+7 <0> ok
+0 <0> ok
+4 <0> ok
+0 <0> ok
+1 <0> ok
+15 <0> ok
+45 <0> ok
+<0|error> type error in sum
+<0|error> type error in sum

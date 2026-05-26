@@ -1,83 +1,83 @@
 logicforth
-ok
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
 0 7 
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
 1 99 
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
 42 
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
 caught  99 
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<1|110> ok
 110 
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<1|'?> ok
 outer  88 
-ok
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
 caught  50 
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
 outer got  15 
-ok
-ok
-ok
-ok
-<0> 
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+
+<0> ok
+<0> ok
+<0> ok
 2 1 
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
 got  boom 
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
 got  :oops 
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<1|'?> ok
 outer got  10 
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<1|'?> ok
 11 
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<1|'?> ok
 L2 
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<1|'?> ok
 L1 inner-xt threw 
-ok
-ok
-ok
-? shift outside reset
+<0> ok
+<0> ok
+<0> ok
+<0|error> shift outside reset

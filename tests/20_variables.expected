@@ -1,12 +1,12 @@
 logicforth
-ok
-0 ok
-ok
-42 ok
-ok
-99 ok
-ok
-ok
-hello ok
-ok
-{ 1 2 3 } ok
+<0> ok
+0 <0> ok
+<0> ok
+42 <0> ok
+<0> ok
+99 <0> ok
+<0> ok
+<0> ok
+hello <0> ok
+<0> ok
+{ 1 2 3 } <0> ok
