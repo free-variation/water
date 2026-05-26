@@ -694,6 +694,24 @@ static int val_cmp(Val left, Val right) {
 									  /* All compared elements equal — shorter collection sorts first. */
 									  return left_collection->len - right_collection->len;
 								  }
+		case T_MATRIX: {
+						   Object *left_matrix  = objects[left.data];
+						   Object *right_matrix = objects[right.data];
+						   /* Order by shape first (rows, then columns), so even
+							* differently-shaped matrices have a total order. */
+						   if (left_matrix->matrix.rows != right_matrix->matrix.rows)
+							   return left_matrix->matrix.rows - right_matrix->matrix.rows;
+						   if (left_matrix->matrix.columns != right_matrix->matrix.columns)
+							   return left_matrix->matrix.columns - right_matrix->matrix.columns;
+						   int n = left_matrix->matrix.rows * left_matrix->matrix.columns;
+						   for (int i = 0; i < n; i++) {
+							   double a = left_matrix->matrix.elements[i];
+							   double b = right_matrix->matrix.elements[i];
+							   if (a < b) return -1;
+							   if (a > b) return  1;
+						   }
+						   return 0;
+					   }
 
 		default: return 0;
 	}

@@ -55,11 +55,7 @@ Six straightforward primitives mirroring `sum`/`row-sums`/`column-sums`.
 
 ### Cleanup items (still pending)
 
-- **`val_cmp` for matrices** — currently falls through to `default:
-  return 0`, so any two matrices compare as equal regardless of
-  contents. Implement: compare shape first (rows, then cols), then
-  element-wise via the `elements` array. Same pattern as the existing
-  `T_STRING` and `T_SET`/`T_ARRAY` cases.
+(none currently — `val_cmp` for matrices is done.)
 
 ### Beyond core
 
@@ -763,6 +759,81 @@ changes are `dsp` → `interp->dsp` style. No new logic. No new tests
 needed; existing tests should pass byte-for-byte once it builds.
 Probably a day or two of focused work. Could be scripted in large
 part.
+
+### Combined with the file split
+
+The single `logicforth.c` is ~4400 lines. Splitting it and doing this
+refactor touch the same lines, so do them as one pass — threading
+`interp` through a section and moving that section to its destination
+file at the same time. Splitting with `extern` globals first and
+refactoring later would touch everything twice.
+
+The boundary problem: once code lives in separate translation units it
+can no longer see file-scope statics. The `Interpreter *` solves this
+directly — state travels as a parameter, not as `extern` globals. The
+only things the header needs to share are the *types*, the *macros*,
+and the hot helpers.
+
+The seam: core owns the generic Val/Object/ordering layer (everything
+depends on it); each container type and its words live together in
+their own file.
+
+**File decomposition:**
+
+```
+logicforth.h   Tag, Val, Object, ObjectKind, cell, the Interpreter
+               struct, the cfa_handler typedef, size constants, the
+               header-access macros (LINK/FLAGS/NAMEIDX/SRCIDX/IS_IMM)
+               rewritten against interp, POP. make_* and push/pop/
+               unpack as static inline so they still inline per TU.
+               Prototypes of cross-file functions.
+
+core.c         the engine: object registry, object_new_*, GC, val_cmp
+               (the universal total order over every Val), dictionary
+               (create_header/define_primitive/emit), code-field
+               handlers (docol/dosym/dovar), inner + outer interpreter,
+               tokeniser, load, main + REPL. Plus printing (print_val,
+               print_double, print_corners, print_matrix_grid,
+               print_val_compact, print_prompt_state) and the image
+               layer (save text, save-image/load-image binary, reload).
+
+words.c        arithmetic, stack, I/O, return/side stack, variables,
+               control-flow immediates, defining words, continuations
+               (reset/shift/shift-with/resume), string interpolation.
+
+collections.c  the container family — set, array, (future) hashmap:
+               their constructors, type-specific ops (set dedup/union/
+               intersect, array gather/fill, @i, cardinality), literal
+               syntax, and the higher-order words over them (map/mapn/
+               filter/reduce) since those are meaningless without the
+               containers they iterate.
+
+matrix.c       matrix words plus the numeric kernels (dgemm_kernel,
+               transpose, reductions). Kernels later migrate to
+               linalg.c once refactored to take double* not handles.
+
+logic.c        (future) the unification / microKanren machinery once
+               that lands.
+```
+
+`val_cmp` and the object registry/GC stay in core deliberately: they
+are generic infrastructure used by every type (comparison operators,
+GC marking, the collections, the matrix path), not specific to any one
+container. The literate top-to-bottom narrative survives within
+`core.c` and within each domain file.
+
+**Order of operations:**
+
+1. Write `logicforth.h`: types, constants, macros, the `Interpreter`
+   struct, `static inline` hot helpers, cross-file prototypes.
+2. Convert section by section, threading `interp` and relocating each
+   section to its destination `.c` as you go.
+3. Run `make test` after each section — the 50 golden-output tests are
+   the safety net for this mechanical change; a slip surfaces as a
+   failing test immediately.
+4. Update the Makefile to compile and link the multiple `.c` files.
+5. (Follow-on, optional) extract `linalg.c` once the matrix kernels
+   take `double *` instead of object handles.
 
 **Out of scope for this refactor specifically:**
 
