@@ -1,39 +1,39 @@
 logicforth
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-<2> 99 <?> 
-ok
-ok
-ok
-ok
-ok
-ok
-ok
-<2> 99 <?> 
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<0> ok
+<2|k> ok
+99 <?> 
+<2|k> ok
+<2|k> ok
+<2|k> ok
+<2|k> ok
+<2|k> ok
+<2|k> ok
+<2|k> ok
+99 <?> 
+<2|k> ok
+<2|k> ok
+<2|k> ok
 99 
-ok
-ok
-ok
-ok
+<2|k> ok
+<2|k> ok
+<2|k> ok
+<1|k> ok
 10 
-ok
-ok
-ok
-ok
-ok
-ok
-ok
+<0> ok
+<0> ok
+<0> ok
+<2|k> ok
+<2|k> ok
+<2|k> ok
+<1|k> ok
 6 
-ok
+<1|k> ok
 8 
-ok
+<0> ok

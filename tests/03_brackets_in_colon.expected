@@ -1,7 +1,7 @@
 logicforth
-ok
-{ 1 2 3 } ok
-ok
-[ 10 20 ] ok
-ok
-{ 1 2 3 } ok
+<0> ok
+{ 1 2 3 } <0> ok
+<0> ok
+[ 10 20 ] <0> ok
+<0> ok
+{ 1 2 3 } <0> ok

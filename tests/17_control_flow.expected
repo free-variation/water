@@ -1,14 +1,14 @@
 logicforth
-ok
+<0> ok
 + 
-ok
+<0> ok
 - 
-ok
+<0> ok
 z 
-ok
-ok
+<0> ok
+<0> ok
 1 2 3 
-ok
-ok
+<0> ok
+<0> ok
 1 2 3 4 
-ok
+<0> ok
