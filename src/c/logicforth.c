@@ -1816,6 +1816,32 @@ static void p_array_close(cell *cfa) {
 	push(make_array(array_handle));
 }
 
+static void p_array(cell *cfa) {
+	(void)cfa;
+
+	POP(count_value);
+	if (count_value.tag != T_FLOAT) {
+		type_error("array");
+		return;
+	}
+
+	int count = (int)unpack_float(count_value);
+	if (count < 0 || count > dsp) {
+		type_error("array");
+		return;
+	}
+
+	int array_handle = object_new_array(count);
+	if (error_flag) return;
+	Object *array = objects[array_handle];
+
+	int first_item = dsp - count;
+	for (int i = 0; i < count; i++) 
+		array->items[i] = data_stack[first_item + i];
+	dsp = first_item;
+
+	push(make_array(array_handle));
+}
 
 /* ---- set, array, and higher-order operations ------------------------- */
 
@@ -4088,7 +4114,7 @@ static void p_dim(cell *cfa) {
 	push(make_float(matrix->matrix.columns));
 }
 
-static void p_array(cell *cfa) {
+static void p_array_of(cell *cfa) {
 	(void)cfa;
 
 	POP(size_val);
@@ -4216,6 +4242,8 @@ int main(void) {
 	define_primitive("[",      p_array_open,  0);
 	define_primitive("]",      p_array_close, 0);
 
+	define_primitive("array",		 p_array, 0);
+	define_primitive("array-of",	 p_array_of, 0);
 	define_primitive("cardinality",  p_cardinality, 0);
 	define_primitive("member?",      p_member,      0);
 	define_primitive("set",          p_set,         0);
@@ -4254,7 +4282,6 @@ int main(void) {
 	define_primitive("0-matrix",		p_0_matrix, 0);
 	define_primitive("matrix",			p_matrix, 0);
 	define_primitive("dim",				p_dim, 0);
-	define_primitive("array",			p_array, 0);
 	define_primitive("transpose",		p_transpose, 0);
 	define_primitive("diagonal-matrix",	p_diagonal_matrix, 0);
 	define_primitive("@i",           	p_at_i,  0);

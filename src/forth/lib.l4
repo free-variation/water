@@ -23,7 +23,7 @@
 \ broadcast a scalar to the dimension of the preceding matrix
 ( m scalar -- m broadcast-scalar )
 : scalar-op
-	over dim * array
+	over dim * array-of
 	over dim matrix ;
 
 : scalar+ scalar-op + ;

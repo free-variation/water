@@ -1,0 +1,26 @@
+\ array ( v1 ... vN n -- arr ) — gather the top N stack items into an
+\ array, preserving order and duplicates.
+
+\ basic gather
+1 2 3 3 array .                      \ [ 1 2 3 ]
+
+\ order is preserved (unlike set)
+10 20 30 3 array .                   \ [ 10 20 30 ]
+
+\ duplicates are kept (unlike set)
+5 5 5 3 array .                      \ [ 5 5 5 ]
+
+\ mixed types
+"a" 42 "b" 3 array .                 \ [ a 42 b ]
+
+\ empty array
+0 array .                            \ [ ]
+
+\ gather leaves items below the count alone
+99 1 2 3 3 array . . cr              \ [ 1 2 3 ] 99
+
+\ length via cardinality
+1 2 3 4 5 5 array cardinality .      \ 5
+
+\ round-trip through @i
+7 8 9 3 array 1 @i .                 \ 8
