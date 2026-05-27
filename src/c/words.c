@@ -722,10 +722,21 @@ int read_string_literal(Interpreter *interp) {
 	return length;
 }
 
+static void interp_append(char **buffer, int *capacity, int *length, const char *src, int n) {
+	if (*length + n > *capacity) {
+		while (*length + n > *capacity) {
+			*capacity *= 2;
+		}
+		*buffer = realloc(*buffer, (size_t)*capacity);
+	}
+	memcpy(*buffer + *length, src, (size_t)n);
+	*length += n;
+}
+
 int interpolate(Interpreter *interp, int template_handle) {
 	Object *template = interp->objects[template_handle];
 
-	int max_ref = -1, any_placeholders = 0, placeholder_count = 0;
+	int max_ref = -1, any_placeholders = 0;
 	for (int cursor = 0; cursor < template->len; ) {
 		if (template->bytes[cursor] == '{') {
 			int scan = cursor + 1, digit_value = 0, saw_digit = 0;
@@ -737,7 +748,6 @@ int interpolate(Interpreter *interp, int template_handle) {
 			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
 				if (digit_value > max_ref) max_ref = digit_value;
 				any_placeholders = 1;
-				placeholder_count++;
 				cursor = scan + 1;
 				continue;
 			}
@@ -745,7 +755,8 @@ int interpolate(Interpreter *interp, int template_handle) {
 		cursor++;
 	}
 
-	char *out_buffer = malloc((size_t)template->len + (size_t)placeholder_count * 256 + 1);
+	int capacity = template->len + 64;
+	char *out_buffer = malloc((size_t)capacity);
 	int out_length = 0;
 	for (int cursor = 0; cursor < template->len; ) {
 		if (template->bytes[cursor] == '{') {
@@ -762,41 +773,40 @@ int interpolate(Interpreter *interp, int template_handle) {
 					free(out_buffer);
 					return object_new_string(interp, "", 0);
 				}
-				char rendered[256];
-				int rendered_length = 0;
 				Val value = interp->data_stack[stack_index];
 				switch (value.tag) {
 					case T_FLOAT: {
-									  double number = unpack_float(value);
-									  if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
-										  rendered_length = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
-									  else
-										  rendered_length = snprintf(rendered, sizeof(rendered), "%g", number);
-									  break;
-								  }
-					case T_SYM:
-								  rendered_length = snprintf(rendered, sizeof(rendered),
-										  "%s", &interp->vocab->symbol_pool[value.data]);
-								  break;
+						char rendered[64];
+						double number = unpack_float(value);
+						int n;
+						if (number == (double)(int64_t)number && number > -1e15 && number < 1e15) {
+							n = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
+						} else {
+							n = snprintf(rendered, sizeof(rendered), "%g", number);
+						}
+						interp_append(&out_buffer, &capacity, &out_length, rendered, n);
+						break;
+					}
+					case T_SYM: {
+						const char *name = &interp->vocab->symbol_pool[value.data];
+						interp_append(&out_buffer, &capacity, &out_length, name, (int)strlen(name));
+						break;
+					}
 					case T_STRING: {
-									   Object *string_obj = interp->objects[value.data];
-									   int copy_length = MIN(string_obj->len, (int)sizeof(rendered) - 1);
-									   memcpy(rendered, string_obj->bytes, (size_t)copy_length);
-									   rendered[copy_length] = 0;
-									   rendered_length = copy_length;
-									   break;
-								   }
+						Object *string_obj = interp->objects[value.data];
+						interp_append(&out_buffer, &capacity, &out_length, string_obj->bytes, string_obj->len);
+						break;
+					}
 					default:
-								   rendered_length = snprintf(rendered, sizeof(rendered), "<?>");
-								   break;
+						interp_append(&out_buffer, &capacity, &out_length, "<?>", 3);
+						break;
 				}
-				memcpy(out_buffer + out_length, rendered, (size_t)rendered_length);
-				out_length += rendered_length;
 				cursor = scan + 1;
 				continue;
 			}
 		}
-		out_buffer[out_length++] = template->bytes[cursor++];
+		interp_append(&out_buffer, &capacity, &out_length, &template->bytes[cursor], 1);
+		cursor++;
 	}
 
 	if (any_placeholders && max_ref >= 0) {
