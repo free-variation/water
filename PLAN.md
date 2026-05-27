@@ -193,9 +193,22 @@ this model is enough.
 
 ## Core language additions
 
-Six features identified as load-bearing for a complete core language.
+Features identified as load-bearing for a complete core language.
 Each kept short here; expand into its own section once we start
 implementing.
+
+### Symbol literals
+
+`:foo` reads as a symbol — interned on use and pushed as a `T_SYM`,
+with no declaration. In interpret mode it pushes immediately; in
+compile mode it compiles as a literal push (like a number or string).
+It creates no dictionary entry — just a `symbol_pool` entry in the
+interpreter's own vocabulary.
+
+- `symbol name` defines a symbol whose name doesn't start with `:`.
+- `string>symbol ( str -- sym )` interns a computed string's bytes
+  and returns the symbol — the runtime counterpart to the literal,
+  for hash-map keys built at runtime.
 
 ### Dictionaries / hash maps
 
@@ -685,12 +698,20 @@ threads (mutex + deep-copy across).
 
 ---
 
-## Interpreter refactor — `Interpreter *interp` everywhere
+## Interpreter refactor — `Interpreter *` + per-interpreter `Vocabulary`
 
-A standalone architectural change: bundle the file-scope state into a
-struct, thread it through every function as a parameter. Independent
-of concurrency, but a prerequisite for path B below — and good
-architecture regardless of whether path B ever happens.
+Bundle the file-scope state into structs and thread a pointer through
+every function. **Two** structs, not one, split by lifetime:
+
+- `Vocabulary` — the compiled world: the dictionary, its name/source/
+  symbol pools, and the cached internal CFAs. Written only at
+  definition time.
+- `Interpreter` — per-execution state: the data/return/side stacks,
+  `ip`, the error/compile flags, the object registry, GC roots, the
+  loaded-file history, and the continuation-unwind state. Holds a
+  `Vocabulary *vocab`.
+
+**Each interpreter owns its own `Vocabulary`.**
 
 **Why:**
 
@@ -707,52 +728,94 @@ architecture regardless of whether path B ever happens.
 - **Lua model.** `lua_State *L` is what makes Lua so easy to embed.
   Same idea here.
 
-**What changes:**
+**Two structs, owned 1:1.** The split is by lifetime: compiled world
+vs. per-execution state. Keeping them separate gives a clean boundary
+and leaves optional sharing open later without restructuring.
+
+Because the dictionary is growable (below), an interpreter costs only
+what it actually compiles — tens of KB for a normal vocabulary — so
+owning one per interpreter is cheap even at high thread counts, and a
+spawned worker allocates tight. Ownership gives each interpreter a
+mutable dictionary and symbol pool: it can define words, metaprogram,
+and intern symbols at runtime (what hashmap keys need) freely in its
+own vocabulary, with the engine on plain index-threading.
+
+**The structs** (as built in `logicforth.h`):
 
 ```c
+typedef struct Vocabulary {
+    cell *dict;          /* growable; realloc by doubling */
+    int   dict_cap;      /* capacity in cells             */
+    int   here;          /* used cells                    */
+    int   latest_cfa;
+    char  name_pool[NAME_POOL];
+    int   names_here;
+    char  source_pool[SOURCE_POOL];
+    int   source_here;
+    char  symbol_pool[SYMBOL_POOL];
+    int   symbol_pool_here;
+    int   exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa;
+    int   init_here, init_latest_cfa, init_names_here;
+    int   init_source_here, init_symbol_pool_here;
+    int   lib_end_latest_cfa;
+} Vocabulary;
+
 typedef struct Interpreter {
-    cell dict[MEMSZ];
-    int  here, latest_cfa;
-    char namepool[NAMEPOOL];
-    int  names_here;
-    Val  data_stack[DSTACK];
-    int  dsp;
-    Val  return_stack[RSTACK];
-    int  rsp;
-    cell *ip;
-    int  running, error_flag, compiling;
-    char inbuf[INBUFSZ];
-    int  inbuf_len, inbuf_pos, need_more;
-    Object *objects[MAXOBJS];
-    int  n_objects;
-    Val  gc_roots[GC_ROOTS_MAX];
-    int  n_gc_roots;
-    char source_pool[SOURCEPOOL];
-    int  sources_here;
-    char symbol_pool[SYMBOLPOOL];
-    int  symbol_pool_here;
-    int  compiling_src_start;
-    int  initial_here, initial_latest_cfa,
-         initial_names_here, initial_sources_here,
-         initial_symbol_pool_here;
-    int  lib_end_latest_cfa;
-    char *loaded_files[MAX_LOADED_FILES];
-    int  n_loaded_files, load_depth;
-    cell trampoline[2];
-    int  exit_cfa, stop_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa;
+    Vocabulary *vocab;
+    Val  data_stack[DATA_STACK_DEPTH];   int dsp;
+    Val  return_stack[RETURN_STACK_DEPTH]; int rsp;
+    Val  side_stack[SIDESTACK_DEPTH];    int side_dsp;
+    int  ip;                             /* index into vocab->dict */
+    int  running, compiling, error_flag;
+    char inbuf[INBUF_SIZE];
+    int  inbuf_len, inbuf_pos, need_more, compiling_src_start;
+    Object *objects[MAX_OBJECTS];        int n_objects;
+    Val  gc_roots[MAX_GC_ROOTS];         int n_gc_roots;
+    char *loaded_files[MAX_LOADED_FILES]; int n_loaded_files, load_depth;
+    int  unwinding, unwind_target, next_mark_id;
 } Interpreter;
 ```
 
-Every function that touches state takes `Interpreter *interp`. The
-`cfa_handler` typedef changes:
+**Growable dictionary.** `dict` is a `cell *` plus `dict_cap`, not a
+fixed array. Start at a modest initial capacity and `realloc` by
+doubling on overflow; on `spawn` allocate *tight* (capacity = the
+template's `here`) so a worker that never defines a word carries zero
+slack. The size constant is the *initial* capacity, not a ceiling —
+"dictionary full" becomes a genuine `realloc` OOM. `source_pool` can
+grow the same way later; the two 32 KB name/symbol pools stay fixed
+for now.
+
+**`ip` as an index.** `ip` is an `int` index into `vocab->dict`, not a
+`cell *`. This is what makes the `dict` block safe to `realloc`-move:
+every other reference into `dict` — return addresses, variable
+addresses, cached CFAs — is already index-based and survives a move.
+It also *simplifies* `docol`/exit, which no longer do `ip - dict` /
+`dict + n` arithmetic. It touches `run_inner`, `docol`, `dovar`, and
+`execute_cfa`; the two-cell `trampoline` scratch (today a separate
+array `ip` points at) gets rehomed into reserved `dict` cells.
+
+**cfa_handler:**
 
 ```c
 typedef void (*cfa_handler)(Interpreter *interp, cell *cfa);
 ```
 
-Header-access macros (`LINK`, `FLAGS`, `NAMEIDX`, `SRCIDX`, `IS_IMM`)
-get rewritten to take `interp` or operate on a known `interp` in
-scope. Same for `POP` and any other macros that touch globals.
+**Header macros — parameterized on the `Vocabulary`, not the
+interpreter.** Nothing guarantees a single vocabulary, and these
+macros index `vocab->dict`, so they take the `Vocabulary *` they
+actually read:
+
+```c
+#define LINK(v, cfa)    ((v)->dict[(cfa) - 4])
+#define FLAGS(v, cfa)   ((v)->dict[(cfa) - 3])
+#define NAMEIDX(v, cfa) ((v)->dict[(cfa) - 2])
+#define SRCIDX(v, cfa)  ((v)->dict[(cfa) - 1])
+#define IS_IMM(v, cfa)  (FLAGS(v, cfa) & 1)
+```
+
+Call sites pass `interp->vocab`. `POP` stays on `interp` (it touches
+the data stack and error flag): `#define POP(name) Val name =
+pop(interp); if (interp->error_flag) return`.
 
 **Cost:** ~2000 line touches, almost entirely mechanical. Most
 changes are `dsp` → `interp->dsp` style. No new logic. No new tests
@@ -781,12 +844,12 @@ their own file.
 **File decomposition:**
 
 ```
-logicforth.h   Tag, Val, Object, ObjectKind, cell, the Interpreter
-               struct, the cfa_handler typedef, size constants, the
-               header-access macros (LINK/FLAGS/NAMEIDX/SRCIDX/IS_IMM)
-               rewritten against interp, POP. make_* and push/pop/
-               unpack as static inline so they still inline per TU.
-               Prototypes of cross-file functions.
+logicforth.h   Tag, Val, Object, ObjectKind, cell, the Vocabulary and
+               Interpreter structs, the cfa_handler typedef, size
+               constants, the header-access macros (LINK/FLAGS/NAMEIDX/
+               SRCIDX/IS_IMM) parameterized on Vocabulary*, POP. make_*
+               and push/pop/unpack as static inline so they still
+               inline per TU. Prototypes of cross-file functions.
 
 core.c         the engine: object registry, object_new_*, GC, val_cmp
                (the universal total order over every Val), dictionary
@@ -824,23 +887,30 @@ container. The literate top-to-bottom narrative survives within
 
 **Order of operations:**
 
-1. Write `logicforth.h`: types, constants, macros, the `Interpreter`
-   struct, `static inline` hot helpers, cross-file prototypes.
-2. Convert section by section, threading `interp` and relocating each
-   section to its destination `.c` as you go.
-3. Run `make test` after each section — the 50 golden-output tests are
+1. Write `logicforth.h`: types, constants, macros, the `Vocabulary`
+   and `Interpreter` structs, `static inline` hot helpers, cross-file
+   prototypes.
+2. Convert `ip` from a `cell *` to an `int` index, and make `dict` a
+   growable `cell *` (`realloc` by doubling); rehome the `trampoline`
+   scratch into reserved `dict` cells. This touches `run_inner`,
+   `docol`, `dovar`, `execute_cfa` — do it as part of converting the
+   engine section.
+3. Convert section by section, threading `interp` (and `interp->vocab`
+   to the header macros) and relocating each section to its
+   destination `.c` as you go.
+4. Run `make test` after each section — the 50 golden-output tests are
    the safety net for this mechanical change; a slip surfaces as a
    failing test immediately.
-4. Update the Makefile to compile and link the multiple `.c` files.
-5. (Follow-on, optional) extract `linalg.c` once the matrix kernels
+5. Update the Makefile to compile and link the multiple `.c` files.
+6. (Follow-on, optional) extract `linalg.c` once the matrix kernels
    take `double *` instead of object handles.
 
 **Out of scope for this refactor specifically:**
 
-- Threading. The refactor produces a *thread-unsafe* interpreter
-  struct — only one OS thread should run on it at a time, but
-  multiple Interpreter instances can coexist in the same thread.
-  Threading is path B below, layered on top.
+- Threading. The refactor produces a single-threaded interpreter that
+  owns its vocabulary; multiple instances can coexist in one OS thread
+  already. Running instances on separate OS threads is path B below,
+  layered on top.
 
 ---
 
@@ -859,9 +929,13 @@ small follow-on.
 
 **New primitives:**
 
-- `xt spawn-thread ( -- thread-id )` — fork a fresh `Interpreter`,
-  bootstrap it (register primitives, load lib.l4), run xt in it as
-  the body, return a handle (`T_THREAD`) for the resulting thread.
+- `xt spawn-thread ( -- thread-id )` — fork a fresh `Interpreter`
+  whose `Vocabulary` is cloned *tight* from the parent's compiled
+  state (copy the used `dict` region and pools, capacity = `here`), so
+  the worker inherits every word defined so far — not just the
+  primitives + lib.l4 — and the body `xt`'s dict index resolves in the
+  clone. Run xt as the body; return a handle (`T_THREAD`). After the
+  fork the two vocabularies evolve independently.
 - `thread-id join ( -- )` — wait for the thread to finish.
 - `thread-id message send ( -- )` — enqueue the message in the
   target thread's mailbox. Non-blocking (mailbox is unbounded).
@@ -898,11 +972,12 @@ into the live-thread table.
   dance, queue management, predicate matching for the selective
   variant).
 - `spawn-thread` / `join` / `self`: ~80 lines (pthread wrappers,
-  fresh-instance bootstrap, ID assignment).
+  tight vocabulary clone, ID assignment).
 - Deep-copy on send: ~100 lines, one case per object kind.
-- Symbol-pool: per-thread (each thread interns its own; on send,
-  symbols travel as their byte names and get re-interned). Simpler
-  than shared with a lock.
+- Symbol-pool: per-thread automatically — each interpreter owns its
+  `Vocabulary`, and the symbol pool lives in it. On send, symbols
+  travel as their byte names and get re-interned in the receiver.
+  Nothing shared, no lock.
 - Output coordination: wrap stdout writes in a single shared mutex,
   or have a dedicated "output thread" that serializes. Easy either
   way.
