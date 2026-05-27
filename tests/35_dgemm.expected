@@ -97,24 +97,24 @@ logicforth
 <0> ok
 <0> ok
 <0> ok
-<0|error> type error in dgemm: inner dimensions must match
+<0|error> dgemm: inner dimensions must match (op(A) is 2x3, op(B) is 2x2)
 <0> ok
 <0> ok
 <0> ok
-<0|error> type error in dgemm: inner dimensions must match
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0|error> type error in dgemm: C shape must match the product shape
+<0|error> dgemm: inner dimensions must match (op(A) is 3x2, op(B) is 3x3)
 <0> ok
 <0> ok
 <0> ok
 <0> ok
-<0|error> type error in dgemm: alpha and beta must be floats
+<0|error> dgemm: C must be 1x1 to match the product, but is 3x3
 <0> ok
 <0> ok
-<0|error> type error in dgemm: A, B, C must be matrices
 <0> ok
 <0> ok
-<0|error> type error in dgemm: A, B, C must be matrices
+<0|error> dgemm: alpha and beta must be floats, got a string and a float
+<0> ok
+<0> ok
+<0|error> dgemm: A, B, C must be matrices, got a float, a matrix, a matrix
+<0> ok
+<0> ok
+<0|error> dgemm: A, B, C must be matrices, got a matrix, a matrix, a string

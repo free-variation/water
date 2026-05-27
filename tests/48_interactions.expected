@@ -38,7 +38,7 @@ outer-caught  15
 <0> ok
 <0> ok
 <0> ok
-<0|error> side stack underflow
+<0|error> side>: side stack is empty
 <0> ok
 <0> ok
 <0> ok

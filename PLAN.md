@@ -659,42 +659,54 @@ Path A stands alone; Path B lights up parallelism.
 
 ## Functional primitives
 
-`map` and `mapn` are already in. Adding the rest of the standard
-higher-order toolkit. Most are short library definitions in `lib.l4`;
-a couple of hot ones get C primitives for speed on large arrays.
+`map`, `mapn`, and `filter` are in (`src/c/functional.c`). Adding the
+rest of the standard higher-order toolkit.
 
-**C primitives (perf-critical):**
+**The dividing line is whether a word builds a new array.** Forth-side
+array construction has exactly one path: push the elements and gather
+them with `[ … ]` / `array`. That gather reads off the data stack,
+which is fixed at `DATA_STACK_DEPTH` (256), and there is no in-place
+element store (`@i` only reads; `array-of` only fills a constant). So
+a word that produces an array of data-dependent length cannot be a
+`lib.l4` definition — it would cap out at ~250 elements. Anything that
+allocates and fills a result array must do it in C, the way `map` /
+`mapn` / `filter` already do. Words that return a scalar, an element,
+or a boolean have no such constraint and belong in `lib.l4`.
 
-- **`filter`** — `arr [: pred :] filter` → array of elements matching
-  the predicate. Done in C so it walks the source array once and
-  allocates the result with the right size after a counting pass.
-  ~30 lines.
+**C primitives (fold, or build a result array):**
+
 - **`reduce`** — `arr initial [: ( acc elt -- acc ) :] reduce` → folded
-  result. Left fold. Done in C to avoid xt-call overhead on every
-  element. ~25 lines.
+  result. Left fold. C to avoid xt-call overhead and because the
+  accumulator threads through user code (root it across the loop, like
+  `map`'s result). ~25 lines.
+- **`range`** — `n range` → `[ 0 1 … n-1 ]`; two-arg `start end range`
+  → `[ start … end-1 ]`. Builds an n-element array → C.
+- **`take`** — `arr n take` → first n elements. Builder → C.
+- **`drop`** — `arr n drop` → skip first n. Builder → C.
+- **`reverse`** — reverse an array. Builder → C (O(n); a `lib.l4`
+  version atop `concat` would be O(n²)).
+- **`concat`** — `a b concat` → joined array. Builder → C. (Sets and
+  strings already concatenate via `+`.)
+- **`distinct`** — remove duplicates while preserving order. Builder →
+  C. (Sets already dedupe but lose order.)
 
-**lib.l4 definitions (built atop map / filter / reduce / each):**
+Each follows the same discipline as `map`/`filter`: snapshot or stack-
+root the source, guard the predicate's stack effect where one is run,
+allocate the result at the known size, fill, push. A shared internal
+copy/slice helper covers `take`/`drop`/`reverse`/`concat`.
+
+**lib.l4 definitions (return a scalar/element, or compose C builders):**
 
 - **`find`** — `arr [: pred :] find` → first matching element, or a
-  sentinel (probably `T_NONE`). Short-circuits via `shift` once we
-  have continuations.
+  sentinel (`T_NONE`). Short-circuits via `shift`.
 - **`any?`** — `arr [: pred :] any?` → boolean float (-1 / 0).
 - **`all?`** — `arr [: pred :] all?` → boolean float.
-- **`range`** — `n range` → `[ 0 1 … n-1 ]`. Two-arg form
-  `start end range` → `[ start … end-1 ]`. Sequence constructor;
-  head of most pipelines.
-- **`take`** — `arr n take` → first n elements.
-- **`drop`** — `arr n drop` → skip first n.
-- **`reverse`** — reverse an array.
-- **`concat`** — `a b concat` → joined array. (Sets and strings
-  already concatenate via `+`.)
-- **`sort-by`** — `arr [: ( elt -- key ) :] sort-by` → sorted by
-  extracted key. Cleaner than `sort-with` for the common case of
-  "sort by some field."
 - **`flat-map`** — `arr [: ( elt -- arr ) :] flat-map` → map then
-  concatenate. Monadic bind for arrays.
-- **`distinct`** — remove duplicates while preserving order. (Sets
-  already dedupe but lose order.)
+  concatenate. `map` then a `concat` fold; both pieces are C, so the
+  result isn't stack-bounded. Monadic bind for arrays.
+- **`sort-by`** — `arr [: ( elt -- key ) :] sort-by` → sorted by
+  extracted key. Atop `sort-with` (see the Sort section); sorting
+  reorders in place rather than building, so it stays in `lib.l4`.
 
 **Predicated on dicts being in:**
 
@@ -705,19 +717,18 @@ a couple of hot ones get C primitives for speed on large arrays.
 
 **Deliberately not adding** (composable in one line of user code):
 
-- `count` — `[: pred :] filter length`.
+- `count` — `[: pred :] filter cardinality`.
 - `min-by` / `max-by` — `reduce` with comparison.
 - `sum` / `product` — `0 [: + :] reduce` etc.
 - `for-each` — already covered by `each`.
 
 **Cost:**
 
-- C: `filter` + `reduce` → ~55 lines.
-- `lib.l4`: ~10 short definitions, ~80 lines total.
+- C: `reduce` + `range` + the builder family (`take`, `drop`,
+  `reverse`, `concat`, `distinct`) sharing a copy/slice helper → ~150
+  lines.
+- `lib.l4`: `find`, `any?`, `all?`, `flat-map`, `sort-by` → ~50 lines.
 - `group-by` and `partition` wait on dicts.
-
-Net: small. Most of the value is in committing to consistent
-stack-effect conventions across the family.
 
 ---
 

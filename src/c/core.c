@@ -529,7 +529,22 @@ void fail(Interpreter *interp, const char *fmt, ...) {
 	interp->error_flag = 1;
 }
 
-void type_error(Interpreter *interp, const char *op) { fail(interp, "type error in %s", op); }
+const char *tag_name(Tag t) {
+	switch (t) {
+		case T_NONE:   return "none";
+		case T_SYM:    return "a symbol";
+		case T_FLOAT:  return "a float";
+		case T_STRING: return "a string";
+		case T_SET:    return "a set";
+		case T_ARRAY:  return "an array";
+		case T_MATRIX: return "a matrix";
+		case T_XT:     return "an execution token";
+		case T_ADDR:   return "an address";
+		case T_CONT:   return "a continuation";
+		case T_MARK:   return "a mark";
+		default:       return "an unknown value";
+	}
+}
 
 void p_exit(Interpreter *interp, cell *cfa) {
 	(void)cfa;
@@ -588,13 +603,13 @@ void p_set(Interpreter *interp, cell *cfa) {
 
 	POP(count_value);
 	if (count_value.tag != T_FLOAT) {
-		type_error(interp, "set");
+		fail(interp, "set: expected a float count, got %s", tag_name(count_value.tag));
 		return;
 	}
 
 	int count = (int)unpack_float(count_value);
 	if (count < 0 || count > interp->dsp) {
-		type_error(interp, "set");
+		fail(interp, "set: count %d out of range (stack has %d available)", count, interp->dsp);
 		return;
 	}
 
@@ -692,7 +707,7 @@ void run_outer(Interpreter *interp) {
 			else push(interp, value);
 			continue;
 		}
-		fail(interp, "%s", tok);
+		fail(interp, "unknown word: %s", tok);
 		return;
 	}
 }
@@ -764,7 +779,7 @@ void p_load(Interpreter *interp, cell *cfa) {
 
 	POP(value);
 	if (value.tag != T_STRING) {
-		type_error(interp, "load");
+		fail(interp, "load: expected a string filename, got %s", tag_name(value.tag));
 		return;
 	}
 	gc_root_push(interp, value);
@@ -899,7 +914,7 @@ void p_save(Interpreter *interp, cell *cfa) {
 
 	POP(value);
 	if (value.tag != T_STRING) {
-		type_error(interp, "save");
+		fail(interp, "save: expected a string filename, got %s", tag_name(value.tag));
 		return;
 	}
 	gc_root_push(interp, value);
@@ -985,7 +1000,7 @@ void p_save_image(Interpreter *interp, cell *cfa) {
 
 	POP(value);
 	if (value.tag != T_STRING) {
-		type_error(interp, "save-image");
+		fail(interp, "save-image: expected a string filename, got %s", tag_name(value.tag));
 		return;
 	}
 	gc_root_push(interp, value);
@@ -1130,7 +1145,7 @@ void p_load_image(Interpreter *interp, cell *cfa) {
 
 	POP(value);
 	if (value.tag != T_STRING) {
-		type_error(interp, "load-image");
+		fail(interp, "load-image: expected a string filename, got %s", tag_name(value.tag));
 		return;
 	}
 
@@ -1446,6 +1461,7 @@ int main(void) {
 	define_primitive(interp, "execute", p_execute, 0);
 	define_primitive(interp, "map", p_map, 0);
 	define_primitive(interp, "mapn", p_mapn, 0);
+	define_primitive(interp, "filter", p_filter, 0);
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
 

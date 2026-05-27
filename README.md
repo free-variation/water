@@ -70,7 +70,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 - **Set literals** — `{ 1 2 3 }`, set operations, `member?`, `cardinality`.
 - **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), indexed access via `@i`.
-- **Map and zip-map** — `map` for a single source, `mapn` for N-ary zip, with anonymous quotations as the higher-order argument.
+- **Map, zip-map, filter** — `map` for a single source, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
 
 ### Strings
 
@@ -139,7 +139,7 @@ Tracked in `PLAN.md`, with design notes for each.
 - **Word-local variables** — `{| name |}` at the head of a colon definition; `TO` for mutation.
 - **Sort** — `sort`, `sort-with`, `sort-by`.
 - **stdin / env** — `read-line`, `read-all`, environment variable access.
-- **Functional primitives** — `filter`, `reduce` in C; `find`, `any?`, `all?`, `range`, `take`, `drop`, `reverse`, `concat`, `flat-map`, `distinct` in `lib.l4`.
+- **Functional primitives** — `reduce` and the array builders (`range`, `take`, `drop`, `reverse`, `concat`, `distinct`) in C, since Forth-side array construction is bounded by the data-stack depth; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter` done.)
 - **Help system** — `help word` showing a one-line doc string.
 
 ### Logic layer
@@ -164,8 +164,9 @@ Built in stages on the per-interpreter foundation already in place:
 src/c/logicforth.h     — types, Interpreter/Vocabulary structs, prototypes
 src/c/core.c           — engine: interpreter, dictionary, GC, printing, image, REPL
 src/c/words.c          — arithmetic, stack, I/O, control flow, defining words, continuations
-src/c/collections.c    — sets, arrays, higher-order operations
+src/c/collections.c    — sets and arrays
 src/c/matrix.c         — matrix words and numeric kernels
+src/c/functional.c     — higher-order operations (map, mapn, …)
 src/forth/lib.l4       — standard library (auto-loaded at startup)
 tests/                 — golden-output test files
 docs/                  — design documents

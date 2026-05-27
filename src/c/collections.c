@@ -83,7 +83,7 @@ void p_setclose(Interpreter *interp, cell *cfa) {
 	int mark_index = interp->dsp;
 	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
 	if (mark_index == 0) {
-		type_error(interp, "}");
+		fail(interp, "} : no matching { on the stack");
 		return;
 	}
 
@@ -107,7 +107,7 @@ void p_array_close(Interpreter *interp, cell *cfa) {
 	int mark_index = interp->dsp;
 	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
 	if (mark_index == 0) {
-		type_error(interp, "]");
+		fail(interp, "] : no matching [ on the stack");
 		return;
 	}
 	int num_elements = interp->dsp - mark_index;
@@ -123,13 +123,13 @@ void p_array(Interpreter *interp, cell *cfa) {
 
 	POP(count_value);
 	if (count_value.tag != T_FLOAT) {
-		type_error(interp, "array");
+		fail(interp, "array: expected a float count, got %s", tag_name(count_value.tag));
 		return;
 	}
 
 	int count = (int)unpack_float(count_value);
 	if (count < 0 || count > interp->dsp) {
-		type_error(interp, "array");
+		fail(interp, "array: count %d out of range (stack has %d available)", count, interp->dsp);
 		return;
 	}
 
@@ -151,7 +151,7 @@ void p_cardinality(Interpreter *interp, cell *cfa) {
 	POP(collection);
 	if (collection.tag == T_SET || collection.tag == T_ARRAY || collection.tag == T_STRING)
 		push(interp, make_float((double)interp->objects[collection.data]->len));
-	else type_error(interp, "cardinality");
+	else fail(interp, "cardinality: expected a set, array, or string, got %s", tag_name(collection.tag));
 }
 
 void p_member(Interpreter *interp, cell *cfa) {
@@ -160,7 +160,7 @@ void p_member(Interpreter *interp, cell *cfa) {
 	POP(value);
 	POP(set_value);
 	if (set_value.tag != T_SET) {
-		type_error(interp, "member?");
+		fail(interp, "member?: expected a set, got %s", tag_name(set_value.tag));
 		return;
 	}
 	push(interp, make_bool(set_member(interp, (int)set_value.data, value)));
@@ -172,7 +172,7 @@ void p_union(Interpreter *interp, cell *cfa) {
 	POP(right);
 	POP(left);
 	if (left.tag != T_SET || right.tag != T_SET) {
-		type_error(interp, "union");
+		fail(interp, "union: expected two sets, got %s and %s", tag_name(left.tag), tag_name(right.tag));
 		return;
 	}
 	push(interp, make_set(set_union(interp, (int)left.data, (int)right.data)));
@@ -184,7 +184,7 @@ void p_intersect(Interpreter *interp, cell *cfa) {
 	POP(right);
 	POP(left);
 	if (left.tag != T_SET || right.tag != T_SET) {
-		type_error(interp, "intersection");
+		fail(interp, "intersection: expected two sets, got %s and %s", tag_name(left.tag), tag_name(right.tag));
 		return;
 	}
 	push(interp, make_set(set_intersect(interp, (int)left.data, (int)right.data)));
@@ -196,104 +196,10 @@ void p_difference(Interpreter *interp, cell *cfa) {
 	POP(right);
 	POP(left);
 	if (left.tag != T_SET || right.tag != T_SET) {
-		type_error(interp, "difference");
+		fail(interp, "difference: expected two sets, got %s and %s", tag_name(left.tag), tag_name(right.tag));
 		return;
 	}
 	push(interp, make_set(set_difference(interp, (int)left.data, (int)right.data)));
-}
-
-void p_map(Interpreter *interp, cell *cfa) {
-	(void)cfa;
-
-	POP(xt);
-	POP(source_value);
-	if (xt.tag != T_XT || (source_value.tag != T_SET && source_value.tag != T_ARRAY)) {
-		type_error(interp, "map");
-		return;
-	}
-	Object *source = interp->objects[source_value.data];
-	int source_length = source->len;
-	Val *snapshot = malloc(sizeof(Val) * (size_t)MAX(source_length, 1));
-	memcpy(snapshot, source->items, sizeof(Val) * (size_t)source_length);
-	gc_root_push(interp, source_value);
-	int result_handle = object_new_array(interp, source_length);
-	if (interp->error_flag) { gc_root_pop(interp); free(snapshot); return; }
-	Object *result = interp->objects[result_handle];
-	memset(result->items, 0, sizeof(Val) * (size_t)MAX(source_length, 1));
-	gc_root_push(interp, make_array(result_handle));
-	for (int i = 0; i < source_length && !interp->error_flag; i++) {
-		push(interp, snapshot[i]);
-		execute_cfa(interp, (int)xt.data);
-		if (interp->error_flag) break;
-		result->items[i] = pop(interp);
-	}
-	gc_root_pop(interp);
-	gc_root_pop(interp);
-	free(snapshot);
-	push(interp, make_array(result_handle));
-}
-
-void p_mapn(Interpreter *interp, cell *cfa) {
-	(void)cfa;
-
-	POP(arity_value);
-	if (arity_value.tag != T_FLOAT) {
-		type_error(interp, "mapn");
-		return;
-	}
-	int arity = (int)unpack_float(arity_value);
-	if (arity < 1) {
-		type_error(interp, "mapn");
-		return;
-	}
-	POP(xt);
-	if (xt.tag != T_XT) {
-		type_error(interp, "mapn");
-		return;
-	}
-	if (arity > interp->dsp) {
-		type_error(interp, "mapn");
-		return;
-	}
-
-	int first_source = interp->dsp - arity;
-	int row_count = -1;
-	for (int i = 0; i < arity; i++) {
-		if (interp->data_stack[first_source + i].tag != T_ARRAY) {
-			type_error(interp, "mapn");
-			return;
-		}
-		Object *source = interp->objects[interp->data_stack[first_source + i].data];
-		if (row_count < 0) row_count = source->len;
-		else if (source->len != row_count) {
-			type_error(interp, "mapn");
-			return;
-		}
-	}
-
-	int result_handle = object_new_array(interp, row_count);
-	if (interp->error_flag) return;
-	Object *result = interp->objects[result_handle];
-	memset(result->items, 0, sizeof(Val) * (size_t)MAX(row_count, 1));
-	gc_root_push(interp, make_array(result_handle));
-
-	for (int row = 0; row < row_count && !interp->error_flag; row++) {
-		int dsp_before = interp->dsp;
-		for (int source_index = 0; source_index < arity; source_index++) {
-			Object *source = interp->objects[interp->data_stack[first_source + source_index].data];
-			push(interp, source->items[row]);
-		}
-		execute_cfa(interp, (int)xt.data);
-		if (interp->error_flag) break;
-		if (interp->dsp != dsp_before + 1) { type_error(interp, "mapn"); break; }
-		result->items[row] = pop(interp);
-	}
-	gc_root_pop(interp);
-
-	if (!interp->error_flag) {
-		interp->dsp = first_source;
-		push(interp, make_array(result_handle));
-	}
 }
 
 void p_array_of(Interpreter *interp, cell *cfa) {
@@ -301,7 +207,7 @@ void p_array_of(Interpreter *interp, cell *cfa) {
 
 	POP(size_val);
 	if (size_val.tag != T_FLOAT) {
-		type_error(interp, "array length");
+		fail(interp, "array-of: expected a float length, got %s", tag_name(size_val.tag));
 		return;
 	}
 

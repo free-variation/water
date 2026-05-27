@@ -73,6 +73,6 @@ logicforth
 5 <0> ok
 <0> ok
 <0> ok
-<0|error> type error in row-sums
-<0|error> type error in column-sums
-<0|error> type error in column-sums
+<0|error> row-sums: expected a matrix, got a string
+<0|error> column-sums: expected a matrix, got a string
+<0|error> column-sums: expected a matrix, got an array

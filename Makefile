@@ -2,7 +2,7 @@ CC     = clang
 CFLAGS = -O3 -march=native -Wall -Wextra
 LDLIBS = -lm
 
-SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c
+SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c
 HDRS = src/c/logicforth.h
 
 logicforth: $(SRCS) $(HDRS)

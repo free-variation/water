@@ -31,7 +31,7 @@ void p_add(Interpreter *interp, cell *cfa) {
 		if (target_handle < 0) return;
 		push(interp, make_matrix(target_handle));
 	}
-	else type_error(interp, "+");
+	else fail(interp, "+ : expected two floats, two strings, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 void p_sub(Interpreter *interp, cell *cfa) {
@@ -49,7 +49,7 @@ void p_sub(Interpreter *interp, cell *cfa) {
 		if (target_handle < 0) return;
 		push(interp, make_matrix(target_handle));
 	}
-	else type_error(interp, "-");
+	else fail(interp, "- : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 void p_mul(Interpreter *interp, cell *cfa) {
@@ -67,7 +67,7 @@ void p_mul(Interpreter *interp, cell *cfa) {
 		if (target_handle < 0) return;
 		push(interp, make_matrix(target_handle));
 	}
-	else type_error(interp, "*");
+	else fail(interp, "* : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 void p_div(Interpreter *interp, cell *cfa) {
@@ -75,15 +75,16 @@ void p_div(Interpreter *interp, cell *cfa) {
 
 	POP(right);
 	POP(left);
-	if (left.tag == T_FLOAT && right.tag == T_FLOAT && unpack_float(right) != 0.0)
+	if (left.tag == T_FLOAT && right.tag == T_FLOAT) {
+		if (unpack_float(right) == 0.0) { fail(interp, "/ : division by zero"); return; }
 		push(interp, make_float(unpack_float(left) / unpack_float(right)));
+	}
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
-		/* Match the scalar path: a zero divisor is an error, not silent inf/nan. */
 		Object *divisor = interp->objects[right.data];
 		int n = divisor->matrix.rows * divisor->matrix.columns;
 		for (int i = 0; i < n; i++) {
 			if (divisor->matrix.elements[i] == 0.0) {
-				type_error(interp, "/");
+				fail(interp, "/ : division by zero (matrix element %d)", i);
 				return;
 			}
 		}
@@ -91,7 +92,7 @@ void p_div(Interpreter *interp, cell *cfa) {
 		if (target_handle < 0) return;
 		push(interp, make_matrix(target_handle));
 	}
-	else type_error(interp, "/");
+	else fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 static double scalar_negate(double x) { return -x; }
@@ -192,13 +193,13 @@ void p_roll(Interpreter *interp, cell *cfa) {
 
 	POP(n_val);
 	if (n_val.tag != T_FLOAT) {
-		type_error(interp, "roll");
+		fail(interp, "roll: expected a float depth, got %s", tag_name(n_val.tag));
 		return;
 	}
 
 	int n = (int)unpack_float(n_val);
 	if (n < 0 || n >= interp->dsp) {
-		fail(interp, "roll: index out of range");
+		fail(interp, "roll: depth %d out of range (stack has %d below it)", n, interp->dsp);
 		return;
 	}
 
@@ -252,7 +253,7 @@ void p_emit_(Interpreter *interp, cell *cfa) {
 	if (character.tag == T_FLOAT) {
 		putchar((int)unpack_float(character));
 		fflush(stdout);
-	} else type_error(interp, "emit");
+	} else fail(interp, "emit: expected a float character code, got %s", tag_name(character.tag));
 }
 
 void p_dots(Interpreter *interp, cell *cfa) {
@@ -289,7 +290,7 @@ void p_rfetch(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	if (interp->rsp > 0) push(interp, interp->return_stack[interp->rsp - 1]);
-	else fail(interp, "return stack empty");
+	else fail(interp, "r@: return stack is empty");
 }
 
 void p_to_side(Interpreter *interp, cell *cfa) {
@@ -297,7 +298,7 @@ void p_to_side(Interpreter *interp, cell *cfa) {
 
 	POP(value);
 	if (interp->side_dsp >= SIDESTACK_DEPTH) {
-		fail(interp, "side stack overflow");
+		fail(interp, ">side: side stack overflow (max %d)", SIDESTACK_DEPTH);
 		return;
 	}
 	interp->side_stack[interp->side_dsp++] = value;
@@ -307,7 +308,7 @@ void p_side_to(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	if (interp->side_dsp <= 0) {
-		fail(interp, "side stack underflow");
+		fail(interp, "side>: side stack is empty");
 		return;
 	}
 	push(interp, interp->side_stack[--interp->side_dsp]);
@@ -317,7 +318,7 @@ void p_side_drop(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	if (interp->side_dsp <= 0) {
-		fail(interp, "side stack underflow");
+		fail(interp, "side-drop: side stack is empty");
 		return;
 	}
 	interp->side_dsp--;
@@ -334,7 +335,7 @@ void p_fetch(Interpreter *interp, cell *cfa) {
 
 	POP(address);
 	if (address.tag != T_ADDR) {
-		type_error(interp, "@");
+		fail(interp, "@ : expected an address (from a variable), got %s", tag_name(address.tag));
 		return;
 	}
 	int cell_index = (int)address.data;
@@ -350,7 +351,7 @@ void p_store(Interpreter *interp, cell *cfa) {
 	POP(addr);
 	POP(value);
 	if (addr.tag != T_ADDR) {
-		type_error(interp, "!");
+		fail(interp, "! : expected an address (from a variable) on top, got %s", tag_name(addr.tag));
 		return;
 	}
 	int cell_index = (int)addr.data;
@@ -363,7 +364,7 @@ void p_execute(Interpreter *interp, cell *cfa) {
 
 	POP(value);
 	if (value.tag != T_XT) {
-		type_error(interp, "execute");
+		fail(interp, "execute: expected an execution token, got %s", tag_name(value.tag));
 		return;
 	}
 	execute_cfa(interp, (int)value.data);
@@ -383,7 +384,7 @@ int capture_continuation(Interpreter *interp, int *out_mark_index) {
 		mark_index--;
 	}
 	if (mark_index < 0) {
-		fail(interp, "shift outside reset");
+		fail(interp, "shift/shift-with: no enclosing reset on the return stack");
 		return -1;
 	}
 
@@ -413,7 +414,7 @@ void p_shift_with(Interpreter *interp, cell *cfa) {
 
 	POP(handler);
 	if (handler.tag != T_XT) {
-		type_error(interp, "shift-with");
+		fail(interp, "shift-with: expected an execution token handler, got %s", tag_name(handler.tag));
 		return;
 	}
 
@@ -436,7 +437,7 @@ void p_resume(Interpreter *interp, cell *cfa) {
 
 	POP(k);
 	if (k.tag != T_CONT) {
-		type_error(interp, "resume");
+		fail(interp, "resume: expected a continuation, got %s", tag_name(k.tag));
 		return;
 	}
 
@@ -478,7 +479,7 @@ void p_see(Interpreter *interp, cell *cfa) {
 
 	POP(xt);
 	if (xt.tag != T_XT) {
-		type_error(interp, "see");
+		fail(interp, "see: expected an execution token (try ' word), got %s", tag_name(xt.tag));
 		return;
 	}
 	int target_cfa = (int)xt.data;
@@ -519,7 +520,7 @@ void p_semi(Interpreter *interp, cell *cfa) {
 		int src_len = src_end - interp->compiling_src_start;
 		if (src_len < 0) src_len = 0;
 		if (interp->vocab->source_here + src_len + 1 > SOURCE_POOL) {
-			fail(interp, "source pool full");
+			fail(interp, "source pool full (max %d bytes); definition source too large to store", SOURCE_POOL);
 		} else {
 			int source_offset = interp->vocab->source_here;
 			memcpy(&interp->vocab->source_pool[interp->vocab->source_here],
@@ -621,9 +622,9 @@ void p_tick(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	char *token = next_token(interp);
-	if (!token) { type_error(interp, "'"); return; }
+	if (!token) { fail(interp, "' : expected a word name"); return; }
 	int target_cfa = find(interp, token);
-	if (!target_cfa) { fail(interp, "%s", token); return; }
+	if (!target_cfa) { fail(interp, "' : unknown word: %s", token); return; }
 	Val value = make_xt(target_cfa);
 	if (interp->compiling) emit_val_literal(interp, value);
 	else push(interp, value);
@@ -634,7 +635,7 @@ void p_colon(Interpreter *interp, cell *cfa) {
 
 	char *token = next_token(interp);
 	if (!token) {
-		fail(interp, ": needs a name");
+		fail(interp, ": expected a name for the new definition");
 		return;
 	}
 
@@ -650,7 +651,7 @@ void p_variable(Interpreter *interp, cell *cfa) {
 
 	char *token = next_token(interp);
 	if (!token) {
-		fail(interp, "variable needs a name");
+		fail(interp, "variable: expected a name");
 		return;
 	}
 
@@ -669,7 +670,7 @@ void p_symbol(Interpreter *interp, cell *cfa) {
 
 	char *token = next_token(interp);
 	if (!token) {
-		fail(interp, "symbol needs a name");
+		fail(interp, "symbol: expected a name");
 		return;
 	}
 
@@ -684,7 +685,7 @@ void p_string_to_symbol(Interpreter *interp, cell *cfa) {
 
 	POP(value);
 	if (value.tag != T_STRING) {
-		type_error(interp, "string>symbol");
+		fail(interp, "string>symbol: expected a string, got %s", tag_name(value.tag));
 		return;
 	}
 
@@ -697,12 +698,12 @@ void p_forget(Interpreter *interp, cell *cfa) {
 
 	char *token = next_token(interp);
 	if (!token) {
-		fail(interp, "forget needs a name");
+		fail(interp, "forget: expected a name");
 		return;
 	}
 	int target_cfa = find(interp, token);
 	if (!target_cfa) {
-		fail(interp, "%s", token);
+		fail(interp, "forget: unknown word: %s", token);
 		return;
 	}
 	interp->vocab->here = target_cfa - 4;
@@ -779,7 +780,8 @@ int interpolate(Interpreter *interp, int template_handle) {
 			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
 				int stack_index = interp->dsp - 1 - digit_value;
 				if (stack_index < 0) {
-					type_error(interp, "string interpolation: stack too shallow");
+					fail(interp, "string interpolation: {%d} needs %d stack value(s) but only %d present",
+							digit_value, digit_value + 1, interp->dsp);
 					free(out_buffer);
 					return object_new_string(interp, "", 0);
 				}
@@ -857,7 +859,7 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 
 		push(interp, make_matrix(target_handle));
 	} else {
-		type_error(interp, name);
+		fail(interp, "%s: expected a float or a matrix, got %s", name, tag_name(operand.tag));
 	}
 }
 
