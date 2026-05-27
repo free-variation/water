@@ -8,5 +8,5 @@ logicforth
 1 <0> ok
 15 <0> ok
 45 <0> ok
-<0|error> type error in sum
-<0|error> type error in sum
+<0|error> sum: expected a matrix, got a string
+<0|error> sum: expected a matrix, got an array

@@ -6,11 +6,11 @@ logicforth
 <0> ok
 <0> ok
 <0> ok
-<0|error> type error in /
+<0|error> / : division by zero (matrix element 1)
 <0> ok
-<0|error> type error in /
+<0|error> / : division by zero (matrix element 0)
 <0> ok
 <0> ok
-<0|error> type error in /
+<0|error> / : division by zero
 <0> ok
 2 <0> ok

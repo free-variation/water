@@ -80,4 +80,4 @@ L1 inner-xt threw
 <0> ok
 <0> ok
 <0> ok
-<0|error> shift outside reset
+<0|error> shift/shift-with: no enclosing reset on the return stack

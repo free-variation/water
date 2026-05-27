@@ -13,7 +13,9 @@ int matrix_scalar_op(Interpreter *interp, Val left_val, Val right_val, scalar_op
 	Object *right = interp->objects[right_val.data];
 
 	if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) {
-		type_error(interp, "matrix shapes");
+		fail(interp, "element-wise op: matrix shapes differ (%dx%d vs %dx%d)",
+				left->matrix.rows, left->matrix.columns,
+				right->matrix.rows, right->matrix.columns);
 		return -1;
 	}
 
@@ -35,7 +37,7 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 
 	POP(index_value);
 	if (index_value.tag != T_FLOAT) {
-		type_error(interp, "@i index");
+		fail(interp, "@i: expected a float index, got %s", tag_name(index_value.tag));
 		return;
 	}
 	int index = (int)unpack_float(index_value);
@@ -44,7 +46,7 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 	if (source_val.tag == T_ARRAY) {
 		Object *array = interp->objects[source_val.data];
 		if (index < 0 || index >= array->len) {
-			type_error(interp, "@i: array index out of bounds");
+			fail(interp, "@i: array index %d out of bounds (length %d)", index, array->len);
 			return;
 		}
 
@@ -52,7 +54,7 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 	} else if (source_val.tag == T_MATRIX) {
 		Object *source = interp->objects[source_val.data];
 		if (index < 0 || index >= source->matrix.rows) {
-			type_error(interp, "@i: row index out of bounds");
+			fail(interp, "@i: row index %d out of bounds (%d rows)", index, source->matrix.rows);
 			return;
 		}
 
@@ -66,7 +68,7 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 
 		push(interp, make_matrix(row_handle));
 	} else {
-		type_error(interp, "@i: needs array or matrix");
+		fail(interp, "@i: expected an array or matrix, got %s", tag_name(source_val.tag));
 	}
 }
 
@@ -75,20 +77,20 @@ void p_at_j(Interpreter *interp, cell *cfa) {
 
 	POP(index_value);
 	if (index_value.tag != T_FLOAT) {
-		type_error(interp, "@j index");
+		fail(interp, "@j: expected a float index, got %s", tag_name(index_value.tag));
 		return;
 	}
 	int index = (int)unpack_float(index_value);
 
 	POP(source_val);
 	if (source_val.tag != T_MATRIX) {
-		type_error(interp, "@j: needs matrix");
+		fail(interp, "@j: expected a matrix, got %s", tag_name(source_val.tag));
 		return;
 	}
 
 	Object *source = interp->objects[source_val.data];
 	if (index < 0 || index >= source->matrix.columns) {
-		type_error(interp, "@j: column index out of bounds");
+		fail(interp, "@j: column index %d out of bounds (%d columns)", index, source->matrix.columns);
 		return;
 	}
 
@@ -108,31 +110,31 @@ void p_at_ij(Interpreter *interp, cell *cfa) {
 
 	POP(j_value);
 	if (j_value.tag != T_FLOAT) {
-		type_error(interp, "@i,j column index");
+		fail(interp, "@i,j: expected a float column index, got %s", tag_name(j_value.tag));
 		return;
 	}
 	int j = (int)unpack_float(j_value);
 
 	POP(i_value);
 	if (i_value.tag != T_FLOAT) {
-		type_error(interp, "@i,j row index");
+		fail(interp, "@i,j: expected a float row index, got %s", tag_name(i_value.tag));
 		return;
 	}
 	int i = (int)unpack_float(i_value);
 
 	POP(source_val);
 	if (source_val.tag != T_MATRIX) {
-		type_error(interp, "@i,j: needs matrix");
+		fail(interp, "@i,j: expected a matrix, got %s", tag_name(source_val.tag));
 		return;
 	}
 
 	Object *source = interp->objects[source_val.data];
 	if (i < 0 || i >= source->matrix.rows) {
-		type_error(interp, "@i,j: row index out of bounds");
+		fail(interp, "@i,j: row index %d out of bounds (%d rows)", i, source->matrix.rows);
 		return;
 	}
 	if (j < 0 || j >= source->matrix.columns) {
-		type_error(interp, "@i,j: column index out of bounds");
+		fail(interp, "@i,j: column index %d out of bounds (%d columns)", j, source->matrix.columns);
 		return;
 	}
 
@@ -155,12 +157,14 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 	int op_b_cols = transpose_b ? B->matrix.rows : B->matrix.columns;
 
 	if (op_a_cols != op_b_rows) {
-		type_error(interp, "dgemm: inner dimensions must match");
+		fail(interp, "dgemm: inner dimensions must match (op(A) is %dx%d, op(B) is %dx%d)",
+				op_a_rows, op_a_cols, op_b_rows, op_b_cols);
 		return -1;
 	}
 
 	if (C->matrix.rows != op_a_rows || C->matrix.columns != op_b_cols) {
-		type_error(interp, "dgemm: C shape must match the product shape");
+		fail(interp, "dgemm: C must be %dx%d to match the product, but is %dx%d",
+				op_a_rows, op_b_cols, C->matrix.rows, C->matrix.columns);
 		return -1;
 	}
 
@@ -216,11 +220,13 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	POP(alpha_val);
 
 	if (alpha_val.tag != T_FLOAT || beta_val.tag != T_FLOAT) {
-		type_error(interp, "dgemm: alpha and beta must be floats");
+		fail(interp, "dgemm: alpha and beta must be floats, got %s and %s",
+				tag_name(alpha_val.tag), tag_name(beta_val.tag));
 		return;
 	}
 	if (a_val.tag != T_MATRIX || b_val.tag != T_MATRIX || c_val.tag != T_MATRIX) {
-		type_error(interp, "dgemm: A, B, C must be matrices");
+		fail(interp, "dgemm: A, B, C must be matrices, got %s, %s, %s",
+				tag_name(a_val.tag), tag_name(b_val.tag), tag_name(c_val.tag));
 		return;
 	}
 
@@ -301,20 +307,19 @@ int create_matrix(Interpreter *interp) {
 	Val left = pop(interp);
 	if (interp->error_flag) return -1;
 	if (left.tag != T_FLOAT || right.tag != T_FLOAT) {
-		type_error(interp, "matrix dimensions");
+		fail(interp, "matrix dimensions: expected two floats (rows cols), got %s and %s",
+				tag_name(left.tag), tag_name(right.tag));
 		return -1;
 	}
 
 	int num_rows = (int)(unpack_float(left));
 	int num_columns = (int)(unpack_float(right));
 	if (num_rows < 0 || num_columns < 0) {
-		type_error(interp, "matrix dimensions");
+		fail(interp, "matrix dimensions: must be non-negative, got %dx%d", num_rows, num_columns);
 		return -1;
 	}
-	/* Reject products that would overflow the int element-count arithmetic
-	   used throughout the matrix kernels (loops index with int). */
 	if (num_columns != 0 && num_rows > INT_MAX / num_columns) {
-		fail(interp, "matrix dimensions too large");
+		fail(interp, "matrix dimensions: %dx%d too large (element count overflows)", num_rows, num_columns);
 		return -1;
 	}
 
@@ -337,7 +342,7 @@ void p_diagonal_matrix(Interpreter *interp, cell *cfa) {
 
 	POP(diag_val);
 	if (diag_val.tag != T_FLOAT) {
-		type_error(interp, "diagonal matrix scalar");
+		fail(interp, "diagonal-matrix: expected a float fill value, got %s", tag_name(diag_val.tag));
 		return;
 	}
 
@@ -355,7 +360,7 @@ void p_diagonal(Interpreter *interp, cell *cfa) {
 
 	POP(source_val);
 	if (source_val.tag != T_MATRIX) {
-		type_error(interp, "diagonal requires matrix");
+		fail(interp, "diagonal: expected a matrix, got %s", tag_name(source_val.tag));
 		return;
 	}
 
@@ -376,28 +381,30 @@ void p_reshape(Interpreter *interp, cell *cfa) {
 
 	POP(cols_val);
 	if (cols_val.tag != T_FLOAT) {
-		type_error(interp, "reshape cols");
+		fail(interp, "reshape: columns must be a float, got %s", tag_name(cols_val.tag));
 		return;
 	}
 	int new_cols = (int)unpack_float(cols_val);
 
 	POP(rows_val);
 	if (rows_val.tag != T_FLOAT) {
-		type_error(interp, "reshape rows");
+		fail(interp, "reshape: rows must be a float, got %s", tag_name(rows_val.tag));
 		return;
 	}
 	int new_rows = (int)unpack_float(rows_val);
 
 	POP(source_val);
 	if (source_val.tag != T_MATRIX) {
-		type_error(interp, "reshape needs matrix");
+		fail(interp, "reshape: expected a matrix, got %s", tag_name(source_val.tag));
 		return;
 	}
 
 	Object *source = interp->objects[source_val.data];
 	int total = source->matrix.rows * source->matrix.columns;
 	if (new_rows * new_cols != total) {
-		type_error(interp, "reshape: element count must match");
+		fail(interp, "reshape: cannot reshape %d elements (%dx%d) into %dx%d (%d)",
+				total, source->matrix.rows, source->matrix.columns,
+				new_rows, new_cols, new_rows * new_cols);
 		return;
 	}
 
@@ -419,7 +426,7 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 
 	POP(array_val);
 	if (array_val.tag != T_ARRAY) {
-		type_error(interp, "matrix needs array");
+		fail(interp, "matrix: expected an array of elements, got %s", tag_name(array_val.tag));
 		return;
 	}
 
@@ -427,13 +434,14 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 	Object *input_array = interp->objects[array_val.data];
 	int num_elements = matrix->matrix.rows * matrix->matrix.columns;
 	if (input_array->len != num_elements) {
-		type_error(interp, "matrix array length");
+		fail(interp, "matrix: array has %d elements but %dx%d needs %d",
+				input_array->len, matrix->matrix.rows, matrix->matrix.columns, num_elements);
 		return;
 	}
 
 	for (int i = 0; i < num_elements; i++) {
 		if (input_array->items[i].tag != T_FLOAT) {
-			type_error(interp, "matrix array element");
+			fail(interp, "matrix: element %d is %s, expected a float", i, tag_name(input_array->items[i].tag));
 			return;
 		}
 		matrix->matrix.elements[i] = unpack_float(input_array->items[i]);
@@ -447,7 +455,7 @@ void p_dim(Interpreter *interp, cell *cfa) {
 
 	POP(matrix_val);
 	if (matrix_val.tag != T_MATRIX) {
-		type_error(interp, "dim needs matrix");
+		fail(interp, "dim: expected a matrix, got %s", tag_name(matrix_val.tag));
 		return;
 	}
 
@@ -461,7 +469,7 @@ void p_transpose(Interpreter *interp, cell *cfa) {
 
 	POP(matrix_val);
 	if (matrix_val.tag != T_MATRIX) {
-		type_error(interp, "transpose matrix");
+		fail(interp, "transpose: expected a matrix, got %s", tag_name(matrix_val.tag));
 		return;
 	}
 
@@ -482,7 +490,7 @@ void p_transpose(Interpreter *interp, cell *cfa) {
 		(void)cfa; \
 		POP(source_val); \
 		if (source_val.tag != T_MATRIX) { \
-			type_error(interp, word_name); \
+			fail(interp, "%s: expected a matrix, got %s", word_name, tag_name(source_val.tag)); \
 			return; \
 		} \
 		push(interp, make_float(matrix_reduce_overall(interp->objects[source_val.data], fn, identity))); \
@@ -493,7 +501,7 @@ void p_transpose(Interpreter *interp, cell *cfa) {
 		(void)cfa; \
 		POP(source_val); \
 		if (source_val.tag != T_MATRIX) { \
-			type_error(interp, word_name); \
+			fail(interp, "%s: expected a matrix, got %s", word_name, tag_name(source_val.tag)); \
 			return; \
 		} \
 		int target_handle = matrix_reduce_rows(interp, interp->objects[source_val.data], fn, identity); \
@@ -505,7 +513,7 @@ void p_transpose(Interpreter *interp, cell *cfa) {
 		(void)cfa; \
 		POP(source_val); \
 		if (source_val.tag != T_MATRIX) { \
-			type_error(interp, word_name); \
+			fail(interp, "%s: expected a matrix, got %s", word_name, tag_name(source_val.tag)); \
 			return; \
 		} \
 		int target_handle = matrix_reduce_columns(interp, interp->objects[source_val.data], fn, identity); \
