@@ -725,7 +725,7 @@ int read_string_literal(Interpreter *interp) {
 int interpolate(Interpreter *interp, int template_handle) {
 	Object *template = interp->objects[template_handle];
 
-	int max_ref = -1, any_placeholders = 0;
+	int max_ref = -1, any_placeholders = 0, placeholder_count = 0;
 	for (int cursor = 0; cursor < template->len; ) {
 		if (template->bytes[cursor] == '{') {
 			int scan = cursor + 1, digit_value = 0, saw_digit = 0;
@@ -737,6 +737,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
 				if (digit_value > max_ref) max_ref = digit_value;
 				any_placeholders = 1;
+				placeholder_count++;
 				cursor = scan + 1;
 				continue;
 			}
@@ -744,7 +745,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 		cursor++;
 	}
 
-	char *out_buffer = malloc((size_t)template->len * 4 + 64);
+	char *out_buffer = malloc((size_t)template->len + (size_t)placeholder_count * 256 + 1);
 	int out_length = 0;
 	for (int cursor = 0; cursor < template->len; ) {
 		if (template->bytes[cursor] == '{') {
