@@ -1,8 +1,11 @@
 CC     = clang
 CFLAGS = -O3 -march=native -Wall -Wextra
 
-logicforth: src/c/logicforth.c
-	$(CC) $(CFLAGS) -o logicforth src/c/logicforth.c
+SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c
+HDRS = src/c/logicforth.h
+
+logicforth: $(SRCS) $(HDRS)
+	$(CC) $(CFLAGS) -o logicforth $(SRCS)
 
 test: logicforth
 	tests/run.sh

@@ -1,0 +1,26 @@
+\ symbol literals (:foo) intern on use; string>symbol interns at runtime.
+
+\ a literal equals itself
+:foo :foo = .                      \ -1
+
+\ distinct names are distinct
+:foo :bar = .                      \ 0
+
+\ :foo and a symbol defined via `symbol` share identity
+symbol baz
+baz :baz = .                       \ -1
+
+\ string>symbol matches the same-named literal
+"hello" string>symbol :hello = .   \ -1
+
+\ a colon-prefixed token that names a defined word still resolves as the word
+\ (here :foo is only ever a symbol; words like :] are unaffected)
+
+\ symbols print as their name
+:cat .                             \ cat
+
+\ symbols live in sets without collapsing distinct names
+:a :b :c 3 set cardinality .       \ 3
+
+\ duplicate symbols dedup in a set
+:a :a :a 3 set cardinality .       \ 1
