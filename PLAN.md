@@ -69,8 +69,7 @@ Deferred until there's a specific use case:
 - **Norms** — `norm` (L2), `frobenius-norm`. Composable from existing
   reductions but common enough to deserve named words.
 - **SVD** — one-sided Jacobi as the starting point. ~50–100 lines.
-  No LAPACK available, so hand-rolled is the only option. (See the
-  CNN-speculative section below for the broader linear-algebra arc.)
+  No LAPACK available, so hand-rolled is the only option.
 
 ---
 
@@ -197,19 +196,6 @@ Features identified as load-bearing for a complete core language.
 Each kept short here; expand into its own section once we start
 implementing.
 
-### Symbol literals
-
-`:foo` reads as a symbol — interned on use and pushed as a `T_SYM`,
-with no declaration. In interpret mode it pushes immediately; in
-compile mode it compiles as a literal push (like a number or string).
-It creates no dictionary entry — just a `symbol_pool` entry in the
-interpreter's own vocabulary.
-
-- `symbol name` defines a symbol whose name doesn't start with `:`.
-- `string>symbol ( str -- sym )` interns a computed string's bytes
-  and returns the symbol — the runtime counterpart to the literal,
-  for hash-map keys built at runtime.
-
 ### Dictionaries / hash maps
 
 Key→value mapping. Keys are strings (or symbols, treated equivalently).
@@ -245,69 +231,6 @@ than `rand()`).
 - `min max random-int` — uniform integer in `[min, max]`.
 - `seed seed!` — set the RNG seed for reproducibility.
 - `array shuffle` — permute in place (Fisher-Yates).
-
-### Delimited continuations — `reset` / `shift`
-
-The unifying control primitive. Throw/catch, coroutines, backtracking,
-and cooperative scheduling all derive from it. Building throw/catch
-alone and trying to extend it later doesn't work — the architectural
-commitments are different — so we commit to the bigger thing up front.
-
-**Surface:**
-
-```
-[: ... :] reset                   \ install a delimiter, run the xt
-[: ( k -- ... ) ... :] shift      \ capture continuation up to nearest
-                                  \ reset, pass it as k to the inner xt
-```
-
-`k` is a first-class `Val` (new tag `T_CONT`). Invoke it any time,
-anywhere, any number of times via `execute`. Multi-shot: each
-invocation deep-copies the saved state, so the same `k` can be called
-repeatedly with consistent semantics.
-
-**Derived forms (in `lib.l4` or a follow-up):**
-
-```forth
-: throw  ( v -- )            [: drop :] shift ;
-: catch  ( xt -- ... 0 | v ) [: execute 0 :] reset ;
-
-\ Coroutine: yield captures, hands to scheduler; resume calls the saved k.
-\ amb/fail for backtracking. Same shape.
-```
-
-**Implementation sketch:**
-
-- New tag `T_CONT`, new object kind `OBJECT_CONT` carrying a deep-copied
-  data-stack slice, a deep-copied return-stack slice, and a saved `ip`.
-- A C-side `reset_frames[]` stack of `(saved_dsp, saved_rsp, ...)`
-  records — `reset` pushes a frame, runs the xt, pops on return.
-- `shift` walks back to the innermost reset frame, slices the stacks
-  between that frame's saved positions and the current positions,
-  packages them into an `OBJECT_CONT`, truncates the live stacks back
-  to the reset's saved positions, then calls the inner xt with the new
-  `T_CONT` on the data stack.
-- `execute` on a `T_CONT`: push the current `ip` as a normal return
-  frame (so the continuation returns to *us* when it completes), then
-  copy the captured data slice and return slice back onto the live
-  stacks, then set `ip` to the saved resume point.
-- GC marks `T_CONT` objects and walks their captured Vals (data slice
-  and return slice both contain Vals that may root heap objects).
-
-**Cost:** ~300 lines C plus a careful think-through. Worth it because
-the lib-level derived forms then cost ~10 lines each, and we never
-need to build throw/catch / coroutines / etc. as separate machinery.
-
-**Out of scope for the first cut:**
-
-- Multi-shot semantics when the captured continuation refers to state
-  that's been `forget`-ten in between invocations. Define as undefined
-  behavior; document.
-- Continuations that survive across `save-image` / `load-image`.
-  The captured `ip` is an offset into `dict[]`, which is portable
-  across image save/load, but continuations referring to forgot-and-
-  redefined words can land in a different place. First cut: don't
-  save continuations into images (treat T_CONT as session-only).
 
 ### Sort
 
@@ -523,48 +446,6 @@ leaks until process exit. Acceptable.
 
 ---
 
-## File organization (when to split logicforth.c)
-
-The source is around 3000 lines now — single file, growing. Resist
-the urge to pre-split.
-
-**Why not split speculatively:**
-
-The literate-programming flow we've been protecting works *because* the
-file reads top-to-bottom — Tag enum, then Val constructors, then storage,
-then handlers, then primitives, then the outer interpreter. Splitting
-fragments that narrative.
-
-The coupling cost of splitting is also real. A separate `matrix.c`
-would need visibility into `objects[]`, `Val`, `Object`, `Tag`,
-`push`/`pop`, `error_flag`, the `make_*` constructors, and the
-type-dispatch in `p_add` etc. All of that would have to become
-`extern`, killing the compiler's static-inlining hints, requiring a
-header file that duplicates the type definitions, and leaking
-implementation details across what's supposed to be a boundary.
-
-**Where the seam actually is:**
-
-The matrix *primitives* (`p_add`'s matrix arm, `p_dim`, `p_matrix`,
-`p_sum`, etc.) are tightly tied to the interpreter — pop, type-check,
-error, push. They belong with the other `p_*` functions. The thing
-that's actually self-contained is the *pure numeric kernels*: the
-optimized `dgemm_kernel`, the row-major transpose, eventual
-`svd_jacobi` — none of which touch Val, the stack, or `error_flag`.
-
-When more pure kernels exist (SVD, element-wise math loops, etc.),
-factor them out into a **`linalg.c`** that takes `double *` arrays.
-The `p_*` wrappers stay in `logicforth.c`. This split:
-
-- Keeps the interpreter's narrative intact.
-- Cleanly separates "language" from "math."
-- Doesn't require exposing language internals.
-
-Until the kernel layer is substantively larger, splitting is premature
-optimization. File size by itself isn't a forcing function.
-
----
-
 ## Unification + nondeterminism (microKanren-flavored, on continuations)
 
 Once delimited continuations are in, a logic-programming layer becomes
@@ -698,222 +579,6 @@ threads (mutex + deep-copy across).
 
 ---
 
-## Interpreter refactor — `Interpreter *` + per-interpreter `Vocabulary`
-
-Bundle the file-scope state into structs and thread a pointer through
-every function. **Two** structs, not one, split by lifetime:
-
-- `Vocabulary` — the compiled world: the dictionary, its name/source/
-  symbol pools, and the cached internal CFAs. Written only at
-  definition time.
-- `Interpreter` — per-execution state: the data/return/side stacks,
-  `ip`, the error/compile flags, the object registry, GC roots, the
-  loaded-file history, and the continuation-unwind state. Holds a
-  `Vocabulary *vocab`.
-
-**Each interpreter owns its own `Vocabulary`.**
-
-**Why:**
-
-- **Embeddability.** Multiple interpreter instances in the same OS
-  thread. Sandbox untrusted code in a fresh instance; give each test
-  its own clean instance; embed the language inside another program.
-- **No TLS shortcuts.** `_Thread_local` works but is uneven across
-  toolchains, has init-order issues, can't be used in some contexts.
-  Explicit `Interpreter *` works everywhere C works.
-- **Clarity.** "The interpreter" stops being implicit (a pile of
-  file-scope statics) and becomes a concrete thing with a defined
-  boundary. Easier to reason about lifetimes, easier to inspect in a
-  debugger, easier to extend.
-- **Lua model.** `lua_State *L` is what makes Lua so easy to embed.
-  Same idea here.
-
-**Two structs, owned 1:1.** The split is by lifetime: compiled world
-vs. per-execution state. Keeping them separate gives a clean boundary
-and leaves optional sharing open later without restructuring.
-
-Because the dictionary is growable (below), an interpreter costs only
-what it actually compiles — tens of KB for a normal vocabulary — so
-owning one per interpreter is cheap even at high thread counts, and a
-spawned worker allocates tight. Ownership gives each interpreter a
-mutable dictionary and symbol pool: it can define words, metaprogram,
-and intern symbols at runtime (what hashmap keys need) freely in its
-own vocabulary, with the engine on plain index-threading.
-
-**The structs** (as built in `logicforth.h`):
-
-```c
-typedef struct Vocabulary {
-    cell *dict;          /* growable; realloc by doubling */
-    int   dict_cap;      /* capacity in cells             */
-    int   here;          /* used cells                    */
-    int   latest_cfa;
-    char  name_pool[NAME_POOL];
-    int   names_here;
-    char  source_pool[SOURCE_POOL];
-    int   source_here;
-    char  symbol_pool[SYMBOL_POOL];
-    int   symbol_pool_here;
-    int   exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa;
-    int   init_here, init_latest_cfa, init_names_here;
-    int   init_source_here, init_symbol_pool_here;
-    int   lib_end_latest_cfa;
-} Vocabulary;
-
-typedef struct Interpreter {
-    Vocabulary *vocab;
-    Val  data_stack[DATA_STACK_DEPTH];   int dsp;
-    Val  return_stack[RETURN_STACK_DEPTH]; int rsp;
-    Val  side_stack[SIDESTACK_DEPTH];    int side_dsp;
-    int  ip;                             /* index into vocab->dict */
-    int  running, compiling, error_flag;
-    char inbuf[INBUF_SIZE];
-    int  inbuf_len, inbuf_pos, need_more, compiling_src_start;
-    Object *objects[MAX_OBJECTS];        int n_objects;
-    Val  gc_roots[MAX_GC_ROOTS];         int n_gc_roots;
-    char *loaded_files[MAX_LOADED_FILES]; int n_loaded_files, load_depth;
-    int  unwinding, unwind_target, next_mark_id;
-} Interpreter;
-```
-
-**Growable dictionary.** `dict` is a `cell *` plus `dict_cap`, not a
-fixed array. Start at a modest initial capacity and `realloc` by
-doubling on overflow; on `spawn` allocate *tight* (capacity = the
-template's `here`) so a worker that never defines a word carries zero
-slack. The size constant is the *initial* capacity, not a ceiling —
-"dictionary full" becomes a genuine `realloc` OOM. `source_pool` can
-grow the same way later; the two 32 KB name/symbol pools stay fixed
-for now.
-
-**`ip` as an index.** `ip` is an `int` index into `vocab->dict`, not a
-`cell *`. This is what makes the `dict` block safe to `realloc`-move:
-every other reference into `dict` — return addresses, variable
-addresses, cached CFAs — is already index-based and survives a move.
-It also *simplifies* `docol`/exit, which no longer do `ip - dict` /
-`dict + n` arithmetic. It touches `run_inner`, `docol`, `dovar`, and
-`execute_cfa`; the two-cell `trampoline` scratch (today a separate
-array `ip` points at) gets rehomed into reserved `dict` cells.
-
-**cfa_handler:**
-
-```c
-typedef void (*cfa_handler)(Interpreter *interp, cell *cfa);
-```
-
-**Header macros — parameterized on the `Vocabulary`, not the
-interpreter.** Nothing guarantees a single vocabulary, and these
-macros index `vocab->dict`, so they take the `Vocabulary *` they
-actually read:
-
-```c
-#define LINK(v, cfa)    ((v)->dict[(cfa) - 4])
-#define FLAGS(v, cfa)   ((v)->dict[(cfa) - 3])
-#define NAMEIDX(v, cfa) ((v)->dict[(cfa) - 2])
-#define SRCIDX(v, cfa)  ((v)->dict[(cfa) - 1])
-#define IS_IMM(v, cfa)  (FLAGS(v, cfa) & 1)
-```
-
-Call sites pass `interp->vocab`. `POP` stays on `interp` (it touches
-the data stack and error flag): `#define POP(name) Val name =
-pop(interp); if (interp->error_flag) return`.
-
-**Cost:** ~2000 line touches, almost entirely mechanical. Most
-changes are `dsp` → `interp->dsp` style. No new logic. No new tests
-needed; existing tests should pass byte-for-byte once it builds.
-Probably a day or two of focused work. Could be scripted in large
-part.
-
-### Combined with the file split
-
-The single `logicforth.c` is ~4400 lines. Splitting it and doing this
-refactor touch the same lines, so do them as one pass — threading
-`interp` through a section and moving that section to its destination
-file at the same time. Splitting with `extern` globals first and
-refactoring later would touch everything twice.
-
-The boundary problem: once code lives in separate translation units it
-can no longer see file-scope statics. The `Interpreter *` solves this
-directly — state travels as a parameter, not as `extern` globals. The
-only things the header needs to share are the *types*, the *macros*,
-and the hot helpers.
-
-The seam: core owns the generic Val/Object/ordering layer (everything
-depends on it); each container type and its words live together in
-their own file.
-
-**File decomposition:**
-
-```
-logicforth.h   Tag, Val, Object, ObjectKind, cell, the Vocabulary and
-               Interpreter structs, the cfa_handler typedef, size
-               constants, the header-access macros (LINK/FLAGS/NAMEIDX/
-               SRCIDX/IS_IMM) parameterized on Vocabulary*, POP. make_*
-               and push/pop/unpack as static inline so they still
-               inline per TU. Prototypes of cross-file functions.
-
-core.c         the engine: object registry, object_new_*, GC, val_cmp
-               (the universal total order over every Val), dictionary
-               (create_header/define_primitive/emit), code-field
-               handlers (docol/dosym/dovar), inner + outer interpreter,
-               tokeniser, load, main + REPL. Plus printing (print_val,
-               print_double, print_corners, print_matrix_grid,
-               print_val_compact, print_prompt_state) and the image
-               layer (save text, save-image/load-image binary, reload).
-
-words.c        arithmetic, stack, I/O, return/side stack, variables,
-               control-flow immediates, defining words, continuations
-               (reset/shift/shift-with/resume), string interpolation.
-
-collections.c  the container family — set, array, (future) hashmap:
-               their constructors, type-specific ops (set dedup/union/
-               intersect, array gather/fill, @i, cardinality), literal
-               syntax, and the higher-order words over them (map/mapn/
-               filter/reduce) since those are meaningless without the
-               containers they iterate.
-
-matrix.c       matrix words plus the numeric kernels (dgemm_kernel,
-               transpose, reductions). Kernels later migrate to
-               linalg.c once refactored to take double* not handles.
-
-logic.c        (future) the unification / microKanren machinery once
-               that lands.
-```
-
-`val_cmp` and the object registry/GC stay in core deliberately: they
-are generic infrastructure used by every type (comparison operators,
-GC marking, the collections, the matrix path), not specific to any one
-container. The literate top-to-bottom narrative survives within
-`core.c` and within each domain file.
-
-**Order of operations:**
-
-1. Write `logicforth.h`: types, constants, macros, the `Vocabulary`
-   and `Interpreter` structs, `static inline` hot helpers, cross-file
-   prototypes.
-2. Convert `ip` from a `cell *` to an `int` index, and make `dict` a
-   growable `cell *` (`realloc` by doubling); rehome the `trampoline`
-   scratch into reserved `dict` cells. This touches `run_inner`,
-   `docol`, `dovar`, `execute_cfa` — do it as part of converting the
-   engine section.
-3. Convert section by section, threading `interp` (and `interp->vocab`
-   to the header macros) and relocating each section to its
-   destination `.c` as you go.
-4. Run `make test` after each section — the 50 golden-output tests are
-   the safety net for this mechanical change; a slip surfaces as a
-   failing test immediately.
-5. Update the Makefile to compile and link the multiple `.c` files.
-6. (Follow-on, optional) extract `linalg.c` once the matrix kernels
-   take `double *` instead of object handles.
-
-**Out of scope for this refactor specifically:**
-
-- Threading. The refactor produces a single-threaded interpreter that
-  owns its vocabulary; multiple instances can coexist in one OS thread
-  already. Running instances on separate OS threads is path B below,
-  layered on top.
-
----
-
 ## OS-thread parallelism via isolated interpreters + mailboxes (path B)
 
 Real multi-core parallelism. Multiple OS threads, each owning its own
@@ -923,9 +588,9 @@ boundary.
 
 The Erlang actor model.
 
-**Predicated on the Interpreter refactor above.** That's the gate.
-Without it, this devolves into TLS hacks. With it, threading is a
-small follow-on.
+The per-interpreter `Interpreter`/`Vocabulary` foundation is already in
+place, so this is a layered-on follow-on rather than a rewrite: each OS
+thread runs its own owned interpreter, with no shared mutable state.
 
 **New primitives:**
 
@@ -1013,12 +678,14 @@ way.
 
 **Build order:**
 
-1. Finish continuations.
-2. Path A — green threads (~50 lines).
-3. Interpreter refactor (~2000 line touches, no new behavior).
-4. Path B — spawn-thread + mailboxes (~350 lines).
+Continuations and the per-interpreter refactor are both in place, so
+what remains:
 
-Steps 1–3 each stand alone. Step 4 lights up parallelism.
+1. Path A — green threads (~50 lines), on the existing continuations.
+2. Path B — spawn-thread + mailboxes (~350 lines), on the existing
+   per-interpreter interpreters.
+
+Path A stands alone; Path B lights up parallelism.
 
 ---
 

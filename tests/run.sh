@@ -1,4 +1,4 @@
-#!/usr/bin/env bash
+#!/bin/sh
 # Golden-output test harness for logicforth.
 #
 # Each test is a pair of files in this directory:
@@ -14,13 +14,10 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 bin="$root/logicforth"
 
-# Build via the Makefile so tests run against the same flags as the
-# real binary (-O2, -Wall, -Wextra). make rebuilds only when stale.
 (cd "$root" && make logicforth) || { echo "build failed"; exit 1; }
 
 pass=0
 fail=0
-failures=()
 
 for input in "$here"/*.l4; do
     [ -e "$input" ] || { echo "no tests found"; exit 1; }
@@ -30,14 +27,13 @@ for input in "$here"/*.l4; do
         echo "SKIP $name (no .expected file)"
         continue
     fi
-    actual=$(mktemp -t logicforth-actual.XXXXXX)
+    actual=$(mktemp "${TMPDIR:-/tmp}/logicforth.XXXXXX")
     "$bin" < "$input" > "$actual" 2>&1
     if diff -q "$expected" "$actual" > /dev/null 2>&1; then
         pass=$((pass + 1))
         printf "  ok   %s\n" "$name"
     else
         fail=$((fail + 1))
-        failures+=("$name")
         printf "  FAIL %s\n" "$name"
         diff -u "$expected" "$actual" | sed 's/^/       /'
     fi
