@@ -11,51 +11,19 @@ The matrix type is functionally complete for value-semantic numeric
 work: construction, element-wise arithmetic, scalar broadcasting,
 transpose, DGEMM in all four transpose variants, indexing (`@i`, `@j`,
 `@i,j`), `reshape`, `flatten`, `diagonal-matrix` / `identity-matrix` /
-`diagonal`, and the reduction family (`sum`, `row-sums`,
-`column-sums`, `mean`, `row-means`, `column-means`). The reductions
-on max/min and the element-wise math primitives are the next
-substantive additions.
+`diagonal`, the reduction family (`sum`, `row-sums`, `column-sums`,
+`mean`, `row-means`, `column-means`, plus the `max`/`min` /
+`row-maxes` / `column-maxes` / `row-mins` / `column-mins` set), and
+the polymorphic element-wise math primitives (`abs`, `sqrt`, `exp`,
+`log`, `sin`, `cos`, `tan`, `tanh`, `negate`) that dispatch on both
+floats and matrices. `val_cmp` orders matrices by shape then contents,
+so they work as set members. What remains is the "beyond core" list.
 
-### Element-wise math primitives
+### argmax / argmin
 
-Apply a scalar function to every element of a matrix, producing a new
-same-shape matrix. Each is ~10 lines of straight `MAT(...)` loop.
-Dispatched the same way as `+` and friends so the user-facing names
-read naturally (`m abs`, `m sqrt`, etc.).
-
-Words to add:
-
-- **`abs`** — absolute value.
-- **`sqrt`** — square root. Domain check (negative input → NaN or
-  error? Decide at implementation.)
-- **`exp`** — `e^x`. Needed for softmax, sigmoid.
-- **`log`** — natural log. Needed for cross-entropy. Domain check
-  (non-positive → NaN or error?).
-- **`negate`** already exists for floats and could extend to matrices
-  trivially.
-
-These should ALSO dispatch on `T_FLOAT` for the scalar case, so
-`5 sqrt` and `m sqrt` both work. Polymorphic via the same
-type-dispatch the arithmetic primitives use.
-
-### Max/min reductions
-
-The sum/mean family currently covers additive aggregation. The
-matching shape for max/min:
-
-- **`max`** — overall maximum of a matrix (returns a float).
-- **`min`** — overall minimum (returns a float).
-- **`row-maxes`, `column-maxes`** — N×1 and 1×N matrices of per-row
-  and per-column max.
-- **`row-mins`, `column-mins`** — same for min.
-- **`argmax`, `argmin`** — possibly. Index of the maximum element
-  (or `(i, j)` pair). Defer until there's a use case.
-
-Six straightforward primitives mirroring `sum`/`row-sums`/`column-sums`.
-
-### Cleanup items (still pending)
-
-(none currently — `val_cmp` for matrices is done.)
+Index of the maximum / minimum element (or an `(i, j)` pair). Deferred
+until there's a concrete use case; the additive and max/min reductions
+already cover aggregation.
 
 ### Beyond core
 

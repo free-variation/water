@@ -1,0 +1,15 @@
+\ scalar negate
+5 negate .
+-3 negate .
+0 negate .
+
+\ matrix negate is element-wise
+[ 1 -2 3 -4 ] 2 2 matrix negate .
+[ 5 -6 ] 1 2 matrix negate .
+
+\ double negate is the identity
+[ 1 2 3 ] 1 3 matrix negate negate .
+
+\ negate on a non-numeric is a type error
+"x" negate
+{ 1 2 } negate

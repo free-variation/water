@@ -1,0 +1,14 @@
+logicforth
+<0> ok
+<0|error> matrix dimensions too large
+<0|error> matrix dimensions too large
+<0> ok
+<0> ok
+<0|error> type error in matrix dimensions
+<0|error> type error in matrix dimensions
+<0> ok
+<0> ok
+100 100 <0> ok
+<0> ok
+<0> ok
+3 2 <0> ok

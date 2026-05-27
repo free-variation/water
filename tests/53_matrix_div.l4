@@ -1,0 +1,12 @@
+\ element-wise matrix division by an all-nonzero divisor works
+[ 4 6 8 10 ] 2 2 matrix  [ 2 3 4 5 ] 2 2 matrix  / .
+
+\ a zero anywhere in the divisor is an error, matching the scalar path
+[ 1 2 3 4 ] 2 2 matrix  [ 1 0 2 2 ] 2 2 matrix  /
+\ zero in the first cell
+[ 1 2 ] 1 2 matrix  [ 0 1 ] 1 2 matrix  /
+
+\ scalar divide-by-zero is also an error (existing behavior, shown for contrast)
+6 0 /
+\ scalar nonzero divide still works
+6 3 / .

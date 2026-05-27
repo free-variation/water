@@ -78,6 +78,15 @@ void p_div(Interpreter *interp, cell *cfa) {
 	if (left.tag == T_FLOAT && right.tag == T_FLOAT && unpack_float(right) != 0.0)
 		push(interp, make_float(unpack_float(left) / unpack_float(right)));
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+		/* Match the scalar path: a zero divisor is an error, not silent inf/nan. */
+		Object *divisor = interp->objects[right.data];
+		int n = divisor->matrix.rows * divisor->matrix.columns;
+		for (int i = 0; i < n; i++) {
+			if (divisor->matrix.elements[i] == 0.0) {
+				type_error(interp, "/");
+				return;
+			}
+		}
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_divide);
 		if (target_handle < 0) return;
 		push(interp, make_matrix(target_handle));
@@ -85,11 +94,12 @@ void p_div(Interpreter *interp, cell *cfa) {
 	else type_error(interp, "/");
 }
 
+static double scalar_negate(double x) { return -x; }
+
 void p_neg(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 	POP(operand);
-	if (operand.tag == T_FLOAT) push(interp, make_float(-unpack_float(operand)));
-	else type_error(interp, "negate");
+	unary_op(interp, operand, scalar_negate, "negate");
 }
 
 Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }

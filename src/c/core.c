@@ -97,9 +97,15 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 	obj->kind = OBJECT_MATRIX;
 	obj->matrix.rows = num_rows;
 	obj->matrix.columns = num_columns;
-	size_t num_elements = (size_t)(num_rows * num_columns);
-	obj->matrix.elements = calloc(num_elements, sizeof(double));
-	memset(obj->matrix.elements, 0, num_elements);
+	/* Compute the element count in size_t so a large rows*columns can't
+	   overflow int before it reaches calloc. calloc already zero-fills. */
+	size_t num_elements = (size_t)num_rows * (size_t)num_columns;
+	obj->matrix.elements = calloc(num_elements ? num_elements : 1, sizeof(double));
+	if (!obj->matrix.elements) {
+		free(obj);
+		fail(interp, "matrix too large to allocate");
+		return -1;
+	}
 
 	interp->objects[slot] = obj;
 	return slot;
@@ -180,6 +186,9 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 						   return 0;
 					   }
 
+		/* T_CONT, T_MARK, T_NONE have no ordering: they compare equal here, so
+		   a set treats all continuations/marks as a single member. Identity-
+		   based comparison is deferred to the planned logic layer. */
 		default: return 0;
 	}
 }
@@ -833,8 +842,14 @@ void gc(Interpreter *interp) {
 	static int sorted_cfas[VOCABULARY_INIT_SIZE / 4];
 	int num_cfas = 0;
 	for (int cfa = interp->vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
-		if (num_cfas < (int)(sizeof sorted_cfas / sizeof sorted_cfas[0]))
-			sorted_cfas[num_cfas++] = cfa;
+		if (num_cfas >= (int)(sizeof sorted_cfas / sizeof sorted_cfas[0])) {
+			/* A partial scan would leave some word bodies unmarked and free
+			   objects they still reference. Abort the sweep instead — leaking
+			   is recoverable, a use-after-free is not. */
+			fail(interp, "gc: vocabulary too large to scan safely");
+			return;
+		}
+		sorted_cfas[num_cfas++] = cfa;
 	}
 
 	for (int i = 1; i < num_cfas; i++) {
@@ -897,10 +912,12 @@ void p_save(Interpreter *interp, cell *cfa) {
 		return;
 	}
 
-	int collected_cfas[VOCABULARY_INIT_SIZE];
+	/* One entry per word; each header is >=4 cells, so /4 bounds the count.
+	   static (like gc's sorted_cfas) keeps ~4MB off the call stack. */
+	static int collected_cfas[VOCABULARY_INIT_SIZE / 4];
 	int num_cfas = 0;
 	for (int cfa = interp->vocab->latest_cfa; cfa > interp->vocab->lib_end_latest_cfa; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
-		if (num_cfas < VOCABULARY_INIT_SIZE) collected_cfas[num_cfas++] = cfa;
+		if (num_cfas < (int)(sizeof collected_cfas / sizeof collected_cfas[0])) collected_cfas[num_cfas++] = cfa;
 	}
 
 	fprintf(file, "\\ logicforth vocabulary\n\n");
@@ -982,8 +999,16 @@ void p_save_image(Interpreter *interp, cell *cfa) {
 	}
 
 	int user_word_count = 0;
-	int collected[VOCABULARY_INIT_SIZE];
+	/* One entry per word; each header is >=4 cells, so /4 bounds the count.
+	   static keeps ~4MB off the call stack. */
+	static int collected[VOCABULARY_INIT_SIZE / 4];
 	for (int c = interp->vocab->latest_cfa; c >= interp->vocab->init_here; c = (int)WORD_LINK(interp->vocab, c)) {
+		if (user_word_count >= (int)(sizeof collected / sizeof collected[0])) {
+			fail(interp, "save-image: too many words");
+			fclose(file);
+			gc_root_pop(interp);
+			return;
+		}
 		collected[user_word_count++] = c;
 	}
 

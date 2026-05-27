@@ -8,6 +8,7 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <math.h>
+#include <limits.h>
 
 typedef int64_t cell;
 
@@ -373,9 +374,6 @@ double reduce_min(double accumulator, double element);
 double matrix_reduce_overall(Object *source, reducer fn, double identity);
 int matrix_reduce_rows(Interpreter *interp, Object *source, reducer fn, double identity);
 int matrix_reduce_columns(Interpreter *interp, Object *source, reducer fn, double identity);
-void primitive_name(Interpreter *interp, cell *cfa);
-void primitive_name(Interpreter *interp, cell *cfa);
-void primitive_name(Interpreter *interp, cell *cfa);
 void p_set(Interpreter *interp, cell *cfa);
 void p_union(Interpreter *interp, cell *cfa);
 void p_intersect(Interpreter *interp, cell *cfa);

@@ -311,6 +311,12 @@ int create_matrix(Interpreter *interp) {
 		type_error(interp, "matrix dimensions");
 		return -1;
 	}
+	/* Reject products that would overflow the int element-count arithmetic
+	   used throughout the matrix kernels (loops index with int). */
+	if (num_columns != 0 && num_rows > INT_MAX / num_columns) {
+		fail(interp, "matrix dimensions too large");
+		return -1;
+	}
 
 	return object_new_matrix(interp, num_rows, num_columns);
 }
