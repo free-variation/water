@@ -5,7 +5,7 @@
 : square dup * ;
 : cube dup square * ;
 variable counter
-42 counter !
+42 to counter
 symbol red
 { 1 2 3 }
 "hello"
@@ -15,7 +15,7 @@ symbol red
 \ Scribble over live state — redefine square, clear stack, clobber counter.
 clear
 : square 0 ;
-0 counter !
+0 to counter
 3 square .  cr   \ expects 0 from the clobbered version
 
 "/tmp/lf-test-43.image" load-image
@@ -23,6 +23,6 @@ clear
 \ Stack and definitions should be restored.
 3 square .  cr   \ expects 9 from the original
 3 cube .    cr   \ expects 27; exercises cross-reference between user words
-counter @ . cr   \ expects 42
+counter .   cr   \ expects 42
 red .       cr   \ expects red
 .s          cr   \ expects { 1 2 3 } hello <matrix 2x2: ...>

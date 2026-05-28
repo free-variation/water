@@ -4,7 +4,7 @@
 : double 2 * ;
 : square dup * ;
 variable counter
-42 counter !
+42 to counter
 symbol red
 "/tmp/lf_save_test.l4" save
 
@@ -21,4 +21,4 @@ forget double
 \ Symbol survives.
 red .
 \ Variable is reachable but its old value was not preserved.
-counter @ .
+counter .
