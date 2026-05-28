@@ -7,6 +7,14 @@
 ( a b -- b )
 : nip swap drop ;
 
+\ array words
+
+( arr n -- arr' )  \ last n elements (clamped to [0, length])
+: last  swap reverse swap take reverse ;
+
+( arr n -- arr' )  \ all but the first n elements (clamped)
+: skip  over cardinality swap -  swap reverse swap take reverse ;
+
 \ Execeptions
 : throw ( exc -- ) [: drop 1 :] shift-with ;
 : catch ( xt -- result 0 | exc 1 ) reset execute 0 ;

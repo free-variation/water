@@ -1,0 +1,36 @@
+\ ascending
+2 5 range .
+0 9 range .
+
+\ descending
+5 2 range .
+9 0 range .
+
+\ equal endpoints
+5 5 range .
+0 0 range .
+-3 -3 range .
+
+\ spans zero
+-2 2 range .
+2 -2 range .
+
+\ single-element behavior under cardinality
+0 0 range cardinality .
+
+\ composes
+0 4 range cardinality .
+0 4 range reverse .
+0 9 range 3 take .
+0 9 range 3 skip .
+0 4 range [: dup * :] map .
+
+\ stack shape: ( from to -- arr )
+99 0 3 range .
+.s
+
+\ failures
+"x" 5 range
+0 "x" range
+5 range
+range

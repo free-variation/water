@@ -601,13 +601,7 @@ void p_dostr(Interpreter *interp, cell *cfa) {
 void p_set(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(count_value);
-	if (count_value.tag != T_FLOAT) {
-		fail(interp, "set: expected a float count, got %s", tag_name(count_value.tag));
-		return;
-	}
-
-	int count = (int)unpack_float(count_value);
+	POP_INT(count, "set", "count");
 	if (count < 0 || count > interp->dsp) {
 		fail(interp, "set: count %d out of range (stack has %d available)", count, interp->dsp);
 		return;
@@ -1452,6 +1446,10 @@ int main(void) {
 
 	define_primitive(interp, "array",		 p_array, 0);
 	define_primitive(interp, "array-of",	 p_array_of, 0);
+	define_primitive(interp, "take",		 p_take, 0);
+	define_primitive(interp, "reverse",	 p_reverse, 0);
+	define_primitive(interp, "concat",	 p_concat, 0);
+	define_primitive(interp, "range",	 p_range, 0);
 	define_primitive(interp, "cardinality", p_cardinality, 0);
 	define_primitive(interp, "member?", p_member, 0);
 	define_primitive(interp, "set", p_set, 0);
@@ -1538,7 +1536,7 @@ int main(void) {
 
 	interp->vocab->lib_end_latest_cfa = interp->vocab->latest_cfa;
 
-	printf("logicforth\n");
+	printf("logicforth %s\n", VERSION);
 	char line[1024];
 
 	while (fgets(line, sizeof(line), stdin)) {

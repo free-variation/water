@@ -1,4 +1,3 @@
-logicforth
 <0> ok
 <matrix 3x2>
           1          2
@@ -53,5 +52,5 @@ logicforth
 <0> ok
 <0> ok
 <0|error> reshape: cannot reshape 6 elements (2x3) into 2x2 (4)
-<0|error> reshape: rows must be a float, got a string
+<0|error> reshape: expected a float row count, got a string
 <0|error> reshape: expected a matrix, got a float

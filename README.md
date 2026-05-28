@@ -139,7 +139,7 @@ Tracked in `PLAN.md`, with design notes for each.
 - **Word-local variables** — `{| name |}` at the head of a colon definition; `TO` for mutation.
 - **Sort** — `sort`, `sort-with`, `sort-by`.
 - **stdin / env** — `read-line`, `read-all`, environment variable access.
-- **Functional primitives** — `reduce` and the array builders (`range`, `take`, `drop`, `reverse`, `concat`, `distinct`) in C, since Forth-side array construction is bounded by the data-stack depth; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter` done.)
+- **Functional primitives** — `reduce` and `range` remain in C; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter`/`take`/`reverse`/`concat` done in C; `skip`/`last` in `lib.l4`.)
 - **Help system** — `help word` showing a one-line doc string.
 
 ### Logic layer

@@ -1,0 +1,25 @@
+\ basic: + on two arrays does concat
+[ 1 2 3 ] [ 4 5 6 ] + .
+
+\ empties on either or both sides
+[ ] [ 1 2 ] + .
+[ 1 2 ] [ ] + .
+[ ] [ ] + .
+
+\ self-add via dup
+[ 1 2 ] dup + .
+
+\ + and concat produce identical results
+[ 1 2 3 ] [ 4 5 ] +      .
+[ 1 2 3 ] [ 4 5 ] concat .
+
+\ composes
+[ 1 2 ] [ 3 4 ] + cardinality .
+[ 1 2 ] [ 3 4 ] + reverse .
+[ 1 2 ] [ 3 4 ] + [ 5 6 ] + .
+0 4 range  5 9 range  + .
+
+\ failures: + with one array and a non-array
+[ 1 2 ] 5 +
+[ 1 2 ] "x" +
+5 [ 1 2 ] +

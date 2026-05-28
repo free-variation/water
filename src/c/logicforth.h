@@ -1,6 +1,8 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
+#define VERSION "0.1.0"
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -265,6 +267,32 @@ static inline Val rpop(Interpreter *interp) {
 
 #define POP(name) Val name = pop(interp); if (interp->error_flag) return
 
+#define POP_INT(name, op, what) \
+	Val name##_val = pop(interp); \
+	if (interp->error_flag) return; \
+	if (name##_val.tag != T_FLOAT) { \
+		fail(interp, "%s: expected a float %s, got %s", (op), (what), tag_name(name##_val.tag)); \
+		return; \
+	} \
+	int name = (int)unpack_float(name##_val)
+
+#define NEW_ARRAY(handle, obj, len) \
+	int handle = object_new_array(interp, (len)); \
+	if (interp->error_flag) return; \
+	Object *obj = interp->objects[handle]
+
+#define PEEK_COLLECTION_AT(name, depth, op) \
+	if (interp->dsp <= (depth)) { \
+		fail(interp, "%s: stack too shallow; expected array or set", (op)); \
+		return; \
+	} \
+	Val name##_val = interp->data_stack[interp->dsp - 1 - (depth)]; \
+	if (name##_val.tag != T_ARRAY && name##_val.tag != T_SET) { \
+		fail(interp, "%s: expected array or set, got %s", (op), tag_name(name##_val.tag)); \
+		return; \
+	} \
+	Object *name = interp->objects[name##_val.data]
+
 
 
 /* ---- internal cross-file prototypes ---- */
@@ -441,6 +469,10 @@ void p_reshape(Interpreter *interp, cell *cfa);
 void p_matrix(Interpreter *interp, cell *cfa);
 void p_dim(Interpreter *interp, cell *cfa);
 void p_array_of(Interpreter *interp, cell *cfa);
+void p_take(Interpreter *interp, cell *cfa);
+void p_reverse(Interpreter *interp, cell *cfa);
+void p_concat(Interpreter *interp, cell *cfa);
+void p_range(Interpreter *interp, cell *cfa);
 void p_transpose(Interpreter *interp, cell *cfa);
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name);
 void p_abs(Interpreter *interp, cell *cfa);

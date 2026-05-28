@@ -1,0 +1,28 @@
+\ one-arg form: cols computed from array length and rows
+[ 1 2 3 4 5 6 ] 2 matrix .
+[ 1 2 3 4 5 6 ] 3 matrix .
+[ 1 2 3 4 5 6 ] 6 matrix .
+[ 1 2 3 4 5 6 ] 1 matrix .
+
+\ one-arg with a single-element array
+[ 42 ] 1 matrix .
+
+\ two-arg form still works (unchanged behavior)
+[ 1 2 3 4 5 6 ] 2 3 matrix .
+[ 1 2 3 4 ] 2 2 matrix .
+
+\ same matrix from one-arg and two-arg forms
+[ 10 20 30 40 ] 2 matrix .
+[ 10 20 30 40 ] 2 2 matrix .
+
+\ composes with other matrix words
+[ 1 2 3 4 ] 2 matrix transpose .
+[ 1 2 3 4 5 6 ] 2 matrix dim . .
+
+\ failures
+[ 1 2 3 4 5 ] 2 matrix
+[ 1 2 3 ] 0 matrix
+[ 1 2 3 ] -1 matrix
+"x" 2 matrix
+5 matrix
+matrix

@@ -1,0 +1,35 @@
+\ basic
+[ 1 2 3 ] [ 4 5 6 ] concat .
+
+\ either or both empty
+[ ] [ 1 2 3 ] concat .
+[ 1 2 3 ] [ ] concat .
+[ ] [ ] concat .
+
+\ self-concat: dup then concat doubles the array
+[ 1 2 3 ] dup concat .
+
+\ set source on either side: items in stored (sorted) order, result is an array
+{ 5 1 3 } [ 7 8 ] concat .
+[ 0 ] { 5 1 3 } concat .
+{ 1 2 } { 3 4 } concat .
+
+\ stack shape: ( a b -- ab )
+9 [ 1 2 ] [ 3 4 ] concat .
+.s
+
+\ composes
+[ 1 2 ] [ 3 4 ] concat cardinality .
+[ 1 2 ] [ 3 4 ] concat reverse .
+[ 1 2 ] [ 3 4 ] concat 2 take .
+[ 1 2 ] [ 3 4 ] concat 2 skip .
+
+\ associativity (over three arrays)
+[ 1 2 ] [ 3 4 ] concat [ 5 6 ] concat .
+[ 1 2 ] [ 3 4 ] [ 5 6 ] concat concat .
+
+\ failures
+[ 1 2 3 ] 5 concat
+5 [ 1 2 3 ] concat
+[ 1 2 3 ] concat
+concat

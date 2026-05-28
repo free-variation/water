@@ -35,12 +35,7 @@ int matrix_scalar_op(Interpreter *interp, Val left_val, Val right_val, scalar_op
 void p_at_i(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(index_value);
-	if (index_value.tag != T_FLOAT) {
-		fail(interp, "@i: expected a float index, got %s", tag_name(index_value.tag));
-		return;
-	}
-	int index = (int)unpack_float(index_value);
+	POP_INT(index, "@i", "index");
 
 	POP(source_val);
 	if (source_val.tag == T_ARRAY) {
@@ -75,12 +70,7 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 void p_at_j(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(index_value);
-	if (index_value.tag != T_FLOAT) {
-		fail(interp, "@j: expected a float index, got %s", tag_name(index_value.tag));
-		return;
-	}
-	int index = (int)unpack_float(index_value);
+	POP_INT(index, "@j", "index");
 
 	POP(source_val);
 	if (source_val.tag != T_MATRIX) {
@@ -108,19 +98,8 @@ void p_at_j(Interpreter *interp, cell *cfa) {
 void p_at_ij(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(j_value);
-	if (j_value.tag != T_FLOAT) {
-		fail(interp, "@i,j: expected a float column index, got %s", tag_name(j_value.tag));
-		return;
-	}
-	int j = (int)unpack_float(j_value);
-
-	POP(i_value);
-	if (i_value.tag != T_FLOAT) {
-		fail(interp, "@i,j: expected a float row index, got %s", tag_name(i_value.tag));
-		return;
-	}
-	int i = (int)unpack_float(i_value);
+	POP_INT(j, "@i,j", "column index");
+	POP_INT(i, "@i,j", "row index");
 
 	POP(source_val);
 	if (source_val.tag != T_MATRIX) {
@@ -379,19 +358,8 @@ void p_diagonal(Interpreter *interp, cell *cfa) {
 void p_reshape(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(cols_val);
-	if (cols_val.tag != T_FLOAT) {
-		fail(interp, "reshape: columns must be a float, got %s", tag_name(cols_val.tag));
-		return;
-	}
-	int new_cols = (int)unpack_float(cols_val);
-
-	POP(rows_val);
-	if (rows_val.tag != T_FLOAT) {
-		fail(interp, "reshape: rows must be a float, got %s", tag_name(rows_val.tag));
-		return;
-	}
-	int new_rows = (int)unpack_float(rows_val);
+	POP_INT(new_cols, "reshape", "column count");
+	POP_INT(new_rows, "reshape", "row count");
 
 	POP(source_val);
 	if (source_val.tag != T_MATRIX) {
@@ -421,15 +389,54 @@ void p_reshape(Interpreter *interp, cell *cfa) {
 void p_matrix(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
+	if (interp->dsp < 2) {
+		fail(interp, "matrix: stack too shallow (expected array and at least one dimension)");
+		return;
+	}
+	Val top = interp->data_stack[interp->dsp - 1];
+	Val below = interp->data_stack[interp->dsp - 2];
+	if (top.tag != T_FLOAT) {
+		fail(interp, "matrix: expected a float dimension on top, got %s", tag_name(top.tag));
+		return;
+	}
+
+	int num_rows, num_cols;
+	Val arr_val;
+	if (below.tag == T_FLOAT) {
+		if (interp->dsp < 3) {
+			fail(interp, "matrix: stack too shallow (expected array below two dimensions)");
+			return;
+		}
+		arr_val = interp->data_stack[interp->dsp - 3];
+		if (arr_val.tag != T_ARRAY) {
+			fail(interp, "matrix: expected an array, got %s", tag_name(arr_val.tag));
+			return;
+		}
+		num_rows = (int)unpack_float(below);
+		num_cols = (int)unpack_float(top);
+		interp->dsp -= 3;
+	} else if (below.tag == T_ARRAY) {
+		num_rows = (int)unpack_float(top);
+		Object *arr = interp->objects[below.data];
+		if (num_rows <= 0 || arr->len % num_rows != 0) {
+			fail(interp, "matrix: %d elements does not divide evenly into %d rows", arr->len, num_rows);
+			return;
+		}
+		num_cols = arr->len / num_rows;
+		arr_val = below;
+		interp->dsp -= 2;
+	} else {
+		fail(interp, "matrix: expected an array below the dimension(s), got %s", tag_name(below.tag));
+		return;
+	}
+
+	push(interp, arr_val);
+	push(interp, make_float(num_rows));
+	push(interp, make_float(num_cols));
 	int matrix_handle = create_matrix(interp);
 	if (interp->error_flag) return;
 
 	POP(array_val);
-	if (array_val.tag != T_ARRAY) {
-		fail(interp, "matrix: expected an array of elements, got %s", tag_name(array_val.tag));
-		return;
-	}
-
 	Object *matrix = interp->objects[matrix_handle];
 	Object *input_array = interp->objects[array_val.data];
 	int num_elements = matrix->matrix.rows * matrix->matrix.columns;

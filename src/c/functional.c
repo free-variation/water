@@ -18,9 +18,7 @@ void p_map(Interpreter *interp, cell *cfa) {
 
 	Object *source = interp->objects[source_value.data];
 
-	int result_handle = object_new_array(interp, source->len);
-	if (interp->error_flag) return;
-	Object *result = interp->objects[result_handle];
+	NEW_ARRAY(result_handle, result, source->len);
 	memset(result->items, 0, sizeof(Val) * (size_t)MAX(source->len, 1));
 	gc_root_push(interp, make_array(result_handle));
 
@@ -47,12 +45,7 @@ void p_map(Interpreter *interp, cell *cfa) {
 void p_mapn(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(arity_value);
-	if (arity_value.tag != T_FLOAT) {
-		fail(interp, "mapn: expected a float arity, got %s", tag_name(arity_value.tag));
-		return;
-	}
-	int arity = (int)unpack_float(arity_value);
+	POP_INT(arity, "mapn", "arity");
 	if (arity < 1) {
 		fail(interp, "mapn: arity must be >= 1, got %d", arity);
 		return;
@@ -82,9 +75,7 @@ void p_mapn(Interpreter *interp, cell *cfa) {
 		}
 	}
 
-	int result_handle = object_new_array(interp, row_count);
-	if (interp->error_flag) return;
-	Object *result = interp->objects[result_handle];
+	NEW_ARRAY(result_handle, result, row_count);
 	memset(result->items, 0, sizeof(Val) * (size_t)MAX(row_count, 1));
 
 	gc_root_push(interp, make_array(result_handle));
@@ -116,14 +107,18 @@ void p_filter(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP(xt);
-	POP(source_value);
+	if (interp->dsp < 1) {
+		fail(interp, "filter: expected a set/array and a quotation, but the stack is too shallow");
+		return;
+	}
+	int source_index = interp->dsp - 1;
+	Val source_value = interp->data_stack[source_index];
 	if (xt.tag != T_XT || (source_value.tag != T_SET && source_value.tag != T_ARRAY)) {
 		fail(interp, "filter: expected a set/array and a quotation, got %s and %s",
 				tag_name(source_value.tag), tag_name(xt.tag));
 		return;
 	}
 
-	gc_root_push(interp, source_value);
 	Object *source = interp->objects[source_value.data];
 
 	int *keep = malloc((size_t)MAX(source->len, 1) * sizeof(int));
@@ -141,18 +136,10 @@ void p_filter(Interpreter *interp, cell *cfa) {
 		n_kept += keep[i];
 	}
 
-	if (interp->error_flag) {
-		gc_root_pop(interp);
-		free(keep);
-		return;
-	}
+	if (interp->error_flag) { free(keep); return; }
 
 	int result_handle = object_new_array(interp, n_kept);
-	if (interp->error_flag) {
-		gc_root_pop(interp);
-		free(keep);
-		return;
-	}
+	if (interp->error_flag) { free(keep); return; }
 	Object *result = interp->objects[result_handle];
 
 	int result_idx = 0;
@@ -161,8 +148,8 @@ void p_filter(Interpreter *interp, cell *cfa) {
 			result->items[result_idx++] = source->items[i];
 	}
 
-	gc_root_pop(interp);
 	free(keep);
+	interp->dsp = source_index;
 	push(interp, make_array(result_handle));
 }
 

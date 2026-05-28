@@ -28,7 +28,9 @@ for input in "$here"/*.l4; do
         continue
     fi
     actual=$(mktemp "${TMPDIR:-/tmp}/logicforth.XXXXXX")
-    "$bin" < "$input" > "$actual" 2>&1
+    # Drop the startup banner (line 1) so the version isn't baked into every
+    # expected file; expected files start from the first command's output.
+    "$bin" < "$input" 2>&1 | tail -n +2 > "$actual"
     if diff -q "$expected" "$actual" > /dev/null 2>&1; then
         pass=$((pass + 1))
         printf "  ok   %s\n" "$name"

@@ -111,9 +111,9 @@ void p_array_close(Interpreter *interp, cell *cfa) {
 		return;
 	}
 	int num_elements = interp->dsp - mark_index;
-	int array_handle = object_new_array(interp, num_elements);
+	NEW_ARRAY(array_handle, array, num_elements);
 	for (int i = 0; i < num_elements; i++)
-		interp->objects[array_handle]->items[i] = interp->data_stack[mark_index + i];
+		array->items[i] = interp->data_stack[mark_index + i];
 	interp->dsp = mark_index - 1;
 	push(interp, make_array(array_handle));
 }
@@ -121,21 +121,13 @@ void p_array_close(Interpreter *interp, cell *cfa) {
 void p_array(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(count_value);
-	if (count_value.tag != T_FLOAT) {
-		fail(interp, "array: expected a float count, got %s", tag_name(count_value.tag));
-		return;
-	}
-
-	int count = (int)unpack_float(count_value);
+	POP_INT(count, "array", "count");
 	if (count < 0 || count > interp->dsp) {
 		fail(interp, "array: count %d out of range (stack has %d available)", count, interp->dsp);
 		return;
 	}
 
-	int array_handle = object_new_array(interp, count);
-	if (interp->error_flag) return;
-	Object *array = interp->objects[array_handle];
+	NEW_ARRAY(array_handle, array, count);
 
 	int first_item = interp->dsp - count;
 	for (int i = 0; i < count; i++)
@@ -205,22 +197,81 @@ void p_difference(Interpreter *interp, cell *cfa) {
 void p_array_of(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(size_val);
-	if (size_val.tag != T_FLOAT) {
-		fail(interp, "array-of: expected a float length, got %s", tag_name(size_val.tag));
-		return;
-	}
-
+	POP_INT(array_len, "array-of", "length");
 	POP(init_val);
 
-	int array_len = (int)(unpack_float(size_val));
-	int array_handle = object_new_array(interp, array_len);
-	if (interp->error_flag) return;
-
-	Object *array = interp->objects[array_handle];
+	NEW_ARRAY(array_handle, array, array_len);
 	for (int i = 0; i < array_len; i++) {
 		array->items[i] = init_val;
 	}
 
 	push(interp, make_array(array_handle));
+}
+
+static void replace_top_with_array(Interpreter *interp, int handle) {
+	interp->data_stack[interp->dsp - 1] = make_array(handle);
+}
+
+void p_take(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	POP_INT(n_items, "take", "length");
+	if (n_items < 0) n_items = 0;
+
+	PEEK_COLLECTION_AT(source, 0, "take");
+	if (n_items > source->len) n_items = source->len;
+
+	NEW_ARRAY(result_handle, result, n_items);
+
+	for (int i = 0; i < n_items; i++)
+		result->items[i] = source->items[i];
+
+	replace_top_with_array(interp, result_handle);
+}
+
+void p_reverse(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_COLLECTION_AT(source, 0, "reverse");
+
+	NEW_ARRAY(result_handle, result, source->len);
+
+	for (int i = 0; i < source->len; i++)
+		result->items[source->len - i - 1] = source->items[i];
+
+	replace_top_with_array(interp, result_handle);
+}
+
+void p_concat(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	int i;
+
+	PEEK_COLLECTION_AT(b, 0, "concat");
+	PEEK_COLLECTION_AT(a, 1, "concat");
+
+	NEW_ARRAY(result_handle, result, a->len + b->len);
+
+	for (i = 0; i < a->len; i++)
+		result->items[i] = a->items[i];
+	for (i = 0; i < b->len; i++)
+		result->items[a->len + i] = b->items[i];
+
+	interp->data_stack[interp->dsp - 2] = make_array(result_handle);
+	interp->dsp--;
+}
+
+void p_range(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	POP_INT(range_to, "range", "to");
+	POP_INT(range_from, "range", "from");
+
+	int step = range_to >= range_from ? 1 : -1;
+	int n_values = (range_to - range_from) * step + 1;
+	NEW_ARRAY(result_handle, result, n_values);
+
+	for (int i = 0; i < n_values; i++)
+		result->items[i] = make_float(range_from + i * step);
+
+	push(interp, make_array(result_handle));
 }

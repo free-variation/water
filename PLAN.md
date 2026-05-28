@@ -5,6 +5,60 @@ git history is the place to look for what's been built.
 
 ---
 
+## Interpreter performance — next up
+
+Three changes prioritized by the Mandelbrot benchmark profile in `bench/`
+(`gprof` on the index-threaded interpreter at -O3). The benchmark sits at
+~1.5s vs Python's 1.77s and C's 0.036s; these target the largest categories
+in the profile.
+
+### Float-fast-path the comparison primitives
+
+`val_cmp` accounts for ~8% of wall time on the benchmark and ~16% across the
+comparison/control bucket. It's called from `p_lt`/`p_gt`/`p_eq`, and even
+when both operands are floats it tag-checks and runs a kind-switch before
+the float compare.
+
+The fix: in each of `p_lt` / `p_gt` / `p_eq`, fast-path the `T_FLOAT` /
+`T_FLOAT` case inline (unpack and compare), and only fall through to
+`val_cmp` for mixed or heap types. ~20 lines of C across three primitives.
+Expected wall win on numeric loops: 3–5%.
+
+### Word-local variables
+
+Already specified under [Core language additions → Word-local variables]
+(below). Listed here too because the profile shows ~25% of time in stack
+manipulation (`over` / `swap` / `dup`) and another ~11% in `dovar` + `@` /
+`!` for global-variable access. Word-locals attack both: code that would
+have juggled live values through the stack reads them by name from rstack
+slots in a single `local@` dispatch — cheaper than `dovar` + `@`, and
+replaces several stack ops with one. Estimated wall win on stack-juggling
+kernels: 10–15%.
+
+### Super-instructions
+
+Common 2- and 3-op idioms become single dispatched ops, removing one
+dispatch each. Each is a small C primitive; the wins compound. The cleaner
+version is a small peephole pass in the colon-compile path that recognizes
+the source pattern and emits the super-instruction in place of the
+expanded sequence.
+
+Candidates ranked by call frequency in the benchmark profile:
+
+- **`+!`** ( n addr -- ) — add to a variable in place. Replaces
+  `@ <expr> + !`. Common for counters and accumulators.
+- **`1+`** ( n -- n+1 ) — specialized increment. Replaces `1 +`.
+- **`dup *`** ( x -- x x*x ) — squaring. Hot on numeric kernels.
+- **`@+`** ( addr -- val+ ) — read a variable then add 1 (the `iters @ 1 +`
+  pattern). Composes with `+!` as a complete `@ 1 + !` collapse.
+- **`?0branch`** — `dup 0= if` collapsed into one op (test top non-destructively
+  and branch if zero). Saves 2 dispatches per non-destructive test.
+
+Each is ~10 lines of C. Adding the peephole pass is another ~50 lines. Together
+plausibly 5–10% on the benchmark and any numeric / control-heavy kernel.
+
+---
+
 ## Matrix — remaining work
 
 The matrix type is functionally complete for value-semantic numeric
@@ -673,6 +727,10 @@ allocates and fills a result array must do it in C, the way `map` /
 `mapn` / `filter` already do. Words that return a scalar, an element,
 or a boolean have no such constraint and belong in `lib.l4`.
 
+`map`, `mapn`, `filter`, `take`, `reverse`, and `concat` are in C.
+`skip` (rename of the planned "drop", since `drop` is taken by the
+stack primitive) and `last` are in `lib.l4` atop `take` + `reverse`.
+
 **C primitives (fold, or build a result array):**
 
 - **`reduce`** — `arr initial [: ( acc elt -- acc ) :] reduce` → folded
@@ -681,19 +739,6 @@ or a boolean have no such constraint and belong in `lib.l4`.
   `map`'s result). ~25 lines.
 - **`range`** — `n range` → `[ 0 1 … n-1 ]`; two-arg `start end range`
   → `[ start … end-1 ]`. Builds an n-element array → C.
-- **`take`** — `arr n take` → first n elements. Builder → C.
-- **`drop`** — `arr n drop` → skip first n. Builder → C.
-- **`reverse`** — reverse an array. Builder → C (O(n); a `lib.l4`
-  version atop `concat` would be O(n²)).
-- **`concat`** — `a b concat` → joined array. Builder → C. (Sets and
-  strings already concatenate via `+`.)
-- **`distinct`** — remove duplicates while preserving order. Builder →
-  C. (Sets already dedupe but lose order.)
-
-Each follows the same discipline as `map`/`filter`: snapshot or stack-
-root the source, guard the predicate's stack effect where one is run,
-allocate the result at the known size, fill, push. A shared internal
-copy/slice helper covers `take`/`drop`/`reverse`/`concat`.
 
 **lib.l4 definitions (return a scalar/element, or compose C builders):**
 
@@ -724,9 +769,7 @@ copy/slice helper covers `take`/`drop`/`reverse`/`concat`.
 
 **Cost:**
 
-- C: `reduce` + `range` + the builder family (`take`, `drop`,
-  `reverse`, `concat`, `distinct`) sharing a copy/slice helper → ~150
-  lines.
+- C: `reduce` + `range` → ~50 lines.
 - `lib.l4`: `find`, `any?`, `all?`, `flat-map`, `sort-by` → ~50 lines.
 - `group-by` and `partition` wait on dicts.
 

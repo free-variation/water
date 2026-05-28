@@ -31,7 +31,12 @@ void p_add(Interpreter *interp, cell *cfa) {
 		if (target_handle < 0) return;
 		push(interp, make_matrix(target_handle));
 	}
-	else fail(interp, "+ : expected two floats, two strings, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	else if (left.tag == T_ARRAY && right.tag == T_ARRAY) {
+		push(interp, left);
+		push(interp, right);
+		p_concat(interp, NULL);
+	}
+	else fail(interp, "+ : expected two floats, two strings, two sets, two matrices, or two arrays; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 void p_sub(Interpreter *interp, cell *cfa) {
@@ -191,13 +196,7 @@ void p_depth(Interpreter *interp, cell *cfa) {
 void p_roll(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(n_val);
-	if (n_val.tag != T_FLOAT) {
-		fail(interp, "roll: expected a float depth, got %s", tag_name(n_val.tag));
-		return;
-	}
-
-	int n = (int)unpack_float(n_val);
+	POP_INT(n, "roll", "depth");
 	if (n < 0 || n >= interp->dsp) {
 		fail(interp, "roll: depth %d out of range (stack has %d below it)", n, interp->dsp);
 		return;
@@ -249,11 +248,9 @@ void p_cr(Interpreter *interp, cell *cfa) {
 void p_emit_(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(character);
-	if (character.tag == T_FLOAT) {
-		putchar((int)unpack_float(character));
-		fflush(stdout);
-	} else fail(interp, "emit: expected a float character code, got %s", tag_name(character.tag));
+	POP_INT(c, "emit", "character code");
+	putchar(c);
+	fflush(stdout);
 }
 
 void p_dots(Interpreter *interp, cell *cfa) {
