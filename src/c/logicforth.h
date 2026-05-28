@@ -167,7 +167,7 @@ typedef struct Vocabulary {
 	char symbol_pool[SYMBOL_POOL];
 	int symbol_pool_here;
 
-	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa;
+	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
 
 	int init_here, init_latest_cfa, init_names_here;
 	int init_source_here, init_symbol_pool_here;
@@ -275,6 +275,38 @@ static inline Val rpop(Interpreter *interp) {
 		return; \
 	} \
 	int name = (int)unpack_float(name##_val)
+
+#define POP_XT(name, op) \
+	Val name##_val = pop(interp); \
+	if (interp->error_flag) return; \
+	if (name##_val.tag != T_XT) { \
+		fail(interp, "%s: expected an execution token, got %s", (op), tag_name(name##_val.tag)); \
+		return; \
+	} \
+	int name = (int)name##_val.data
+
+#define POP_MATRIX(name, op) \
+	Val name##_val = pop(interp); \
+	if (interp->error_flag) return; \
+	if (name##_val.tag != T_MATRIX) { \
+		fail(interp, "%s: expected a matrix, got %s", (op), tag_name(name##_val.tag)); \
+		return; \
+	} \
+	Object *name = interp->objects[name##_val.data]
+
+#define POP_STRING(name, op) \
+	Val name##_val = pop(interp); \
+	if (interp->error_flag) return; \
+	if (name##_val.tag != T_STRING) { \
+		fail(interp, "%s: expected a string, got %s", (op), tag_name(name##_val.tag)); \
+		return; \
+	} \
+	Object *name = interp->objects[name##_val.data]
+
+#define NEW_MATRIX(handle, obj, rows, cols) \
+	int handle = object_new_matrix(interp, (rows), (cols)); \
+	if (interp->error_flag) return; \
+	Object *obj = interp->objects[handle]
 
 #define NEW_ARRAY(handle, obj, len) \
 	int handle = object_new_array(interp, (len)); \
@@ -429,6 +461,8 @@ void p_qsemi(Interpreter *interp, cell *cfa);
 void p_tick(Interpreter *interp, cell *cfa);
 void p_colon(Interpreter *interp, cell *cfa);
 void p_variable(Interpreter *interp, cell *cfa);
+void p_to(Interpreter *interp, cell *cfa);
+void p_to_var(Interpreter *interp, cell *cfa);
 void p_symbol(Interpreter *interp, cell *cfa);
 void p_string_to_symbol(Interpreter *interp, cell *cfa);
 void p_forget(Interpreter *interp, cell *cfa);

@@ -16,6 +16,6 @@
 [ 9 16 ] <0> ok
 <0> ok
 <0> ok
-<0|error> filter: expected a set/array and a quotation, got an array and a float
-<0|error> filter: expected a set/array and a quotation, got a float and an execution token
+<0|error> filter: expected an execution token, got a float
+<0|error> filter: expected array or set, got a float
 <0|error> filter: predicate must leave exactly one value per element, but changed the stack by 2

@@ -54,10 +54,7 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 		}
 
 		int num_columns = source->matrix.columns;
-		int row_handle = object_new_matrix(interp, 1, num_columns);
-		if (interp->error_flag) return;
-
-		Object *row = interp->objects[row_handle];
+		NEW_MATRIX(row_handle, row, 1, num_columns);
 		for (int j = 0; j < num_columns; j++)
 			MAT(row, 0, j) = MAT(source, index, j);
 
@@ -71,24 +68,15 @@ void p_at_j(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP_INT(index, "@j", "index");
+	POP_MATRIX(source, "@j");
 
-	POP(source_val);
-	if (source_val.tag != T_MATRIX) {
-		fail(interp, "@j: expected a matrix, got %s", tag_name(source_val.tag));
-		return;
-	}
-
-	Object *source = interp->objects[source_val.data];
 	if (index < 0 || index >= source->matrix.columns) {
 		fail(interp, "@j: column index %d out of bounds (%d columns)", index, source->matrix.columns);
 		return;
 	}
 
 	int num_rows = source->matrix.rows;
-	int col_handle = object_new_matrix(interp, num_rows, 1);
-	if (interp->error_flag) return;
-
-	Object *col = interp->objects[col_handle];
+	NEW_MATRIX(col_handle, col, num_rows, 1);
 	for (int i = 0; i < num_rows; i++)
 		MAT(col, i, 0) = MAT(source, i, index);
 
@@ -100,14 +88,8 @@ void p_at_ij(Interpreter *interp, cell *cfa) {
 
 	POP_INT(j, "@i,j", "column index");
 	POP_INT(i, "@i,j", "row index");
+	POP_MATRIX(source, "@i,j");
 
-	POP(source_val);
-	if (source_val.tag != T_MATRIX) {
-		fail(interp, "@i,j: expected a matrix, got %s", tag_name(source_val.tag));
-		return;
-	}
-
-	Object *source = interp->objects[source_val.data];
 	if (i < 0 || i >= source->matrix.rows) {
 		fail(interp, "@i,j: row index %d out of bounds (%d rows)", i, source->matrix.rows);
 		return;
@@ -337,17 +319,10 @@ void p_diagonal_matrix(Interpreter *interp, cell *cfa) {
 void p_diagonal(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(source_val);
-	if (source_val.tag != T_MATRIX) {
-		fail(interp, "diagonal: expected a matrix, got %s", tag_name(source_val.tag));
-		return;
-	}
+	POP_MATRIX(source, "diagonal");
 
-	Object *source = interp->objects[source_val.data];
 	int diag_len = MIN(source->matrix.rows, source->matrix.columns);
-	int diag_handle = object_new_matrix(interp, 1, diag_len);
-	if (interp->error_flag) return;
-	Object *diagonal = interp->objects[diag_handle];
+	NEW_MATRIX(diag_handle, diagonal, 1, diag_len);
 
 	for (int i = 0; i < diag_len; i++)
 		diagonal->matrix.elements[i] = MAT(source, i, i);
@@ -360,14 +335,8 @@ void p_reshape(Interpreter *interp, cell *cfa) {
 
 	POP_INT(new_cols, "reshape", "column count");
 	POP_INT(new_rows, "reshape", "row count");
+	POP_MATRIX(source, "reshape");
 
-	POP(source_val);
-	if (source_val.tag != T_MATRIX) {
-		fail(interp, "reshape: expected a matrix, got %s", tag_name(source_val.tag));
-		return;
-	}
-
-	Object *source = interp->objects[source_val.data];
 	int total = source->matrix.rows * source->matrix.columns;
 	if (new_rows * new_cols != total) {
 		fail(interp, "reshape: cannot reshape %d elements (%dx%d) into %dx%d (%d)",
@@ -376,10 +345,7 @@ void p_reshape(Interpreter *interp, cell *cfa) {
 		return;
 	}
 
-	int target_handle = object_new_matrix(interp, new_rows, new_cols);
-	if (interp->error_flag) return;
-	Object *target = interp->objects[target_handle];
-
+	NEW_MATRIX(target_handle, target, new_rows, new_cols);
 	memcpy(target->matrix.elements, source->matrix.elements,
 			(size_t)total * sizeof(double));
 
@@ -460,30 +426,16 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 void p_dim(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(matrix_val);
-	if (matrix_val.tag != T_MATRIX) {
-		fail(interp, "dim: expected a matrix, got %s", tag_name(matrix_val.tag));
-		return;
-	}
-
-	Object *matrix = interp->objects[matrix_val.data];
-	push(interp, make_float(matrix->matrix.rows));
-	push(interp, make_float(matrix->matrix.columns));
+	POP_MATRIX(m, "dim");
+	push(interp, make_float(m->matrix.rows));
+	push(interp, make_float(m->matrix.columns));
 }
 
 void p_transpose(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(matrix_val);
-	if (matrix_val.tag != T_MATRIX) {
-		fail(interp, "transpose: expected a matrix, got %s", tag_name(matrix_val.tag));
-		return;
-	}
-
-	Object *source = interp->objects[matrix_val.data];
-	int target_handle = object_new_matrix(interp, source->matrix.columns, source->matrix.rows);
-	if (interp->error_flag) return;
-	Object *target = interp->objects[target_handle];
+	POP_MATRIX(source, "transpose");
+	NEW_MATRIX(target_handle, target, source->matrix.columns, source->matrix.rows);
 	for (int i = 0; i < source->matrix.rows; i++)
 		for (int j = 0; j < source->matrix.columns; j++)
 			MAT(target, j, i) = MAT(source, i, j);
@@ -495,35 +447,23 @@ void p_transpose(Interpreter *interp, cell *cfa) {
 #define REDUCE_OVERALL(primitive_name, word_name, fn, identity) \
 	void primitive_name(Interpreter *interp, cell *cfa) { \
 		(void)cfa; \
-		POP(source_val); \
-		if (source_val.tag != T_MATRIX) { \
-			fail(interp, "%s: expected a matrix, got %s", word_name, tag_name(source_val.tag)); \
-			return; \
-		} \
-		push(interp, make_float(matrix_reduce_overall(interp->objects[source_val.data], fn, identity))); \
+		POP_MATRIX(source, word_name); \
+		push(interp, make_float(matrix_reduce_overall(source, fn, identity))); \
 	}
 
 #define REDUCE_ROWS(primitive_name, word_name, fn, identity) \
 	void primitive_name(Interpreter *interp, cell *cfa) { \
 		(void)cfa; \
-		POP(source_val); \
-		if (source_val.tag != T_MATRIX) { \
-			fail(interp, "%s: expected a matrix, got %s", word_name, tag_name(source_val.tag)); \
-			return; \
-		} \
-		int target_handle = matrix_reduce_rows(interp, interp->objects[source_val.data], fn, identity); \
+		POP_MATRIX(source, word_name); \
+		int target_handle = matrix_reduce_rows(interp, source, fn, identity); \
 		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \
 	}
 
 #define REDUCE_COLUMNS(primitive_name, word_name, fn, identity) \
 	void primitive_name(Interpreter *interp, cell *cfa) { \
 		(void)cfa; \
-		POP(source_val); \
-		if (source_val.tag != T_MATRIX) { \
-			fail(interp, "%s: expected a matrix, got %s", word_name, tag_name(source_val.tag)); \
-			return; \
-		} \
-		int target_handle = matrix_reduce_columns(interp, interp->objects[source_val.data], fn, identity); \
+		POP_MATRIX(source, word_name); \
+		int target_handle = matrix_reduce_columns(interp, source, fn, identity); \
 		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \
 	}
 

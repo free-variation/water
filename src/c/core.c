@@ -395,8 +395,10 @@ void dosym(Interpreter *interp, cell *cfa) {
 }
 
 void dovar(Interpreter *interp, cell *cfa) {
-	int body_index = (int)((cfa + 1) - interp->vocab->dict);
-	push(interp, make_addr(body_index));
+	Val v;
+	v.tag = (Tag)cfa[1];
+	v.data = cfa[2];
+	push(interp, v);
 }
 
 void run_inner(Interpreter *interp) {
@@ -771,14 +773,10 @@ void load_file(Interpreter *interp, const char *filename) {
 void p_load(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(value);
-	if (value.tag != T_STRING) {
-		fail(interp, "load: expected a string filename, got %s", tag_name(value.tag));
-		return;
-	}
-	gc_root_push(interp, value);
+	POP_STRING(filename_obj, "load");
+	gc_root_push(interp, filename_obj_val);
 
-	const char *filename = interp->objects[value.data]->bytes;
+	const char *filename = filename_obj->bytes;
 	if (interp->load_depth == 0)
 		record_loaded_file(interp, filename);
 	load_file(interp, filename);
@@ -833,6 +831,8 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 			cursor += 2;
 		} else if ((ref == (cell)interp->vocab->branch_cfa
 					|| ref == (cell)interp->vocab->zbranch_cfa) && cursor + 1 < body_end) {
+			cursor += 2;
+		} else if (ref == (cell)interp->vocab->to_var_cfa && cursor + 1 < body_end) {
 			cursor += 2;
 		} else {
 			cursor++;
@@ -906,13 +906,9 @@ void gc(Interpreter *interp) {
 void p_save(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(value);
-	if (value.tag != T_STRING) {
-		fail(interp, "save: expected a string filename, got %s", tag_name(value.tag));
-		return;
-	}
-	gc_root_push(interp, value);
-	const char *filename = interp->objects[value.data]->bytes;
+	POP_STRING(filename_obj, "save");
+	gc_root_push(interp, filename_obj_val);
+	const char *filename = filename_obj->bytes;
 
 	FILE *file = fopen(filename, "w");
 	if (!file) {
@@ -992,13 +988,9 @@ int r_val(FILE *f, Val *v) {
 void p_save_image(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(value);
-	if (value.tag != T_STRING) {
-		fail(interp, "save-image: expected a string filename, got %s", tag_name(value.tag));
-		return;
-	}
-	gc_root_push(interp, value);
-	const char *filename = interp->objects[value.data]->bytes;
+	POP_STRING(filename_obj, "save-image");
+	gc_root_push(interp, filename_obj_val);
+	const char *filename = filename_obj->bytes;
 
 	FILE *file = fopen(filename, "wb");
 	if (!file) {
@@ -1137,19 +1129,15 @@ void forget_user(Interpreter *interp) {
 void p_load_image(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(value);
-	if (value.tag != T_STRING) {
-		fail(interp, "load-image: expected a string filename, got %s", tag_name(value.tag));
-		return;
-	}
+	POP_STRING(filename_obj, "load-image");
 
 	char filename[4096];
-	int fnlen = interp->objects[value.data]->len;
+	int fnlen = filename_obj->len;
 	if (fnlen >= (int)sizeof(filename)) {
 		fail(interp, "filename too long");
 		return;
 	}
-	memcpy(filename, interp->objects[value.data]->bytes, (size_t)fnlen);
+	memcpy(filename, filename_obj->bytes, (size_t)fnlen);
 	filename[fnlen] = 0;
 
 	FILE *file = fopen(filename, "rb");
@@ -1469,6 +1457,7 @@ int main(void) {
 	interp->vocab->zbranch_cfa = define_primitive(interp, "(0branch)", p_0branch, 0);
 	interp->vocab->dostr_cfa = define_primitive(interp, "(dostr)", p_dostr, 0);
 	interp->vocab->stop_cfa = define_primitive(interp, "(stop)", p_stop, 0);
+	interp->vocab->to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 0);
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);
@@ -1476,6 +1465,7 @@ int main(void) {
 	define_primitive(interp, "string>symbol", p_string_to_symbol, 0);
 	define_primitive(interp, "forget", p_forget, 0);
 	define_primitive(interp, "'", p_tick, 1);
+	define_primitive(interp, "to", p_to, 1);
 
 	define_primitive(interp, ";", p_semi, 1);
 	define_primitive(interp, "if", p_if, 1);

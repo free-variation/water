@@ -359,12 +359,8 @@ void p_store(Interpreter *interp, cell *cfa) {
 void p_execute(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(value);
-	if (value.tag != T_XT) {
-		fail(interp, "execute: expected an execution token, got %s", tag_name(value.tag));
-		return;
-	}
-	execute_cfa(interp, (int)value.data);
+	POP_XT(value, "execute");
+	execute_cfa(interp, value);
 }
 
 void p_reset(Interpreter *interp, cell *cfa) {
@@ -409,11 +405,7 @@ void p_shift(Interpreter *interp, cell *cfa) {
 void p_shift_with(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(handler);
-	if (handler.tag != T_XT) {
-		fail(interp, "shift-with: expected an execution token handler, got %s", tag_name(handler.tag));
-		return;
-	}
+	POP_XT(handler, "shift-with");
 
 	int mark_index;
 	int cont_slot = capture_continuation(interp, &mark_index);
@@ -423,7 +415,7 @@ void p_shift_with(Interpreter *interp, cell *cfa) {
 	interp->rsp = mark_index + 1;
 	push(interp, make_continuation(cont_slot));
 
-	execute_cfa(interp, (int)handler.data);
+	execute_cfa(interp, handler);
 	if (interp->error_flag) return;
 
 	interp->unwinding = 1;
@@ -474,12 +466,7 @@ void p_words(Interpreter *interp, cell *cfa) {
 void p_see(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(xt);
-	if (xt.tag != T_XT) {
-		fail(interp, "see: expected an execution token (try ' word), got %s", tag_name(xt.tag));
-		return;
-	}
-	int target_cfa = (int)xt.data;
+	POP_XT(target_cfa, "see");
 
 	const char *name = NULL;
 	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
@@ -662,6 +649,33 @@ void p_variable(Interpreter *interp, cell *cfa) {
 	emit(interp, zero_bits);
 }
 
+void p_to_var(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	int var_cfa = (int)interp->vocab->dict[interp->ip++];
+	POP(v);
+	interp->vocab->dict[var_cfa + 1] = (cell)v.tag;
+	interp->vocab->dict[var_cfa + 2] = v.data;
+}
+
+void p_to(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	char *token = next_token(interp);
+	if (!token) { fail(interp, "to: expected a name"); return; }
+	int target_cfa = find(interp, token);
+	if (!target_cfa) { fail(interp, "to: unknown name: %s", token); return; }
+	cfa_handler h = (cfa_handler)interp->vocab->dict[target_cfa];
+	if (h != dovar) { fail(interp, "to: %s is not a variable", token); return; }
+
+	if (interp->compiling) {
+		emit(interp, (cell)interp->vocab->to_var_cfa);
+		emit(interp, (cell)target_cfa);
+	} else {
+		POP(v);
+		interp->vocab->dict[target_cfa + 1] = (cell)v.tag;
+		interp->vocab->dict[target_cfa + 2] = v.data;
+	}
+}
+
 void p_symbol(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
@@ -680,13 +694,7 @@ void p_symbol(Interpreter *interp, cell *cfa) {
 void p_string_to_symbol(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	POP(value);
-	if (value.tag != T_STRING) {
-		fail(interp, "string>symbol: expected a string, got %s", tag_name(value.tag));
-		return;
-	}
-
-	Object *string = interp->objects[value.data];
+	POP_STRING(string, "string>symbol");
 	push(interp, make_symbol(intern_symbol(interp, string->bytes)));
 }
 
