@@ -599,6 +599,47 @@ void p_dostr(Interpreter *interp, cell *cfa) {
 	push(interp, make_string(interpolate(interp, template_handle)));
 }
 
+void p_enter_locals(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	int n_locals = (int)interp->vocab->dict[interp->ip++];
+	rpush(interp, make_addr(interp->local_base));
+
+	for (int i = 0; i < n_locals; i++)
+		rpush(interp, make_float(0.0));
+
+	interp->local_base = interp->rsp - n_locals;
+}
+
+void p_leave_locals(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	int n_locals = (int)interp->vocab->dict[interp->ip++];
+	interp->rsp -= n_locals;
+	Val saved = rpop(interp);
+	interp->local_base = (int)saved.data;
+}
+
+static Val *local_slot(Interpreter *interp) {
+	int depth = (int)interp->vocab->dict[interp->ip++];
+	int slot  = (int)interp->vocab->dict[interp->ip++];
+
+	int base = interp->local_base;
+	for (int i = 0; i < depth; i++)
+		base = (int)interp->return_stack[base - 1].data;
+
+	return &interp->return_stack[base + slot];
+}
+
+void p_local_fetch(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	push(interp, *local_slot(interp));
+}
+
+void p_local_store(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	*local_slot(interp) = pop(interp);
+}
 
 void p_set(Interpreter *interp, cell *cfa) {
 	(void)cfa;
@@ -832,8 +873,13 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 		} else if ((ref == (cell)interp->vocab->branch_cfa
 					|| ref == (cell)interp->vocab->zbranch_cfa) && cursor + 1 < body_end) {
 			cursor += 2;
-		} else if (ref == (cell)interp->vocab->to_var_cfa && cursor + 1 < body_end) {
+		} else if ((ref == (cell)interp->vocab->to_var_cfa
+					|| ref == (cell)interp->vocab->enter_locals_cfa
+					|| ref == (cell)interp->vocab->leave_locals_cfa) && cursor + 1 < body_end) {
 			cursor += 2;
+		} else if ((ref == (cell)interp->vocab->local_fetch_cfa
+					|| ref == (cell)interp->vocab->local_store_cfa) && cursor + 2 < body_end) {
+			cursor += 3;
 		} else {
 			cursor++;
 		}
@@ -1458,6 +1504,10 @@ int main(void) {
 	interp->vocab->dostr_cfa = define_primitive(interp, "(dostr)", p_dostr, 0);
 	interp->vocab->stop_cfa = define_primitive(interp, "(stop)", p_stop, 0);
 	interp->vocab->to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 0);
+	interp->vocab->enter_locals_cfa = define_primitive(interp, "(enter-locals)", p_enter_locals, 0);
+	interp->vocab->leave_locals_cfa = define_primitive(interp, "(leave-locals)", p_leave_locals, 0);
+	interp->vocab->local_fetch_cfa  = define_primitive(interp, "(local@)", p_local_fetch, 0);
+	interp->vocab->local_store_cfa  = define_primitive(interp, "(local!)", p_local_store, 0);
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);
