@@ -1,0 +1,33 @@
+\ Word-local variables: | name ... | declaration, to assignment, bare-name read.
+\ Covers single/multiple locals, nested-scope depth, shadowing, recursion,
+\ and interaction with delimited continuations (shift/resume).
+
+\ -- 1: single local, square via x*x
+: sq | x | to x  x x * ;
+5 sq . cr
+
+\ -- 2: two locals, assignment order (to b to a binds in declaration order)
+: hyp | a b | to b to a  a a * b b * + ;
+3 4 hyp . cr
+
+\ -- 3: nested quotation reads an outer local (depth path, no inner frame)
+: nest | x | to x  [ 10 20 30 ] [: x + :] map ;
+100 nest . cr
+
+\ -- 4: inner quotation's own local shadows the outer one
+: shadow | x | to x  [: | x | to x  x x * :] 9 swap execute  x + ;
+4 shadow . cr
+
+\ -- 5: recursion — each call gets its own frame
+: fact | n | to n  n 1 < if 1 else n  n 1 - fact * then ;
+5 fact . cr
+
+\ -- 6: a local set before shift is read after resume (frame relocation)
+: shifter shift ;
+: worker | x | to x  shifter  x * ;
+: ex reset 7 worker ;
+ex 3 swap resume . cr
+
+\ -- 7: multi-shot — the same continuation resumed twice, local intact each time
+ex dup  5 swap resume . cr
+        6 swap resume . cr

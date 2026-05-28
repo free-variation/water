@@ -122,6 +122,7 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->kind = OBJECT_CONTINUATION;
 	obj->continuation.return_len = return_len;
 	obj->continuation.resume_ip = resume_ip;
+	obj->continuation.local_base_offset = -1;
 	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
 
@@ -689,9 +690,60 @@ int parse_float(const char *text, double *out) {
 	return 1;
 }
 
+static void skip_whitespace(Interpreter *interp) {
+	while (interp->input_buffer_pos < interp->input_buffer_len
+		&& isspace((unsigned char)interp->input_buffer[interp->input_buffer_pos]))
+		interp->input_buffer_pos++;
+}
+
+static void skip_to_char(Interpreter *interp, char delimiter) {
+	while (interp->input_buffer_pos < interp->input_buffer_len
+		&& interp->input_buffer[interp->input_buffer_pos] != delimiter)
+		interp->input_buffer_pos++;
+}
+
+static int comment_starts_here(Interpreter *interp) {
+	int next = interp->input_buffer_pos + 1;
+	return next >= interp->input_buffer_len
+		|| isspace((unsigned char)interp->input_buffer[next]);
+}
+
+static void compile_or_push(Interpreter *interp, Val value) {
+	if (interp->compiling) emit_val_literal(interp, value);
+	else push(interp, value);
+}
+
+int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out) {
+	for (int scope = interp->n_local_scopes - 1; scope >= 0; scope--) {
+		int slice_start = interp->local_scope_starts[scope];
+		int slice_end = (scope + 1 < interp->n_local_scopes)
+			? interp->local_scope_starts[scope + 1]
+			: interp->n_local_names;
+
+		for (int name_idx = slice_start; name_idx < slice_end; name_idx++) {
+			const char *name = &interp->local_names_pool[interp->local_name_offsets[name_idx]];
+			if (strcmp(token, name) != 0) continue;
+
+			int depth = 0;
+			for (int inner = scope + 1; inner < interp->n_local_scopes; inner++) {
+				int inner_start = interp->local_scope_starts[inner];
+				int inner_end = (inner + 1 < interp->n_local_scopes)
+					? interp->local_scope_starts[inner + 1]
+					: interp->n_local_names;
+				if (inner_end > inner_start) depth++;
+			}
+
+			*depth_out = depth;
+			*slot_out = name_idx - slice_start;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 void run_outer(Interpreter *interp) {
 	while (!interp->error_flag) {
-		while (interp->input_buffer_pos < interp->input_buffer_len && isspace((unsigned char)interp->input_buffer[interp->input_buffer_pos])) interp->input_buffer_pos++;
+		skip_whitespace(interp);
 		if (interp->input_buffer_pos >= interp->input_buffer_len) return;
 
 		char ch = interp->input_buffer[interp->input_buffer_pos];
@@ -708,18 +760,29 @@ void run_outer(Interpreter *interp) {
 			}
 			continue;
 		}
-		if (ch == '(' && (interp->input_buffer_pos + 1 >= interp->input_buffer_len || isspace((unsigned char)interp->input_buffer[interp->input_buffer_pos + 1]))) {
-			while (interp->input_buffer_pos < interp->input_buffer_len && interp->input_buffer[interp->input_buffer_pos] != ')') interp->input_buffer_pos++;
+		if (ch == '(' && comment_starts_here(interp)) {
+			skip_to_char(interp, ')');
 			if (interp->input_buffer_pos < interp->input_buffer_len) interp->input_buffer_pos++;
 			continue;
 		}
-		if (ch == '\\' && (interp->input_buffer_pos + 1 >= interp->input_buffer_len || isspace((unsigned char)interp->input_buffer[interp->input_buffer_pos + 1]))) {
-			while (interp->input_buffer_pos < interp->input_buffer_len && interp->input_buffer[interp->input_buffer_pos] != '\n') interp->input_buffer_pos++;
+		if (ch == '\\' && comment_starts_here(interp)) {
+			skip_to_char(interp, '\n');
 			continue;
 		}
 
 		char *tok = next_token(interp);
 		if (!tok) return;
+
+		if (interp->compiling) {
+			int local_depth, local_slot_idx;
+			if (find_local(interp, tok, &local_depth, &local_slot_idx)) {
+				emit(interp, (cell)interp->vocab->local_fetch_cfa);
+				emit(interp, (cell)local_depth);
+				emit(interp, (cell)local_slot_idx);
+				continue;
+			}
+		}
+
 		int cf = find(interp, tok);
 		if (cf) {
 			if (interp->compiling && !WORD_IS_IMMEDIATE(interp->vocab, cf)) emit(interp, (cell)cf);
@@ -730,18 +793,13 @@ void run_outer(Interpreter *interp) {
 		if (tok[0] == ':' && tok[1] != '\0') {
 			Val value = make_symbol(intern_symbol(interp, tok + 1));
 			if (interp->error_flag) return;
-			if (interp->compiling)
-				emit_val_literal(interp, value);
-			else
-				push(interp, value);
+			compile_or_push(interp, value);
 			continue;
 		}
 
 		double dv;
 		if (parse_float(tok, &dv)) {
-			Val value = make_float(dv);
-			if (interp->compiling) emit_val_literal(interp, value);
-			else push(interp, value);
+			compile_or_push(interp, make_float(dv));
 			continue;
 		}
 		fail(interp, "unknown word: %s", tok);
@@ -1134,6 +1192,7 @@ void p_save_image(Interpreter *interp, cell *cfa) {
 								for (int j = 0; j < obj->continuation.return_len; j++)
 									w_val(file, obj->continuation.return_slice[j]);
 								w_i32(file, obj->continuation.resume_ip);
+								w_i32(file, obj->continuation.local_base_offset);
 								break;
 		}
 	}
@@ -1390,6 +1449,14 @@ void p_load_image(Interpreter *interp, cell *cfa) {
 											  goto done;
 										  }
 										  obj->continuation.resume_ip = resume_ip;
+										  int32_t local_base_offset;
+										  if (!r_i32(file, &local_base_offset)) {
+											  free(obj->continuation.return_slice);
+											  free(obj);
+											  fail(interp, "%s: truncated continuation local_base_offset", filename);
+											  goto done;
+										  }
+										  obj->continuation.local_base_offset = local_base_offset;
 										  break;
 									  }
 			default:
@@ -1526,6 +1593,7 @@ int main(void) {
 	define_primitive(interp, "again", p_again, 1);
 	define_primitive(interp, "[:", p_qcolon, 1);
 	define_primitive(interp, ":]", p_qsemi, 1);
+	define_primitive(interp, "|", p_bar, 1);
 
 	define_primitive(interp, "0-matrix",		p_0_matrix, 0);
 	define_primitive(interp, "matrix",			p_matrix, 0);
@@ -1597,6 +1665,9 @@ int main(void) {
 			interp->dsp = 0;
 			interp->rsp = 0;
 			interp->compiling_src_start = 0;
+			interp->n_local_scopes = 0;
+			interp->n_local_names = 0;
+			interp->local_names_pool_here = 0;
 		}
 
 		if (interp->compiling) continue;

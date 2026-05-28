@@ -274,55 +274,99 @@ than `rand()`).
 and command-line argument handling lives at the shell-script wrapper
 layer, not in the core language.)
 
-### Word-local variables
+### Local variables
 
-Currently every `variable` is global to the dictionary. This forces
-top-level state for things that should be scoped to a single colon
-definition (intermediate matrices, loop accumulators, named popped
-arguments), and risks collisions on `reload`. Standard Forth's
-answer is locals declared at the head of a definition.
+Currently every `variable` is global to the dictionary. Locals
+declared per colon-def or quotation give scoped state for
+intermediate matrices, loop accumulators, named popped arguments,
+without polluting the global namespace or risking `reload`
+collisions.
 
-**Syntax:** `{| name1 name2 ... |}` at the start of a colon def. Pops
-N values off the data stack into named slots; names are valid only
-inside that definition.
-
-```
-: predict-row {| u |}
-    U @ u row
-    S @ diagonal-matrix *
-    Vt @ * ;
-```
-
-- A bare local name compiles to a "fetch local n" op.
-- `TO localname` compiles a store (`5 TO u`).
-- Frames live on the return stack: entry pushes N slots, exit pops them.
-
-**Implementation:**
-
-- Compile-time table of declared locals for the in-progress definition.
-- Body parser checks each token against that table; if matched,
-  compile `local@ n` instead of a dictionary lookup.
-- `TO` becomes an immediate word that consumes the next token and
-  compiles either `local! n` (if local) or a normal variable store.
-- Two new primitives: `local@` and `local!`. ~100 lines total.
-
-**Quotations and locals:** A quotation defined inside a word does
-*not* implicitly capture the enclosing word's locals — that would
-require closures and heap-allocated frames. Instead, quotations
-declare their own locals the same way:
+**Syntax:** `| name1 name2 ... |` at the head of a colon-def or
+quotation body. `|` is an immediate word that reads names until a
+closing `|`. Head-only — must precede any other code in the body.
 
 ```
-[: {| x |} x x * :]
+: predict-row | u |
+    U u @i
+    S diagonal-matrix *
+    Vt * ;
+
+[ 1 2 3 4 5 ] [: | x | x x * :] map
 ```
 
-Cleaner than closures, fits Forth's mental model, no lifetime
-tracking. The cost is a small amount of repetition where a loop body
-wants the index it's iterating over.
+**Declaration does not bind.** A local is introduced as a named slot
+initialized to `0.0` (same as `variable`). The slot is assigned by
+`to`; reading it before the first `to` yields `0.0`. Declaration
+and initialization are deliberately separate so callers don't have
+to push values just to introduce a name.
+
+**Lookup precedence at compile time.** When the body parser sees a
+token:
+
+1. Walk currently-open compile scopes innermost-out. If the name is
+   declared in some scope, emit `(local@ depth slot)` where
+   `depth` is the count of frame-having scopes between the current
+   scope and the target, and `slot` is the name's position within
+   the target scope.
+2. Dictionary (existing path: words, then `:foo` symbol, then number).
+
+`to name` does the same lookup, emitting `(local! depth slot)` for
+a local match or falling through to the existing `(to-var)` for a
+global.
+
+**Nesting.** Locals chain through arbitrary nesting. An innermost
+quotation reads its own locals first, then the next enclosing scope
+that declared locals, and so on out to the colon def. Each
+`(local@)` carries a `depth` that the runtime walks.
+
+**Runtime layout.** Frames live on the return stack. An
+`Interpreter::local_base` register points at slot 0 of the current
+frame. Frame, growing up:
+
+```
+[saved_prev_local_base]
+[local_0]               ← local_base
+[local_1]
+...
+[local_{N-1}]
+```
+
+`(enter-locals N)` pushes the prev local_base, then N zero-init
+slots, then sets `local_base = rsp - N`. `(leave-locals N)` pops
+the N slots and restores `local_base`. `(local@ depth slot)` walks
+`depth` saved-prev links from the current frame, then indexes by
+`slot`. `(local! ...)` is the mirror.
+
+**Compile-time state on `Interpreter`:**
+
+- `local_names_pool[LOCAL_NAMES_POOL_SIZE]` — packed
+  null-terminated names of all currently-visible locals.
+- `local_name_offsets[MAX_LOCAL_NAMES]` — start of each name in the
+  pool, indexed 0..n_local_names-1.
+- `local_scope_starts[MAX_LOCAL_SCOPES]` — n_local_names at each
+  open scope's entry; defines that scope's slice of the offsets
+  array.
+- `local_scope_dict_starts[MAX_LOCAL_SCOPES]` — `here` at each
+  scope's entry; used to enforce head-only `|`.
+- `n_local_names`, `n_local_scopes` — counters.
+
+`:` and `[:` call `enter_compile_scope`, which records the current
+n_local_names and `here` at the new scope's slot. `;` and `:]` call
+`leave_compile_scope`, which emits `(leave-locals N)` if any
+locals were declared in the scope, rewinds the names pool and
+offsets array, then falls through to the existing exit emit.
+
+**Status:** in progress. Runtime ops and compile-time scope
+machinery are in; the `|` immediate word, the body-parser locals
+lookup, and the `to` extension remain. Continuation interaction
+(saving and restoring `local_base` across `shift`/`resume` when a
+captured slice contains a frame) also remains.
 
 **What locals don't replace:** long-lived state (open DB handles,
 factor matrices, lookup dicts) that outlives any single word call
 still wants either a `variable` or a bundled state dict passed
-explicitly. Locals fix intra-word stack juggling; they're not a
+explicitly. Locals fix intra-call stack juggling; they're not a
 substitute for program-level state.
 
 ---

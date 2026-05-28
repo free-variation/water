@@ -1,5 +1,8 @@
 #include "logicforth.h"
 
+static void enter_compile_scope(Interpreter *interp);
+static void leave_compile_scope(Interpreter *interp);
+
 int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 	Object *left = interp->objects[left_handle];
 	Object *right = interp->objects[right_handle];
@@ -387,8 +390,18 @@ int capture_continuation(Interpreter *interp, int *out_mark_index) {
 			return_len, resume_ip);
 	if (interp->error_flag) return -1;
 
+	interp->objects[slot]->continuation.local_base_offset =
+		interp->local_base - (mark_index + 1);
+
 	*out_mark_index = mark_index;
 	return slot;
+}
+
+static void restore_local_base_below(Interpreter *interp, int mark_index) {
+	int base = interp->local_base;
+	while (base > mark_index)
+		base = (int)interp->return_stack[base - 1].data;
+	interp->local_base = base;
 }
 
 void p_shift(Interpreter *interp, cell *cfa) {
@@ -399,6 +412,7 @@ void p_shift(Interpreter *interp, cell *cfa) {
 	if (cont_slot < 0) return;
 
 	interp->rsp = mark_index;
+	restore_local_base_below(interp, mark_index);
 	push(interp, make_continuation(cont_slot));
 }
 
@@ -413,6 +427,7 @@ void p_shift_with(Interpreter *interp, cell *cfa) {
 
 	interp->unwind_target = (int)interp->return_stack[mark_index].data;
 	interp->rsp = mark_index + 1;
+	restore_local_base_below(interp, mark_index);
 	push(interp, make_continuation(cont_slot));
 
 	execute_cfa(interp, handler);
@@ -433,14 +448,19 @@ void p_resume(Interpreter *interp, cell *cfa) {
 	Object *cont = interp->objects[k.data];
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
+	int saved_local_base = interp->local_base;
 
 	interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)interp->vocab->stop_cfa;
 	rpush(interp, make_addr(TRAMPOLINE_SLOT + 1));
 
 	rpush(interp, make_mark());
 
+	int slice_base = interp->rsp;
 	for (int i = 0; i < cont->continuation.return_len; i++)
 		rpush(interp, cont->continuation.return_slice[i]);
+
+	if (cont->continuation.local_base_offset >= 0)
+		interp->local_base = slice_base + cont->continuation.local_base_offset;
 
 	interp->ip = cont->continuation.resume_ip;
 	interp->running = 1;
@@ -448,6 +468,7 @@ void p_resume(Interpreter *interp, cell *cfa) {
 
 	interp->running = saved_running;
 	interp->ip = saved_ip;
+	interp->local_base = saved_local_base;
 }
 
 void p_words(Interpreter *interp, cell *cfa) {
@@ -498,6 +519,7 @@ void p_see(Interpreter *interp, cell *cfa) {
 void p_semi(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
+	leave_compile_scope(interp);
 	emit(interp, (cell)interp->vocab->exit_cfa);
 	if (interp->compiling_src_start > 0 && interp->vocab->latest_cfa != 0) {
 		int src_end = interp->input_buffer_pos - 1;
@@ -580,6 +602,7 @@ void p_qcolon(Interpreter *interp, cell *cfa) {
 	}
 	int anon_cfa = interp->vocab->here;
 	emit(interp, (cell)&docol);
+	enter_compile_scope(interp);
 	interp->compiling = 1;
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
@@ -588,6 +611,7 @@ void p_qcolon(Interpreter *interp, cell *cfa) {
 void p_qsemi(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
+	leave_compile_scope(interp);
 	emit(interp, (cell)interp->vocab->exit_cfa);
 	POP(branch_slot_val);
 	POP(anon_cfa_val);
@@ -614,6 +638,39 @@ void p_tick(Interpreter *interp, cell *cfa) {
 	else push(interp, value);
 }
 
+static void enter_compile_scope(Interpreter *interp) {
+	if (interp->n_local_scopes >= MAX_LOCAL_SCOPES) {
+		fail(interp, "compile: locals nesting deeper than %d", MAX_LOCAL_SCOPES);
+		return;
+	}
+
+	interp->local_scope_starts[interp->n_local_scopes] = interp->n_local_names;
+	interp->local_scope_dict_starts[interp->n_local_scopes] = interp->vocab->here;
+	interp->n_local_scopes++;
+}
+
+static void leave_compile_scope(Interpreter *interp) {
+	if (interp->n_local_scopes <= 0) return;
+
+	interp->n_local_scopes--;
+	int saved_n_names = interp->local_scope_starts[interp->n_local_scopes];
+	int n_locals_in_scope = interp->n_local_names - saved_n_names;
+
+	if (n_locals_in_scope > 0) {
+		emit(interp, (cell)interp->vocab->leave_locals_cfa);
+		emit(interp, (cell)n_locals_in_scope);
+	}
+
+	if (saved_n_names == 0) {
+		interp->local_names_pool_here = 0;
+	} else {
+		int last_offset = interp->local_name_offsets[saved_n_names - 1];
+		interp->local_names_pool_here = last_offset +
+			(int)strlen(&interp->local_names_pool[last_offset]) + 1;
+	}
+	interp->n_local_names = saved_n_names;
+}
+
 void p_colon(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
@@ -625,6 +682,7 @@ void p_colon(Interpreter *interp, cell *cfa) {
 
 	create_header(interp, token, 0);
 	emit(interp, (cell)&docol);
+	enter_compile_scope(interp);
 	interp->compiling = 1;
 
 	interp->compiling_src_start = interp->input_buffer_pos;
@@ -649,6 +707,60 @@ void p_variable(Interpreter *interp, cell *cfa) {
 	emit(interp, zero_bits);
 }
 
+void p_bar(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	if (!interp->compiling || interp->n_local_scopes <= 0) {
+		fail(interp, "|: only valid inside a colon definition or quotation");
+		return;
+	}
+
+	int scope_idx = interp->n_local_scopes - 1;
+	if (interp->vocab->here != interp->local_scope_dict_starts[scope_idx]) {
+		fail(interp, "|: locals must be declared at the head of the body");
+		return;
+	}
+
+	int scope_start = interp->local_scope_starts[scope_idx];
+	while (1) {
+		char *token = next_token(interp);
+		if (!token) {
+			fail(interp, "|: unterminated locals declaration (no closing |)");
+			return;
+		}
+		if (strcmp(token, "|") == 0) break;
+
+		for (int i = scope_start; i < interp->n_local_names; i++) {
+			if (strcmp(token, &interp->local_names_pool[interp->local_name_offsets[i]]) == 0) {
+				fail(interp, "|: local '%s' declared twice", token);
+				return;
+			}
+		}
+
+		int name_len = (int)strlen(token);
+		if (interp->local_names_pool_here + name_len + 1 > LOCAL_NAMES_POOL_SIZE) {
+			fail(interp, "|: local names pool full");
+			return;
+		}
+		if (interp->n_local_names >= MAX_LOCAL_NAMES) {
+			fail(interp, "|: too many local names (max %d)", MAX_LOCAL_NAMES);
+			return;
+		}
+
+		int offset = interp->local_names_pool_here;
+		memcpy(&interp->local_names_pool[offset], token, (size_t)name_len);
+		interp->local_names_pool[offset + name_len] = 0;
+		interp->local_names_pool_here += name_len + 1;
+		interp->local_name_offsets[interp->n_local_names++] = offset;
+	}
+
+	int n_declared = interp->n_local_names - scope_start;
+	if (n_declared > 0) {
+		emit(interp, (cell)interp->vocab->enter_locals_cfa);
+		emit(interp, (cell)n_declared);
+	}
+}
+
 void p_to_var(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 	int var_cfa = (int)interp->vocab->dict[interp->ip++];
@@ -661,6 +773,17 @@ void p_to(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 	char *token = next_token(interp);
 	if (!token) { fail(interp, "to: expected a name"); return; }
+
+	if (interp->compiling) {
+		int local_depth, local_slot_idx;
+		if (find_local(interp, token, &local_depth, &local_slot_idx)) {
+			emit(interp, (cell)interp->vocab->local_store_cfa);
+			emit(interp, (cell)local_depth);
+			emit(interp, (cell)local_slot_idx);
+			return;
+		}
+	}
+
 	int target_cfa = find(interp, token);
 	if (!target_cfa) { fail(interp, "to: unknown name: %s", token); return; }
 	cfa_handler h = (cfa_handler)interp->vocab->dict[target_cfa];
@@ -915,3 +1038,4 @@ void p_tanh(Interpreter *interp, cell *cfa) {
 	POP(operand);
 	unary_op(interp, operand, tanh, "tanh");
 }
+

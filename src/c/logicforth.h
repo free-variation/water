@@ -25,6 +25,9 @@ typedef int64_t cell;
 #define SIDESTACK_DEPTH 		256
 #define MAX_LOADED_FILES 		64
 #define MAX_GC_ROOTS 			16
+#define LOCAL_NAMES_POOL_SIZE	2048
+#define MAX_LOCAL_NAMES			128
+#define MAX_LOCAL_SCOPES		16
 
 #define TRAMPOLINE_SLOT			0
 #define DICT_RESERVED			2
@@ -147,6 +150,7 @@ typedef struct {
 			Val *return_slice;
 			int return_len;
 			int resume_ip;
+			int local_base_offset;
 		} continuation;
 	};
 } Object;
@@ -194,6 +198,14 @@ typedef struct Interpreter {
 	char input_buffer[INPUT_BUFFER_SIZE];
 	int input_buffer_len, input_buffer_pos, need_more;
 	int compiling_src_start;
+
+	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
+	int local_names_pool_here;
+	int local_name_offsets[MAX_LOCAL_NAMES];
+	int n_local_names;
+	int local_scope_starts[MAX_LOCAL_SCOPES];
+	int local_scope_dict_starts[MAX_LOCAL_SCOPES];
+	int n_local_scopes;
 
 	Object *objects[MAX_OBJECTS];
 	int n_objects;
@@ -376,6 +388,7 @@ void p_enter_locals(Interpreter *interp, cell *cfa);
 void p_leave_locals(Interpreter *interp, cell *cfa);
 void p_local_fetch(Interpreter *interp, cell *cfa);
 void p_local_store(Interpreter *interp, cell *cfa);
+int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
 double scalar_add(double a, double b);
 double scalar_subtract(double a, double b);
@@ -469,6 +482,7 @@ void p_colon(Interpreter *interp, cell *cfa);
 void p_variable(Interpreter *interp, cell *cfa);
 void p_to(Interpreter *interp, cell *cfa);
 void p_to_var(Interpreter *interp, cell *cfa);
+void p_bar(Interpreter *interp, cell *cfa);
 void p_symbol(Interpreter *interp, cell *cfa);
 void p_string_to_symbol(Interpreter *interp, cell *cfa);
 void p_forget(Interpreter *interp, cell *cfa);
