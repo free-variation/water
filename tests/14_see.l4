@@ -1,7 +1,7 @@
 : double 2 * ;
 : square dup * ;
 variable counter
-42 counter !
+42 to counter
 symbol red
 ' double see
 ' square see

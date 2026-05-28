@@ -1,11 +1,11 @@
 variable x
-x @ .
-42 x !
-x @ .
-99 x !
-x @ .
+x .
+42 to x
+x .
+99 to x
+x .
 variable y
-"hello" y !
-y @ .
-{ 1 2 3 } y !
-y @ .
+"hello" to y
+y .
+{ 1 2 3 } to y
+y .
