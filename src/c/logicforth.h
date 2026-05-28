@@ -168,6 +168,7 @@ typedef struct Vocabulary {
 	int symbol_pool_here;
 
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
+	int enter_locals_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
 
 	int init_here, init_latest_cfa, init_names_here;
 	int init_source_here, init_symbol_pool_here;
@@ -183,6 +184,7 @@ typedef struct Interpreter {
 	int rsp;
 	Val side_stack[SIDESTACK_DEPTH];
 	int side_dsp;
+	int local_base;
 
 	int ip;
 	int running;
@@ -370,6 +372,10 @@ void p_literal(Interpreter *interp, cell *cfa);
 void p_branch(Interpreter *interp, cell *cfa);
 void p_0branch(Interpreter *interp, cell *cfa);
 void p_dostr(Interpreter *interp, cell *cfa);
+void p_enter_locals(Interpreter *interp, cell *cfa);
+void p_leave_locals(Interpreter *interp, cell *cfa);
+void p_local_fetch(Interpreter *interp, cell *cfa);
+void p_local_store(Interpreter *interp, cell *cfa);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
 double scalar_add(double a, double b);
 double scalar_subtract(double a, double b);
