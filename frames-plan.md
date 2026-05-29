@@ -20,6 +20,7 @@ Access is path-style: a `/a/b/c` literal is an array of symbols that walks down 
   - `!`  `( frame path value -- frame )` — set at path; **auto-vivifies** missing intermediate frames; leaves the frame for chaining.
 - **Other operations:** `delete-at` `( frame path -- frame )`, `has?` `( frame path -- bool )` (non-erroring), `update-at` `( frame path xt -- frame )` (apply quotation to leaf), `keys`/`values` `( frame -- array )` (top level), `size` `( frame -- n )`, `merge` `( frame1 frame2 -- frame3 )` (new frame, right wins), `copy` `( frame -- frame' )` (**deep**).
 - **Recommended defaults:** `delete-at` on a missing leaf **errors** (consistent with `@`); `copy` is **deep**; `update-at` is **included**.
+- **Pretty-printer:** a word (name TBD — e.g. `pp` / `.frame`) `( frame -- )` that renders a frame and its nested frames across **multiple lines, indented by nesting depth**, to reveal tree structure — complementing the compact single-line `{ :a 1 :b 2 }` form that `print_val` produces for embedding inside other values.
 
 ## Implementation
 
@@ -45,6 +46,7 @@ Wire a new tagged heap type, mirroring `T_SET`/`T_ARRAY`:
 ### 3. Frame operations (`collections.c`, registrations in `core.c`)
 - Rewrite `p_fetch`(`@`) and `p_store`(`!`) for the path semantics above (the old `T_ADDR` paths are dead). Path traversal walks the symbol array; `@` errors on miss, `!` auto-vivifies intermediate frames.
 - New `p_frame_delete_at`, `p_frame_has`, `p_frame_update_at`, `p_frame_keys`, `p_frame_values`, `p_frame_size`, `p_frame_merge`, `p_frame_copy` (deep). Register all alongside the set words near `core.c:1567`.
+- Pretty-printer `p_frame_pp` `( frame -- )`: recursive, one key per line, indent two spaces per nesting level, nested frames descend onto their own indented blocks; reuses `print_val` for leaf (non-frame) values. Distinct from the inline `print_val` frame form. Honor `isatty`/depth shading consistently with the other printers.
 - Consider folding `size` to be polymorphic over frames/arrays/sets later; for now a frame-specific `size` is fine.
 
 ### 4. Set → `#{` migration (mechanical, sizable)
