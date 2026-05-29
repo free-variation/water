@@ -33,69 +33,58 @@ int object_alloc_slot(Interpreter *interp) {
 	return -1;
 }
 
-int object_new_string(Interpreter *interp, const char *bytes, int length) {
+static Object *object_new(Interpreter *interp, ObjectKind kind, int *out_slot) {
 	int slot = object_alloc_slot(interp);
 	if (slot < 0) {
 		fail(interp, "object registry full");
-		return -1;
+		*out_slot = -1;
+		return NULL;
 	}
-
 	Object *obj = calloc(1, sizeof(*obj));
-	obj->kind = OBJECT_STRING;
+	obj->kind = kind;
+	interp->objects[slot] = obj;
+	*out_slot = slot;
+	return obj;
+}
+
+int object_new_string(Interpreter *interp, const char *bytes, int length) {
+	NEW_OBJECT(obj, OBJECT_STRING);
 	obj->len = length;
-	obj->cap = length;
+	obj->capacity = length;
 	obj->bytes = malloc((size_t)length + 1);
 	memcpy(obj->bytes, bytes, (size_t)length);
 	obj->bytes[length] = 0;
-
-	interp->objects[slot] = obj;
 	return slot;
 }
 
 #define SET_INITIAL_CAPACITY 4
+#define FRAME_INITIAL_CAPACITY 4
 
 int object_new_set(Interpreter *interp) {
-	int slot = object_alloc_slot(interp);
-	if (slot < 0) {
-		fail(interp, "object registry full");
-		return -1;
-	}
-
-	Object *obj = calloc(1, sizeof(*obj));
-	obj->kind = OBJECT_SET;
-	obj->cap = SET_INITIAL_CAPACITY;
-	obj->items = malloc(sizeof(Val) * (size_t)obj->cap);
-
-	interp->objects[slot] = obj;
+	NEW_OBJECT(obj, OBJECT_SET);
+	obj->capacity = SET_INITIAL_CAPACITY;
+	obj->items = malloc(sizeof(Val) * (size_t)obj->capacity);
 	return slot;
 }
 
 int object_new_array(Interpreter *interp, int num_elements) {
-	int slot = object_alloc_slot(interp);
-	if (slot < 0) {
-		fail(interp, "object registry full");
-		return -1;
-	}
-
-	Object *obj = calloc(1, sizeof(*obj));
-	obj->kind = OBJECT_ARRAY;
+	NEW_OBJECT(obj, OBJECT_ARRAY);
 	obj->len = num_elements;
-	obj->cap = num_elements;
+	obj->capacity = num_elements;
 	obj->items = malloc(sizeof(Val) * (size_t)MAX(num_elements, 1));
+	return slot;
+}
 
-	interp->objects[slot] = obj;
+int object_new_frame(Interpreter *interp) {
+	NEW_OBJECT(obj, OBJECT_FRAME);
+	obj->capacity = FRAME_INITIAL_CAPACITY;
+	obj->frame.keys   = malloc(sizeof(cell) * (size_t)obj->capacity);
+	obj->frame.values = malloc(sizeof(Val)  * (size_t)obj->capacity);
 	return slot;
 }
 
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
-	int slot = object_alloc_slot(interp);
-	if (slot < 0) {
-		fail(interp, "object registry full");
-		return -1;
-	}
-
-	Object *obj = calloc(1, sizeof(*obj));
-	obj->kind = OBJECT_MATRIX;
+	NEW_OBJECT(obj, OBJECT_MATRIX);
 	obj->matrix.rows = num_rows;
 	obj->matrix.columns = num_columns;
 	/* Compute the element count in size_t so a large rows*columns can't
@@ -103,31 +92,21 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 	size_t num_elements = (size_t)num_rows * (size_t)num_columns;
 	obj->matrix.elements = calloc(num_elements ? num_elements : 1, sizeof(double));
 	if (!obj->matrix.elements) {
+		interp->objects[slot] = NULL;
 		free(obj);
 		fail(interp, "matrix too large to allocate");
 		return -1;
 	}
-
-	interp->objects[slot] = obj;
 	return slot;
 }
 
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip) {
-	int slot = object_alloc_slot(interp);
-	if (slot < 0) {
-		fail(interp, "object registry full");
-		return -1;
-	}
-
-	Object *obj = calloc(1, sizeof(*obj));
-	obj->kind = OBJECT_CONTINUATION;
+	NEW_OBJECT(obj, OBJECT_CONTINUATION);
 	obj->continuation.return_len = return_len;
 	obj->continuation.resume_ip = resume_ip;
 	obj->continuation.local_base_offset = -1;
 	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
-
-	interp->objects[slot] = obj;
 	return slot;
 }
 
@@ -187,6 +166,21 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 						   }
 						   return 0;
 					   }
+		case T_FRAME: {
+			Object *left_frame = interp->objects[left.data];
+			Object *right_frame = interp->objects[right.data];
+			if (left_frame->len != right_frame->len)
+				return left_frame->len - right_frame->len;
+			for (int i = 0; i < left_frame->len; i++) {
+				cell left_key = left_frame->frame.keys[i];
+				cell right_key = right_frame->frame.keys[i];
+				if (left_key < right_key) return -1;
+				if (left_key > right_key) return 1;
+				int value_cmp = val_cmp(interp, left_frame->frame.values[i], right_frame->frame.values[i]);
+				if (value_cmp) return value_cmp;
+			}
+			return 0;
+		}
 
 		/* T_CONT, T_MARK, T_NONE have no ordering: they compare equal here, so
 		   a set treats all continuations/marks as a single member. Identity-
@@ -316,8 +310,20 @@ void print_val(Interpreter *interp, Val value) {
 		case T_FLOAT: print_double(unpack_float(value)); break;
 		case T_SYM: fputs(&interp->vocab->symbol_pool[value.data], stdout); break;
 		case T_STRING: fputs(interp->objects[value.data]->bytes, stdout); break;
-		case T_SET: print_depth_enter(); fputs("{ ", stdout); print_items(interp, interp->objects[value.data]); putchar('}'); print_depth_leave(); break;
-		case T_ARRAY: print_depth_enter(); fputs("[ ", stdout); print_items(interp, interp->objects[value.data]); putchar(']'); print_depth_leave(); break;
+		case T_SET:
+			print_depth_enter();
+			fputs("< ", stdout);
+			print_items(interp, interp->objects[value.data]);
+			putchar('>');
+			print_depth_leave();
+			break;
+		case T_ARRAY:
+			print_depth_enter();
+			fputs("[ ", stdout);
+			print_items(interp, interp->objects[value.data]);
+			putchar(']');
+			print_depth_leave();
+			break;
 		case T_XT: printf("<xt %lld>", (long long)value.data); break;
 		case T_ADDR: printf("<addr %lld>", (long long)value.data); break;
 		case T_MATRIX: {
@@ -329,6 +335,19 @@ void print_val(Interpreter *interp, Val value) {
 						   print_depth_leave();
 						   break;
 					   }
+		case T_FRAME: {
+			Object *frame = interp->objects[value.data];
+			print_depth_enter();
+			fputs("{ ", stdout);
+			for (int i = 0; i < frame->len; i++) {
+				printf(":%s ", &interp->vocab->symbol_pool[frame->frame.keys[i]]);
+				print_val(interp, frame->frame.values[i]);
+				putchar(' ');
+			}
+			putchar('}');
+			print_depth_leave();
+			break;
+		}
 		default: printf("<?>"); break;
 	}
 }
@@ -356,8 +375,21 @@ void print_val_compact(Interpreter *interp, Val value) {
 						else printf("%.9s…", name);
 						break;
 					}
-		case T_SET: print_depth_enter(); printf("{%d}", interp->objects[value.data]->len); print_depth_leave(); break;
-		case T_ARRAY: print_depth_enter(); printf("[%d]", interp->objects[value.data]->len); print_depth_leave(); break;
+		case T_SET:
+			print_depth_enter();
+			printf("<%d>", interp->objects[value.data]->len);
+			print_depth_leave();
+			break;
+		case T_ARRAY:
+			print_depth_enter();
+			printf("[%d]", interp->objects[value.data]->len);
+			print_depth_leave();
+			break;
+		case T_FRAME:
+			print_depth_enter();
+			printf("{%d}", interp->objects[value.data]->len);
+			print_depth_leave();
+			break;
 		case T_MATRIX: {
 						   Object *m = interp->objects[value.data];
 						   print_depth_enter();
@@ -386,18 +418,37 @@ void print_val_compact(Interpreter *interp, Val value) {
 	}
 }
 
+void print_frame_pretty(Interpreter *interp, Object *frame, int indent) {
+	fputs("{\n", stdout);
+	for (int i = 0; i < frame->len; i++) {
+		for (int s = 0; s < indent + 2; s++) putchar(' ');
+		printf(":%s ", &interp->vocab->symbol_pool[frame->frame.keys[i]]);
+		Val value = frame->frame.values[i];
+		if (value.tag == T_FRAME)
+			print_frame_pretty(interp, interp->objects[value.data], indent + 2);
+		else
+			print_val(interp, value);
+		putchar('\n');
+	}
+	for (int s = 0; s < indent; s++) putchar(' ');
+	putchar('}');
+}
+
 void print_prompt_state(Interpreter *interp) {
+	int tty = stdout_is_tty();
+	if (tty) fputs("\033[48;5;240m", stdout);
+
 	if (interp->error_flag) {
-		printf("<%d|error> ", interp->dsp);
-		return;
+		printf("%d|error", interp->dsp);
+	} else if (interp->dsp == 0) {
+		printf("0");
+	} else {
+		printf("%d|", interp->dsp);
+		print_val_compact(interp, interp->data_stack[interp->dsp - 1]);
 	}
-	if (interp->dsp == 0) {
-		printf("<0> ");
-		return;
-	}
-	printf("<%d|", interp->dsp);
-	print_val_compact(interp, interp->data_stack[interp->dsp - 1]);
-	printf("> ");
+
+	if (tty) fputs("\033[49m", stdout);
+	putchar(' ');
 }
 
 int find(Interpreter *interp, const char *name) {
@@ -564,6 +615,7 @@ const char *tag_name(Tag t) {
 		case T_STRING: return "a string";
 		case T_SET:    return "a set";
 		case T_ARRAY:  return "an array";
+		case T_FRAME:  return "a frame";
 		case T_MATRIX: return "a matrix";
 		case T_XT:     return "an execution token";
 		case T_ADDR:   return "an address";
@@ -922,6 +974,7 @@ void mark_val(Interpreter *interp, Val value) {
 	if (value.tag != T_STRING &&
 			value.tag != T_SET &&
 			value.tag != T_ARRAY &&
+			value.tag != T_FRAME &&
 			value.tag != T_MATRIX &&
 			value.tag != T_CONT) return;
 
@@ -932,6 +985,8 @@ void mark_val(Interpreter *interp, Val value) {
 	Object *obj = interp->objects[handle];
 	if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
 		for (int i = 0; i < obj->len; i++) mark_val(interp, obj->items[i]);
+	} else if (obj->kind == OBJECT_FRAME) {
+		for (int i = 0; i < obj->len; i++) mark_val(interp, obj->frame.values[i]);
 	} else if (obj->kind == OBJECT_CONTINUATION) {
 		for (int i = 0; i < obj->continuation.return_len; i++)
 			mark_val(interp, obj->continuation.return_slice[i]);
@@ -1023,6 +1078,7 @@ void gc(Interpreter *interp) {
 			case OBJECT_STRING: free(obj->bytes); break;
 			case OBJECT_SET:
 			case OBJECT_ARRAY: free(obj->items); break;
+			case OBJECT_FRAME: free(obj->frame.keys); free(obj->frame.values); break;
 			case OBJECT_MATRIX: free(obj->matrix.elements); break;
 			case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
 		}
@@ -1195,7 +1251,7 @@ void p_save_image(Interpreter *interp, cell *cfa) {
 		w_u8(file, 1);
 		w_u8(file, (uint8_t)obj->kind);
 		w_i32(file, obj->len);
-		w_i32(file, obj->cap);
+		w_i32(file, obj->capacity);
 		switch (obj->kind) {
 			case OBJECT_STRING:
 				fwrite(obj->bytes, 1, (size_t)obj->len, file);
@@ -1232,6 +1288,7 @@ void free_one_object(Object *obj) {
 		case OBJECT_STRING: free(obj->bytes); break;
 		case OBJECT_SET:
 		case OBJECT_ARRAY: free(obj->items); break;
+		case OBJECT_FRAME: free(obj->frame.keys); free(obj->frame.values); break;
 		case OBJECT_MATRIX: free(obj->matrix.elements); break;
 		case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
 	}
@@ -1402,7 +1459,7 @@ void p_load_image(Interpreter *interp, cell *cfa) {
 		Object *obj = calloc(1, sizeof(*obj));
 		obj->kind = kind;
 		obj->len = len;
-		obj->cap = cap;
+		obj->capacity = cap;
 		switch (kind) {
 			case OBJECT_STRING:
 				obj->bytes = malloc((size_t)len + 1);
@@ -1533,8 +1590,8 @@ int main(void) {
 	define_primitive(interp, "depth", p_depth, 0);
 	define_primitive(interp, "roll", p_roll, 0);
 	define_primitive(interp, "=", p_eq, 0);
-	define_primitive(interp, "<", p_lt, 0);
-	define_primitive(interp, ">", p_gt, 0);
+	define_primitive(interp, "lt", p_lt, 0);
+	define_primitive(interp, "gt", p_gt, 0);
 	define_primitive(interp, "0=", p_zeq, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
@@ -1564,13 +1621,16 @@ int main(void) {
 	define_primitive(interp, "shift-with", 	p_shift_with, 0);
 	define_primitive(interp, "resume", 	p_resume, 0);
 
-	define_primitive(interp, "{", p_setopen, 0);
-	define_primitive(interp, "}", p_setclose, 0);
+	define_primitive(interp, "{", p_frameopen, 0);
+	define_primitive(interp, "}", p_frameclose, 0);
+	define_primitive(interp, "<", p_setopen, 0);
+	define_primitive(interp, ">", p_setclose, 0);
 	define_primitive(interp, "[", p_array_open, 0);
 	define_primitive(interp, "]", p_array_close, 0);
 
 	define_primitive(interp, "array",		 p_array, 0);
 	define_primitive(interp, "array-of",	 p_array_of, 0);
+	define_primitive(interp, ">frame",		 p_to_frame, 0);
 	define_primitive(interp, "take",		 p_take, 0);
 	define_primitive(interp, "reverse",	 p_reverse, 0);
 	define_primitive(interp, "concat",	 p_concat, 0);

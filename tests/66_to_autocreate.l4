@@ -1,0 +1,22 @@
+\ Revised `to`: at the REPL it auto-creates a global on first assignment;
+\ inside a definition an undeclared target is a clear error.
+
+\ auto-create on first assignment, then read
+4 to x
+x . cr
+
+\ reassignment of the auto-created global
+9 to x
+x . cr
+
+\ holds any value, not just floats
+[ 1 2 3 ] to arr
+arr . cr
+
+\ explicit `variable` still works alongside auto-create
+variable v
+5 to v
+v . cr
+
+\ inside a definition, an undeclared target errors (can't allocate mid-compile)
+: bad 1 to undeclared ;

@@ -19,7 +19,7 @@
 4 shadow . cr
 
 \ -- 5: recursion — each call gets its own frame
-: fact | n | to n  n 1 < if 1 else n  n 1 - fact * then ;
+: fact | n | to n  n 1 lt if 1 else n  n 1 - fact * then ;
 5 fact . cr
 
 \ -- 6: a local set before shift is read after resume (frame relocation)

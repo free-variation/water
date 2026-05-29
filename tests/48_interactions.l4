@@ -36,8 +36,8 @@ side>
 
 \ -- 5: side-stack works with non-numeric values (strings, sets, etc.)
 "hello" >side
-{ 1 2 3 } >side
-side> .  cr                 \ { 1 2 3 } (the most recently pushed)
+< 1 2 3 > >side
+side> .  cr                 \ < 1 2 3 > (the most recently pushed)
 side> .  cr                 \ hello
 
 \ -- 6: side-stack contents survive GC. Push an object, force gc, pop it.

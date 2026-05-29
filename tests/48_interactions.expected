@@ -1,88 +1,88 @@
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<2|k> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+2|k ok
 1 
-<1|k> ok
-<3|k> ok
+1|k ok
+3|k ok
 2 
-<2|k> ok
-<3|3> ok
+2|k ok
+3|3 ok
 0 0 3 
-<3|3> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<2|k> ok
-<1|k> ok
-<1|500> ok
+3|3 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+2|k ok
+1|k ok
+1|500 ok
 500 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<1|'?> ok
+0 ok
+0 ok
+0 ok
+0 ok
+1|'? ok
 outer-caught  15 
-<0> ok
-<0> ok
-<0> ok
-<0|error> side>: side stack is empty
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-{ 1 2 3 } 
-<0> ok
+0 ok
+0 ok
+0 ok
+0|error side>: side stack is empty
+0 ok
+0 ok
+0 ok
+0 ok
+< 1 2 3 > 
+0 ok
 hello 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 [ 1 2 3 4 5 ] 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 47 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<1|k> ok
-<1|k> ok
-<1|k> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+1|k ok
+1|k ok
+1|k ok
 6 
-<1|k> ok
+1|k ok
 10 
-<1|k> ok
-<1|k> ok
-<1|k> ok
+1|k ok
+1|k ok
+1|k ok
 14 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<1|k> ok
-<1|k> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+1|k ok
+1|k ok
 6 
-<0> ok
+0 ok

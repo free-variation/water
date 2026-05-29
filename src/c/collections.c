@@ -13,9 +13,9 @@ void set_add(Interpreter *interp, int set_handle, Val value) {
 		else high = mid;
 	}
 
-	if (set->len >= set->cap) {
-		set->cap *= 2;
-		set->items = realloc(set->items, sizeof(Val) * (size_t)set->cap);
+	if (set->len >= set->capacity) {
+		set->capacity *= 2;
+		set->items = realloc(set->items, sizeof(Val) * (size_t)set->capacity);
 	}
 
 	memmove(&set->items[low + 1], &set->items[low],
@@ -83,7 +83,7 @@ void p_setclose(Interpreter *interp, cell *cfa) {
 	int mark_index = interp->dsp;
 	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
 	if (mark_index == 0) {
-		fail(interp, "} : no matching { on the stack");
+		fail(interp, "> : no matching < on the stack");
 		return;
 	}
 
@@ -93,6 +93,41 @@ void p_setclose(Interpreter *interp, cell *cfa) {
 	}
 	interp->dsp = mark_index - 1;
 	push(interp, make_set(set_handle));
+}
+
+void p_frameopen(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	push(interp, make_mark());
+}
+
+void p_frameclose(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	int mark_index = interp->dsp;
+	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
+	if (mark_index == 0) {
+		fail(interp, "} : no matching { on the stack");
+		return;
+	}
+
+	int count = interp->dsp - mark_index;
+	if (count % 2 != 0) {
+		fail(interp, "} : frame needs key/value pairs");
+		return;
+	}
+
+	NEW_FRAME(frame_handle, frame);
+	for (int i = mark_index; i < interp->dsp; i += 2) {
+		if (interp->data_stack[i].tag != T_SYM) {
+			fail(interp, "} : frame keys must be symbols, got %s", tag_name(interp->data_stack[i].tag));
+			return;
+		}
+		frame_put(frame, interp->data_stack[i].data, interp->data_stack[i + 1]);
+	}
+
+	interp->dsp = mark_index - 1;
+	push(interp, make_frame(frame_handle));
 }
 
 void p_array_open(Interpreter *interp, cell *cfa) {
@@ -275,3 +310,79 @@ void p_range(Interpreter *interp, cell *cfa) {
 
 	push(interp, make_array(result_handle));
 }
+
+int frame_find(Object *frame, cell key) {
+	int low = 0;
+	int high = frame->len;
+	int mid;
+	cell mid_key;
+
+	while (low < high) {
+		mid = (low + high) / 2;
+		mid_key = frame->frame.keys[mid];
+		if (mid_key < key)
+			low = mid + 1;
+		else 
+			high = mid;
+	}
+
+	return low;
+}
+
+void frame_put(Object *frame, cell key, Val value) {
+	int at = frame_find(frame, key);
+	if (at < frame->len && frame->frame.keys[at] == key) {
+		frame->frame.values[at] = value;
+		return;
+	}
+
+	if (frame->len >= frame->capacity) {
+		frame->capacity *= 2;
+		frame->frame.keys = realloc(frame->frame.keys, sizeof(cell) * (size_t)frame->capacity);
+		frame->frame.values = realloc(frame->frame.values, sizeof(Val) * (size_t)frame->capacity);
+	}
+
+	memmove(&frame->frame.keys[at + 1], &frame->frame.keys[at], sizeof(cell) * (size_t)(frame->len - at));
+	memmove(&frame->frame.values[at + 1], &frame->frame.values[at], sizeof(Val) * (size_t)(frame->len - at));
+	frame->frame.keys[at] = key;
+	frame->frame.values[at] = value;
+	frame->len++;
+}
+
+int frame_delete(Object *frame, cell key) {
+	int at = frame_find(frame, key);
+	if (at >= frame->len || frame->frame.keys[at] != key) return 0;
+	memmove(&frame->frame.keys[at], &frame->frame.keys[at + 1], sizeof(cell) * (size_t)(frame->len - at - 1));
+	memmove(&frame->frame.values[at], &frame->frame.values[at + 1], sizeof(Val) * (size_t)(frame->len - at - 1));
+	frame->len--;
+	return 1;
+}
+
+
+void p_to_frame(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_COLLECTION_AT(source, 0, ">frame");
+	if (source_val.tag != T_ARRAY) {
+		fail(interp, ">frame: expected an array, got %s", tag_name(source_val.tag));
+		return;
+	}
+	if (source->len % 2 != 0) {
+		fail(interp, ">frame: array needs an even number of kv pairs");
+		return;
+	}
+
+	NEW_FRAME(frame_handle, frame);
+	for (int i = 0; i < source->len; i += 2) {
+		if (source->items[i].tag != T_SYM) {
+			fail(interp, ">frame: keys must be symbols, got %s", tag_name(source->items[i].tag));
+			return;
+		}
+		frame_put(frame, source->items[i].data, source->items[i + 1]);
+	}
+
+	interp->dsp--;
+	push(interp, make_frame(frame_handle));
+}
+
+	

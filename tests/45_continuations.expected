@@ -1,40 +1,40 @@
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 10 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
 99 
-<0> ok
-<0> ok
-<0> ok
-<1|k> ok
+0 ok
+0 ok
+0 ok
+1|k ok
 6 
-<1|k> ok
+1|k ok
 8 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
 100 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
 8 
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 100 1001 
-<2|1001> ok
-<2|1001> ok
-<2|1001> ok
-<0|error> shift/shift-with: no enclosing reset on the return stack
+2|1001 ok
+2|1001 ok
+2|1001 ok
+0|error shift/shift-with: no enclosing reset on the return stack

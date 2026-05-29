@@ -12,4 +12,4 @@
 
 \ negate on a non-numeric is a type error
 "x" negate
-{ 1 2 } negate
+< 1 2 > negate

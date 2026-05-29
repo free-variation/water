@@ -1,26 +1,26 @@
-<0> ok
-<0> ok
-<0> ok
--1 <0> ok
-<0> ok
-<0> ok
-0 <0> ok
-<0> ok
-<0> ok
-<0> ok
--1 <0> ok
-<0> ok
-<0> ok
--1 <0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-cat <0> ok
-<0> ok
-<0> ok
-3 <0> ok
-<0> ok
-<0> ok
-1 <0> ok
+0 ok
+0 ok
+0 ok
+-1 0 ok
+0 ok
+0 ok
+0 0 ok
+0 ok
+0 ok
+0 ok
+-1 0 ok
+0 ok
+0 ok
+-1 0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+cat 0 ok
+0 ok
+0 ok
+3 0 ok
+0 ok
+0 ok
+1 0 ok

@@ -1,9 +1,9 @@
-<0> ok
+0 ok
 <matrix 3x2>
           1          2
           3          4
           5          6
-<0> ok
+0 ok
 <matrix 6x1>
           1
           2
@@ -11,17 +11,17 @@
           4
           5
           6
-<0> ok
+0 ok
 <matrix 1x6>
           1          2          3          4          5          6
-<0> ok
+0 ok
 <matrix 1x1>
           7
-<0> ok
+0 ok
 <matrix 2x4>
           1          2          3          4
           5          6          7          8
-<0> ok
+0 ok
 <matrix 8x1>
           1
           2
@@ -31,26 +31,26 @@
           6
           7
           8
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 1x6>
           1          2          3          4          5          6
-<0> ok
+0 ok
 <matrix 1x3>
           1          2          3
-<0> ok
+0 ok
 <matrix 1x9>
           1          0          0          0          1        ...          0          0          1
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x3>
           1          2          3
           4          5          6
-<0> ok
-<0> ok
-<0> ok
-<0|error> reshape: cannot reshape 6 elements (2x3) into 2x2 (4)
-<0|error> reshape: expected a float row count, got a string
-<0|error> reshape: expected a matrix, got a float
+0 ok
+0 ok
+0 ok
+0|error reshape: cannot reshape 6 elements (2x3) into 2x2 (4)
+0|error reshape: expected a float row count, got a string
+0|error reshape: expected a matrix, got a float

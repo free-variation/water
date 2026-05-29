@@ -1,21 +1,21 @@
-<0> ok
-[ 4 5 ] <0> ok
-<0> ok
-<0> ok
-[ ] <0> ok
-[ 1 2 3 ] <0> ok
-<0> ok
-<0> ok
-[ ] <0> ok
-<0> ok
-<0> ok
-[ 3 4 5 ] <0> ok
-<0> ok
-<0> ok
-3 <0> ok
-[ 9 16 ] <0> ok
-<0> ok
-<0> ok
-<0|error> filter: expected an execution token, got a float
-<0|error> filter: expected array or set, got a float
-<0|error> filter: predicate must leave exactly one value per element, but changed the stack by 2
+0 ok
+[ 4 5 ] 0 ok
+0 ok
+0 ok
+[ ] 0 ok
+[ 1 2 3 ] 0 ok
+0 ok
+0 ok
+[ ] 0 ok
+0 ok
+0 ok
+[ 3 4 5 ] 0 ok
+0 ok
+0 ok
+3 0 ok
+[ 9 16 ] 0 ok
+0 ok
+0 ok
+0|error filter: expected an execution token, got a float
+0|error filter: expected array or set, got a float
+0|error filter: predicate must leave exactly one value per element, but changed the stack by 2

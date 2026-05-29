@@ -1,25 +1,25 @@
-<0> ok
-[ 1 2 3 4 5 6 ] <0> ok
-<0> ok
-<0> ok
-[ 1 2 ] <0> ok
-[ 1 2 ] <0> ok
-[ ] <0> ok
-<0> ok
-<0> ok
-[ 1 2 1 2 ] <0> ok
-<0> ok
-<0> ok
-[ 1 2 3 4 5 ] <0> ok
-[ 1 2 3 4 5 ] <0> ok
-<0> ok
-<0> ok
-4 <0> ok
-[ 4 3 2 1 ] <0> ok
-[ 1 2 3 4 5 6 ] <0> ok
-[ 0 1 2 3 4 5 6 7 8 9 ] <0> ok
-<0> ok
-<0> ok
-<0|error> + : expected two floats, two strings, two sets, two matrices, or two arrays; got an array and a float
-<0|error> + : expected two floats, two strings, two sets, two matrices, or two arrays; got an array and a string
-<0|error> + : expected two floats, two strings, two sets, two matrices, or two arrays; got a float and an array
+0 ok
+[ 1 2 3 4 5 6 ] 0 ok
+0 ok
+0 ok
+[ 1 2 ] 0 ok
+[ 1 2 ] 0 ok
+[ ] 0 ok
+0 ok
+0 ok
+[ 1 2 1 2 ] 0 ok
+0 ok
+0 ok
+[ 1 2 3 4 5 ] 0 ok
+[ 1 2 3 4 5 ] 0 ok
+0 ok
+0 ok
+4 0 ok
+[ 4 3 2 1 ] 0 ok
+[ 1 2 3 4 5 6 ] 0 ok
+[ 0 1 2 3 4 5 6 7 8 9 ] 0 ok
+0 ok
+0 ok
+0|error + : expected two floats, two strings, two sets, two matrices, or two arrays; got an array and a float
+0|error + : expected two floats, two strings, two sets, two matrices, or two arrays; got an array and a string
+0|error + : expected two floats, two strings, two sets, two matrices, or two arrays; got a float and an array

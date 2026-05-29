@@ -39,6 +39,7 @@ typedef enum {
 	T_STRING,
 	T_SET,
 	T_ARRAY,
+	T_FRAME,
 	T_MATRIX,
 	T_XT,
 	T_ADDR,
@@ -92,6 +93,13 @@ static inline Val make_array(int handle) {
 	return value;
 }
 
+static inline Val make_frame(int handle) {
+	Val value;
+	value.tag = T_FRAME;
+	value.data = handle;
+	return value;
+}
+
 static inline Val make_matrix(int handle) {
 	Val value;
 	value.tag = T_MATRIX;
@@ -131,16 +139,21 @@ typedef enum {
 	OBJECT_STRING = 0,
 	OBJECT_SET,
 	OBJECT_ARRAY,
+	OBJECT_FRAME,
 	OBJECT_MATRIX,
 	OBJECT_CONTINUATION
 } ObjectKind;
 
 typedef struct {
 	ObjectKind kind;
-	int len, cap;
+	int len, capacity;
 	union {
 		char *bytes;
 		Val  *items;
+		struct {
+			cell *keys;
+			Val *values;
+		} frame;
 		struct {
 			int rows;
 			int columns;
@@ -336,6 +349,16 @@ static inline Val rpop(Interpreter *interp) {
 	if (interp->error_flag) return; \
 	Object *obj = interp->objects[handle]
 
+#define NEW_FRAME(handle, obj) \
+	int handle = object_new_frame(interp); \
+	if (interp->error_flag) return; \
+	Object *obj = interp->objects[handle]
+
+#define NEW_OBJECT(obj, kind) \
+	int slot; \
+	Object *obj = object_new(interp, (kind), &slot); \
+	if (!obj) return -1
+
 #define PEEK_COLLECTION_AT(name, depth, op) \
 	if (interp->dsp <= (depth)) { \
 		fail(interp, "%s: stack too shallow; expected array or set", (op)); \
@@ -357,6 +380,7 @@ int object_alloc_slot(Interpreter *interp);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
 int object_new_set(Interpreter *interp);
 int object_new_array(Interpreter *interp, int num_elements);
+int object_new_frame(Interpreter *interp);
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns);
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip);
 int val_cmp(Interpreter *interp, Val left, Val right);
@@ -372,6 +396,7 @@ void print_matrix_cell(double value);
 void print_matrix_grid(Object *m);
 void print_val(Interpreter *interp, Val value);
 void print_val_compact(Interpreter *interp, Val value);
+void print_frame_pretty(Interpreter *interp, Object *frame, int indent);
 void print_prompt_state(Interpreter *interp);
 int find(Interpreter *interp, const char *name);
 void docol(Interpreter *interp, cell *cfa);
@@ -439,6 +464,8 @@ void p_fetch(Interpreter *interp, cell *cfa);
 void p_store(Interpreter *interp, cell *cfa);
 void p_setopen(Interpreter *interp, cell *cfa);
 void p_setclose(Interpreter *interp, cell *cfa);
+void p_frameopen(Interpreter *interp, cell *cfa);
+void p_frameclose(Interpreter *interp, cell *cfa);
 void p_array_open(Interpreter *interp, cell *cfa);
 void p_array_close(Interpreter *interp, cell *cfa);
 void p_array(Interpreter *interp, cell *cfa);
@@ -537,6 +564,10 @@ void p_take(Interpreter *interp, cell *cfa);
 void p_reverse(Interpreter *interp, cell *cfa);
 void p_concat(Interpreter *interp, cell *cfa);
 void p_range(Interpreter *interp, cell *cfa);
+int frame_find(Object *frame, cell key);
+void frame_put(Object *frame, cell key, Val value);
+int frame_delete(Object *frame, cell key);
+void p_to_frame(Interpreter *interp, cell *cfa);
 void p_transpose(Interpreter *interp, cell *cfa);
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name);
 void p_abs(Interpreter *interp, cell *cfa);

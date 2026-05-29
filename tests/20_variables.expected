@@ -1,11 +1,11 @@
-<0> ok
-0 <0> ok
-<0> ok
-42 <0> ok
-<0> ok
-99 <0> ok
-<0> ok
-<0> ok
-hello <0> ok
-<0> ok
-{ 1 2 3 } <0> ok
+0 ok
+0 0 ok
+0 ok
+42 0 ok
+0 ok
+99 0 ok
+0 ok
+0 ok
+hello 0 ok
+0 ok
+< 1 2 3 > 0 ok

@@ -1,4 +1,4 @@
-: classify dup 0 > if "+" . else dup 0 < if "-" . else "z" . then then drop ;
+: classify dup 0 gt if "+" . else dup 0 lt if "-" . else "z" . then then drop ;
 5 classify cr
 -5 classify cr
 0 classify cr

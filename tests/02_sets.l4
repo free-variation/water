@@ -1,6 +1,6 @@
-{ 1 2 3 } { 3 4 5 } union .
-{ 1 2 3 } { 3 4 5 } intersection .
-{ 1 2 3 } { 2 } difference .
-{ 1 2 3 } cardinality .
-{ 1 2 3 } 2 member? .
-{ 1 2 3 } 9 member? .
+< 1 2 3 > < 3 4 5 > union .
+< 1 2 3 > < 3 4 5 > intersection .
+< 1 2 3 > < 2 > difference .
+< 1 2 3 > cardinality .
+< 1 2 3 > 2 member? .
+< 1 2 3 > 9 member? .

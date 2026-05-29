@@ -1,59 +1,59 @@
-<0> ok
+0 ok
 <matrix 2x1>
           6
          15
-<0> ok
+0 ok
 <matrix 3x1>
           3
           7
          11
-<0> ok
+0 ok
 <matrix 2x1>
           3
           7
-<0> ok
+0 ok
 <matrix 1x1>
           7
-<0> ok
+0 ok
 <matrix 3x1>
           1
           1
           1
-<0> ok
+0 ok
 <matrix 4x1>
           0
           0
           0
           0
-<0> ok
+0 ok
 <matrix 1x1>
           6
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 1x3>
           5          7          9
-<0> ok
+0 ok
 <matrix 1x2>
           9         12
-<0> ok
+0 ok
 <matrix 1x2>
           4          6
-<0> ok
+0 ok
 <matrix 1x1>
           7
-<0> ok
+0 ok
 <matrix 1x3>
           1          1          1
-<0> ok
+0 ok
 <matrix 1x4>
           0          0          0          0
-<0> ok
+0 ok
 <matrix 1x1>
           6
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x1>
           6
          15
@@ -61,17 +61,17 @@
 <matrix 1x2>
           6         15
 
-<0> ok
-<0> ok
-<0> ok
-2.5 <0> ok
-2 <0> ok
-7 <0> ok
-0 <0> ok
-0.333333 <0> ok
-5 <0> ok
-<0> ok
-<0> ok
-<0|error> row-sums: expected a matrix, got a string
-<0|error> column-sums: expected a matrix, got a string
-<0|error> column-sums: expected a matrix, got an array
+0 ok
+0 ok
+0 ok
+2.5 0 ok
+2 0 ok
+7 0 ok
+0 0 ok
+0.333333 0 ok
+5 0 ok
+0 ok
+0 ok
+0|error row-sums: expected a matrix, got a string
+0|error column-sums: expected a matrix, got a string
+0|error column-sums: expected a matrix, got an array

@@ -2,24 +2,24 @@
           5          0          0
           0          5          0
           0          0          5
-<0> ok
+0 ok
 <matrix 4x4>
           1          0          0          0
           0          1          0          0
           0          0          1          0
           0          0          0          1
-<0> ok
+0 ok
 <matrix 2x2>
           0          0
           0          0
-<0> ok
+0 ok
 <matrix 1x1>
           7
-<0> ok
+0 ok
 <matrix 3x3>
           3          0          0
           0          3          0
           0          0          3
-<0> ok
+0 ok
 3 3 
-<0> ok
+0 ok

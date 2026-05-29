@@ -32,4 +32,4 @@
 \ ---- failures ----
 "x" abs
 "x" sqrt
-{ 1 2 } exp
+< 1 2 > exp

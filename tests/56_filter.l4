@@ -1,21 +1,21 @@
 \ keep elements greater than 3
-[ 1 2 3 4 5 ] [: 3 > :] filter .
+[ 1 2 3 4 5 ] [: 3 gt :] filter .
 
 \ keep none / keep all
-[ 1 2 3 ] [: 100 > :] filter .
-[ 1 2 3 ] [: 0 > :] filter .
+[ 1 2 3 ] [: 100 gt :] filter .
+[ 1 2 3 ] [: 0 gt :] filter .
 
 \ empty source
-[ ] [: 0 > :] filter .
+[ ] [: 0 gt :] filter .
 
 \ filter over a set (members stay sorted)
-{ 5 1 3 2 4 } [: 2 > :] filter .
+< 5 1 3 2 4 > [: 2 gt :] filter .
 
 \ composes with cardinality and map
-[ 1 2 3 4 5 6 ] [: 3 > :] filter cardinality .
-[ 1 2 3 4 ] [: 2 > :] filter [: dup * :] map .
+[ 1 2 3 4 5 6 ] [: 3 gt :] filter cardinality .
+[ 1 2 3 4 ] [: 2 gt :] filter [: dup * :] map .
 
 \ failures
 [ 1 2 3 ] 5 filter
-5 [: 0 > :] filter
+5 [: 0 gt :] filter
 [ 1 2 3 ] [: dup :] filter

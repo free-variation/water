@@ -217,6 +217,9 @@ void p_dot(Interpreter *interp, cell *cfa) {
 	POP(value);
 	if (value.tag == T_MATRIX) {
 		print_matrix_grid(interp->objects[value.data]);
+	} else if (value.tag == T_FRAME) {
+		print_frame_pretty(interp, interp->objects[value.data], 0);
+		putchar('\n');
 	} else {
 		print_val(interp, value);
 		putchar(' ');
@@ -688,6 +691,20 @@ void p_colon(Interpreter *interp, cell *cfa) {
 	interp->compiling_src_start = interp->input_buffer_pos;
 }
 
+static int create_variable(Interpreter *interp, const char *name) {
+	create_header(interp, name, 0);
+	emit(interp, (cell)&dovar);
+	emit(interp, (cell)T_FLOAT);
+
+	double zero_value = 0.0;
+	cell zero_bits;
+	memcpy(&zero_bits, &zero_value, 8);
+	emit(interp, zero_bits);
+
+	return interp->vocab->latest_cfa;
+}
+
+
 void p_variable(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
@@ -697,14 +714,7 @@ void p_variable(Interpreter *interp, cell *cfa) {
 		return;
 	}
 
-	create_header(interp, token, 0);
-	emit(interp, (cell)&dovar);
-	emit(interp, (cell)T_FLOAT);
-
-	double zero_value = 0.0;
-	cell zero_bits;
-	memcpy(&zero_bits, &zero_value, 8);
-	emit(interp, zero_bits);
+	create_variable(interp, token);
 }
 
 void p_bar(Interpreter *interp, cell *cfa) {
@@ -772,7 +782,10 @@ void p_to_var(Interpreter *interp, cell *cfa) {
 void p_to(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 	char *token = next_token(interp);
-	if (!token) { fail(interp, "to: expected a name"); return; }
+	if (!token) {
+		fail(interp, "to: expected a name"); 
+		return;
+	}
 
 	if (interp->compiling) {
 		int local_depth, local_slot_idx;
@@ -785,9 +798,19 @@ void p_to(Interpreter *interp, cell *cfa) {
 	}
 
 	int target_cfa = find(interp, token);
-	if (!target_cfa) { fail(interp, "to: unknown name: %s", token); return; }
+	if (!target_cfa) {
+		if (interp->compiling) {
+			fail(interp, "to: unknown variable: %s; declare it with variable", token); 
+		return; 
+		}
+		target_cfa = create_variable(interp, token);
+	}
+
 	cfa_handler h = (cfa_handler)interp->vocab->dict[target_cfa];
-	if (h != dovar) { fail(interp, "to: %s is not a variable", token); return; }
+	if (h != dovar) {
+		fail(interp, "to: %s is not a variable", token); 
+		return; 
+	}
 
 	if (interp->compiling) {
 		emit(interp, (cell)interp->vocab->to_var_cfa);

@@ -1,23 +1,23 @@
-<0> ok
-[ 5 4 3 2 1 ] <0> ok
-[ 1 ] <0> ok
-[ ] <0> ok
-<0> ok
-<0> ok
-[ 1 2 3 4 5 ] <0> ok
-<0> ok
-<0> ok
-[ 5 4 3 2 1 ] <0> ok
-<0> ok
-<0> ok
-[ 5 4 3 ] <0> ok
-3 <0> ok
-<0> ok
-<0> ok
-[ 30 20 10 ] <2|2> ok
-1 2 <2|2> ok
-<2|2> ok
-<2|2> ok
-<0|error> reverse: expected array or set, got a float
-<0|error> reverse: expected array or set, got a string
-<0|error> reverse: stack too shallow; expected array or set
+0 ok
+[ 5 4 3 2 1 ] 0 ok
+[ 1 ] 0 ok
+[ ] 0 ok
+0 ok
+0 ok
+[ 1 2 3 4 5 ] 0 ok
+0 ok
+0 ok
+[ 5 4 3 2 1 ] 0 ok
+0 ok
+0 ok
+[ 5 4 3 ] 0 ok
+3 0 ok
+0 ok
+0 ok
+[ 30 20 10 ] 2|2 ok
+1 2 2|2 ok
+2|2 ok
+2|2 ok
+0|error reverse: expected array or set, got a float
+0|error reverse: expected array or set, got a string
+0|error reverse: stack too shallow; expected array or set

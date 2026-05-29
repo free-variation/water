@@ -7,7 +7,7 @@
 variable counter
 42 to counter
 symbol red
-{ 1 2 3 }
+< 1 2 3 >
 "hello"
 [ 1 2 3 4 ] 2 2 matrix
 "/tmp/lf-test-43.image" save-image
@@ -25,4 +25,4 @@ clear
 3 cube .    cr   \ expects 27; exercises cross-reference between user words
 counter .   cr   \ expects 42
 red .       cr   \ expects red
-.s          cr   \ expects { 1 2 3 } hello <matrix 2x2: ...>
+.s          cr   \ expects < 1 2 3 > hello <matrix 2x2: ...>

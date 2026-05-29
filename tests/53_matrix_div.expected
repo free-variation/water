@@ -1,15 +1,15 @@
-<0> ok
+0 ok
 <matrix 2x2>
           2          2
           2          2
-<0> ok
-<0> ok
-<0> ok
-<0|error> / : division by zero (matrix element 1)
-<0> ok
-<0|error> / : division by zero (matrix element 0)
-<0> ok
-<0> ok
-<0|error> / : division by zero
-<0> ok
-2 <0> ok
+0 ok
+0 ok
+0 ok
+0|error / : division by zero (matrix element 1)
+0 ok
+0|error / : division by zero (matrix element 0)
+0 ok
+0 ok
+0|error / : division by zero
+0 ok
+2 0 ok

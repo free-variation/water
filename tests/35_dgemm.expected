@@ -1,119 +1,119 @@
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
          58         64
         139        154
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 1x1>
          32
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 3x3>
           4          5          6
           8         10         12
          12         15         18
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
          19         22
          43         50
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
           1          2
           3          4
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
           1          2
           3          4
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
         100        200
         300        400
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
           3          6
           9         12
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
           1          3
           5          7
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
           0          0
           0          0
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
          10         14
          14         20
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
          89         98
         116        128
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 <matrix 2x2>
          14         32
          32         77
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 <matrix 3x3>
          39         49         59
          54         68         82
          69         87        105
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0|error> dgemm: inner dimensions must match (op(A) is 2x3, op(B) is 2x2)
-<0> ok
-<0> ok
-<0> ok
-<0|error> dgemm: inner dimensions must match (op(A) is 3x2, op(B) is 3x3)
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0|error> dgemm: C must be 1x1 to match the product, but is 3x3
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0|error> dgemm: alpha and beta must be floats, got a string and a float
-<0> ok
-<0> ok
-<0|error> dgemm: A, B, C must be matrices, got a float, a matrix, a matrix
-<0> ok
-<0> ok
-<0|error> dgemm: A, B, C must be matrices, got a matrix, a matrix, a string
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0|error dgemm: inner dimensions must match (op(A) is 2x3, op(B) is 2x2)
+0 ok
+0 ok
+0 ok
+0|error dgemm: inner dimensions must match (op(A) is 3x2, op(B) is 3x3)
+0 ok
+0 ok
+0 ok
+0 ok
+0|error dgemm: C must be 1x1 to match the product, but is 3x3
+0 ok
+0 ok
+0 ok
+0 ok
+0|error dgemm: alpha and beta must be floats, got a string and a float
+0 ok
+0 ok
+0|error dgemm: A, B, C must be matrices, got a float, a matrix, a matrix
+0 ok
+0 ok
+0|error dgemm: A, B, C must be matrices, got a matrix, a matrix, a string

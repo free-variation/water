@@ -1,17 +1,17 @@
-<0> ok
-<0> ok
-<0> ok
-<0> ok
-<0> ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
 : double 2 * ;
-<0> ok
+0 ok
 : square dup * ;
-<0> ok
+0 ok
 variable counter  \ current value: 42
-<0> ok
+0 ok
 symbol red
-<0> ok
+0 ok
 + is a primitive
-<0> ok
+0 ok
 [: ... :]  \ anonymous, no source
-<0> ok
+0 ok

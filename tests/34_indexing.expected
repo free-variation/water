@@ -1,21 +1,21 @@
-10 <0> ok
-30 <0> ok
+10 0 ok
+30 0 ok
 <matrix 1x3>
           1          2          3
-<0> ok
+0 ok
 <matrix 1x3>
           4          5          6
-<0> ok
+0 ok
 <matrix 2x1>
           1
           4
-<0> ok
+0 ok
 <matrix 2x1>
           3
           6
-<0> ok
-1 <0> ok
-6 <0> ok
-7 <0> ok
-1 <0> ok
-0 <0> ok
+0 ok
+1 0 ok
+6 0 ok
+7 0 ok
+1 0 ok
+0 0 ok

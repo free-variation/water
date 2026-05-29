@@ -10,9 +10,9 @@
 [ 1 2 3 ] dup concat .
 
 \ set source on either side: items in stored (sorted) order, result is an array
-{ 5 1 3 } [ 7 8 ] concat .
-[ 0 ] { 5 1 3 } concat .
-{ 1 2 } { 3 4 } concat .
+< 5 1 3 > [ 7 8 ] concat .
+[ 0 ] < 5 1 3 > concat .
+< 1 2 > < 3 4 > concat .
 
 \ stack shape: ( a b -- ab )
 9 [ 1 2 ] [ 3 4 ] concat .

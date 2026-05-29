@@ -1,24 +1,24 @@
 <matrix 2x3>
           0          0          0
           0          0          0
-<0> ok
+0 ok
 <matrix 2x2>
           1          2
           3          4
-<0> ok
+0 ok
 2 2 
-<0> ok
+0 ok
 <matrix 2x2>
          11         22
          33         44
-<0> ok
+0 ok
 <matrix 1x2>
           3          8
-<0> ok
+0 ok
 <matrix 2x2>
           9         18
          27         36
-<0> ok
+0 ok
 <matrix 1x2>
           4          4
-<0> ok
+0 ok
