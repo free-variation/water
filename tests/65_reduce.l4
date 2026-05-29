@@ -1,0 +1,17 @@
+\ reduce ( arr init [: acc elt -- acc :] -- result ) — left fold in C.
+
+\ sum
+[ 1 2 3 4 5 ] 0 [: + :] reduce . cr
+
+\ product
+[ 1 2 3 4 ] 1 [: * :] reduce . cr
+
+\ single element
+[ 5 ] 0 [: + :] reduce . cr
+
+\ empty collection yields the initial value, combiner never runs
+[ ] 42 [: + :] reduce . cr
+
+\ non-commutative combiner pins the fold direction and operand order:
+\ ((((100 - 1) - 2) - 3) = 94, with the accumulator as the left operand.
+[ 1 2 3 ] 100 [: - :] reduce . cr

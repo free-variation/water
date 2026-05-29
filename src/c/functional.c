@@ -127,5 +127,27 @@ void p_filter(Interpreter *interp, cell *cfa) {
 	push(interp, make_array(result_handle));
 }
 
+void p_reduce(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	POP_XT(combiner, "reduce");
+	POP(init_val);
+	PEEK_COLLECTION_AT(source, 0, "reduce");
+
+	Val result_val = init_val;
+	for (int i = 0; i < source->len; i++) {
+		push(interp, result_val);
+		push(interp, source->items[i]);
+
+		execute_cfa(interp, combiner);
+
+		result_val = pop(interp);
+		if (interp->error_flag) return;
+	}
+
+	pop(interp);
+	push(interp, result_val);
+}
+
 
 

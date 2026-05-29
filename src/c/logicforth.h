@@ -317,6 +317,15 @@ static inline Val rpop(Interpreter *interp) {
 	} \
 	Object *name = interp->objects[name##_val.data]
 
+#define POP_COLLECTION(name, op) \
+	Val name##_val = pop(interp); \
+	if (interp->error_flag) return; \
+	if (name##_val.tag != T_ARRAY && name##_val.tag != T_SET) { \
+		fail(interp, "%s: expected an array or set, got %s", (op), tag_name(name##_val.tag)); \
+		return; \
+	} \
+	Object *name = interp->objects[name##_val.data]
+
 #define NEW_MATRIX(handle, obj, rows, cols) \
 	int handle = object_new_matrix(interp, (rows), (cols)); \
 	if (interp->error_flag) return; \
@@ -466,6 +475,7 @@ void p_resume(Interpreter *interp, cell *cfa);
 void p_map(Interpreter *interp, cell *cfa);
 void p_mapn(Interpreter *interp, cell *cfa);
 void p_filter(Interpreter *interp, cell *cfa);
+void p_reduce(Interpreter *interp, cell *cfa);
 void p_words(Interpreter *interp, cell *cfa);
 void p_see(Interpreter *interp, cell *cfa);
 void p_semi(Interpreter *interp, cell *cfa);

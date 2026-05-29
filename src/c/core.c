@@ -1,4 +1,5 @@
 #include "logicforth.h"
+#include <unistd.h>
 
 void gc_root_push(Interpreter *interp, Val value) {
 	if (interp->n_gc_roots < MAX_GC_ROOTS) {
@@ -207,6 +208,25 @@ void print_double(double number) {
 
 int print_truncate = 1;
 
+static int stdout_is_tty(void) {
+	static int cached = -1;
+	if (cached < 0) cached = isatty(fileno(stdout));
+	return cached;
+}
+
+static int print_depth = 0;
+
+static void print_depth_bg(int depth) {
+	if (!stdout_is_tty()) return;
+	if (depth <= 0) { fputs("\033[49m", stdout); return; }
+	int idx = 238 + (depth - 1) * 3;
+	if (idx > 250) idx = 250;
+	printf("\033[48;5;%dm", idx);
+}
+
+static void print_depth_enter(void) { print_depth_bg(++print_depth); }
+static void print_depth_leave(void) { print_depth_bg(--print_depth); }
+
 void print_items(Interpreter *interp, Object *collection) {
 	int length = collection->len;
 
@@ -296,15 +316,17 @@ void print_val(Interpreter *interp, Val value) {
 		case T_FLOAT: print_double(unpack_float(value)); break;
 		case T_SYM: fputs(&interp->vocab->symbol_pool[value.data], stdout); break;
 		case T_STRING: fputs(interp->objects[value.data]->bytes, stdout); break;
-		case T_SET: fputs("{ ", stdout); print_items(interp, interp->objects[value.data]); putchar('}'); break;
-		case T_ARRAY: fputs("[ ", stdout); print_items(interp, interp->objects[value.data]); putchar(']'); break;
+		case T_SET: print_depth_enter(); fputs("{ ", stdout); print_items(interp, interp->objects[value.data]); putchar('}'); print_depth_leave(); break;
+		case T_ARRAY: print_depth_enter(); fputs("[ ", stdout); print_items(interp, interp->objects[value.data]); putchar(']'); print_depth_leave(); break;
 		case T_XT: printf("<xt %lld>", (long long)value.data); break;
 		case T_ADDR: printf("<addr %lld>", (long long)value.data); break;
 		case T_MATRIX: {
 						   Object *matrix = interp->objects[value.data];
+						   print_depth_enter();
 						   printf("<matrix %dx%d: ", matrix->matrix.rows, matrix->matrix.columns);
 						   print_corners(matrix);
 						   putchar('>');
+						   print_depth_leave();
 						   break;
 					   }
 		default: printf("<?>"); break;
@@ -334,11 +356,13 @@ void print_val_compact(Interpreter *interp, Val value) {
 						else printf("%.9s…", name);
 						break;
 					}
-		case T_SET: printf("{%d}", interp->objects[value.data]->len); break;
-		case T_ARRAY: printf("[%d]", interp->objects[value.data]->len); break;
+		case T_SET: print_depth_enter(); printf("{%d}", interp->objects[value.data]->len); print_depth_leave(); break;
+		case T_ARRAY: print_depth_enter(); printf("[%d]", interp->objects[value.data]->len); print_depth_leave(); break;
 		case T_MATRIX: {
 						   Object *m = interp->objects[value.data];
+						   print_depth_enter();
 						   printf("M%dx%d", m->matrix.rows, m->matrix.columns);
+						   print_depth_leave();
 						   break;
 					   }
 		case T_XT: {
@@ -1561,6 +1585,7 @@ int main(void) {
 	define_primitive(interp, "map", p_map, 0);
 	define_primitive(interp, "mapn", p_mapn, 0);
 	define_primitive(interp, "filter", p_filter, 0);
+	define_primitive(interp, "reduce", p_reduce, 0);
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
 
