@@ -53,6 +53,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
 - **Variables and symbols** — `variable foo` holds one Val. `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
+- **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (initialized to `0.0`); read by bare name, assign with `to name`. Locals nest through quotations and survive continuation capture.
 - **Mark-and-sweep GC** — walks data/return/side stacks, dictionary, and a small `gc_roots` array for in-flight C-level temporaries.
 
 ### Numeric / matrix
@@ -70,7 +71,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 - **Set literals** — `{ 1 2 3 }`, set operations, `member?`, `cardinality`.
 - **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), indexed access via `@i`.
-- **Map, zip-map, filter** — `map` for a single source, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
+- **Map, fold, zip-map, filter** — `map` for a single source, `reduce` for a left fold with an accumulator, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
 
 ### Strings
 
@@ -80,7 +81,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 ### I/O and persistence
 
-- **Stdin REPL** with rlwrap-friendly behavior and a stack-state prompt.
+- **Stdin REPL** with rlwrap-friendly behavior and a stack-state prompt. On a color terminal, printed arrays, sets, and matrices get a background shade that deepens with nesting depth; piped/redirected output stays plain.
 - **`load`** runs a source file as if typed.
 - **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
@@ -136,10 +137,9 @@ Tracked in `PLAN.md`, with design notes for each.
 
 ### Language ergonomics
 
-- **Word-local variables** — `{| name |}` at the head of a colon definition; `TO` for mutation.
 - **Sort** — `sort`, `sort-with`, `sort-by`.
 - **stdin / env** — `read-line`, `read-all`, environment variable access.
-- **Functional primitives** — `reduce` and `range` remain in C; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter`/`take`/`reverse`/`concat` done in C; `skip`/`last` in `lib.l4`.)
+- **Functional primitives** — `range` remains in C; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter`/`reduce`/`take`/`reverse`/`concat` done in C; `skip`/`last` in `lib.l4`.)
 - **Help system** — `help word` showing a one-line doc string.
 
 ### Logic layer

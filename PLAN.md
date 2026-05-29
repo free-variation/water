@@ -7,7 +7,7 @@ git history is the place to look for what's been built.
 
 ## Interpreter performance — next up
 
-Three changes prioritized by the Mandelbrot benchmark profile in `bench/`
+Two changes prioritized by the Mandelbrot benchmark profile in `bench/`
 (`gprof` on the index-threaded interpreter at -O3). The benchmark sits at
 ~1.5s vs Python's 1.77s and C's 0.036s; these target the largest categories
 in the profile.
@@ -23,17 +23,6 @@ The fix: in each of `p_lt` / `p_gt` / `p_eq`, fast-path the `T_FLOAT` /
 `T_FLOAT` case inline (unpack and compare), and only fall through to
 `val_cmp` for mixed or heap types. ~20 lines of C across three primitives.
 Expected wall win on numeric loops: 3–5%.
-
-### Word-local variables
-
-Already specified under [Core language additions → Word-local variables]
-(below). Listed here too because the profile shows ~25% of time in stack
-manipulation (`over` / `swap` / `dup`) and another ~11% in `dovar` + `@` /
-`!` for global-variable access. Word-locals attack both: code that would
-have juggled live values through the stack reads them by name from rstack
-slots in a single `local@` dispatch — cheaper than `dovar` + `@`, and
-replaces several stack ops with one. Estimated wall win on stack-juggling
-kernels: 10–15%.
 
 ### Super-instructions
 
@@ -273,101 +262,6 @@ than `rand()`).
 (`argv` deliberately not included — invocation is `logicforth file.l4`
 and command-line argument handling lives at the shell-script wrapper
 layer, not in the core language.)
-
-### Local variables
-
-Currently every `variable` is global to the dictionary. Locals
-declared per colon-def or quotation give scoped state for
-intermediate matrices, loop accumulators, named popped arguments,
-without polluting the global namespace or risking `reload`
-collisions.
-
-**Syntax:** `| name1 name2 ... |` at the head of a colon-def or
-quotation body. `|` is an immediate word that reads names until a
-closing `|`. Head-only — must precede any other code in the body.
-
-```
-: predict-row | u |
-    U u @i
-    S diagonal-matrix *
-    Vt * ;
-
-[ 1 2 3 4 5 ] [: | x | x x * :] map
-```
-
-**Declaration does not bind.** A local is introduced as a named slot
-initialized to `0.0` (same as `variable`). The slot is assigned by
-`to`; reading it before the first `to` yields `0.0`. Declaration
-and initialization are deliberately separate so callers don't have
-to push values just to introduce a name.
-
-**Lookup precedence at compile time.** When the body parser sees a
-token:
-
-1. Walk currently-open compile scopes innermost-out. If the name is
-   declared in some scope, emit `(local@ depth slot)` where
-   `depth` is the count of frame-having scopes between the current
-   scope and the target, and `slot` is the name's position within
-   the target scope.
-2. Dictionary (existing path: words, then `:foo` symbol, then number).
-
-`to name` does the same lookup, emitting `(local! depth slot)` for
-a local match or falling through to the existing `(to-var)` for a
-global.
-
-**Nesting.** Locals chain through arbitrary nesting. An innermost
-quotation reads its own locals first, then the next enclosing scope
-that declared locals, and so on out to the colon def. Each
-`(local@)` carries a `depth` that the runtime walks.
-
-**Runtime layout.** Frames live on the return stack. An
-`Interpreter::local_base` register points at slot 0 of the current
-frame. Frame, growing up:
-
-```
-[saved_prev_local_base]
-[local_0]               ← local_base
-[local_1]
-...
-[local_{N-1}]
-```
-
-`(enter-locals N)` pushes the prev local_base, then N zero-init
-slots, then sets `local_base = rsp - N`. `(leave-locals N)` pops
-the N slots and restores `local_base`. `(local@ depth slot)` walks
-`depth` saved-prev links from the current frame, then indexes by
-`slot`. `(local! ...)` is the mirror.
-
-**Compile-time state on `Interpreter`:**
-
-- `local_names_pool[LOCAL_NAMES_POOL_SIZE]` — packed
-  null-terminated names of all currently-visible locals.
-- `local_name_offsets[MAX_LOCAL_NAMES]` — start of each name in the
-  pool, indexed 0..n_local_names-1.
-- `local_scope_starts[MAX_LOCAL_SCOPES]` — n_local_names at each
-  open scope's entry; defines that scope's slice of the offsets
-  array.
-- `local_scope_dict_starts[MAX_LOCAL_SCOPES]` — `here` at each
-  scope's entry; used to enforce head-only `|`.
-- `n_local_names`, `n_local_scopes` — counters.
-
-`:` and `[:` call `enter_compile_scope`, which records the current
-n_local_names and `here` at the new scope's slot. `;` and `:]` call
-`leave_compile_scope`, which emits `(leave-locals N)` if any
-locals were declared in the scope, rewinds the names pool and
-offsets array, then falls through to the existing exit emit.
-
-**Status:** in progress. Runtime ops and compile-time scope
-machinery are in; the `|` immediate word, the body-parser locals
-lookup, and the `to` extension remain. Continuation interaction
-(saving and restoring `local_base` across `shift`/`resume` when a
-captured slice contains a frame) also remains.
-
-**What locals don't replace:** long-lived state (open DB handles,
-factor matrices, lookup dicts) that outlives any single word call
-still wants either a `variable` or a bundled state dict passed
-explicitly. Locals fix intra-call stack juggling; they're not a
-substitute for program-level state.
 
 ---
 
@@ -771,16 +665,12 @@ allocates and fills a result array must do it in C, the way `map` /
 `mapn` / `filter` already do. Words that return a scalar, an element,
 or a boolean have no such constraint and belong in `lib.l4`.
 
-`map`, `mapn`, `filter`, `take`, `reverse`, and `concat` are in C.
-`skip` (rename of the planned "drop", since `drop` is taken by the
+`map`, `mapn`, `filter`, `take`, `reverse`, `concat`, and `reduce` are
+in C. `skip` (rename of the planned "drop", since `drop` is taken by the
 stack primitive) and `last` are in `lib.l4` atop `take` + `reverse`.
 
-**C primitives (fold, or build a result array):**
+**C primitives (build a result array):**
 
-- **`reduce`** — `arr initial [: ( acc elt -- acc ) :] reduce` → folded
-  result. Left fold. C to avoid xt-call overhead and because the
-  accumulator threads through user code (root it across the loop, like
-  `map`'s result). ~25 lines.
 - **`range`** — `n range` → `[ 0 1 … n-1 ]`; two-arg `start end range`
   → `[ start … end-1 ]`. Builds an n-element array → C.
 
@@ -813,7 +703,7 @@ stack primitive) and `last` are in `lib.l4` atop `take` + `reverse`.
 
 **Cost:**
 
-- C: `reduce` + `range` → ~50 lines.
+- C: `range` → ~25 lines.
 - `lib.l4`: `find`, `any?`, `all?`, `flat-map`, `sort-by` → ~50 lines.
 - `group-by` and `partition` wait on dicts.
 
