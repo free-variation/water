@@ -28,7 +28,7 @@
 3|M2x2 ok
 42 
 3|M2x2 ok
-red 
+:red 
 3|M2x2 ok
 < 1 2 3 > hello <matrix 2x2:  1 2 3 4> 
 3|M2x2 ok

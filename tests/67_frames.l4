@@ -1,0 +1,120 @@
+\ Frames: { :sym val ... } literal, >frame builder, @ path get.
+
+\ literal, pretty-printed by .
+{ :a 1 :b 2 } . cr
+
+\ builder from a key/value array
+[ :a 1 :b 2 ] >frame . cr
+
+\ keys are stored sorted regardless of insertion order
+{ :b 2 :a 1 } . cr
+
+\ nested frame literal
+{ :a 1 :b { :c 2 } } . cr
+
+\ @ : single-key get
+{ :a 5 } [ :a ] @ . cr
+
+\ @ : nested path get
+{ :a { :b 7 } } [ :a :b ] @ . cr
+
+\ @ : missing key errors
+{ :a 1 } [ :z ] @ . cr
+
+\ compact single-line form when embedded in an array
+[ { :a 1 } ] . cr
+
+\ structural equality
+{ :a 1 } { :a 1 } = . cr
+{ :a 1 } { :a 2 } = . cr
+
+\ equal frames dedup as set members
+< { :a 1 } { :a 1 } > . cr
+
+\ ! : single-key set, leaves the frame
+{ :a 1 } [ :b ] 2 ! . cr
+
+\ ! : auto-vivifies missing intermediate frames
+{ } [ :a :b ] 9 ! . cr
+
+\ ! : overwrites an existing key
+{ :a 1 } [ :a ] 2 ! . cr
+
+\ ! : leaves the frame, so sets chain
+{ } [ :a ] 1 ! [ :b ] 2 ! . cr
+
+\ ! then @ round-trips
+{ } [ :x :y ] 7 ! [ :x :y ] @ . cr
+
+\ ! : empty path errors
+{ :a 1 } [ ] 5 ! . cr
+
+\ keys : top-level keys as an array (sorted by symbol-id)
+{ :b 2 :a 1 } keys . cr
+
+\ values : top-level values, parallel to keys
+{ :b 2 :a 1 } values . cr
+
+\ keys/values of an empty frame
+{ } keys . cr
+{ } values . cr
+
+\ size counts top-level entries
+{ :a 1 :b 2 :c 3 } size . cr
+
+\ frame : build from a keys array and a values array
+[ :a :b ] [ 1 2 ] frame . cr
+
+\ frame : keys/values round-trip
+{ :x 1 :y 2 } dup keys swap values frame . cr
+
+\ frame : a set of symbols works as the keys list
+< :b :a > [ 1 2 ] frame . cr
+
+\ frame : mismatched lengths error
+[ :a ] [ 1 2 ] frame . cr
+
+\ delete-at : remove a top-level key, leaves the frame
+{ :a 1 :b 2 } [ :a ] delete-at . cr
+
+\ delete-at : remove a nested key
+{ :a { :b 1 :c 2 } } [ :a :b ] delete-at . cr
+
+\ delete-at : leaves the frame, so deletes chain
+{ :a 1 :b 2 :c 3 } [ :b ] delete-at [ :a ] delete-at . cr
+
+\ delete-at : missing key errors
+{ :a 1 } [ :z ] delete-at . cr
+
+\ delete-at : empty path errors
+{ :a 1 } [ ] delete-at . cr
+
+\ has? : present nested path is true
+{ :a { :b 1 } } [ :a :b ] has? . cr
+
+\ has? : missing key is false (no error)
+{ :a { :b 1 } } [ :a :z ] has? . cr
+
+\ has? : non-frame mid-path is false
+{ :a 1 } [ :a :b ] has? . cr
+
+\ has? : consumes frame and path, leaves only the bool
+{ :a 1 } [ :a ] has? . cr
+
+\ update-at : apply a quotation to a leaf, leaves the frame
+{ :n 5 } [ :n ] [: 1 + :] update-at . cr
+
+\ update-at : nested path
+{ :a { :b 10 } } [ :a :b ] [: 2 * :] update-at . cr
+
+\ update-at : leaves the frame, so it round-trips with @
+{ :n 5 } [ :n ] [: 10 + :] update-at [ :n ] @ . cr
+
+\ update-at : missing key errors
+{ :a 1 } [ :z ] [: 1 + :] update-at . cr
+
+\ update-at : non-xt errors
+{ :n 5 } [ :n ] 7 update-at . cr
+
+\ update-at : empty path errors
+{ :n 5 } [ ] [: 1 + :] update-at . cr

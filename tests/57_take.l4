@@ -20,7 +20,7 @@
 .s
 
 \ composes with other words
-[ 1 2 3 4 5 6 ] 4 take cardinality .
+[ 1 2 3 4 5 6 ] 4 take size .
 [ 1 2 3 4 5 ] 3 take reverse .
 
 \ failures

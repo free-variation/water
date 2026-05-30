@@ -34,14 +34,20 @@ expanded sequence.
 
 Candidates ranked by call frequency in the benchmark profile:
 
-- **`+!`** ( n addr -- ) — add to a variable in place. Replaces
-  `@ <expr> + !`. Common for counters and accumulators.
+- **`+!`** — add to a variable in place. STALE: the old form `@ <expr> + !`
+  assumed `@`/`!` as variable fetch/store, which are now frame ops. Re-derive
+  against the `to` / auto-deref model — the accumulate pattern is now
+  `x <expr> + to x` (cf. `accum` in `bench/frames.l4`).
 - **`1+`** ( n -- n+1 ) — specialized increment. Replaces `1 +`.
 - **`dup *`** ( x -- x x*x ) — squaring. Hot on numeric kernels.
-- **`@+`** ( addr -- val+ ) — read a variable then add 1 (the `iters @ 1 +`
-  pattern). Composes with `+!` as a complete `@ 1 + !` collapse.
+- **`@+`** — STALE for the same reason; the read-then-increment idiom is now
+  `x 1 + to x`, not `@ 1 +`. Re-derive before implementing.
 - **`?0branch`** — `dup 0= if` collapsed into one op (test top non-destructively
   and branch if zero). Saves 2 dispatches per non-destructive test.
+
+(The frequency ranking above came from `bench/mandel.l4`, which itself
+predates the `@`/`!` repurposing and the `<`/`>` → `lt`/`gt` rename; refresh
+the profile against a current benchmark before committing to candidates.)
 
 Each is ~10 lines of C. Adding the peephole pass is another ~50 lines. Together
 plausibly 5–10% on the benchmark and any numeric / control-heavy kernel.
@@ -80,7 +86,27 @@ Deferred until there's a specific use case:
 - **Norms** — `norm` (L2), `frobenius-norm`. Composable from existing
   reductions but common enough to deserve named words.
 - **SVD** — one-sided Jacobi as the starting point. ~50–100 lines.
-  No LAPACK available, so hand-rolled is the only option.
+  No LAPACK in the default build, so hand-rolled — but see the optional
+  BLAS/LAPACK build below, which would supply it directly.
+
+### Optional BLAS/LAPACK build
+
+An optional build that replaces the autochthonous matrix kernels with
+BLAS/LAPACK. The default build stays zero-dependency and self-contained (the
+project ethos); this is opt-in behind a build switch, leaving the `Matrix`
+representation and the word surface unchanged — only the implementations
+behind the primitives swap, so behaviour and the test corpus are unaffected.
+
+- **BLAS** for the compute kernels: DGEMM (all four transpose variants) →
+  `cblas_dgemm`, and the reduction / element-wise loops where a BLAS routine
+  fits.
+- **LAPACK** unlocks the linear-algebra ops the zero-dep build can't
+  reasonably match — SVD (above), solve / least-squares, inverse, eigen.
+
+Open questions to settle before implementing: which interface (reference
+CBLAS/LAPACKE vs a vendor lib — OpenBLAS / MKL / Accelerate); how the switch
+is wired (a `Makefile` target and/or `#ifdef`); and row-major vs column-major
+handling at the boundary.
 
 ---
 
@@ -207,19 +233,16 @@ Features identified as load-bearing for a complete core language.
 Each kept short here; expand into its own section once we start
 implementing.
 
-### Dictionaries / hash maps
+### Dictionaries / hash maps — done, as frames
 
-Key→value mapping. Keys are strings (or symbols, treated equivalently).
-Values are any `Val`.
-
-- New tag `T_DICT`, new `OBJECT_DICT` kind.
-- Literal syntax: `{ "a": 1, "b": 2 }`. Bracketed by `{` `}` like sets,
-  disambiguated by the `:` separator.
-- Operations: `at` (key → value, polymorphic with array/matrix indexing),
-  `set` or `!` (insert/update), `keys`, `values`, `size` (polymorphic
-  with array length), `contains?`, `delete`.
-- Internals: open-addressing hash table, linear probing, ~150 lines of C.
-  Mutable in place — same semantics as sets and arrays.
+Superseded by the **frame** type (`T_FRAME`): symbol-keyed nested maps with
+`{ :a 1 :b 2 }` literals, `@` / `!` / `has?` / `delete-at` / `update-at` /
+`keys` / `values`, `frame` / `>frame` builders, and `/a/b/c` path literals.
+Sorted parallel key/value arrays rather than a hash table — chosen for
+structural compare/unify (frames are the planned unification layer's compound
+term) and for small record-sized maps where a flat ordered scan beats hashing.
+See `frames-plan.md` for the design and remaining work (`merge`, `copy`,
+image save/load).
 
 ### Time / dates
 
@@ -696,7 +719,7 @@ stack primitive) and `last` are in `lib.l4` atop `take` + `reverse`.
 
 **Deliberately not adding** (composable in one line of user code):
 
-- `count` — `[: pred :] filter cardinality`.
+- `count` — `[: pred :] filter size`.
 - `min-by` / `max-by` — `reduce` with comparison.
 - `sum` / `product` — `0 [: + :] reduce` etc.
 - `for-each` — already covered by `each`.

@@ -1,4 +1,4 @@
 "hello" " " + "world" + .
-"abc" cardinality .
-"" cardinality .
-"a" "b" + "c" + cardinality .
+"abc" size .
+"" size .
+"a" "b" + "c" + size .

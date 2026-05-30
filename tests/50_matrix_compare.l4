@@ -17,7 +17,7 @@
 [ 1 2 3 4 5 6 ] 2 3 matrix [ 9 9 9 9 9 9 9 9 9 ] 3 3 matrix lt .   \ -1
 
 \ matrices can live in sets without collapsing (distinct shapes/contents)
-[ 1 2 3 4 ] 2 2 matrix [ 1 2 3 5 ] 2 2 matrix 2 set cardinality .  \ 2
+[ 1 2 3 4 ] 2 2 matrix [ 1 2 3 5 ] 2 2 matrix 2 set size .  \ 2
 
 \ identical matrices dedup in a set
-[ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 ] 2 2 matrix 2 set cardinality .  \ 1
+[ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 ] 2 2 matrix 2 set size .  \ 1

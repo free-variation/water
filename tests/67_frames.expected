@@ -1,0 +1,218 @@
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b {
+    :c 2
+  }
+}
+
+0 ok
+0 ok
+0 ok
+5 
+0 ok
+0 ok
+0 ok
+7 
+0 ok
+0 ok
+0 ok
+0|error @ : no key :z
+0 ok
+0 ok
+[ { :a 1 } ] 
+0 ok
+0 ok
+0 ok
+-1 
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+< { :a 1 } > 
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a {
+    :b 9
+  }
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+7 
+0 ok
+0 ok
+0 ok
+0|error ! : empty path
+0 ok
+0 ok
+[ :a :b ] 
+0 ok
+0 ok
+0 ok
+[ 1 2 ] 
+0 ok
+0 ok
+0 ok
+[ ] 
+0 ok
+[ ] 
+0 ok
+0 ok
+0 ok
+3 
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :x 1
+  :y 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+0|error frame: keys and values must be the same length (1 vs 2)
+0 ok
+0 ok
+{
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a {
+    :c 2
+  }
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :c 3
+}
+
+0 ok
+0 ok
+0 ok
+0|error delete-at : no key :z
+0 ok
+0 ok
+0|error delete-at : empty path
+0 ok
+0 ok
+-1 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+-1 
+0 ok
+0 ok
+0 ok
+{
+  :n 6
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a {
+    :b 20
+  }
+}
+
+0 ok
+0 ok
+0 ok
+15 
+0 ok
+0 ok
+0 ok
+0|error update-at: no key :z
+0 ok
+0 ok
+0|error update-at: xt required on stack, got a float
+0 ok
+0 ok
+0|error update-at : empty path

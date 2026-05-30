@@ -4,7 +4,8 @@ void p_map(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP_XT(xt, "map");
-	PEEK_COLLECTION_AT(source, 0, "map");
+	PEEK_COLLECTION_AT(source_val, 0, "map");
+	Object *source = interp->objects[source_val.data];
 	int source_index = interp->dsp - 1;
 
 	NEW_ARRAY(result_handle, result, source->len);
@@ -92,7 +93,8 @@ void p_filter(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP_XT(xt, "filter");
-	PEEK_COLLECTION_AT(source, 0, "filter");
+	PEEK_COLLECTION_AT(source_val, 0, "filter");
+	Object *source = interp->objects[source_val.data];
 	int source_index = interp->dsp - 1;
 
 	int *keep = malloc((size_t)MAX(source->len, 1) * sizeof(int));
@@ -110,10 +112,15 @@ void p_filter(Interpreter *interp, cell *cfa) {
 		n_kept += keep[i];
 	}
 
-	if (interp->error_flag) { free(keep); return; }
-
+	if (interp->error_flag) {
+		free(keep);
+		return;
+	}
 	int result_handle = object_new_array(interp, n_kept);
-	if (interp->error_flag) { free(keep); return; }
+	if (interp->error_flag) {
+		free(keep);
+		return;
+	}
 	Object *result = interp->objects[result_handle];
 
 	int result_idx = 0;
@@ -132,7 +139,8 @@ void p_reduce(Interpreter *interp, cell *cfa) {
 
 	POP_XT(combiner, "reduce");
 	POP(init_val);
-	PEEK_COLLECTION_AT(source, 0, "reduce");
+	PEEK_COLLECTION_AT(source_val, 0, "reduce");
+	Object *source = interp->objects[source_val.data];
 
 	Val result_val = init_val;
 	for (int i = 0; i < source->len; i++) {

@@ -24,7 +24,10 @@ No external dependencies.
 [ 1 2 3 4 ] 2 2 matrix dup transpose *  \ matrix multiplication
 
 \ Sets and set algebra
-{ 1 2 3 } { 2 3 4 } + .                 \ { 1 2 3 4 }  (union via polymorphic +)
+< 1 2 3 > < 2 3 4 > + .                 \ < 1 2 3 4 >  (union via polymorphic +)
+
+\ Frames — symbol-keyed nested maps
+{ :a 1 :b { :c 2 } } /b/c @ .           \ 2
 
 \ Higher-order operations
 [ 1 2 3 4 5 ] [: dup * :] map .         \ [ 1 4 9 16 25 ]
@@ -43,7 +46,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 ### Core language
 
-- **Tagged Vals** — floats, strings, symbols, sets, arrays, matrices, execution tokens, dictionary addresses, continuations, internal marks. Single 16-byte representation; tag determines interpretation.
+- **Tagged Vals** — floats, strings, symbols, sets, arrays, frames, matrices, execution tokens, dictionary addresses, continuations, internal marks. Single 16-byte representation; tag determines interpretation.
 - **Index-threaded inner interpreter** — dispatches one CFA per iteration, no separate bytecode.
 - **Per-interpreter state** — all mutable state lives in an `Interpreter`, which owns its `Vocabulary` (a growable dictionary plus name/source/symbol pools). Multiple independent instances can coexist in one process; the engine is embeddable.
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
@@ -52,7 +55,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 - **Control flow** — `if`/`else`/`then`, `begin`/`until`/`again`, `>r`/`r>`/`r@` for return-stack access.
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
-- **Variables and symbols** — `variable foo` holds one Val. `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
+- **Variables and symbols** — `variable foo` declares a global; read it by bare name, assign with `42 to foo` (`to` also auto-creates a global on first assignment at the REPL). `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
 - **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (initialized to `0.0`); read by bare name, assign with `to name`. Locals nest through quotations and survive continuation capture.
 - **Mark-and-sweep GC** — walks data/return/side stacks, dictionary, and a small `gc_roots` array for in-flight C-level temporaries.
 
@@ -65,13 +68,23 @@ reset producer                          \ leaves (1, k) — next value via resum
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
 - **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tan`, `tanh`. Polymorphic over floats and matrices.
-- **Total ordering** — `=`/`<`/`>` compare matrices by shape then row-major contents, so matrices work as set members.
+- **Total ordering** — `=`/`lt`/`gt` compare matrices by shape then row-major contents, so matrices work as set members.
 
 ### Sets, arrays, higher-order
 
-- **Set literals** — `{ 1 2 3 }`, set operations, `member?`, `cardinality`.
+- **Set literals** — `< 1 2 3 >`, set operations, `member?`, `size`.
 - **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), indexed access via `@i`.
 - **Map, fold, zip-map, filter** — `map` for a single source, `reduce` for a left fold with an accumulator, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
+
+### Frames
+
+Symbol-keyed nested maps — the associative type, and the compound term the planned logic layer builds on. The three bracket families are distinct: `[ ]` arrays, `{ }` frames, `< >` sets.
+
+- **Literals** — `{ :a 1 :b 2 }`; values may be any Val, including nested frames, arrays, and sets.
+- **Builders** — `frame` ( keys values -- frame ) from two parallel collections, `>frame` ( kv-array -- frame ) from an alternating key/value array.
+- **Path literals** — `/a/b/c` is a symbol array `[ :a :b :c ]`, built once at compile time, used to address into the tree.
+- **Access** — `@` ( frame path -- value ) get, `!` ( frame path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, plus `keys` / `values` / `size`.
+- **Representation** — sorted parallel key/value arrays with binary-search lookup; mutable in place, reference semantics. Structurally comparable, so frames work as set members and round-trip through their `{ }` literal. See `frames-plan.md`.
 
 ### Strings
 
@@ -81,7 +94,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 ### I/O and persistence
 
-- **Stdin REPL** with rlwrap-friendly behavior and a stack-state prompt. On a color terminal, printed arrays, sets, and matrices get a background shade that deepens with nesting depth; piped/redirected output stays plain.
+- **Stdin REPL** with rlwrap-friendly behavior and a `count|top` prompt showing stack depth and the top value — green on a terminal, red on error. Printed arrays, sets, frames, and matrices get a background shade that deepens with nesting depth; piped/redirected output stays plain.
 - **`load`** runs a source file as if typed.
 - **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
@@ -122,7 +135,6 @@ Tracked in `PLAN.md`, with design notes for each.
 
 ### Data types
 
-- **Dictionaries / hash maps** — first-class key→value mapping with literal syntax `{ "a": 1, "b": 2 }`. Open-addressing hash table.
 - **Time / dates** — Unix timestamps as floats: `now`, `time-format`, `time-parse`.
 - **Random numbers** — xoshiro256++ PRNG: `random-float`, `random-int`, `seed!`, `shuffle`.
 
@@ -157,6 +169,7 @@ Built in stages on the per-interpreter foundation already in place:
 
 - **Slicing**, **`hstack`**/`vstack`, **norms**, **element-wise comparison**.
 - **SVD** — one-sided Jacobi.
+- **Optional BLAS/LAPACK build** — swap the hand-rolled kernels for BLAS/LAPACK behind a build switch; default stays zero-dependency.
 
 ## Project layout
 
@@ -164,7 +177,7 @@ Built in stages on the per-interpreter foundation already in place:
 src/c/logicforth.h     — types, Interpreter/Vocabulary structs, prototypes
 src/c/core.c           — engine: interpreter, dictionary, GC, printing, image, REPL
 src/c/words.c          — arithmetic, stack, I/O, control flow, defining words, continuations
-src/c/collections.c    — sets and arrays
+src/c/collections.c    — sets, arrays, and frames
 src/c/matrix.c         — matrix words and numeric kernels
 src/c/functional.c     — higher-order operations (map, mapn, …)
 src/forth/lib.l4       — standard library (auto-loaded at startup)
@@ -172,6 +185,7 @@ tests/                 — golden-output test files
 docs/                  — design documents
 examples/              — sample programs
 PLAN.md                — deferred work and design notes
+frames-plan.md         — frame type design and status
 ```
 
 ## License

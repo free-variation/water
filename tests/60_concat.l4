@@ -19,7 +19,7 @@
 .s
 
 \ composes
-[ 1 2 ] [ 3 4 ] concat cardinality .
+[ 1 2 ] [ 3 4 ] concat size .
 [ 1 2 ] [ 3 4 ] concat reverse .
 [ 1 2 ] [ 3 4 ] concat 2 take .
 [ 1 2 ] [ 3 4 ] concat 2 skip .

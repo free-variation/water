@@ -15,11 +15,11 @@
 -2 2 range .
 2 -2 range .
 
-\ single-element behavior under cardinality
-0 0 range cardinality .
+\ single-element behavior under size
+0 0 range size .
 
 \ composes
-0 4 range cardinality .
+0 4 range size .
 0 4 range reverse .
 0 9 range 3 take .
 0 9 range 3 skip .

@@ -2,4 +2,4 @@ variable s
 "" to s
 : g 1500 begin s "x" + to s 1 - dup 0 = until drop ;
 g
-s cardinality .
+s size .

@@ -20,7 +20,7 @@ baz :baz = .                       \ -1
 :cat .                             \ cat
 
 \ symbols live in sets without collapsing distinct names
-:a :b :c 3 set cardinality .       \ 3
+:a :b :c 3 set size .       \ 3
 
 \ duplicate symbols dedup in a set
-:a :a :a 3 set cardinality .       \ 1
+:a :a :a 3 set size .       \ 1

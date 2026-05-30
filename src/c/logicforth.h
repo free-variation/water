@@ -18,7 +18,7 @@ typedef int64_t cell;
 #define NAME_POOL   			32768
 #define DATA_STACK_DEPTH		256
 #define RETURN_STACK_DEPTH  	256
-#define MAX_OBJECTS    			65536
+#define MAX_OBJECTS    			262144
 #define INPUT_BUFFER_SIZE    			16384
 #define SOURCE_POOL 			1048576
 #define SYMBOL_POOL 			32768
@@ -34,7 +34,7 @@ typedef int64_t cell;
 
 typedef enum {
 	T_NONE = 0,
-	T_SYM,
+	T_SYMBOL,
 	T_FLOAT,
 	T_STRING,
 	T_SET,
@@ -67,7 +67,7 @@ static inline Val make_float(double number) {
 
 static inline Val make_symbol(int cfa) {
 	Val value;
-	value.tag = T_SYM;
+	value.tag = T_SYMBOL;
 	value.data = cfa;
 	return value;
 }
@@ -222,7 +222,9 @@ typedef struct Interpreter {
 
 	Object *objects[MAX_OBJECTS];
 	int n_objects;
-	int object_mark[MAX_OBJECTS];
+	unsigned char object_mark[MAX_OBJECTS];
+	int free_slots[MAX_OBJECTS];
+	int n_free_slots;
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
 
@@ -359,17 +361,28 @@ static inline Val rpop(Interpreter *interp) {
 	Object *obj = object_new(interp, (kind), &slot); \
 	if (!obj) return -1
 
-#define PEEK_COLLECTION_AT(name, depth, op) \
+#define PEEK_AT(var, depth, op, type) \
+	if (interp->dsp <= (depth)) { \
+		fail(interp, "%s: stack too shallow; expected %s", (op), tag_name(type)); \
+		return; \
+	} \
+	Val var = interp->data_stack[interp->dsp - 1 - (depth)]; \
+	if (var.tag != (type)) { \
+		fail(interp, "%s: expected %s, got %s", (op), tag_name(type), tag_name(var.tag)); \
+		return; \
+	}
+
+#define PEEK_COLLECTION_AT(var, depth, op) \
 	if (interp->dsp <= (depth)) { \
 		fail(interp, "%s: stack too shallow; expected array or set", (op)); \
 		return; \
 	} \
-	Val name##_val = interp->data_stack[interp->dsp - 1 - (depth)]; \
-	if (name##_val.tag != T_ARRAY && name##_val.tag != T_SET) { \
-		fail(interp, "%s: expected array or set, got %s", (op), tag_name(name##_val.tag)); \
+	Val var = interp->data_stack[interp->dsp - 1 - (depth)]; \
+	if (var.tag != T_ARRAY && var.tag != T_SET) { \
+		fail(interp, "%s: expected array or set, got %s", (op), tag_name(var.tag)); \
 		return; \
-	} \
-	Object *name = interp->objects[name##_val.data]
+	}
+
 
 
 
@@ -460,8 +473,14 @@ void p_to_side(Interpreter *interp, cell *cfa);
 void p_side_to(Interpreter *interp, cell *cfa);
 void p_side_drop(Interpreter *interp, cell *cfa);
 void p_side_depth(Interpreter *interp, cell *cfa);
-void p_fetch(Interpreter *interp, cell *cfa);
-void p_store(Interpreter *interp, cell *cfa);
+void p_frame_get(Interpreter *interp, cell *cfa);
+void p_frame_set(Interpreter *interp, cell *cfa);
+void p_frame_delete_at(Interpreter *interp, cell *cfa);
+void p_has(Interpreter *interp, cell *cfa);
+void p_update_at(Interpreter *interp, cell *cfa);
+void p_frame_keys(Interpreter *interp, cell *cfa);
+void p_frame_values(Interpreter *interp, cell *cfa);
+void p_frame(Interpreter *interp, cell *cfa);
 void p_setopen(Interpreter *interp, cell *cfa);
 void p_setclose(Interpreter *interp, cell *cfa);
 void p_frameopen(Interpreter *interp, cell *cfa);
@@ -469,7 +488,7 @@ void p_frameclose(Interpreter *interp, cell *cfa);
 void p_array_open(Interpreter *interp, cell *cfa);
 void p_array_close(Interpreter *interp, cell *cfa);
 void p_array(Interpreter *interp, cell *cfa);
-void p_cardinality(Interpreter *interp, cell *cfa);
+void p_size(Interpreter *interp, cell *cfa);
 void p_member(Interpreter *interp, cell *cfa);
 void p_at_i(Interpreter *interp, cell *cfa);
 void p_at_j(Interpreter *interp, cell *cfa);

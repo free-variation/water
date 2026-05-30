@@ -13,7 +13,7 @@
 : last  swap reverse swap take reverse ;
 
 ( arr n -- arr' )  \ all but the first n elements (clamped)
-: skip  over cardinality swap -  swap reverse swap take reverse ;
+: skip  over size swap -  swap reverse swap take reverse ;
 
 \ Execeptions
 : throw ( exc -- ) [: drop 1 :] shift-with ;

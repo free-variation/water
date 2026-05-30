@@ -119,7 +119,7 @@ void p_frameclose(Interpreter *interp, cell *cfa) {
 
 	NEW_FRAME(frame_handle, frame);
 	for (int i = mark_index; i < interp->dsp; i += 2) {
-		if (interp->data_stack[i].tag != T_SYM) {
+		if (interp->data_stack[i].tag != T_SYMBOL) {
 			fail(interp, "} : frame keys must be symbols, got %s", tag_name(interp->data_stack[i].tag));
 			return;
 		}
@@ -172,13 +172,16 @@ void p_array(Interpreter *interp, cell *cfa) {
 	push(interp, make_array(array_handle));
 }
 
-void p_cardinality(Interpreter *interp, cell *cfa) {
+void p_size(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP(collection);
-	if (collection.tag == T_SET || collection.tag == T_ARRAY || collection.tag == T_STRING)
+	if (collection.tag == T_SET ||
+			collection.tag == T_ARRAY ||
+			collection.tag == T_STRING ||
+			collection.tag == T_FRAME)
 		push(interp, make_float((double)interp->objects[collection.data]->len));
-	else fail(interp, "cardinality: expected a set, array, or string, got %s", tag_name(collection.tag));
+	else fail(interp, "size: expected a set, array, string, or frame; got %s", tag_name(collection.tag));
 }
 
 void p_member(Interpreter *interp, cell *cfa) {
@@ -253,7 +256,8 @@ void p_take(Interpreter *interp, cell *cfa) {
 	POP_INT(n_items, "take", "length");
 	if (n_items < 0) n_items = 0;
 
-	PEEK_COLLECTION_AT(source, 0, "take");
+	PEEK_COLLECTION_AT(source_val, 0, "take");
+	Object *source = interp->objects[source_val.data];
 	if (n_items > source->len) n_items = source->len;
 
 	NEW_ARRAY(result_handle, result, n_items);
@@ -267,7 +271,8 @@ void p_take(Interpreter *interp, cell *cfa) {
 void p_reverse(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_COLLECTION_AT(source, 0, "reverse");
+	PEEK_COLLECTION_AT(source_val, 0, "reverse");
+	Object *source = interp->objects[source_val.data];
 
 	NEW_ARRAY(result_handle, result, source->len);
 
@@ -281,8 +286,10 @@ void p_concat(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 	int i;
 
-	PEEK_COLLECTION_AT(b, 0, "concat");
-	PEEK_COLLECTION_AT(a, 1, "concat");
+	PEEK_COLLECTION_AT(b_val, 0, "concat");
+	PEEK_COLLECTION_AT(a_val, 1, "concat");
+	Object *b = interp->objects[b_val.data];
+	Object *a = interp->objects[a_val.data];
 
 	NEW_ARRAY(result_handle, result, a->len + b->len);
 
@@ -329,9 +336,13 @@ int frame_find(Object *frame, cell key) {
 	return low;
 }
 
+#define FRAME_LOOKUP(obj, key, at, present) \
+	int at = frame_find((obj), (key)); \
+	int present = (at) < (obj)->len && (obj)->frame.keys[at] == (key)
+
 void frame_put(Object *frame, cell key, Val value) {
-	int at = frame_find(frame, key);
-	if (at < frame->len && frame->frame.keys[at] == key) {
+	FRAME_LOOKUP(frame, key, at, present);
+	if (present) {
 		frame->frame.values[at] = value;
 		return;
 	}
@@ -350,8 +361,8 @@ void frame_put(Object *frame, cell key, Val value) {
 }
 
 int frame_delete(Object *frame, cell key) {
-	int at = frame_find(frame, key);
-	if (at >= frame->len || frame->frame.keys[at] != key) return 0;
+	FRAME_LOOKUP(frame, key, at, present);
+	if (!present) return 0;
 	memmove(&frame->frame.keys[at], &frame->frame.keys[at + 1], sizeof(cell) * (size_t)(frame->len - at - 1));
 	memmove(&frame->frame.values[at], &frame->frame.values[at + 1], sizeof(Val) * (size_t)(frame->len - at - 1));
 	frame->len--;
@@ -362,11 +373,12 @@ int frame_delete(Object *frame, cell key) {
 void p_to_frame(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_COLLECTION_AT(source, 0, ">frame");
+	PEEK_COLLECTION_AT(source_val, 0, ">frame");
 	if (source_val.tag != T_ARRAY) {
 		fail(interp, ">frame: expected an array, got %s", tag_name(source_val.tag));
 		return;
 	}
+	Object *source = interp->objects[source_val.data];
 	if (source->len % 2 != 0) {
 		fail(interp, ">frame: array needs an even number of kv pairs");
 		return;
@@ -374,7 +386,7 @@ void p_to_frame(Interpreter *interp, cell *cfa) {
 
 	NEW_FRAME(frame_handle, frame);
 	for (int i = 0; i < source->len; i += 2) {
-		if (source->items[i].tag != T_SYM) {
+		if (source->items[i].tag != T_SYMBOL) {
 			fail(interp, ">frame: keys must be symbols, got %s", tag_name(source->items[i].tag));
 			return;
 		}
@@ -385,4 +397,208 @@ void p_to_frame(Interpreter *interp, cell *cfa) {
 	push(interp, make_frame(frame_handle));
 }
 
+static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
+	if (path_val.tag != T_ARRAY) {
+		fail(interp, "%s : expected a path (array of symbols), got %s", op, tag_name(path_val.tag));
+		return NULL;
+	}
 	
+	Object *path = interp->objects[path_val.data];
+	for (int i = 0; i < path->len; i++) {
+		if (path->items[i].tag != T_SYMBOL) {
+			fail(interp, "%s: path elements must be symbols, got %s", op, tag_name(path->items[i].tag));
+			return NULL;
+		}
+	}
+	return path;
+}
+
+typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
+
+static Val frame_walk(Interpreter *interp, Val node, Object *path,
+		int count, FrameWalkMode mode, int *found, const char *op) {
+	for (int i = 0; i < count; i++) {
+		if (node.tag != T_FRAME) {
+			if (found) *found = 0;
+			if (mode != WALK_PROBE)
+				fail(interp, "%s : cannot descend into %s", op, tag_name(node.tag));
+			return node;
+		}
+
+		cell key = path->items[i].data;
+		Object *frame = interp->objects[node.data];
+		FRAME_LOOKUP(frame, key, at, present);
+		if (present && (mode != WALK_VIVIFY || frame->frame.values[at].tag == T_FRAME)) {
+			node = frame->frame.values[at];
+		} else if (mode == WALK_VIVIFY) {
+			int child = object_new_frame(interp);
+			frame_put(interp->objects[node.data], key, make_frame(child));
+			node = make_frame(child);
+		} else {
+			if (found) *found = 0;
+			if (mode != WALK_PROBE)
+				fail(interp, "%s : no key :%s", op, &interp->vocab->symbol_pool[key]);
+			return node;
+		}
+	}
+	if (found) *found = 1;
+	return node;
+}
+
+#define PEEK_FRAME_PATH(frame, path, op) \
+	PEEK_AT(frame, 1, op, T_FRAME); \
+	Object *path = frame_path(interp, interp->data_stack[interp->dsp - 1], op); \
+	if (!path) return
+
+#define PEEK_FRAME_PATH_VALUE(frame, path, value, op) \
+	PEEK_AT(frame, 2, op, T_FRAME); \
+	Object *path = frame_path(interp, interp->data_stack[interp->dsp - 2], op); \
+	if (!path) return; \
+	Val value = interp->data_stack[interp->dsp - 1]
+
+#define REQUIRE_NONEMPTY_PATH(path, op) \
+	if ((path)->len == 0) { \
+		fail(interp, "%s : empty path", (op)); \
+		return; \
+	}
+
+void p_frame_get(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_FRAME_PATH(frame, path, "@");
+
+	Val result = frame_walk(interp, frame, path, path->len, WALK_ERROR, NULL, "@");
+	if (interp->error_flag) return;
+
+	interp->dsp -= 2;
+	push(interp, result);
+}
+
+void p_frame_set(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_FRAME_PATH_VALUE(frame, path, value, "!");
+	REQUIRE_NONEMPTY_PATH(path, "!");
+
+	Val parent = frame_walk(interp, frame, path, path->len - 1, WALK_VIVIFY, NULL, "!");
+	if (interp->error_flag) return;
+
+	frame_put(interp->objects[parent.data], path->items[path->len - 1].data, value);
+	interp->dsp -= 2;
+}
+
+void p_frame_delete_at(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_FRAME_PATH(frame, path, "delete-at");
+	REQUIRE_NONEMPTY_PATH(path, "delete-at");
+
+	Val parent = frame_walk(interp, frame, path, path->len - 1, WALK_ERROR, NULL, "delete-at");
+	if (interp->error_flag) return;
+
+	cell leaf = path->items[path->len - 1].data;
+	if (parent.tag != T_FRAME || !frame_delete(interp->objects[parent.data], leaf)) {
+		fail(interp, "delete-at : no key :%s", &interp->vocab->symbol_pool[leaf]);
+		return;
+	}
+	interp->dsp--;
+}
+
+void p_frame_keys(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_AT(frame_val, 0, "keys", T_FRAME);
+	Object *frame = interp->objects[frame_val.data];
+	NEW_ARRAY(result_handle, result, frame->len);
+
+	for (int i = 0; i < frame->len; i++)
+		result->items[i] = make_symbol((int)frame->frame.keys[i]);
+
+	replace_top_with_array(interp, result_handle);
+}
+
+void p_frame_values(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_AT(frame_val, 0, "values", T_FRAME);
+	Object *frame = interp->objects[frame_val.data];
+	NEW_ARRAY(result_handle, result, frame->len);
+
+	for (int i = 0; i < frame->len; i++)
+		result->items[i] = frame->frame.values[i];
+
+	replace_top_with_array(interp, result_handle);
+}
+
+void p_frame(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_AT(values_val, 0, "frame", T_ARRAY);
+	PEEK_COLLECTION_AT(keys_val, 1, "frame");
+	Object *values = interp->objects[values_val.data];
+	Object *keys = interp->objects[keys_val.data];
+	if (keys->len != values->len) {
+		fail(interp, "frame: keys and values must be the same length (%d vs %d)", keys->len, values->len);
+		return;
+	}
+	for (int i = 0; i < keys->len; i++) {
+		if (keys->items[i].tag != T_SYMBOL) {
+			fail(interp, "frame: keys must be symbols, got %s", tag_name(keys->items[i].tag));
+			return;
+		}
+	}
+
+	NEW_FRAME(frame_handle, frame);
+	for (int i = 0; i < keys->len; i++)
+		frame_put(frame, keys->items[i].data, values->items[i]);
+
+	interp->dsp -= 2;
+	push(interp, make_frame(frame_handle));
+}
+
+void p_has(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_FRAME_PATH(frame, path, "has?");
+	REQUIRE_NONEMPTY_PATH(path, "has?");
+	int found;
+
+	frame_walk(interp, frame, path, path->len, WALK_PROBE, &found, "has?");
+
+	interp->dsp -= 2;
+	push(interp, make_bool(found));
+}
+
+void p_update_at(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_FRAME_PATH_VALUE(frame, path, xt, "update-at");
+	REQUIRE_NONEMPTY_PATH(path, "update-at");
+	if (xt.tag != T_XT) {
+		fail(interp, "update-at: xt required on stack, got %s", tag_name(xt.tag));
+		return;
+	}
+
+	Val parent = frame_walk(interp, frame, path, path->len - 1, WALK_ERROR, NULL, "update-at");
+	if (interp->error_flag) return;
+	if (parent.tag != T_FRAME) {
+		fail(interp, "update-at: parent is not a frame, got %s", tag_name(parent.tag));
+		return;
+	}
+
+	Object *parent_obj = interp->objects[parent.data];
+	cell leaf = path->items[path->len - 1].data;
+	FRAME_LOOKUP(parent_obj, leaf, at, present);
+	if (!present) {
+		fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
+		return;
+	}
+
+	push(interp, parent_obj->frame.values[at]);
+	execute_cfa(interp, (int)xt.data);
+	parent_obj->frame.values[at] = pop(interp);
+
+	interp->dsp -= 2;
+}
+	
+

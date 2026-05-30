@@ -17,18 +17,14 @@ int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_objects < MAX_OBJECTS) {
 		return interp->n_objects++;
 	}
-
-	for (int i = 0; i < MAX_OBJECTS; i++) {
-		if (interp->objects[i] == NULL) {
-			return i;
-		}
+	if (interp->n_free_slots > 0) {
+		return interp->free_slots[--interp->n_free_slots];
 	}
+
 	gc(interp);
 
-	for (int i = 0; i < MAX_OBJECTS; i++) {
-		if (interp->objects[i] == NULL) {
-			return i;
-		}
+	if (interp->n_free_slots > 0) {
+		return interp->free_slots[--interp->n_free_slots];
 	}
 	return -1;
 }
@@ -78,8 +74,8 @@ int object_new_array(Interpreter *interp, int num_elements) {
 int object_new_frame(Interpreter *interp) {
 	NEW_OBJECT(obj, OBJECT_FRAME);
 	obj->capacity = FRAME_INITIAL_CAPACITY;
-	obj->frame.keys   = malloc(sizeof(cell) * (size_t)obj->capacity);
-	obj->frame.values = malloc(sizeof(Val)  * (size_t)obj->capacity);
+	obj->frame.keys = malloc(sizeof(cell) * (size_t)obj->capacity);
+	obj->frame.values = malloc(sizeof(Val) * (size_t)obj->capacity);
 	return slot;
 }
 
@@ -122,7 +118,7 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 						  if (left_value > right_value) return 1;
 						  return 0;
 					  }
-		case T_SYM: case T_XT: case T_ADDR:
+		case T_SYMBOL: case T_XT: case T_ADDR:
 
 					  if (left.data < right.data) return -1;
 					  if (left.data > right.data) return 1;
@@ -209,10 +205,14 @@ static int stdout_is_tty(void) {
 }
 
 static int print_depth = 0;
+static int suppress_depth_bg = 0;
 
 static void print_depth_bg(int depth) {
-	if (!stdout_is_tty()) return;
-	if (depth <= 0) { fputs("\033[49m", stdout); return; }
+	if (!stdout_is_tty() || suppress_depth_bg) return;
+	if (depth <= 0) {
+		fputs("\033[49m", stdout);
+		return;
+	}
 	int idx = 238 + (depth - 1) * 3;
 	if (idx > 250) idx = 250;
 	printf("\033[48;5;%dm", idx);
@@ -308,7 +308,7 @@ void print_matrix_grid(Object *m) {
 void print_val(Interpreter *interp, Val value) {
 	switch (value.tag) {
 		case T_FLOAT: print_double(unpack_float(value)); break;
-		case T_SYM: fputs(&interp->vocab->symbol_pool[value.data], stdout); break;
+		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[value.data]); break;
 		case T_STRING: fputs(interp->objects[value.data]->bytes, stdout); break;
 		case T_SET:
 			print_depth_enter();
@@ -368,11 +368,11 @@ void print_val_compact(Interpreter *interp, Val value) {
 						   else printf("\"%.9s…\"", obj->bytes);
 						   break;
 					   }
-		case T_SYM: {
+		case T_SYMBOL: {
 						const char *name = &interp->vocab->symbol_pool[value.data];
 						int len = (int)strlen(name);
-						if (len <= 10) fputs(name, stdout);
-						else printf("%.9s…", name);
+						if (len <= 10) printf(":%s", name);
+						else printf(":%.9s…", name);
 						break;
 					}
 		case T_SET:
@@ -401,7 +401,10 @@ void print_val_compact(Interpreter *interp, Val value) {
 					   int target = (int)value.data;
 					   const char *name = NULL;
 					   for (int cfa = interp->vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
-						   if (cfa == target) { name = &interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)]; break; }
+						   if (cfa == target) {
+						   	name = &interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)];
+						   	break;
+						   }
 					   }
 					   if (name) {
 						   int len = (int)strlen(name);
@@ -436,18 +439,20 @@ void print_frame_pretty(Interpreter *interp, Object *frame, int indent) {
 
 void print_prompt_state(Interpreter *interp) {
 	int tty = stdout_is_tty();
-	if (tty) fputs("\033[48;5;240m", stdout);
+	if (tty) fputs(interp->error_flag ? "\033[41m" : "\033[42m", stdout);
 
 	if (interp->error_flag) {
 		printf("%d|error", interp->dsp);
 	} else if (interp->dsp == 0) {
-		printf("0");
+		putchar('0');
 	} else {
 		printf("%d|", interp->dsp);
+		suppress_depth_bg = 1;
 		print_val_compact(interp, interp->data_stack[interp->dsp - 1]);
+		suppress_depth_bg = 0;
 	}
 
-	if (tty) fputs("\033[49m", stdout);
+	if (tty) fputs("\033[0m", stdout);
 	putchar(' ');
 }
 
@@ -529,8 +534,10 @@ void execute_cfa(Interpreter *interp, int cfa) {
 
 int alloc_name(Interpreter *interp, const char *name) {
 	int length = (int)strlen(name) + 1;
-	if (interp->vocab->names_here + length > NAME_POOL) { fail(interp, "name pool full"); return 0; }
-
+	if (interp->vocab->names_here + length > NAME_POOL) {
+		fail(interp, "name pool full");
+		return 0;
+	}
 	int name_offset = interp->vocab->names_here;
 	memcpy(&interp->vocab->name_pool[interp->vocab->names_here], name, (size_t)length);
 	interp->vocab->names_here += length;
@@ -610,7 +617,7 @@ void fail(Interpreter *interp, const char *fmt, ...) {
 const char *tag_name(Tag t) {
 	switch (t) {
 		case T_NONE:   return "none";
-		case T_SYM:    return "a symbol";
+		case T_SYMBOL:    return "a symbol";
 		case T_FLOAT:  return "a float";
 		case T_STRING: return "a string";
 		case T_SET:    return "a set";
@@ -873,6 +880,44 @@ void run_outer(Interpreter *interp) {
 			continue;
 		}
 
+		if (tok[0] == '/' && tok[1] != '\0') {
+			char path[INPUT_BUFFER_SIZE];
+			strncpy(path, tok, sizeof(path) - 1);
+			path[sizeof(path) - 1] = '\0';
+
+			int count = 0;
+			for (char *p = path; *p; ) {
+				while (*p == '/') p++;
+				if (!*p) break;
+				count++;
+				while (*p && *p != '/') p++;
+			}
+			if (count == 0) {
+				fail(interp, "path literal %s has no segments", tok);
+				return;
+			}
+
+			int handle = object_new_array(interp, count);
+			if (interp->error_flag) return;
+			Object *path_array = interp->objects[handle];
+
+			int idx = 0;
+			for (char *p = path; *p; ) {
+				while (*p == '/') p++;
+				if (!*p) break;
+				char *segment = p;
+				while (*p && *p != '/') p++;
+				if (*p) {
+					*p = '\0';
+					p++;
+				}
+				path_array->items[idx++] = make_symbol(intern_symbol(interp, segment));
+			}
+
+			compile_or_push(interp, make_array(handle));
+			continue;
+		}
+
 		double dv;
 		if (parse_float(tok, &dv)) {
 			compile_or_push(interp, make_float(dv));
@@ -1070,20 +1115,24 @@ void gc(Interpreter *interp) {
 
 	}
 
+	interp->n_free_slots = 0;
 	for (int handle = 0; handle < interp->n_objects; handle++) {
 		Object *obj = interp->objects[handle];
-		if (!obj || interp->object_mark[handle]) continue;
+		if (obj && interp->object_mark[handle]) continue;
 
-		switch (obj->kind) {
-			case OBJECT_STRING: free(obj->bytes); break;
-			case OBJECT_SET:
-			case OBJECT_ARRAY: free(obj->items); break;
-			case OBJECT_FRAME: free(obj->frame.keys); free(obj->frame.values); break;
-			case OBJECT_MATRIX: free(obj->matrix.elements); break;
-			case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
+		if (obj) {
+			switch (obj->kind) {
+				case OBJECT_STRING: free(obj->bytes); break;
+				case OBJECT_SET:
+				case OBJECT_ARRAY: free(obj->items); break;
+				case OBJECT_FRAME: free(obj->frame.keys); free(obj->frame.values); break;
+				case OBJECT_MATRIX: free(obj->matrix.elements); break;
+				case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
+			}
+			free(obj);
+			interp->objects[handle] = NULL;
 		}
-		free(interp->objects[handle]);
-		interp->objects[handle] = NULL;
+		interp->free_slots[interp->n_free_slots++] = handle;
 	}
 }
 
@@ -1303,6 +1352,7 @@ void forget_user(Interpreter *interp) {
 		}
 	}
 	interp->n_objects = 0;
+	interp->n_free_slots = 0;
 	interp->dsp = 0;
 	interp->rsp = 0;
 	interp->vocab->here = interp->vocab->init_here;
@@ -1548,6 +1598,7 @@ void p_load_image(Interpreter *interp, cell *cfa) {
 		interp->objects[slot] = obj;
 	}
 	interp->n_objects = saved_n_objects;
+	interp->n_free_slots = 0;
 
 	for (int i = 0; i < saved_dsp; i++) {
 		if (!r_val(file, &interp->data_stack[i])) {
@@ -1600,7 +1651,7 @@ int main(void) {
 	define_primitive(interp, ".s", p_dots, 0);
 	define_primitive(interp, "bye", p_bye, 0);
 	define_primitive(interp, "clear", p_clear, 0);
-	define_primitive(interp, "gc",	 p_gc, 0);
+	define_primitive(interp, "gc", p_gc, 0);
 	define_primitive(interp, "load", p_load, 0);
 	define_primitive(interp, "save", p_save, 0);
 	define_primitive(interp, "save-image", p_save_image, 0);
@@ -1613,13 +1664,18 @@ int main(void) {
 	define_primitive(interp, "side>", p_side_to, 0);
 	define_primitive(interp, "side-drop", p_side_drop, 0);
 	define_primitive(interp, "side-depth", p_side_depth, 0);
-	define_primitive(interp, "@", p_fetch, 0);
-	define_primitive(interp, "!", p_store, 0);
+	define_primitive(interp, "@", p_frame_get, 0);
+	define_primitive(interp, "!", p_frame_set, 0);
+	define_primitive(interp, "keys", p_frame_keys, 0);
+	define_primitive(interp, "values", p_frame_values, 0);
+	define_primitive(interp, "delete-at", p_frame_delete_at, 0);
+	define_primitive(interp, "has?", p_has, 0);
+	define_primitive(interp, "update-at", p_update_at, 0);
 
-	define_primitive(interp, "reset", 		p_reset, 0);
-	define_primitive(interp, "shift", 		p_shift, 0);
-	define_primitive(interp, "shift-with", 	p_shift_with, 0);
-	define_primitive(interp, "resume", 	p_resume, 0);
+	define_primitive(interp, "reset", p_reset, 0);
+	define_primitive(interp, "shift", p_shift, 0);
+	define_primitive(interp, "shift-with", p_shift_with, 0);
+	define_primitive(interp, "resume", p_resume, 0);
 
 	define_primitive(interp, "{", p_frameopen, 0);
 	define_primitive(interp, "}", p_frameclose, 0);
@@ -1628,14 +1684,15 @@ int main(void) {
 	define_primitive(interp, "[", p_array_open, 0);
 	define_primitive(interp, "]", p_array_close, 0);
 
-	define_primitive(interp, "array",		 p_array, 0);
-	define_primitive(interp, "array-of",	 p_array_of, 0);
-	define_primitive(interp, ">frame",		 p_to_frame, 0);
-	define_primitive(interp, "take",		 p_take, 0);
-	define_primitive(interp, "reverse",	 p_reverse, 0);
-	define_primitive(interp, "concat",	 p_concat, 0);
-	define_primitive(interp, "range",	 p_range, 0);
-	define_primitive(interp, "cardinality", p_cardinality, 0);
+	define_primitive(interp, "array", p_array, 0);
+	define_primitive(interp, "array-of", p_array_of, 0);
+	define_primitive(interp, ">frame", p_to_frame, 0);
+	define_primitive(interp, "frame", p_frame, 0);
+	define_primitive(interp, "take", p_take, 0);
+	define_primitive(interp, "reverse", p_reverse, 0);
+	define_primitive(interp, "concat", p_concat, 0);
+	define_primitive(interp, "range", p_range, 0);
+	define_primitive(interp, "size", p_size, 0);
 	define_primitive(interp, "member?", p_member, 0);
 	define_primitive(interp, "set", p_set, 0);
 	define_primitive(interp, "union", p_union, 0);
@@ -1658,8 +1715,8 @@ int main(void) {
 	interp->vocab->to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 0);
 	interp->vocab->enter_locals_cfa = define_primitive(interp, "(enter-locals)", p_enter_locals, 0);
 	interp->vocab->leave_locals_cfa = define_primitive(interp, "(leave-locals)", p_leave_locals, 0);
-	interp->vocab->local_fetch_cfa  = define_primitive(interp, "(local@)", p_local_fetch, 0);
-	interp->vocab->local_store_cfa  = define_primitive(interp, "(local!)", p_local_store, 0);
+	interp->vocab->local_fetch_cfa = define_primitive(interp, "(local@)", p_local_fetch, 0);
+	interp->vocab->local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 0);
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);
@@ -1680,39 +1737,39 @@ int main(void) {
 	define_primitive(interp, ":]", p_qsemi, 1);
 	define_primitive(interp, "|", p_bar, 1);
 
-	define_primitive(interp, "0-matrix",		p_0_matrix, 0);
-	define_primitive(interp, "matrix",			p_matrix, 0);
-	define_primitive(interp, "dim",				p_dim, 0);
-	define_primitive(interp, "transpose",		p_transpose, 0);
-	define_primitive(interp, "diagonal-matrix",	p_diagonal_matrix, 0);
-	define_primitive(interp, "@i", 	p_at_i, 0);
-	define_primitive(interp, "@j", 	p_at_j, 0);
-	define_primitive(interp, "@i,j", 	p_at_ij, 0);
-	define_primitive(interp, "diagonal",		p_diagonal, 0);
-	define_primitive(interp, "reshape",			p_reshape, 0);
-	define_primitive(interp, "sum",				p_sum, 0);
-	define_primitive(interp, "row-sums",		p_row_sums, 0);
-	define_primitive(interp, "column-sums",		p_column_sums, 0);
-	define_primitive(interp, "max",				p_max, 0);
-	define_primitive(interp, "min",				p_min, 0);
-	define_primitive(interp, "row-maxes",		p_row_maxes, 0);
-	define_primitive(interp, "row-mins",		p_row_mins, 0);
-	define_primitive(interp, "column-maxes",	p_column_maxes, 0);
-	define_primitive(interp, "column-mins",		p_column_mins, 0);
+	define_primitive(interp, "0-matrix", p_0_matrix, 0);
+	define_primitive(interp, "matrix", p_matrix, 0);
+	define_primitive(interp, "dim", p_dim, 0);
+	define_primitive(interp, "transpose", p_transpose, 0);
+	define_primitive(interp, "diagonal-matrix", p_diagonal_matrix, 0);
+	define_primitive(interp, "@i", p_at_i, 0);
+	define_primitive(interp, "@j", p_at_j, 0);
+	define_primitive(interp, "@i,j", p_at_ij, 0);
+	define_primitive(interp, "diagonal", p_diagonal, 0);
+	define_primitive(interp, "reshape", p_reshape, 0);
+	define_primitive(interp, "sum", p_sum, 0);
+	define_primitive(interp, "row-sums", p_row_sums, 0);
+	define_primitive(interp, "column-sums", p_column_sums, 0);
+	define_primitive(interp, "max", p_max, 0);
+	define_primitive(interp, "min", p_min, 0);
+	define_primitive(interp, "row-maxes", p_row_maxes, 0);
+	define_primitive(interp, "row-mins", p_row_mins, 0);
+	define_primitive(interp, "column-maxes", p_column_maxes, 0);
+	define_primitive(interp, "column-mins", p_column_mins, 0);
 
-	define_primitive(interp, "dgemm-nn", 	p_dgemm_nn, 0);
-	define_primitive(interp, "dgemm-tn", 	p_dgemm_tn, 0);
-	define_primitive(interp, "dgemm-nt", 	p_dgemm_nt, 0);
-	define_primitive(interp, "dgemm-tt", 	p_dgemm_tt, 0);
+	define_primitive(interp, "dgemm-nn", p_dgemm_nn, 0);
+	define_primitive(interp, "dgemm-tn", p_dgemm_tn, 0);
+	define_primitive(interp, "dgemm-nt", p_dgemm_nt, 0);
+	define_primitive(interp, "dgemm-tt", p_dgemm_tt, 0);
 
-	define_primitive(interp, "abs",		p_abs, 0);
-	define_primitive(interp, "sqrt",	p_sqrt, 0);
-	define_primitive(interp, "exp",		p_exp, 0);
-	define_primitive(interp, "log",		p_log, 0);
-	define_primitive(interp, "sin",		p_sin, 0);
-	define_primitive(interp, "cos",		p_cos, 0);
-	define_primitive(interp, "tan",		p_tan, 0);
-	define_primitive(interp, "tanh",	p_tanh, 0);
+	define_primitive(interp, "abs", p_abs, 0);
+	define_primitive(interp, "sqrt", p_sqrt, 0);
+	define_primitive(interp, "exp", p_exp, 0);
+	define_primitive(interp, "log", p_log, 0);
+	define_primitive(interp, "sin", p_sin, 0);
+	define_primitive(interp, "cos", p_cos, 0);
+	define_primitive(interp, "tan", p_tan, 0);
+	define_primitive(interp, "tanh", p_tanh, 0);
 
 	interp->vocab->init_here = interp->vocab->here;
 	interp->vocab->init_latest_cfa = interp->vocab->latest_cfa;

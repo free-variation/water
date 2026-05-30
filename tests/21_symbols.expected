@@ -3,9 +3,9 @@
 0 ok
 -1 0 ok
 0 0 ok
-red 
+:red 
 0 ok
-green 
+:green 
 0 ok
-green blue red 
+:green :blue :red 
 0 ok

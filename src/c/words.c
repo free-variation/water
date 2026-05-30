@@ -84,7 +84,10 @@ void p_div(Interpreter *interp, cell *cfa) {
 	POP(right);
 	POP(left);
 	if (left.tag == T_FLOAT && right.tag == T_FLOAT) {
-		if (unpack_float(right) == 0.0) { fail(interp, "/ : division by zero"); return; }
+		if (unpack_float(right) == 0.0) {
+			fail(interp, "/ : division by zero");
+			return;
+		}
 		push(interp, make_float(unpack_float(left) / unpack_float(right)));
 	}
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
@@ -333,34 +336,7 @@ void p_side_depth(Interpreter *interp, cell *cfa) {
 	push(interp, make_float((double)interp->side_dsp));
 }
 
-void p_fetch(Interpreter *interp, cell *cfa) {
-	(void)cfa;
 
-	POP(address);
-	if (address.tag != T_ADDR) {
-		fail(interp, "@ : expected an address (from a variable), got %s", tag_name(address.tag));
-		return;
-	}
-	int cell_index = (int)address.data;
-	Val loaded;
-	loaded.tag = (Tag)interp->vocab->dict[cell_index];
-	loaded.data = interp->vocab->dict[cell_index + 1];
-	push(interp, loaded);
-}
-
-void p_store(Interpreter *interp, cell *cfa) {
-	(void)cfa;
-
-	POP(addr);
-	POP(value);
-	if (addr.tag != T_ADDR) {
-		fail(interp, "! : expected an address (from a variable) on top, got %s", tag_name(addr.tag));
-		return;
-	}
-	int cell_index = (int)addr.data;
-	interp->vocab->dict[cell_index] = (cell)value.tag;
-	interp->vocab->dict[cell_index + 1] = value.data;
-}
 
 void p_execute(Interpreter *interp, cell *cfa) {
 	(void)cfa;
@@ -494,7 +470,10 @@ void p_see(Interpreter *interp, cell *cfa) {
 
 	const char *name = NULL;
 	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
-		if (cf == target_cfa) { name = &interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)]; break; }
+		if (cf == target_cfa) {
+			name = &interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)];
+			break;
+		}
 	}
 	cfa_handler handler = (cfa_handler)interp->vocab->dict[target_cfa];
 	if (handler == docol) {
@@ -633,9 +612,15 @@ void p_tick(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	char *token = next_token(interp);
-	if (!token) { fail(interp, "' : expected a word name"); return; }
+	if (!token) {
+		fail(interp, "' : expected a word name");
+		return;
+	}
 	int target_cfa = find(interp, token);
-	if (!target_cfa) { fail(interp, "' : unknown word: %s", token); return; }
+	if (!target_cfa) {
+		fail(interp, "' : unknown word: %s", token);
+		return;
+	}
 	Val value = make_xt(target_cfa);
 	if (interp->compiling) emit_val_literal(interp, value);
 	else push(interp, value);
@@ -830,6 +815,7 @@ void p_symbol(Interpreter *interp, cell *cfa) {
 		fail(interp, "symbol: expected a name");
 		return;
 	}
+	if (token[0] == ':') token++;
 
 	create_header(interp, token, 0);
 	emit(interp, (cell)&dosym);
@@ -876,7 +862,10 @@ int read_string_literal(Interpreter *interp) {
 	int start = interp->input_buffer_pos + 1;
 	int cursor = start;
 	while (cursor < interp->input_buffer_len && interp->input_buffer[cursor] != '"') cursor++;
-	if (cursor >= interp->input_buffer_len) { interp->need_more = 1; return -1; }
+	if (cursor >= interp->input_buffer_len) {
+		interp->need_more = 1;
+		return -1;
+	}
 	int length = cursor - start;
 	memcpy(interp->token_buffer, interp->input_buffer + start, (size_t)length);
 	interp->token_buffer[length] = 0;
@@ -950,7 +939,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 						interp_append(&out_buffer, &capacity, &out_length, rendered, n);
 						break;
 					}
-					case T_SYM: {
+					case T_SYMBOL: {
 						const char *name = &interp->vocab->symbol_pool[value.data];
 						interp_append(&out_buffer, &capacity, &out_length, name, (int)strlen(name));
 						break;
