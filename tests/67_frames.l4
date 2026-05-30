@@ -118,3 +118,12 @@
 
 \ update-at : empty path errors
 { :n 5 } [ ] [: 1 + :] update-at . cr
+
+\ merge : combine two frames, right wins on conflicts
+{ :a 1 :b 2 } { :b 3 :c 4 } merge . cr
+
+\ merge : with an empty frame is identity
+{ :a 1 } { } merge . cr
+
+\ merge : builds a new frame, leaving the inputs unchanged
+{ :a 1 } dup { :a 9 } merge drop /a @ . cr

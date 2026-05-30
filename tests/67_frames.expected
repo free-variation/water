@@ -216,3 +216,23 @@
 0 ok
 0 ok
 0|error update-at : empty path
+0 ok
+0 ok
+{
+  :a 1
+  :b 3
+  :c 4
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+}
+
+0 ok
+0 ok
+0 ok
+1 
+0 ok

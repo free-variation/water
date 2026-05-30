@@ -478,6 +478,7 @@ void p_frame_set(Interpreter *interp, cell *cfa);
 void p_frame_delete_at(Interpreter *interp, cell *cfa);
 void p_has(Interpreter *interp, cell *cfa);
 void p_update_at(Interpreter *interp, cell *cfa);
+void p_merge(Interpreter *interp, cell *cfa);
 void p_frame_keys(Interpreter *interp, cell *cfa);
 void p_frame_values(Interpreter *interp, cell *cfa);
 void p_frame(Interpreter *interp, cell *cfa);

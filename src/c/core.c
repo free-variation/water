@@ -1671,6 +1671,7 @@ int main(void) {
 	define_primitive(interp, "delete-at", p_frame_delete_at, 0);
 	define_primitive(interp, "has?", p_has, 0);
 	define_primitive(interp, "update-at", p_update_at, 0);
+	define_primitive(interp, "merge", p_merge, 0);
 
 	define_primitive(interp, "reset", p_reset, 0);
 	define_primitive(interp, "shift", p_shift, 0);

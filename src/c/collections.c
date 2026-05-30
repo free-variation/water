@@ -530,6 +530,24 @@ void p_frame_values(Interpreter *interp, cell *cfa) {
 	replace_top_with_array(interp, result_handle);
 }
 
+void p_merge(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_AT(right, 0, "merge", T_FRAME);
+	PEEK_AT(left, 1, "merge", T_FRAME);
+	Object *right_frame = interp->objects[right.data];
+	Object *left_frame = interp->objects[left.data];
+
+	NEW_FRAME(result_handle, result);
+	for (int i = 0; i < left_frame->len; i++)
+		frame_put(result, left_frame->frame.keys[i], left_frame->frame.values[i]);
+	for (int i = 0; i < right_frame->len; i++)
+		frame_put(result, right_frame->frame.keys[i], right_frame->frame.values[i]);
+
+	interp->dsp -= 2;
+	push(interp, make_frame(result_handle));
+}
+
 void p_frame(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
