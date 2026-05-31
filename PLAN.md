@@ -72,14 +72,65 @@ primitive instead of one pattern.
   on load. Version bump on the image format. Text `save` is unaffected
   because it works from `WORD_SOURCE`, not the compiled body.
 
-**What it makes possible:**
+### Computed-goto threading
 
-Once dispatch is one indirect call per op, the natural follow-on is
-computed-goto / token threading (each handler ends with
-`goto *dict[ip++]` instead of returning to a central loop). That's another
-10-20% on top, at the cost of needing the handlers to live in one giant
-switch — a larger refactor. Direct threading is the prerequisite and stands
-on its own.
+The architectural follow-on to direct threading. Each handler ends with
+its own `goto *dict[ip++]` instead of returning to a central dispatch
+loop. The central loop disappears entirely — what was
+
+```c
+while (running) {
+    cfa_handler h = (cfa_handler)dict[ip++];
+    h(interp, &dict[ip]);
+}
+```
+
+becomes inline at the end of each handler body, expressed with GCC/Clang
+labels-as-values:
+
+```c
+goto *dict[ip++];
+
+L_p_add:
+    /* ... p_add work ... */
+    goto *dict[ip++];
+
+L_p_mul:
+    /* ... p_mul work ... */
+    goto *dict[ip++];
+```
+
+The dispatch transition between two ops is one indirect jump from the
+end of one handler to the start of the next — no function-call or return
+overhead, no central-loop iteration counter, and (the bigger win) the
+branch predictor sees a *distinct* call site for each (current-op, next-op)
+pair. Direct threading still has one indirect-call site whose target
+varies; the predictor has a single history slot. Computed-goto gives
+each handler-to-handler edge its own predictor entry, so a tight inner
+loop with a repeating op sequence trains the predictor and runs near
+branch-perfect.
+
+CPython adopted this in 3.11 and reported 15-25% improvement. For
+logicforth, 15-20% on dispatch-heavy code is in line.
+
+**The architectural cost.** Every primitive handler must live as a
+label inside one giant function. logicforth's primitives are currently
+spread across `core.c`, `words.c`, `collections.c`, `matrix.c`,
+`functional.c` as separate `void p_X(Interpreter*, cell*)` functions. To
+adopt computed-goto, the handler bodies need to be consolidated — either
+inlined at their labels in one master function (the maximally fast
+version), or kept as `static inline` functions called from labels (a
+smaller refactor that loses some of the cross-handler optimization).
+
+Build portability: labels-as-values is GCC/Clang only — MSVC doesn't
+support it. A compile-time fallback to the plain DTC dispatch loop is
+needed for non-GCC builds (a single `#ifdef __GNUC__` switch).
+
+**Direct threading is the prerequisite.** Computed-goto needs body cells
+to be direct dispatch targets, not indices that require dereferencing
+before the jump. The DTC infrastructure (`emit_call`, handler-id image
+encoding, two-cell call sites) carries forward unchanged; computed-goto
+just changes what the handler does at its tail end.
 
 ### Float-fast-path the comparison primitives
 
@@ -132,9 +183,14 @@ Candidates ranked by call frequency in the benchmark profile:
 - **`?0branch`** — `dup 0= if` collapsed into one op (test top non-destructively
   and branch if zero). Saves 2 dispatches per non-destructive test.
 
-(The frequency ranking above came from `bench/mandel.l4`, which itself
-predates the `@`/`!` repurposing and the `<`/`>` → `lt`/`gt` rename; refresh
-the profile against a current benchmark before committing to candidates.)
+The first two items (`(local@0)` / `(local!0)` and `(@k)` / `(!k)`) are
+ranked by the current `bench/synth.l4` profile. The remaining items
+(`+!`, `1+`, `dup *`, `@+`, `?0branch`) are carried forward from an
+earlier mandelbrot-style benchmark that predates the `@` / `!` →
+frame-op rename and the `<` / `>` → `lt` / `gt` rename; the patterns
+they target are still valid (the items aren't stale), but their ranking
+against the current benchmark suite should be refreshed before
+committing implementation order.
 
 Each is ~10 lines of C. Adding the peephole pass is another ~50 lines. Together
 plausibly 5–10% on the benchmark and any numeric / control-heavy kernel.
@@ -148,6 +204,176 @@ compiler can integrate them into `p_frame_get` / `p_frame_set` / `(@k)` /
 `(!k)`. Per-call function-call setup disappears; branch prediction sees the
 binary-search loop inlined in the primitive's hot body. ~2 ns per access, near
 zero implementation cost.
+
+### Optional type annotations
+
+Compile-time type information on stack effects and locals, used by the
+compiler to skip runtime tag dispatch on monomorphic arithmetic and
+collection ops. No runtime type feedback — annotations are declarations
+the compiler trusts.
+
+**Syntax.** Stack-effect annotations in the `( ... )` of a colon def —
+parsed, not ignored, when type names appear:
+
+```forth
+: square ( float -- float ) dup * ;
+: row-sum ( matrix -- float ) row-sums sum ;
+```
+
+Locals annotations as a `:type` suffix on each name:
+
+```forth
+: sum-of-squares ( -- float )
+  | i:float acc:float |
+  0 to acc  1 to i
+  begin acc i i * + to acc  i 1 + to i  i 1000 gt until
+  acc ;
+```
+
+Default for unannotated names is `any` (polymorphic, no specialization,
+current behaviour). Annotated and unannotated code mix freely; the
+polymorphic primitives stay as the fallback emission path.
+
+**Type set.** One per Val tag: `float`, `string`, `symbol`, `array`,
+`set`, `frame`, `matrix`, `xt`, plus `any` for the default. No
+subtyping, no unions, no parametric polymorphism — the type system
+mirrors the tag system one-to-one.
+
+**What the compiler does.** It maintains a stack-type model — "what tags
+are on the abstract stack right now" — through the body of a typed
+colon def. When the model says an op's inputs are monomorphic, the
+emit step picks a specialized primitive instead of the polymorphic one:
+
+| Source op | Inferred input types | Emitted |
+|---|---|---|
+| `+` | float float | `(f+)` |
+| `+` | matrix matrix | `(m+)` |
+| `+` | any any | `+` (polymorphic) |
+| `*` | float float | `(f*)` |
+| `lt` | float float | `(f<)` |
+| `gt` | float float | `(f>)` |
+| `@` | frame array | `(frame@)` (skips path-validation loop) |
+
+Specialized primitives are tiny: pop two float-data fields, do the op,
+push. ~10 lines each. The polymorphic versions remain as the fallback
+when type info doesn't flow.
+
+**Runtime entry check.** A typed colon def emits a small prologue that
+tag-checks its declared inputs at entry. One branch per declared input,
+plus a fail-and-error path. Cost: a few ns per call. Pays for the
+tag-free interior throughout the body.
+
+**Per-op standalone savings, modest.** The specialized primitive skips
+the tag-test and polymorphic-dispatch branch inside `p_mul` / `p_add` /
+etc. — roughly 1 ns per call. On a tight numeric inner loop dispatching
+~10-15 ops per iteration with 3-4 arithmetic ops among them, that's
+~3-4 ns saved per iteration. **~8-12 % standalone** on numeric loops.
+
+**Where the leverage compounds.** The standalone gain is bounded. The
+larger win is that type annotations make the next item (fused typed
+super-instructions) sound — a single dispatched op can absorb a whole
+accumulation expression when the compiler knows the operand types match.
+
+**Storage of typed locals.** First cut keeps the existing Val-based
+rstack layout. The annotation is purely compile-time guidance; runtime
+layout unchanged. The compiler emits typed fetches/stores that bypass
+the tag-check on read and the tag-set on write, but the underlying
+cells are still Vals.
+
+A later optimization could store float locals unboxed in a parallel
+`double[]` slab indexed by slot. Halves the unpack-on-fetch cost. Defer
+until the simple version is measured.
+
+**Surfaces touched.**
+
+- Tokenizer / parser: extend `( ... )` parsing to recognize type names;
+  extend `| ... |` to accept `:type` suffixes. ~30 lines.
+- Compile-time stack-type model: a small abstract evaluator running
+  during `: ... ;` compilation. ~100 lines.
+- Emit path: replace polymorphic `emit` with type-aware emission when
+  types are known. ~30 lines.
+- New specialized primitives: `(f+)`, `(f-)`, `(f*)`, `(f/)`, `(f<)`,
+  `(f>)`, `(f=)`, plus `(m+)`, `(m-)`, `(m*)`, `(m/)`, plus `(frame@)`,
+  `(frame!)`. ~10 lines each, ~15 primitives.
+- Variable annotations: `variable foo : float` to type a global. The
+  variable participates in the type model on read / `to`-write. ~15
+  lines.
+- Entry prologue emission: ~20 lines.
+
+Total initial implementation: ~300-400 lines for a meaningful first cut.
+
+**Out of scope (first cut).**
+
+- Type inference: no propagation from output requirements back to input
+  types. Annotations stay explicit.
+- Compile-time errors on annotation/body mismatch: the first cut trusts
+  annotations and emits accordingly; wrong annotations produce wrong
+  results silently. Harden once basics work.
+- Polymorphic specialization across call sites: a word annotated
+  `( any -- any )` isn't re-specialized per caller. Defer.
+- Typed higher-order quotation arguments: `[ floats ] [: (f+) :] reduce`
+  could specialize the per-element call, but the first cut treats
+  higher-order quotations as polymorphic.
+
+### Fused typed super-instructions
+
+Type annotations enable the compiler to recognize multi-op patterns
+over monomorphic operands and collapse them into a single dispatched op.
+The previous item saves the tag-test inside each primitive; fused typed
+super-instructions remove the *dispatch* for the absorbed ops entirely.
+
+The accumulator pattern that shows up in any numeric inner loop —
+
+```forth
+acc i i * + to acc
+```
+
+with `| i:float acc:float |` declared — is six dispatched ops today.
+With type info, the compile-time emission table can recognize the
+sequence and emit a single `(f-acc-sq)` op whose body does:
+
+```
+fetch acc, fetch i, fetch i, fmul, fadd, store acc
+```
+
+inline in one C primitive. What was six dispatches becomes one. At
+~3-4 ns of dispatch overhead per op, that's ~15-20 ns saved per
+iteration of such a loop.
+
+**Recognition is a peephole over the stack-type model.** When the
+compiler is emitting a typed body and the next-N tokens match a fixed
+sub-pattern whose types match, replace the expanded emission with the
+fused op.
+
+**Candidate patterns.**
+
+| Source | Required types | Emitted |
+|---|---|---|
+| `dup *` | float on TOS | `(f-sq)` |
+| `<local> <expr> + to <local>` | float local, float `<expr>` | `(f-acc-add)` |
+| `<local> <expr> * to <local>` | float local, float `<expr>` | `(f-acc-mul)` |
+| `<local> 1 +` | float local | `(f-inc)` |
+| `<local> 1 + to <local>` | float local | `(f-step)` |
+| `<arr> <i> @i` | array of float, int index | `(f-arr-at)` (skip element tag-check) |
+| `<m> <r> @i` | matrix, int row | `(m-row)` (skip matrix tag-check) |
+
+The catalogue grows as the type-tracking compiler matures.
+
+**Why this depends on type annotations.** Without type info, the
+compiler can't safely substitute these — `dup *` over heterogeneous
+operands calls polymorphic `p_mul`, which can produce a string concat,
+a set intersection, or a matrix product depending on tags. The fusion
+is only sound when types are statically known.
+
+**Cost.** Each fused op is a small C primitive (~15-25 lines) plus a
+peephole-recognition entry in the compile-time emission table. The
+peephole framework is the same one the regular super-instructions use;
+this extends it with type-aware variants.
+
+**Combined gain.** Type annotations alone: ~8-12%. Fused typed
+super-instructions on top: another ~15-20% on numeric inner loops.
+Combined ceiling: roughly 25-30% additional speedup on the
+type-annotated parts of a program. The two items are designed together.
 
 ---
 
@@ -204,6 +430,156 @@ Open questions to settle before implementing: which interface (reference
 CBLAS/LAPACKE vs a vendor lib — OpenBLAS / MKL / Accelerate); how the switch
 is wired (a `Makefile` target and/or `#ifdef`); and row-major vs column-major
 handling at the boundary.
+
+---
+
+## Tensors and DNNs (long-horizon)
+
+This section captures a deliberately large body of future work — tensors
+as the generalization of `T_MATRIX`, and the deep-neural-network use
+case that surface drives. **None of this is near-term.** It lands after
+the interpreter-performance items, the language-feature items above, and
+probably after the logic layer. The intent here is to record the design
+decisions already taken (so future work doesn't relitigate them) and to
+size the scope (so it doesn't sneak up unannounced). Implementation
+specifics are for whoever picks this up.
+
+The decisions taken:
+
+- Tensors are **fully N-dimensional**, not just rank-3 or rank-4.
+- **One unified type `T_TENSOR`** replaces `T_MATRIX`. A matrix is a
+  rank-2 tensor. Single vocabulary; no conversion words.
+- The name stays **tensor**.
+- **Tensor-op primitives**, not layer primitives. Users compose layers
+  as colon defs over a small set of coarse-grained tensor operations.
+- **BLAS becomes the default backend** for tensor work (the optional
+  BLAS build above gets promoted to required-for-tensors).
+- **Convolution via im2col + GEMM**, reusing the BLAS-accelerated
+  matmul path.
+- **Training is in scope**, which means autograd.
+
+### Tensors
+
+The Object union arm replaces the current `(int rows, int columns,
+double *elements)` matrix struct with `(int rank, int *shape, double
+*elements)`. Row-major / C-order layout (numpy default). A rank-2
+tensor's flat-offset arithmetic reduces to today's `i·columns + j`, so
+every existing matrix kernel reads the same bytes the same way after
+the storage refactor; rank-2-specific kernels (DGEMM, identity,
+diagonal-matrix) keep their fast paths and error on other ranks.
+
+API surface to design:
+
+- Element-wise `+`/`-`/`*`/`/` and polymorphic unary math (`abs`,
+  `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`) extend to any rank with
+  matching shape.
+- **Broadcasting** for shape-mismatched element-wise ops: `(B, N)` plus
+  `(N)` produces `(B, N)`. numpy semantics.
+- **Axis reductions**: `sum-axis`, `mean-axis`, `max-axis`, `min-axis`.
+  Today's `row-sums` / `column-sums` become the rank-2 cases of
+  `sum-axis 1` / `sum-axis 0`.
+- **Shape ops**: `reshape`, `transpose` (reverses dim order at any
+  rank), `permute` (explicit axis permutation), `flatten`, `shape`,
+  `rank`, `numel`.
+- **Indexing**: `tensor i₀ … iₙ₋₁ @` for scalar access;
+  `tensor k i @-axis` for slice along axis k.
+- **Slicing**: ranges along each axis, returning fresh contiguous
+  tensors. Views with shared storage are a later optimization.
+
+Open questions to settle at implementation time: NCHW vs NHWC
+convention (matters for conv); how the `@i` / `@j` shortcuts coexist
+with the general `@-axis`; print format for rank ≥ 3 (suggested: shape
+header plus a few 2D slices).
+
+### BLAS as the default tensor backend
+
+The "Optional BLAS/LAPACK build" item above moves from optional to
+default-on for tensor-enabled builds. For DNN scale, BLAS isn't
+optional — pure-C DGEMM peaks around 5-10 GFLOPS on modern CPUs;
+vendor BLAS hits 50-500 GFLOPS via SIMD/AVX/NEON. That's the
+difference between useful and toy.
+
+The matrix-only zero-dep build remains as a smaller-footprint variant.
+Vendor selection (Apple Accelerate / OpenBLAS / MKL) and build wiring
+(Makefile target vs `#ifdef`) are open per the existing BLAS
+subsection — those questions carry over.
+
+### Convolution via im2col + GEMM
+
+Standard implementation. Unfold the input window into a matrix
+(im2col), GEMM it against the filter matrix, reshape the output back.
+Reuses the BLAS-accelerated matmul path; minimal new compute code on
+top.
+
+- **`im2col`** primitive — tensor → 2D matrix with each row a
+  filter-shaped window. ~80 lines of C.
+- **`col2im`** for the backward pass — the same transform inverted.
+- `conv2d`, `conv1d`, transposed convolutions, strided / dilated
+  variants compose from `im2col` + GEMM + `reshape` in user-level
+  colon defs. No per-variant C primitive needed.
+
+Open questions at implementation time: stride / dilation / padding
+parameter packaging (single packed Val vs multiple stack args);
+padding mode set (`valid` and `same` only, or also `reflect` /
+`replicate`); NCHW vs NHWC.
+
+### Autograd for training
+
+Training requires automatic differentiation. With no JIT and no AOT-to-C,
+the path is a runtime-recorded computation graph: each tensor op records
+itself onto a tape, the backward pass walks the tape in reverse and
+accumulates gradients into each leaf.
+
+This is the largest single piece of work in this section by line count,
+because it requires every tensor op to grow a backward implementation.
+
+Components:
+
+- A flag on `T_TENSOR` (or a parallel `T_GRAD_TENSOR` tag) marking
+  tensors that participate in the graph. Regular tensors flow through
+  unchanged.
+- A **tape** data structure recording each op's operands and the
+  derivative info needed for the backward pass.
+- A **`backward`** primitive that walks the tape from a scalar loss,
+  accumulating gradients into the leaves.
+- A **`requires-grad`** / **`no-grad`** context for opting tensors in
+  or out of graph participation.
+- Per-op **backward implementations** for every primitive that can
+  appear in a graph: matmul, conv (im2col + GEMM in both directions),
+  element-wise, axis reductions, activations, broadcasting. This is
+  the bulk of the code.
+
+Open questions: tape representation (linear array vs linked list);
+gradient accumulation strategy (one tensor per leaf vs sparse map);
+how `to`-mutation interacts with graph membership (probably:
+in-place store on a grad tensor severs the graph node); whether to
+support second-order gradients (probably not in the first cut).
+
+### Suggested build order
+
+When this work is eventually started, the rough dependency order:
+
+1. **Tensor storage refactor** (`T_MATRIX` → `T_TENSOR`, rank/shape
+   fields, existing matrix kernels still working).
+2. **Tensor-op primitives** (axis reductions, reshape, permute,
+   broadcast, indexing, slicing).
+3. **BLAS integration as the default**. Matmul lights up.
+4. **`im2col` / `col2im`**. Convolution composable.
+5. **Autograd**. Last, because it requires every prior op to have a
+   backward.
+
+Each step is a substantial body of work; together easily several
+thousand lines of C plus a much larger test corpus.
+
+### Out of scope
+
+- **GPU acceleration** (CUDA / Metal / OpenCL). CPU only.
+- **Quantization** (INT8 / FP16 / BF16). Could come later if useful;
+  not in the initial design.
+- **Distributed / multi-node training.** Single-process only.
+- **PyTorch / ONNX model loading.** Conversion outside logicforth.
+- **Kernel-level micro-tuning beyond BLAS.** Not writing a BLAS
+  competitor.
 
 ---
 
