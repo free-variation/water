@@ -1,4 +1,5 @@
 #include "logicforth.h"
+#include <time.h>
 
 static void enter_compile_scope(Interpreter *interp);
 static void leave_compile_scope(Interpreter *interp);
@@ -1049,5 +1050,12 @@ void p_tanh(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 	POP(operand);
 	unary_op(interp, operand, tanh, "tanh");
+}
+
+void p_now(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	push(interp, make_float((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));
 }
 

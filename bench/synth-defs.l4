@@ -1,0 +1,67 @@
+\ Definitions for the synthetic benchmark — see bench/synth.l4 for the
+\ one-shot driver and bench/profile.l4 for the looped profiling driver.
+
+1000000 to ITER1
+500000  to ITER2
+100     to MAT_DIM
+10000   to MAT_ELEMS
+50000   to ITER4
+1000000 to ITER5
+
+: phase1 ( -- sum )
+  | i acc |
+  0 to acc
+  1 to i
+  begin
+    acc i i * + to acc
+    i 1 + to i
+    i ITER1 gt
+  until
+  acc ;
+
+: phase2 ( -- sum )
+  1 ITER2 range
+  [: dup * :] map
+  [: 10000 gt :] filter
+  0 [: + :] reduce ;
+
+: phase3 ( -- sum )
+  | a |
+  1 MAT_ELEMS range MAT_DIM MAT_DIM matrix to a
+  1 a a transpose 0 MAT_DIM MAT_DIM 0-matrix dgemm-nn
+  sum ;
+
+: make-rec ( i -- frame )
+  | i |
+  to i
+  { } /id i ! /sq i i * ! /tri i i 1 + * 2 / ! ;
+
+: phase4 ( -- sum )
+  0 ITER4 range
+  [: make-rec :] map
+  [: /sq @ :] map
+  0 [: + :] reduce ;
+
+: phase5 ( -- sum )
+  1 ITER5 range
+  [: dup * :] map
+  0 [: + :] reduce ;
+
+: run-phase ( xt name -- )
+  | xt name t0 |
+  to name to xt
+  now to t0
+  xt execute
+  >side
+  name now t0 -
+  "{1} elapsed={0}s" . cr
+  name side>
+  "{1}   result={0}" . cr ;
+
+: bench
+  cr
+  [: phase1 :] "phase1" run-phase
+  [: phase2 :] "phase2" run-phase
+  [: phase3 :] "phase3" run-phase
+  [: phase4 :] "phase4" run-phase
+  [: phase5 :] "phase5" run-phase ;

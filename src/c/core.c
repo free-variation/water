@@ -1882,6 +1882,8 @@ int main(void) {
 	define_primitive(interp, "tan", p_tan, 0);
 	define_primitive(interp, "tanh", p_tanh, 0);
 
+	define_primitive(interp, "now", p_now, 0);
+
 	interp->vocab->init_here = interp->vocab->here;
 	interp->vocab->init_latest_cfa = interp->vocab->latest_cfa;
 	interp->vocab->init_names_here = interp->vocab->names_here;

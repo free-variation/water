@@ -599,6 +599,7 @@ void p_sin(Interpreter *interp, cell *cfa);
 void p_cos(Interpreter *interp, cell *cfa);
 void p_tan(Interpreter *interp, cell *cfa);
 void p_tanh(Interpreter *interp, cell *cfa);
+void p_now(Interpreter *interp, cell *cfa);
 Interpreter *interp_new(void);
 
 #endif

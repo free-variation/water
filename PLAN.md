@@ -34,6 +34,13 @@ expanded sequence.
 
 Candidates ranked by call frequency in the benchmark profile:
 
+- **`(local@0)` / `(local!0)`** — depth-zero local fetch/store, taking only
+  the slot as an operand. Replaces the general `(local@) <depth> <slot>` /
+  `(local!) <depth> <slot>` whenever depth resolves to 0 at compile time —
+  every reference in a non-nested colon body, which is the universal case
+  outside closures. Drops one operand-fetch per access and the depth-walk
+  loop in `local_slot`. Phase 1 of `bench/synth.l4` spends ~10% of CPU in
+  `p_local_fetch` + `p_local_store` between them; this catches the lot.
 - **`+!`** — add to a variable in place. STALE: the old form `@ <expr> + !`
   assumed `@`/`!` as variable fetch/store, which are now frame ops. Re-derive
   against the `to` / auto-deref model — the accumulate pattern is now
