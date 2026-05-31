@@ -84,7 +84,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the pla
 - **Builders** — `frame` ( keys values -- frame ) from two parallel collections, `>frame` ( kv-array -- frame ) from an alternating key/value array.
 - **Path literals** — `/a/b/c` is a symbol array `[ :a :b :c ]`, built once at compile time, used to address into the tree.
 - **Access** — `@` ( frame path -- value ) get, `!` ( frame path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, plus `keys` / `values` / `size`.
-- **Representation** — sorted parallel key/value arrays with binary-search lookup; mutable in place, reference semantics. Structurally comparable, so frames work as set members and round-trip through their `{ }` literal. See `frames-plan.md`.
+- **Representation** — sorted parallel key/value arrays with binary-search lookup; mutable in place, reference semantics. Structurally comparable, so frames work as set members and round-trip through their `{ }` literal.
 
 ### Strings
 
@@ -185,7 +185,6 @@ tests/                 — golden-output test files
 docs/                  — design documents
 examples/              — sample programs
 PLAN.md                — deferred work and design notes
-frames-plan.md         — frame type design and status
 ```
 
 ## License

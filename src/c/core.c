@@ -2,9 +2,11 @@
 #include <unistd.h>
 
 void gc_root_push(Interpreter *interp, Val value) {
-	if (interp->n_gc_roots < MAX_GC_ROOTS) {
-		interp->gc_roots[interp->n_gc_roots++] = value;
+	if (interp->n_gc_roots >= MAX_GC_ROOTS) {
+		fail(interp, "gc roots exhausted");
+		return;
 	}
+	interp->gc_roots[interp->n_gc_roots++] = value;
 }
 
 void gc_root_pop(Interpreter *interp) {
@@ -163,24 +165,24 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 						   return 0;
 					   }
 		case T_FRAME: {
-			Object *left_frame = interp->objects[left.data];
-			Object *right_frame = interp->objects[right.data];
-			if (left_frame->len != right_frame->len)
-				return left_frame->len - right_frame->len;
-			for (int i = 0; i < left_frame->len; i++) {
-				cell left_key = left_frame->frame.keys[i];
-				cell right_key = right_frame->frame.keys[i];
-				if (left_key < right_key) return -1;
-				if (left_key > right_key) return 1;
-				int value_cmp = val_cmp(interp, left_frame->frame.values[i], right_frame->frame.values[i]);
-				if (value_cmp) return value_cmp;
-			}
-			return 0;
-		}
+						  Object *left_frame = interp->objects[left.data];
+						  Object *right_frame = interp->objects[right.data];
+						  if (left_frame->len != right_frame->len)
+							  return left_frame->len - right_frame->len;
+						  for (int i = 0; i < left_frame->len; i++) {
+							  cell left_key = left_frame->frame.keys[i];
+							  cell right_key = right_frame->frame.keys[i];
+							  if (left_key < right_key) return -1;
+							  if (left_key > right_key) return 1;
+							  int value_cmp = val_cmp(interp, left_frame->frame.values[i], right_frame->frame.values[i]);
+							  if (value_cmp) return value_cmp;
+						  }
+						  return 0;
+					  }
 
-		/* T_CONT, T_MARK, T_NONE have no ordering: they compare equal here, so
-		   a set treats all continuations/marks as a single member. Identity-
-		   based comparison is deferred to the planned logic layer. */
+					  /* T_CONT, T_MARK, T_NONE have no ordering: they compare equal here, so
+						 a set treats all continuations/marks as a single member. Identity-
+						 based comparison is deferred to the planned logic layer. */
 		default: return 0;
 	}
 }
@@ -311,19 +313,19 @@ void print_val(Interpreter *interp, Val value) {
 		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[value.data]); break;
 		case T_STRING: fputs(interp->objects[value.data]->bytes, stdout); break;
 		case T_SET:
-			print_depth_enter();
-			fputs("< ", stdout);
-			print_items(interp, interp->objects[value.data]);
-			putchar('>');
-			print_depth_leave();
-			break;
+					   print_depth_enter();
+					   fputs("< ", stdout);
+					   print_items(interp, interp->objects[value.data]);
+					   putchar('>');
+					   print_depth_leave();
+					   break;
 		case T_ARRAY:
-			print_depth_enter();
-			fputs("[ ", stdout);
-			print_items(interp, interp->objects[value.data]);
-			putchar(']');
-			print_depth_leave();
-			break;
+					   print_depth_enter();
+					   fputs("[ ", stdout);
+					   print_items(interp, interp->objects[value.data]);
+					   putchar(']');
+					   print_depth_leave();
+					   break;
 		case T_XT: printf("<xt %lld>", (long long)value.data); break;
 		case T_ADDR: printf("<addr %lld>", (long long)value.data); break;
 		case T_MATRIX: {
@@ -336,18 +338,18 @@ void print_val(Interpreter *interp, Val value) {
 						   break;
 					   }
 		case T_FRAME: {
-			Object *frame = interp->objects[value.data];
-			print_depth_enter();
-			fputs("{ ", stdout);
-			for (int i = 0; i < frame->len; i++) {
-				printf(":%s ", &interp->vocab->symbol_pool[frame->frame.keys[i]]);
-				print_val(interp, frame->frame.values[i]);
-				putchar(' ');
-			}
-			putchar('}');
-			print_depth_leave();
-			break;
-		}
+						  Object *frame = interp->objects[value.data];
+						  print_depth_enter();
+						  fputs("{ ", stdout);
+						  for (int i = 0; i < frame->len; i++) {
+							  printf(":%s ", &interp->vocab->symbol_pool[frame->frame.keys[i]]);
+							  print_val(interp, frame->frame.values[i]);
+							  putchar(' ');
+						  }
+						  putchar('}');
+						  print_depth_leave();
+						  break;
+					  }
 		default: printf("<?>"); break;
 	}
 }
@@ -369,27 +371,27 @@ void print_val_compact(Interpreter *interp, Val value) {
 						   break;
 					   }
 		case T_SYMBOL: {
-						const char *name = &interp->vocab->symbol_pool[value.data];
-						int len = (int)strlen(name);
-						if (len <= 10) printf(":%s", name);
-						else printf(":%.9s…", name);
-						break;
-					}
+						   const char *name = &interp->vocab->symbol_pool[value.data];
+						   int len = (int)strlen(name);
+						   if (len <= 10) printf(":%s", name);
+						   else printf(":%.9s…", name);
+						   break;
+					   }
 		case T_SET:
-			print_depth_enter();
-			printf("<%d>", interp->objects[value.data]->len);
-			print_depth_leave();
-			break;
+					   print_depth_enter();
+					   printf("<%d>", interp->objects[value.data]->len);
+					   print_depth_leave();
+					   break;
 		case T_ARRAY:
-			print_depth_enter();
-			printf("[%d]", interp->objects[value.data]->len);
-			print_depth_leave();
-			break;
+					   print_depth_enter();
+					   printf("[%d]", interp->objects[value.data]->len);
+					   print_depth_leave();
+					   break;
 		case T_FRAME:
-			print_depth_enter();
-			printf("{%d}", interp->objects[value.data]->len);
-			print_depth_leave();
-			break;
+					   print_depth_enter();
+					   printf("{%d}", interp->objects[value.data]->len);
+					   print_depth_leave();
+					   break;
 		case T_MATRIX: {
 						   Object *m = interp->objects[value.data];
 						   print_depth_enter();
@@ -402,8 +404,8 @@ void print_val_compact(Interpreter *interp, Val value) {
 					   const char *name = NULL;
 					   for (int cfa = interp->vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
 						   if (cfa == target) {
-						   	name = &interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)];
-						   	break;
+							   name = &interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)];
+							   break;
 						   }
 					   }
 					   if (name) {
@@ -775,13 +777,13 @@ int parse_float(const char *text, double *out) {
 
 static void skip_whitespace(Interpreter *interp) {
 	while (interp->input_buffer_pos < interp->input_buffer_len
-		&& isspace((unsigned char)interp->input_buffer[interp->input_buffer_pos]))
+			&& isspace((unsigned char)interp->input_buffer[interp->input_buffer_pos]))
 		interp->input_buffer_pos++;
 }
 
 static void skip_to_char(Interpreter *interp, char delimiter) {
 	while (interp->input_buffer_pos < interp->input_buffer_len
-		&& interp->input_buffer[interp->input_buffer_pos] != delimiter)
+			&& interp->input_buffer[interp->input_buffer_pos] != delimiter)
 		interp->input_buffer_pos++;
 }
 
@@ -1015,7 +1017,7 @@ void p_reload(Interpreter *interp, cell *cfa) {
 	}
 }
 
-void mark_val(Interpreter *interp, Val value) {
+void mark_value(Interpreter *interp, Val value) {
 	if (value.tag != T_STRING &&
 			value.tag != T_SET &&
 			value.tag != T_ARRAY &&
@@ -1029,13 +1031,99 @@ void mark_val(Interpreter *interp, Val value) {
 	interp->object_mark[handle] = 1;
 	Object *obj = interp->objects[handle];
 	if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
-		for (int i = 0; i < obj->len; i++) mark_val(interp, obj->items[i]);
+		for (int i = 0; i < obj->len; i++) mark_value(interp, obj->items[i]);
 	} else if (obj->kind == OBJECT_FRAME) {
-		for (int i = 0; i < obj->len; i++) mark_val(interp, obj->frame.values[i]);
+		for (int i = 0; i < obj->len; i++) mark_value(interp, obj->frame.values[i]);
 	} else if (obj->kind == OBJECT_CONTINUATION) {
 		for (int i = 0; i < obj->continuation.return_len; i++)
-			mark_val(interp, obj->continuation.return_slice[i]);
+			mark_value(interp, obj->continuation.return_slice[i]);
 	}
+}
+
+void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
+	int i, copy_handle;
+
+	switch(source_val.tag) {
+		case T_STRING: {
+						   Object *source = interp->objects[source_val.data];
+						   copy_handle = object_new_string(interp, source->bytes, source->len);
+						   if (interp->error_flag) return;
+						   *copy_val = make_string(copy_handle);
+						   return;
+					   }
+
+		case T_MATRIX: {
+						   Object *source = interp->objects[source_val.data];
+						   copy_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
+						   if (interp->error_flag) return;
+						   Object *copy = interp->objects[copy_handle];
+						   memcpy(copy->matrix.elements, source->matrix.elements, sizeof(double) * (size_t)source->matrix.rows * source->matrix.columns);
+						   *copy_val = make_matrix(copy_handle);
+						   return;
+					   }
+
+		case T_ARRAY:
+		case T_SET: {
+						Object *source = interp->objects[source_val.data];
+						copy_handle = (source_val.tag == T_ARRAY) ? object_new_array(interp, source->len) : object_new_set(interp);
+						if (interp->error_flag) return;
+
+						Object *copy = interp->objects[copy_handle];
+						if (source->len > copy->capacity) {
+							while (copy->capacity < source->len) 
+								copy->capacity *= 2;
+							copy->items = realloc(copy->items, sizeof(Val) * (size_t)copy->capacity);
+						}
+
+						memset(copy->items, 0, sizeof(Val) * (size_t)source->len);
+						copy->len = source->len;
+						*copy_val = (source_val.tag == T_ARRAY) ? make_array(copy_handle) : make_set(copy_handle);
+						for (i = 0; i < source->len; i++)
+							copy_value(interp, source->items[i], &copy->items[i]);
+						return;
+					}
+
+		case T_FRAME: {
+						  Object *source = interp->objects[source_val.data];
+						  copy_handle = object_new_frame(interp);
+						  if (interp->error_flag) return;
+
+						  Object *copy = interp->objects[copy_handle];
+						  if (source->len > copy->capacity) {
+							  while (copy->capacity < source->len)
+								  copy->capacity *= 2;
+							  copy->frame.keys = realloc(copy->frame.keys, sizeof(cell) * (size_t)copy->capacity);
+							  copy->frame.values = realloc(copy->frame.values, sizeof(Val) * (size_t)copy->capacity);
+						  }
+
+						  for (i = 0; i < source->len; i++)
+							  copy->frame.keys[i] = source->frame.keys[i];
+						  memset(copy->frame.values, 0, sizeof(Val) * (size_t)source->len);
+						  copy->len = source->len;
+						  *copy_val = make_frame(copy_handle);
+						  for (i = 0; i < source->len; i++)
+							  copy_value(interp, source->frame.values[i], &copy->frame.values[i]);
+						  return;
+					  }
+		default:
+					  *copy_val = source_val;
+					  return;
+	}
+}
+
+void p_copy(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_AT(source_val, 0, "copy");
+	gc_root_push(interp, source_val);
+	if (interp->error_flag) return;
+
+	copy_value(interp, source_val, &interp->gc_roots[interp->n_gc_roots - 1]);
+	Val copy_val = interp->gc_roots[interp->n_gc_roots - 1];
+	gc_root_pop(interp);
+	if (interp->error_flag) return;
+
+	interp->data_stack[interp->dsp - 1] = copy_val;
 }
 
 void mark_body(Interpreter *interp, int body_start, int body_end) {
@@ -1046,11 +1134,11 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 		if (ref == (cell)interp->vocab->literal_cfa && cursor + 2 < body_end) {
 			Tag tag = (Tag)interp->vocab->dict[cursor + 1];
 			Val value; value.tag = tag; value.data = interp->vocab->dict[cursor + 2];
-			mark_val(interp, value);
+			mark_value(interp, value);
 			cursor += 3;
 		} else if (ref == (cell)interp->vocab->dostr_cfa && cursor + 1 < body_end) {
 			Val value; value.tag = T_STRING; value.data = interp->vocab->dict[cursor + 1];
-			mark_val(interp, value);
+			mark_value(interp, value);
 			cursor += 2;
 		} else if ((ref == (cell)interp->vocab->branch_cfa
 					|| ref == (cell)interp->vocab->zbranch_cfa) && cursor + 1 < body_end) {
@@ -1071,10 +1159,10 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 void gc(Interpreter *interp) {
 	memset(interp->object_mark, 0, sizeof(interp->object_mark));
 
-	for (int i = 0; i < interp->dsp; i++) mark_val(interp, interp->data_stack[i]);
-	for (int i = 0; i < interp->rsp; i++) mark_val(interp, interp->return_stack[i]);
-	for (int i = 0; i < interp->side_dsp; i++) mark_val(interp, interp->side_stack[i]);
-	for (int i = 0; i < interp->n_gc_roots; i++) mark_val(interp, interp->gc_roots[i]);
+	for (int i = 0; i < interp->dsp; i++) mark_value(interp, interp->data_stack[i]);
+	for (int i = 0; i < interp->rsp; i++) mark_value(interp, interp->return_stack[i]);
+	for (int i = 0; i < interp->side_dsp; i++) mark_value(interp, interp->side_stack[i]);
+	for (int i = 0; i < interp->n_gc_roots; i++) mark_value(interp, interp->gc_roots[i]);
 
 	static int sorted_cfas[VOCABULARY_INIT_SIZE / 4];
 	int num_cfas = 0;
@@ -1110,7 +1198,7 @@ void gc(Interpreter *interp) {
 			Val value;
 			value.tag = (Tag)interp->vocab->dict[body_start];
 			value.data = interp->vocab->dict[body_start + 1];
-			mark_val(interp, value);
+			mark_value(interp, value);
 		}
 
 	}
@@ -1308,6 +1396,12 @@ void p_save_image(Interpreter *interp, cell *cfa) {
 			case OBJECT_SET:
 			case OBJECT_ARRAY:
 				for (int j = 0; j < obj->len; j++) w_val(file, obj->items[j]);
+				break;
+			case OBJECT_FRAME:
+				for (int j = 0; j < obj->len; j++) {
+					w_i64(file, (int64_t)obj->frame.keys[j]);
+					w_val(file, obj->frame.values[j]);
+				}
 				break;
 			case OBJECT_MATRIX: {
 									w_i32(file, obj->matrix.rows);
@@ -1533,6 +1627,21 @@ void p_load_image(Interpreter *interp, cell *cfa) {
 					}
 				}
 				break;
+			case OBJECT_FRAME:
+				obj->frame.keys = malloc(sizeof(cell) * (size_t)MAX(cap, 1));
+				obj->frame.values = malloc(sizeof(Val) * (size_t)MAX(cap, 1));
+				for (int j = 0; j < len; j++) {
+					int64_t key;
+					if (!r_i64(file, &key) || !r_val(file, &obj->frame.values[j])) {
+						free(obj->frame.keys);
+						free(obj->frame.values);
+						free(obj);
+						fail(interp, "%s: truncated frame", filename);
+						goto done;
+					}
+					obj->frame.keys[j] = (cell)key;
+				}
+				break;
 			case OBJECT_MATRIX: {
 									int32_t rows, cols;
 									if (!r_i32(file, &rows) || !r_i32(file, &cols)) {
@@ -1672,6 +1781,7 @@ int main(void) {
 	define_primitive(interp, "has?", p_has, 0);
 	define_primitive(interp, "update-at", p_update_at, 0);
 	define_primitive(interp, "merge", p_merge, 0);
+	define_primitive(interp, "copy", p_copy, 0);
 
 	define_primitive(interp, "reset", p_reset, 0);
 	define_primitive(interp, "shift", p_shift, 0);

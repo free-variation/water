@@ -31,5 +31,5 @@
 1|9 ok
 0|error concat: expected array or set, got a float
 0|error concat: expected array or set, got a float
-0|error concat: stack too shallow; expected array or set
-0|error concat: stack too shallow; expected array or set
+0|error concat: stack too shallow
+0|error concat: stack too shallow

@@ -361,23 +361,22 @@ static inline Val rpop(Interpreter *interp) {
 	Object *obj = object_new(interp, (kind), &slot); \
 	if (!obj) return -1
 
-#define PEEK_AT(var, depth, op, type) \
+#define PEEK_AT(var, depth, op) \
 	if (interp->dsp <= (depth)) { \
-		fail(interp, "%s: stack too shallow; expected %s", (op), tag_name(type)); \
+		fail(interp, "%s: stack too shallow", (op)); \
 		return; \
 	} \
-	Val var = interp->data_stack[interp->dsp - 1 - (depth)]; \
+	Val var = interp->data_stack[interp->dsp - 1 - (depth)]
+
+#define PEEK_TYPE_AT(var, depth, op, type) \
+	PEEK_AT(var, depth, op); \
 	if (var.tag != (type)) { \
 		fail(interp, "%s: expected %s, got %s", (op), tag_name(type), tag_name(var.tag)); \
 		return; \
 	}
 
 #define PEEK_COLLECTION_AT(var, depth, op) \
-	if (interp->dsp <= (depth)) { \
-		fail(interp, "%s: stack too shallow; expected array or set", (op)); \
-		return; \
-	} \
-	Val var = interp->data_stack[interp->dsp - 1 - (depth)]; \
+	PEEK_AT(var, depth, op); \
 	if (var.tag != T_ARRAY && var.tag != T_SET) { \
 		fail(interp, "%s: expected array or set, got %s", (op), tag_name(var.tag)); \
 		return; \
@@ -479,6 +478,7 @@ void p_frame_delete_at(Interpreter *interp, cell *cfa);
 void p_has(Interpreter *interp, cell *cfa);
 void p_update_at(Interpreter *interp, cell *cfa);
 void p_merge(Interpreter *interp, cell *cfa);
+void p_copy(Interpreter *interp, cell *cfa);
 void p_frame_keys(Interpreter *interp, cell *cfa);
 void p_frame_values(Interpreter *interp, cell *cfa);
 void p_frame(Interpreter *interp, cell *cfa);
@@ -553,7 +553,8 @@ void record_loaded_file(Interpreter *interp, const char *filename);
 void load_file(Interpreter *interp, const char *filename);
 void p_load(Interpreter *interp, cell *cfa);
 void p_reload(Interpreter *interp, cell *cfa);
-void mark_val(Interpreter *interp, Val value);
+void mark_value(Interpreter *interp, Val value);
+void copy_value(Interpreter *interp, Val source_val, Val *copy_val);
 void mark_body(Interpreter *interp, int body_start, int body_end);
 void gc(Interpreter *interp);
 void p_gc(Interpreter *interp, cell *cfa);

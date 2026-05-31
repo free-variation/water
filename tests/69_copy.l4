@@ -1,0 +1,42 @@
+\ copy : deep/total copy of any value. Two things to verify everywhere:
+\ (1) the copy is structurally equal to the original, and
+\ (2) mutating the copy never touches the original (independence), at depth.
+
+\ --- structural equality across every type ---
+{ :a 1 :b 2 } dup copy = . cr            \ -1
+[ 1 2 3 ] dup copy = . cr                \ -1
+< 1 2 3 > dup copy = . cr                \ -1
+"hello" dup copy = . cr                  \ -1
+[ 1 2 3 4 ] 2 2 matrix dup copy = . cr   \ -1
+42 dup copy = . cr                       \ -1
+:foo dup copy = . cr                     \ -1
+{ } dup copy = . cr                      \ -1
+[ ] dup copy = . cr                      \ -1
+
+\ --- equality of mixed and deeply nested structures ---
+{ :arr [ 1 2 3 ] :set < 4 5 > :sub { :x 9 } :str "hi" } dup copy = . cr   \ -1
+{ :a { :b { :c { :d 1 } } } } dup copy = . cr                            \ -1
+[ { :a 1 } { :b 2 } ] dup copy = . cr                                    \ -1
+< { :a 1 } { :a 2 } > dup copy = . cr                                    \ -1
+
+\ --- independence: mutate the copy via ! at increasing depth, original intact ---
+{ :a 1 } dup copy /a 9 ! drop /a @ . cr                  \ 1
+{ :a { :b 1 } } dup copy /a/b 9 ! drop /a/b @ . cr       \ 1
+{ :a { :b { :c 1 } } } dup copy /a/b/c 9 ! drop /a/b/c @ . cr   \ 1
+
+\ --- independence via the other mutators ---
+{ :a 1 } dup copy /b 2 ! drop size . cr                  \ 1   (copy gained :b, not the original)
+{ :a 1 :b 2 } dup copy /a delete-at drop /a @ . cr       \ 1   (delete on copy left original's :a)
+{ :n 5 } dup copy /n [: 100 + :] update-at drop /n @ . cr   \ 5
+
+\ --- a nested non-frame value: overwriting it in the copy leaves the original's intact ---
+{ :a [ 1 2 3 ] } dup copy /a 99 ! drop /a @ . cr         \ [ 1 2 3 ]
+
+\ --- both sides independent: set the copy and the original to different values ---
+{ :a { :b 0 } } dup copy /a/b 2 ! swap /a/b 1 !
+/a/b @ . cr                                              \ 1   (original)
+/a/b @ . cr                                              \ 2   (copy)
+
+\ --- immediates copy to themselves ---
+42 copy . cr                                             \ 42
+:foo copy . cr                                           \ :foo

@@ -446,12 +446,12 @@ static Val frame_walk(Interpreter *interp, Val node, Object *path,
 }
 
 #define PEEK_FRAME_PATH(frame, path, op) \
-	PEEK_AT(frame, 1, op, T_FRAME); \
+	PEEK_TYPE_AT(frame, 1, op, T_FRAME); \
 	Object *path = frame_path(interp, interp->data_stack[interp->dsp - 1], op); \
 	if (!path) return
 
 #define PEEK_FRAME_PATH_VALUE(frame, path, value, op) \
-	PEEK_AT(frame, 2, op, T_FRAME); \
+	PEEK_TYPE_AT(frame, 2, op, T_FRAME); \
 	Object *path = frame_path(interp, interp->data_stack[interp->dsp - 2], op); \
 	if (!path) return; \
 	Val value = interp->data_stack[interp->dsp - 1]
@@ -507,7 +507,7 @@ void p_frame_delete_at(Interpreter *interp, cell *cfa) {
 void p_frame_keys(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_AT(frame_val, 0, "keys", T_FRAME);
+	PEEK_TYPE_AT(frame_val, 0, "keys", T_FRAME);
 	Object *frame = interp->objects[frame_val.data];
 	NEW_ARRAY(result_handle, result, frame->len);
 
@@ -520,7 +520,7 @@ void p_frame_keys(Interpreter *interp, cell *cfa) {
 void p_frame_values(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_AT(frame_val, 0, "values", T_FRAME);
+	PEEK_TYPE_AT(frame_val, 0, "values", T_FRAME);
 	Object *frame = interp->objects[frame_val.data];
 	NEW_ARRAY(result_handle, result, frame->len);
 
@@ -533,8 +533,8 @@ void p_frame_values(Interpreter *interp, cell *cfa) {
 void p_merge(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_AT(right, 0, "merge", T_FRAME);
-	PEEK_AT(left, 1, "merge", T_FRAME);
+	PEEK_TYPE_AT(right, 0, "merge", T_FRAME);
+	PEEK_TYPE_AT(left, 1, "merge", T_FRAME);
 	Object *right_frame = interp->objects[right.data];
 	Object *left_frame = interp->objects[left.data];
 
@@ -551,7 +551,7 @@ void p_merge(Interpreter *interp, cell *cfa) {
 void p_frame(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_AT(values_val, 0, "frame", T_ARRAY);
+	PEEK_TYPE_AT(values_val, 0, "frame", T_ARRAY);
 	PEEK_COLLECTION_AT(keys_val, 1, "frame");
 	Object *values = interp->objects[values_val.data];
 	Object *keys = interp->objects[keys_val.data];
@@ -618,5 +618,7 @@ void p_update_at(Interpreter *interp, cell *cfa) {
 
 	interp->dsp -= 2;
 }
+
+
 	
 

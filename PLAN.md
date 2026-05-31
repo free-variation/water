@@ -241,8 +241,7 @@ Superseded by the **frame** type (`T_FRAME`): symbol-keyed nested maps with
 Sorted parallel key/value arrays rather than a hash table — chosen for
 structural compare/unify (frames are the planned unification layer's compound
 term) and for small record-sized maps where a flat ordered scan beats hashing.
-See `frames-plan.md` for the design and remaining work (`merge`, `copy`,
-image save/load).
+Complete, including `merge`, deep `copy`, and image save/load.
 
 ### Time / dates
 

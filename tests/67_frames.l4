@@ -127,3 +127,12 @@
 
 \ merge : builds a new frame, leaving the inputs unchanged
 { :a 1 } dup { :a 9 } merge drop /a @ . cr
+
+\ copy : produces a structurally equal frame
+{ :a 1 :b 2 } dup copy = . cr
+
+\ copy : deep — mutating a nested key in the copy leaves the original intact
+{ :a { :b 1 } } dup copy /a/b 9 ! drop /a/b @ . cr
+
+\ copy : independent at the top level too
+{ :a 1 } dup copy /a 9 ! drop /a @ . cr
