@@ -7,6 +7,7 @@
 10000   to MAT_ELEMS
 50000   to ITER4
 1000000 to ITER5
+20000   to ITER6
 
 : phase1 ( -- sum )
   | i acc |
@@ -47,6 +48,45 @@
   [: dup * :] map
   0 [: + :] reduce ;
 
+\ Phase 6: deeply-nested frames built via auto-vivifying ! along five paths
+\ sharing prefixes, then read back via deep path @.
+\
+\ Per record the tree looks like:
+\   { :a { :b { :c { :d N :e 2N } :f 3N } :g 4N }
+\     :h { :i { :j { :k { :l 5N } } } } }
+\
+\ Five writes share prefixes — the first call to /a/b/c/d vivifies a, b, c;
+\ /a/b/c/e and /a/b/f and /a/g then ride the existing skeleton; /h/i/j/k/l
+\ vivifies four fresh intermediates. ~8 frame allocations per record, four
+\ paths of depth 3–5 walked on the read side.
+\
+\ Measures: WALK_VIVIFY skeleton building, binary-search frame_walk on read,
+\ path-literal compile-time interning, frame allocation pressure under map.
+: make-deep ( n -- frame )
+  | n |
+  to n
+  { }
+  /a/b/c/d n !
+  /a/b/c/e n 2 * !
+  /a/b/f   n 3 * !
+  /a/g     n 4 * !
+  /h/i/j/k/l n 5 * ! ;
+
+: read-deep ( frame -- sum )
+  | f |
+  to f
+  f /a/b/c/d @
+  f /a/b/c/e @ +
+  f /a/b/f   @ +
+  f /a/g     @ +
+  f /h/i/j/k/l @ + ;
+
+: phase6 ( -- sum )
+  0 ITER6 range
+  [: make-deep :] map
+  [: read-deep :] map
+  0 [: + :] reduce ;
+
 : run-phase ( xt name -- )
   | xt name t0 |
   to name to xt
@@ -64,4 +104,66 @@
   [: phase2 :] "phase2" run-phase
   [: phase3 :] "phase3" run-phase
   [: phase4 :] "phase4" run-phase
-  [: phase5 :] "phase5" run-phase ;
+  [: phase5 :] "phase5" run-phase
+  [: phase6 :] "phase6" run-phase ;
+
+\ ---- Scaling: frame cost vs frame size ----
+\
+\ For each of five sizes, measure build cost (one full frame construction from
+\ parallel keys/values arrays) and lookup cost (single-key access against a
+\ pre-built frame). Output is a 5-row table revealing the crossover with
+\ Python's hash-table dict.
+\
+\ Lookup uses the compile-time path literal /k0, so the 1-element path array
+\ is allocated once at parse time and reused — the per-lookup measurement is
+\ pure frame_walk cost (binary search + cell compares), not per-call malloc.
+
+: build-keys ( n -- keys-array )
+  0 swap 1 - range [: "k{0}" string>symbol :] map ;
+
+: build-vals ( n -- vals-array )
+  0 swap 1 - range ;
+
+: bench-build ( size reps -- elapsed )
+  | size reps keys vals t0 |
+  to reps to size
+  size build-keys to keys
+  size build-vals to vals
+  now to t0
+  begin
+    keys vals frame drop
+    reps 1 - to reps
+    reps 0 =
+  until
+  now t0 - ;
+
+: bench-lookup ( size passes -- elapsed )
+  | size passes keys vals f t0 |
+  to passes to size
+  size build-keys to keys
+  size build-vals to vals
+  keys vals frame to f
+  now to t0
+  begin
+    f /k0 @ drop
+    passes 1 - to passes
+    passes 0 =
+  until
+  now t0 - ;
+
+: scale-row ( size build-reps lookup-passes -- )
+  | size build-reps lookup-passes |
+  to lookup-passes to build-reps to size
+  size build-reps bench-build  build-reps  /  1e6 *
+  size lookup-passes bench-lookup  lookup-passes  /  1e9 *
+  size
+  "size={0}  build={2} us  lookup={1} ns/op" . cr ;
+
+: scale-frames
+  gc
+  cr "frame scaling — build cost and pure-lookup cost vs size" . cr
+  5     100000 1000000  scale-row
+  25     20000 1000000  scale-row
+  100     4000 1000000  scale-row
+  500      800 1000000  scale-row
+  2000     200 1000000  scale-row ;

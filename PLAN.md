@@ -7,17 +7,85 @@ git history is the place to look for what's been built.
 
 ## Interpreter performance — next up
 
-Two changes prioritized by the Mandelbrot benchmark profile in `bench/`
-(`gprof` on the index-threaded interpreter at -O3). The benchmark sits at
-~1.5s vs Python's 1.77s and C's 0.036s; these target the largest categories
-in the profile.
+`sample` on `bench/profile.l4` (a 200× loop over `bench`, ~12k samples) shows
+~74% of CPU in the dispatch loop inlined into `execute_cfa`. The single
+biggest lever — and the next step in development — is direct threading.
+Float-fast-paths and super-instructions are smaller, opportunistic wins that
+stack on top.
+
+### Direct threading
+
+Today the inner interpreter does two memory reads per virtual op:
+
+```
+int cfa_index = (int)dict[ip++];                   // body cell holds a cfa index
+cfa_handler h = (cfa_handler)dict[cfa_index];      // handler is at dict[cfa]
+h(interp, &dict[cfa_index]);
+```
+
+In a direct-threaded build, the body cell holds the handler pointer itself:
+
+```
+cfa_handler h = (cfa_handler)dict[ip++];
+h(interp, &dict[ip]);
+```
+
+One read instead of two on the dispatch hot path, which the profile says is
+74% of CPU. Per the interpreter-perf literature this lands roughly 10-15%
+wall-time, larger than any individual super-instruction and across every
+primitive instead of one pattern.
+
+**What changes:**
+
+- **`emit` for body references**: `: foo + 1 ;` today writes
+  `[cfa_of_+, cfa_of_(lit), T_FLOAT, 0x3ff0..., cfa_of_exit]`. After this
+  change it writes `[handler_of_+, handler_of_(lit), T_FLOAT, 0x3ff0...,
+  handler_of_exit]`. Single-cell call sites for primitives.
+- **Colon-call sites are two cells**: a colon-def reference compiles to
+  `[docol_ptr, target_body_ip]`. `docol` reads the next cell as the resume
+  target, advances `ip` past it, then pushes the current `ip` to the return
+  stack and jumps to the body. Primitives stay one cell; only colon-call
+  sites grow.
+- **Header layout is unchanged**: `link`/`flags`/`name`/`source` plus the cfa
+  slot (which holds the handler for primitives or `docol` for colon defs)
+  are still walked by `find`, `forget`, and the dictionary chain in `gc`.
+  Only the per-call-site emission inside *bodies* changes shape.
+
+**Surfaces that need updating:**
+
+- `emit_call(target_cfa)` — the new core compile-time helper that writes one
+  cell for a primitive target or two cells for a colon-def target. Used by
+  `run_outer` when it sees a known word, by `p_tick`, by the literal/branch
+  emitters (where applicable).
+- `docol` — reads `dict[ip++]` as the body-start address instead of computing
+  it from its `cfa` parameter.
+- `gc::mark_body` and `forget`'s body walk — currently identify literal/branch
+  ops by comparing dict cells against `literal_cfa`, `dostr_cfa`, etc. After
+  the change those comparisons are against the corresponding handler pointers
+  (`(cell)&p_literal`, `(cell)&p_dostr`, …). Mechanical rename, same logic.
+- `save-image` — the on-disk dict cells today are cfa indices, stable across
+  runs. After the change they're function pointers, which are addresses that
+  change between binaries. The image writer must translate each body cell on
+  save into a portable handler-id (a small enum like the existing
+  `HANDLER_DOCOL`/`HANDLER_DOVAR`/`HANDLER_DOSYM`, extended to cover every
+  primitive) and the reader must translate back to the live handler pointer
+  on load. Version bump on the image format. Text `save` is unaffected
+  because it works from `WORD_SOURCE`, not the compiled body.
+
+**What it makes possible:**
+
+Once dispatch is one indirect call per op, the natural follow-on is
+computed-goto / token threading (each handler ends with
+`goto *dict[ip++]` instead of returning to a central loop). That's another
+10-20% on top, at the cost of needing the handlers to live in one giant
+switch — a larger refactor. Direct threading is the prerequisite and stands
+on its own.
 
 ### Float-fast-path the comparison primitives
 
-`val_cmp` accounts for ~8% of wall time on the benchmark and ~16% across the
-comparison/control bucket. It's called from `p_lt`/`p_gt`/`p_eq`, and even
-when both operands are floats it tag-checks and runs a kind-switch before
-the float compare.
+`val_cmp` (~3% of CPU per the `bench/synth.l4` profile, split across
+`p_lt` / `p_gt` / `p_eq`) does a tag-equality check and kind-switch even
+when both operands are floats — the universal case in numeric kernels.
 
 The fix: in each of `p_lt` / `p_gt` / `p_eq`, fast-path the `T_FLOAT` /
 `T_FLOAT` case inline (unpack and compare), and only fall through to
@@ -41,6 +109,18 @@ Candidates ranked by call frequency in the benchmark profile:
   outside closures. Drops one operand-fetch per access and the depth-walk
   loop in `local_slot`. Phase 1 of `bench/synth.l4` spends ~10% of CPU in
   `p_local_fetch` + `p_local_store` between them; this catches the lot.
+- **`(@k)` / `(!k)`** — single-key frame get/set, taking the symbol as an
+  operand. Replaces the general `@` / `!` whenever the path is a compile-time
+  literal of length 1 — `frame /k @` and `frame /k val !`, which is the
+  common "look up one key" pattern. Skips the `frame_path` validation loop
+  (currently tag-checks every path element on every call), the `frame_walk`
+  function call, and the 1-iteration walk loop; the body becomes just
+  `frame_find` + push/store. Peephole detection: when emitting `@` / `!` and
+  the prior emitted op is a literal pointing at an array of length 1 with a
+  single `T_SYMBOL` element, rewrite to `(@k) <sym>` / `(!k) <sym>` and
+  delete the literal. The `scale-frames` table in `bench/synth.l4` shows
+  single-key lookup at ~37 ns vs Python's ~17 ns; this closes ~10-15 ns of
+  that gap.
 - **`+!`** — add to a variable in place. STALE: the old form `@ <expr> + !`
   assumed `@`/`!` as variable fetch/store, which are now frame ops. Re-derive
   against the `to` / auto-deref model — the accumulate pattern is now
@@ -58,6 +138,16 @@ the profile against a current benchmark before committing to candidates.)
 
 Each is ~10 lines of C. Adding the peephole pass is another ~50 lines. Together
 plausibly 5–10% on the benchmark and any numeric / control-heavy kernel.
+
+### Inline the frame access helpers
+
+`frame_find` and `frame_walk` are short leaf routines hit on every `@` / `!`,
+called via the cross-file extern path (declared in `logicforth.h`, defined in
+`collections.c`). Move the definitions to the header as `static inline` so the
+compiler can integrate them into `p_frame_get` / `p_frame_set` / `(@k)` /
+`(!k)`. Per-call function-call setup disappears; branch prediction sees the
+binary-search loop inlined in the primitive's hot body. ~2 ns per access, near
+zero implementation cost.
 
 ---
 
@@ -679,6 +769,53 @@ what remains:
    per-interpreter interpreters.
 
 Path A stands alone; Path B lights up parallelism.
+
+---
+
+## Array head decomposition
+
+Two C primitives supporting Prolog-style `[H|T]` decomposition over arrays:
+
+- **`>head`** ( elem arr -- arr' ) — prepend an element. Allocates a new
+  array of length len(arr)+1; copies arr after the new first slot.
+- **`head>`** ( arr -- first rest ) — split off the first element. Returns
+  the head Val and a new array of length len(arr)-1 starting at index 1.
+  Errors on empty array.
+
+Names follow the existing direction convention (`>r` / `r>`, `>side` /
+`side>`, `>frame`, `string>symbol`): `>head` puts a head on, `head>` takes
+a head off.
+
+**Why C and not `lib.l4`.** Both could be defined over `@i` + `take` +
+`skip`, but `skip` is `reverse take reverse` — three traversals per call.
+A C `head>` is a single `memcpy`, materially faster for the recursive
+patterns this enables. ~15 lines each.
+
+**Use case.** Recursive walks shaped like Prolog clauses:
+
+```forth
+: sum-arr ( arr -- sum )
+  dup size 0 = if drop 0
+  else head> swap sum-arr + then ;
+```
+
+**Cost note worth documenting.** Arrays are contiguous, not linked. A
+recursive walk over N elements via `head>` allocates a sequence of arrays
+of sizes N-1, N-2, …, 1 — O(N²) Val storage churned. Fine for shallow
+decomposition; pathological for large arrays. The performant alternative
+for those cases is the existing `reduce` / `map` / `each` family, which
+keeps iteration C-side.
+
+**Back-end (snoc-style) deferred.** No equivalent for the tail end of an
+array — the `[H|T]` pattern doesn't need it, and `last` is already in
+`lib.l4` with a different shape (`arr n -- arr'`, last-N elements). If
+added later, name them by behavior, not by symmetry with the head pair.
+
+**Connection to the planned logic layer.** When unification lands,
+`[ H | T ]` becomes a literal pattern term that unifies with arrays of
+length ≥ 1 — `H` binds to head, `T` to a fresh tail array (or a logic
+variable thereof, depending on direction). The pattern syntax is the
+declarative form; `>head` / `head>` remain the imperative fast path.
 
 ---
 

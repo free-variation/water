@@ -12,7 +12,8 @@
   phase2 drop
   phase3 drop
   phase4 drop
-  phase5 drop ;
+  phase5 drop
+  phase6 drop ;
 
 : loop-it ( n -- )
   | n |

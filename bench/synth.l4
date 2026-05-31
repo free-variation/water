@@ -3,4 +3,5 @@
 
 "bench/synth-defs.l4" load
 bench
+scale-frames
 bye

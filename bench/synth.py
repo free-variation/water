@@ -25,6 +25,7 @@ MAT_DIM = 100
 MAT_ELEMS = MAT_DIM * MAT_DIM
 ITER4 = 50_000
 ITER5 = 1_000_000
+ITER6 = 20_000
 
 
 def phase1():
@@ -81,6 +82,82 @@ def phase5():
     return reduce(lambda a, b: a + b, squares, 0.0)
 
 
+def path_set(root, path, value):
+    """Auto-vivifying nested dict set, mirroring logicforth's `!` semantics."""
+    node = root
+    for key in path[:-1]:
+        nxt = node.get(key)
+        if not isinstance(nxt, dict):
+            nxt = {}
+            node[key] = nxt
+        node = nxt
+    node[path[-1]] = value
+
+
+def path_get(root, path):
+    node = root
+    for key in path:
+        node = node[key]
+    return node
+
+
+def make_deep(n):
+    r = {}
+    path_set(r, ('a', 'b', 'c', 'd'), n)
+    path_set(r, ('a', 'b', 'c', 'e'), n * 2.0)
+    path_set(r, ('a', 'b', 'f'),      n * 3.0)
+    path_set(r, ('a', 'g'),           n * 4.0)
+    path_set(r, ('h', 'i', 'j', 'k', 'l'), n * 5.0)
+    return r
+
+
+def read_deep(f):
+    return (path_get(f, ('a', 'b', 'c', 'd'))
+            + path_get(f, ('a', 'b', 'c', 'e'))
+            + path_get(f, ('a', 'b', 'f'))
+            + path_get(f, ('a', 'g'))
+            + path_get(f, ('h', 'i', 'j', 'k', 'l')))
+
+
+def phase6():
+    arr = [float(i) for i in range(0, ITER6 + 1)]
+    frames = list(map(make_deep, arr))
+    sums = list(map(read_deep, frames))
+    return reduce(lambda a, b: a + b, sums, 0.0)
+
+
+def scale_frames():
+    """Match bench/synth-defs.l4's scale-frames: per-size build and lookup."""
+    cases = [
+        (5,     100_000, 1_000_000),
+        (25,     20_000, 1_000_000),
+        (100,     4_000, 1_000_000),
+        (500,       800, 1_000_000),
+        (2000,      200, 1_000_000),
+    ]
+    print()
+    print("frame/dict scaling — build cost and pure-lookup cost vs size (Python)")
+    for size, build_reps, lookup_passes in cases:
+        keys = [f"k{i}" for i in range(size)]
+        vals = [float(i) for i in range(size)]
+
+        t0 = time.monotonic()
+        for _ in range(build_reps):
+            d = dict(zip(keys, vals))
+        t_build = time.monotonic() - t0
+
+        d = dict(zip(keys, vals))
+        k0 = "k0"
+        t0 = time.monotonic()
+        for _ in range(lookup_passes):
+            _ = d[k0]
+        t_lookup = time.monotonic() - t0
+
+        us_per_build = t_build / build_reps * 1e6
+        ns_per_lookup = t_lookup / lookup_passes * 1e9
+        print(f"size={size}  build={us_per_build:g} us  lookup={ns_per_lookup:g} ns/op")
+
+
 def run_phase(name, fn):
     t0 = time.monotonic()
     r = fn()
@@ -96,3 +173,5 @@ if __name__ == '__main__':
     run_phase("phase3", phase3)
     run_phase("phase4", phase4)
     run_phase("phase5", phase5)
+    run_phase("phase6", phase6)
+    scale_frames()
