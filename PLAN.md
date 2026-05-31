@@ -263,13 +263,17 @@ than `rand()`).
 - `random-float` — uniform `[0, 1)`.
 - `min max random-int` — uniform integer in `[min, max]`.
 - `seed seed!` — set the RNG seed for reproducibility.
-- `array shuffle` — permute in place (Fisher-Yates).
+- `array shuffle` — return a new array with the elements randomly
+  permuted (Fisher-Yates).
+- `array sample` — return a uniformly random element. Likely a `lib.l4`
+  word over `random-int` + indexed access, not a C primitive.
 
 ### Sort
 
-- `array sort` — sort using the existing `val_cmp` ordering. Mutates
-  in place (consistent with how arrays work today).
-- `array [ x y -- cmp ] sort-with` — sort with a user comparator
+- `array sort` — return a new array sorted by the existing `val_cmp`
+  ordering; the input is untouched (consistent with `map` / `filter` /
+  `take` / `reverse` / `concat`, which all return fresh arrays).
+- `array [ x y -- cmp ] sort-with` — same, with a user comparator
   quotation that pops two Vals and pushes `-1` / `0` / `1`.
 - Algorithm: introsort or just `qsort` from libc with a comparator
   thunk. ~30 lines either way.
