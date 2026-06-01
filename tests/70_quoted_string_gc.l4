@@ -1,0 +1,18 @@
+\ Regression: a string literal inside an anonymous quotation must survive GC.
+\ The quotation's CFA and body are emitted inline inside the enclosing word's
+\ compiled body, between a (branch) that skips them at run time and a
+\ (literal) that publishes the xt. mark_body must walk into the embedded body
+\ cell by cell so the (dostr) op marks the template string.
+\
+\ A previous bug treated the embedded docol cell as a 2-cell call site and
+\ skipped the first body cell of the quotation. When that first cell was a
+\ (dostr) op, the template went unmarked, got swept, and the next invocation
+\ of the quotation dereferenced a NULL Object and segfaulted.
+
+: msg-xt  [: "msg" :] ;
+
+msg-xt execute drop
+gc
+msg-xt execute drop
+gc
+.s
