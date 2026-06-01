@@ -467,21 +467,32 @@ int find(Interpreter *interp, const char *name) {
 	return 0;
 }
 
-void docol(Interpreter *interp, cell *cfa) {
-	rpush(interp, make_addr(interp->ip));
-	interp->ip = (int)(cfa - interp->vocab->dict) + 1;
-}
-
-void dosym(Interpreter *interp, cell *cfa) {
-	int symbol_offset = (int)cfa[1];
-	push(interp, make_symbol(symbol_offset));
-}
-
-void dovar(Interpreter *interp, cell *cfa) {
+static inline __attribute__((always_inline)) void push_variable(Interpreter *interp, int var_cfa) {
 	Val v;
-	v.tag = (Tag)cfa[1];
-	v.data = cfa[2];
+	v.tag = (Tag)interp->vocab->dict[var_cfa + 1];
+	v.data = interp->vocab->dict[var_cfa + 2];
 	push(interp, v);
+};
+
+static inline __attribute__((always_inline)) void push_symbol(Interpreter *interp, int sym_cfa) {
+	push(interp, make_symbol((int)interp->vocab->dict[sym_cfa + 1]));
+}
+
+void docol(Interpreter *interp, cell *next) {
+	interp->ip++;
+	rpush(interp, make_addr(interp->ip));
+	interp->ip = (int)*next + 1;
+}
+
+void dosym(Interpreter *interp, cell *next) {
+	push_symbol(interp, (int)*next);
+	interp->ip++;
+}
+
+void dovar(Interpreter *interp, cell *next) {
+	push_variable(interp, (int)*next);	
+	interp->ip++;
+
 }
 
 void run_inner(Interpreter *interp) {
@@ -508,23 +519,35 @@ void run_inner(Interpreter *interp) {
 			continue;
 		}
 
-		int cfa_index = (int)interp->vocab->dict[interp->ip++];
-		cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa_index];
-		handler(interp, &interp->vocab->dict[cfa_index]);
+		cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
+		handler(interp, &interp->vocab->dict[interp->ip]);
 	}
 }
 
 void execute_cfa(Interpreter *interp, int cfa) {
 	cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
-	if (handler != &docol) {
+
+	if (handler == dovar) {
+		push_variable(interp, cfa);
+		return;
+	}
+
+	if (handler == dosym) {
+		push_symbol(interp, cfa);
+		return;
+	}
+
+	if (handler != docol) {
 		handler(interp, &interp->vocab->dict[cfa]);
 		return;
 	}
 
+
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
-	interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)cfa;
-	interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)interp->vocab->stop_cfa;
+	interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)docol;
+	interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;
+	interp->vocab->dict[TRAMPOLINE_SLOT + 2] = interp->vocab->dict[interp->vocab->stop_cfa];
 	interp->ip = TRAMPOLINE_SLOT;
 	interp->running = 1;
 
@@ -533,6 +556,7 @@ void execute_cfa(Interpreter *interp, int cfa) {
 	interp->running = saved_running;
 	interp->ip = saved_ip;
 }
+
 
 int alloc_name(Interpreter *interp, const char *name) {
 	int length = (int)strlen(name) + 1;
@@ -602,8 +626,17 @@ void emit(Interpreter *interp, cell value) {
 	interp->vocab->dict[interp->vocab->here++] = value;
 }
 
+void emit_call(Interpreter *interp, int target_cfa) {
+	cfa_handler handler = (cfa_handler)interp->vocab->dict[target_cfa];
+	emit(interp, (cell)handler);
+	
+	if (handler == docol || handler == dovar || handler == dosym) {
+		emit(interp, (cell)target_cfa);
+	}
+}
+
 void emit_val_literal(Interpreter *interp, Val value) {
-	emit(interp, (cell)interp->vocab->literal_cfa);
+	emit_call(interp, interp->vocab->literal_cfa);
 	emit(interp, (cell)value.tag);
 	emit(interp, value.data);
 }
@@ -837,7 +870,7 @@ void run_outer(Interpreter *interp) {
 			if (n < 0) return;
 			int handle = object_new_string(interp, interp->token_buffer, n);
 			if (interp->compiling) {
-				emit(interp, (cell)interp->vocab->dostr_cfa);
+				emit_call(interp, interp->vocab->dostr_cfa);
 				emit(interp, (cell)handle);
 			} else {
 				int r = interpolate(interp, handle);
@@ -861,7 +894,7 @@ void run_outer(Interpreter *interp) {
 		if (interp->compiling) {
 			int local_depth, local_slot_idx;
 			if (find_local(interp, tok, &local_depth, &local_slot_idx)) {
-				emit(interp, (cell)interp->vocab->local_fetch_cfa);
+				emit_call(interp, interp->vocab->local_fetch_cfa);
 				emit(interp, (cell)local_depth);
 				emit(interp, (cell)local_slot_idx);
 				continue;
@@ -870,7 +903,7 @@ void run_outer(Interpreter *interp) {
 
 		int cf = find(interp, tok);
 		if (cf) {
-			if (interp->compiling && !WORD_IS_IMMEDIATE(interp->vocab, cf)) emit(interp, (cell)cf);
+			if (interp->compiling && !WORD_IS_IMMEDIATE(interp->vocab, cf)) emit_call(interp, (cell)cf);
 			else execute_cfa(interp, cf);
 			continue;
 		}
@@ -1127,28 +1160,40 @@ void p_copy(Interpreter *interp, cell *cfa) {
 }
 
 void mark_body(Interpreter *interp, int body_start, int body_end) {
+	cell literal_ptr      = interp->vocab->dict[interp->vocab->literal_cfa];
+	cell dostr_ptr        = interp->vocab->dict[interp->vocab->dostr_cfa];
+	cell branch_ptr       = interp->vocab->dict[interp->vocab->branch_cfa];
+	cell zbranch_ptr      = interp->vocab->dict[interp->vocab->zbranch_cfa];
+	cell to_var_ptr       = interp->vocab->dict[interp->vocab->to_var_cfa];
+	cell enter_locals_ptr = interp->vocab->dict[interp->vocab->enter_locals_cfa];
+	cell leave_locals_ptr = interp->vocab->dict[interp->vocab->leave_locals_cfa];
+	cell local_fetch_ptr  = interp->vocab->dict[interp->vocab->local_fetch_cfa];
+	cell local_store_ptr  = interp->vocab->dict[interp->vocab->local_store_cfa];
+
 	int cursor = body_start;
 
 	while (cursor < body_end) {
 		cell ref = interp->vocab->dict[cursor];
-		if (ref == (cell)interp->vocab->literal_cfa && cursor + 2 < body_end) {
-			Tag tag = (Tag)interp->vocab->dict[cursor + 1];
-			Val value; value.tag = tag; value.data = interp->vocab->dict[cursor + 2];
+		if (ref == literal_ptr && cursor + 2 < body_end) {
+			Val value;
+			value.tag = (Tag)interp->vocab->dict[cursor + 1];
+			value.data = interp->vocab->dict[cursor + 2];
 			mark_value(interp, value);
 			cursor += 3;
-		} else if (ref == (cell)interp->vocab->dostr_cfa && cursor + 1 < body_end) {
-			Val value; value.tag = T_STRING; value.data = interp->vocab->dict[cursor + 1];
+		} else if (ref == dostr_ptr && cursor + 1 < body_end) {
+			Val value;
+			value.tag = T_STRING;
+			value.data = interp->vocab->dict[cursor + 1];
 			mark_value(interp, value);
 			cursor += 2;
-		} else if ((ref == (cell)interp->vocab->branch_cfa
-					|| ref == (cell)interp->vocab->zbranch_cfa) && cursor + 1 < body_end) {
+		} else if ((ref == branch_ptr || ref == zbranch_ptr) && cursor + 1 < body_end) {
 			cursor += 2;
-		} else if ((ref == (cell)interp->vocab->to_var_cfa
-					|| ref == (cell)interp->vocab->enter_locals_cfa
-					|| ref == (cell)interp->vocab->leave_locals_cfa) && cursor + 1 < body_end) {
+		} else if ((ref == to_var_ptr
+					|| ref == enter_locals_ptr
+					|| ref == leave_locals_ptr) && cursor + 1 < body_end) {
 			cursor += 2;
-		} else if ((ref == (cell)interp->vocab->local_fetch_cfa
-					|| ref == (cell)interp->vocab->local_store_cfa) && cursor + 2 < body_end) {
+		} else if ((ref == local_fetch_ptr
+					|| ref == local_store_ptr) && cursor + 2 < body_end) {
 			cursor += 3;
 		} else {
 			cursor++;

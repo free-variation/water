@@ -30,7 +30,7 @@ typedef int64_t cell;
 #define MAX_LOCAL_SCOPES		16
 
 #define TRAMPOLINE_SLOT			0
-#define DICT_RESERVED			2
+#define DICT_RESERVED			3
 
 typedef enum {
 	T_NONE = 0,
@@ -422,6 +422,7 @@ void dict_ensure(Interpreter *interp, int extra);
 int create_header(Interpreter *interp, const char *name, int immediate);
 int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int immediate);
 void emit(Interpreter *interp, cell value);
+void emit_call(Interpreter *interp, int target_cfa);
 void emit_val_literal(Interpreter *interp, Val value);
 const char *tag_name(Tag t);
 void p_exit(Interpreter *interp, cell *cfa);

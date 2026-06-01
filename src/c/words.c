@@ -430,8 +430,7 @@ void p_resume(Interpreter *interp, cell *cfa) {
 	int saved_running = interp->running;
 	int saved_local_base = interp->local_base;
 
-	interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)interp->vocab->stop_cfa;
-	rpush(interp, make_addr(TRAMPOLINE_SLOT + 1));
+	rpush(interp, make_addr(TRAMPOLINE_SLOT + 2));
 
 	rpush(interp, make_mark());
 
@@ -503,7 +502,7 @@ void p_semi(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	leave_compile_scope(interp);
-	emit(interp, (cell)interp->vocab->exit_cfa);
+	emit_call(interp, interp->vocab->exit_cfa);
 	if (interp->compiling_src_start > 0 && interp->vocab->latest_cfa != 0) {
 		int src_end = interp->input_buffer_pos - 1;
 		int src_len = src_end - interp->compiling_src_start;
@@ -527,7 +526,7 @@ void p_semi(Interpreter *interp, cell *cfa) {
 void p_if(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	emit(interp, (cell)interp->vocab->zbranch_cfa);
+	emit_call(interp, interp->vocab->zbranch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
 }
@@ -545,7 +544,7 @@ void p_else(Interpreter *interp, cell *cfa) {
 
 	POP(slot_val);
 	int slot = (int)unpack_float(slot_val);
-	emit(interp, (cell)interp->vocab->branch_cfa);
+	emit_call(interp, interp->vocab->branch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
 	interp->vocab->dict[slot] = (interp->vocab->here - slot);
@@ -561,7 +560,7 @@ void p_until(Interpreter *interp, cell *cfa) {
 
 	POP(back_val);
 	int back = (int)unpack_float(back_val);
-	emit(interp, (cell)interp->vocab->zbranch_cfa);
+	emit_call(interp, interp->vocab->zbranch_cfa);
 	emit(interp, back - interp->vocab->here);
 }
 
@@ -570,7 +569,7 @@ void p_again(Interpreter *interp, cell *cfa) {
 
 	POP(back_val);
 	int back = (int)unpack_float(back_val);
-	emit(interp, (cell)interp->vocab->branch_cfa);
+	emit_call(interp, interp->vocab->branch_cfa);
 	emit(interp, back - interp->vocab->here);
 }
 
@@ -579,7 +578,7 @@ void p_qcolon(Interpreter *interp, cell *cfa) {
 
 	int branch_slot = -1;
 	if (interp->compiling) {
-		emit(interp, (cell)interp->vocab->branch_cfa);
+		emit_call(interp, interp->vocab->branch_cfa);
 		branch_slot = interp->vocab->here;
 		emit(interp, 0);
 	}
@@ -595,7 +594,7 @@ void p_qsemi(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	leave_compile_scope(interp);
-	emit(interp, (cell)interp->vocab->exit_cfa);
+	emit_call(interp, interp->vocab->exit_cfa);
 	POP(branch_slot_val);
 	POP(anon_cfa_val);
 	int branch_slot = (int)unpack_float(branch_slot_val);
@@ -646,7 +645,7 @@ static void leave_compile_scope(Interpreter *interp) {
 	int n_locals_in_scope = interp->n_local_names - saved_n_names;
 
 	if (n_locals_in_scope > 0) {
-		emit(interp, (cell)interp->vocab->leave_locals_cfa);
+		emit_call(interp, interp->vocab->leave_locals_cfa);
 		emit(interp, (cell)n_locals_in_scope);
 	}
 
@@ -752,7 +751,7 @@ void p_bar(Interpreter *interp, cell *cfa) {
 
 	int n_declared = interp->n_local_names - scope_start;
 	if (n_declared > 0) {
-		emit(interp, (cell)interp->vocab->enter_locals_cfa);
+		emit_call(interp, interp->vocab->enter_locals_cfa);
 		emit(interp, (cell)n_declared);
 	}
 }
@@ -776,7 +775,7 @@ void p_to(Interpreter *interp, cell *cfa) {
 	if (interp->compiling) {
 		int local_depth, local_slot_idx;
 		if (find_local(interp, token, &local_depth, &local_slot_idx)) {
-			emit(interp, (cell)interp->vocab->local_store_cfa);
+			emit_call(interp, interp->vocab->local_store_cfa);
 			emit(interp, (cell)local_depth);
 			emit(interp, (cell)local_slot_idx);
 			return;
@@ -799,7 +798,7 @@ void p_to(Interpreter *interp, cell *cfa) {
 	}
 
 	if (interp->compiling) {
-		emit(interp, (cell)interp->vocab->to_var_cfa);
+		emit_call(interp, interp->vocab->to_var_cfa);
 		emit(interp, (cell)target_cfa);
 	} else {
 		POP(v);
