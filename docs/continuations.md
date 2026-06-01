@@ -62,7 +62,7 @@ First-class continuations are *the* foundational control construct. Once you hav
 
 Languages that have first-class continuations (Scheme, Racket, Standard ML with extensions, Ruby) typically build the rest of the control story on top of them. Languages that don't have them (Python, JavaScript, Go) implement each of the above as a separate language feature — Python has `try/except`, `yield`, `async/await`, and `asyncio.Task` as four largely-independent mechanisms. With continuations, they're four instances of the same mechanism.
 
-This is the central pedagogical claim of this document: a single primitive — captureable, resumable pieces of computation — subsumes a sprawl of seemingly-unrelated language features. The implementation is small. The conceptual unification is the prize.
+This is the central pedagogical claim of this document: a single primitive — captureable, resumable pieces of computation — subsumes a sprawl of seemingly-unrelated language features. The implementation is small. The conceptual unification is what makes the investment worthwhile.
 
 ---
 
@@ -172,7 +172,7 @@ The side stack is a small additional piece for situations where library code nee
 
 ## Part 4: The inner interpreter
 
-Forth's execution model is built around an *inner interpreter* — a small loop that dispatches one word at a time. Here's the basic shape:
+Forth's execution model is built around an *inner interpreter* — a small loop that dispatches one word at a time. Here's the basic structure:
 
 ```c
 while (running && !error_flag) {
@@ -540,7 +540,7 @@ Multi-shot resumption is powerful but easy to misuse. Two pitfalls:
 
 **Side effects re-run.** If the captured slice opens a file, mutates a global, or sends a network packet, those effects happen *every time* the slice is resumed. The slice doesn't know it's being re-run. For pure computation this is fine; for I/O it's catastrophic unless you've thought it through.
 
-**Data stack discipline.** The slice expects a particular data-stack shape when it resumes. If you set up the data stack wrong before calling resume, the slice will misbehave. Multi-shot doesn't fix this — each invocation needs the same discipline.
+**Data stack discipline.** The slice expects a particular set of values on the data stack when it resumes. If you set up the data stack wrong before calling resume, the slice will misbehave. Multi-shot doesn't fix this — each invocation needs the same discipline.
 
 For most exception-style and coroutine uses, every continuation is one-shot in practice: you resume it once or you drop it. Multi-shot is reserved for backtracking, probabilistic sampling, and similar cases where re-running really is the point.
 
@@ -727,7 +727,7 @@ This run_inner pops MARK N. It matches `unwind_target`. Clears `unwinding = 0`. 
 
 The next thing executed is whatever cell follows the catch call in the caller's word. The data stack has whatever the handler left there.
 
-That's the whole unwind. A simple flag plus per-level `initial_rsp` tracking gives us multi-level stack unwinding that lands precisely at the right point in the right word.
+That's the whole unwind. A simple flag plus per-level `initial_rsp` tracking gives us multi-level stack unwinding that stops precisely at the right point in the right word.
 
 ---
 
@@ -802,7 +802,7 @@ The side stack is exactly what's needed: a place to put values that nothing else
 
 ### Nested try-catch
 
-Nesting works because each `reset` allocates a fresh mark id and the unwind targets the *innermost* mark by id. A throw deep inside two nested try-catches always lands at the inner one.
+Nesting works because each `reset` allocates a fresh mark id and the unwind targets the *innermost* mark by id. A throw deep inside two nested try-catches is always caught by the inner one.
 
 ```forth
 : outer-h ( exc -- )  ." outer handler: " . cr ;
@@ -1103,7 +1103,7 @@ Generators are a special case of coroutines: one-way, producer-only. A generator
     again ;
 ```
 
-This generator has two pieces of state on the data stack: the limit `n` and the current `i`. Each iteration checks `i <= n`, yields `i*i`, and increments. When `i > n`, it exits without yielding — and the driver sees the data stack in a different shape than usual, which it can detect.
+This generator has two pieces of state on the data stack: the limit `n` and the current `i`. Each iteration checks `i <= n`, yields `i*i`, and increments. When `i > n`, it exits without yielding — and the driver sees the data stack in a different state than usual, which it can detect.
 
 A more robust protocol uses an explicit done signal. One approach: the generator throws a `:done` exception at the end, and the driver wraps it in try-catch.
 
@@ -1726,7 +1726,7 @@ The real power emerges when you compose these patterns.
 
 ### Exceptions inside coroutines
 
-What if a coroutine throws? With our implementation, throw unwinds to the nearest reset. If the coroutine was started by `reset producer`, then throw unwinds to that reset — which means it lands in *the caller of the reset-containing word*, with the unwinding completed. The coroutine's `k` is gone; the caller sees the exception flag on the data stack.
+What if a coroutine throws? With our implementation, throw unwinds to the nearest reset. If the coroutine was started by `reset producer`, then throw unwinds to that reset — which means control resumes in *the caller of the reset-containing word*, with the unwinding completed. The coroutine's `k` is gone; the caller sees the exception flag on the data stack.
 
 If the coroutine should handle its own exceptions internally, wrap parts of it in `try-catch`:
 

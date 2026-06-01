@@ -9,7 +9,7 @@ This document is a primer on how logicforth's garbage collector works. By the en
 - The role of the `gc_roots[]` stack — a small but subtle piece of machinery that fixes a class of bug C programmers will recognize
 - When GC runs, and what it deliberately doesn't manage
 
-The implementation is in `src/c/core.c`, mostly in three functions: `mark_val`, `mark_body`, and `gc`. The whole collector is under 100 lines of C. The conceptual machinery, once you've seen it, is small. But several of its design choices need motivation to feel inevitable rather than arbitrary, and that's what this document tries to provide.
+The implementation is in `src/c/core.c`, mostly in three functions: `mark_value`, `mark_body`, and `gc`. The whole collector is under 100 lines of C. The conceptual machinery, once you've seen it, is small. But several of its design choices need motivation to feel inevitable rather than arbitrary, and that's what this document tries to provide.
 
 ---
 
@@ -42,7 +42,7 @@ The interpreter holds this array as a member of `Interpreter`:
 ```c
 typedef struct Interpreter {
     ...
-    Object *objects[MAX_OBJECTS];   // MAX_OBJECTS = 65536
+    Object *objects[MAX_OBJECTS];   // MAX_OBJECTS = 262144
     int n_objects;                  // highest slot used so far + 1
     ...
 } Interpreter;
@@ -55,16 +55,21 @@ typedef enum {
     OBJECT_STRING = 0,
     OBJECT_SET,
     OBJECT_ARRAY,
+    OBJECT_FRAME,
     OBJECT_MATRIX,
     OBJECT_CONTINUATION
 } ObjectKind;
 
 typedef struct {
     ObjectKind kind;
-    int len, cap;
+    int len, capacity;
     union {
         char *bytes;                    // for strings
         Val  *items;                    // for sets and arrays
+        struct {                        // for frames
+            cell *keys;                 //   symbol-pool offsets, parallel to values[]
+            Val *values;                //   the Vals at each key
+        } frame;
         struct {                        // for matrices
             int rows;
             int columns;
@@ -74,23 +79,25 @@ typedef struct {
             Val *return_slice;
             int return_len;
             int resume_ip;
+            int local_base_offset;
         } continuation;
     };
 } Object;
 ```
 
-So an `Object` has its own outer allocation (the struct, `calloc`'d in `object_new_string`, etc.) plus an inner allocation for its payload (the `bytes`, `items`, `elements`, or `return_slice`). Freeing an Object requires freeing both.
+So an `Object` has its own outer allocation (the struct, `calloc`'d in `object_new_string`, etc.) plus an inner allocation (or two, for frames) for its payload — the `bytes`, `items`, the frame's parallel `keys` and `values`, the matrix `elements`, or the continuation's `return_slice`. Freeing an Object requires freeing each piece.
 
 User code never sees an `Object*` directly. It sees a *handle* — the index into `objects[]`. Handles are wrapped in `Val`s, the interpreter's universal tagged-value type:
 
 ```c
 typedef enum {
     T_NONE = 0,
-    T_SYM,
+    T_SYMBOL,
     T_FLOAT,
     T_STRING,
     T_SET,
     T_ARRAY,
+    T_FRAME,
     T_MATRIX,
     T_XT,
     T_ADDR,
@@ -107,10 +114,10 @@ typedef struct {
 A `Val` is 16 bytes: a `Tag` and a 64-bit `data` field. The tag tells you what's in `data`:
 
 - `T_FLOAT` — `data` holds the bits of an IEEE 754 double.
-- `T_SYM` — `data` is an offset into the symbol pool (a static string area).
+- `T_SYMBOL` — `data` is an offset into the symbol pool (a static string area).
 - `T_XT` / `T_ADDR` — `data` is a position in the dictionary.
 - `T_MARK` / `T_NONE` — `data` is unused or a small integer (a mark id).
-- `T_STRING`, `T_SET`, `T_ARRAY`, `T_MATRIX`, `T_CONT` — `data` is a *handle*: an index into `objects[]`.
+- `T_STRING`, `T_SET`, `T_ARRAY`, `T_FRAME`, `T_MATRIX`, `T_CONT` — `data` is a *handle*: an index into `objects[]`.
 
 That last group is the only group the GC cares about. Everything else (floats, symbols, execution tokens, dictionary addresses, marks) is self-contained in the `Val` and doesn't refer to any heap object.
 
@@ -168,10 +175,10 @@ Look at the "scan roots" code in `gc()`:
 void gc(Interpreter *interp) {
     memset(interp->object_mark, 0, sizeof(interp->object_mark));
 
-    for (int i = 0; i < interp->dsp; i++) mark_val(interp, interp->data_stack[i]);
-    for (int i = 0; i < interp->rsp; i++) mark_val(interp, interp->return_stack[i]);
-    for (int i = 0; i < interp->side_dsp; i++) mark_val(interp, interp->side_stack[i]);
-    for (int i = 0; i < interp->n_gc_roots; i++) mark_val(interp, interp->gc_roots[i]);
+    for (int i = 0; i < interp->dsp; i++) mark_value(interp, interp->data_stack[i]);
+    for (int i = 0; i < interp->rsp; i++) mark_value(interp, interp->return_stack[i]);
+    for (int i = 0; i < interp->side_dsp; i++) mark_value(interp, interp->side_stack[i]);
+    for (int i = 0; i < interp->n_gc_roots; i++) mark_value(interp, interp->gc_roots[i]);
 
     /* ... mark dictionary bodies (see Part 6) ... */
 
@@ -185,13 +192,14 @@ The three stacks plus the `gc_roots` array — that's four of the five root sour
 
 ## Part 5: The mark phase
 
-`mark_val` is the workhorse. It takes a `Val` and, if it's a heap reference, marks its target and recurses into the target's children.
+`mark_value` is the workhorse. It takes a `Val` and, if it's a heap reference, marks its target and recurses into the target's children.
 
 ```c
-void mark_val(Interpreter *interp, Val value) {
+void mark_value(Interpreter *interp, Val value) {
     if (value.tag != T_STRING &&
             value.tag != T_SET &&
             value.tag != T_ARRAY &&
+            value.tag != T_FRAME &&
             value.tag != T_MATRIX &&
             value.tag != T_CONT) return;
 
@@ -201,10 +209,12 @@ void mark_val(Interpreter *interp, Val value) {
     interp->object_mark[handle] = 1;
     Object *obj = interp->objects[handle];
     if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
-        for (int i = 0; i < obj->len; i++) mark_val(interp, obj->items[i]);
+        for (int i = 0; i < obj->len; i++) mark_value(interp, obj->items[i]);
+    } else if (obj->kind == OBJECT_FRAME) {
+        for (int i = 0; i < obj->len; i++) mark_value(interp, obj->frame.values[i]);
     } else if (obj->kind == OBJECT_CONTINUATION) {
         for (int i = 0; i < obj->continuation.return_len; i++)
-            mark_val(interp, obj->continuation.return_slice[i]);
+            mark_value(interp, obj->continuation.return_slice[i]);
     }
 }
 ```
@@ -219,13 +229,16 @@ Read it line by line:
 
 4. **Mark it.** Set `object_mark[handle] = 1`.
 
-5. **Recurse into children, if any.** Strings and matrices don't contain Vals — their internal `bytes` and `elements` arrays are leaf data. But sets and arrays contain Vals (their items), and continuations contain Vals (the captured return-stack slice). For those, walk each child and recurse.
+5. **Recurse into children, if any.** Strings and matrices don't contain Vals — their internal `bytes` and `elements` arrays are leaf data. Sets and arrays contain Vals (their items); frames contain Vals (their `values` array, parallel to `keys`); continuations contain Vals (the captured return-stack slice). For those, walk each child and recurse.
 
-Notice what `mark_val` does *not* do:
+   Notice that for frames we walk `values[]` but not `keys[]`. The keys are `cell`s — symbol-pool offsets, plain integers — not Vals, so they don't reference any heap object and need no marking.
+
+Notice what `mark_value` does *not* do:
 
 - It doesn't unmark anything. Only the `memset` at the start of `gc()` clears the mark array.
 - It doesn't look inside strings or matrices. Those are flat numeric or byte data — no further Vals inside.
-- It doesn't traverse the `Object` struct's bookkeeping fields (`kind`, `len`, `cap`). Those aren't Vals.
+- It doesn't walk frame `keys` arrays (they're cells, not Vals).
+- It doesn't traverse the `Object` struct's bookkeeping fields (`kind`, `len`, `capacity`). Those aren't Vals.
 
 The recursion terminates because every recursive call either (a) hits a leaf object kind (string, matrix), (b) hits an already-marked object (cycle), or (c) hits a non-handle Val (float, symbol, etc.).
 
@@ -243,12 +256,12 @@ Data stack: `[T_ARRAY(1)]`.
 
 Mark phase:
 
-1. `mark_val(T_ARRAY(1))`. Mark handle 1. Recurse on its items.
-2. `mark_val(T_FLOAT(7))`. Not a heap ref. Return.
-3. `mark_val(T_ARRAY(2))`. Mark handle 2. Recurse on its items.
-4. `mark_val(T_STRING(3))` (from the inner). Mark handle 3. No children to recurse into (strings are leaves).
+1. `mark_value(T_ARRAY(1))`. Mark handle 1. Recurse on its items.
+2. `mark_value(T_FLOAT(7))`. Not a heap ref. Return.
+3. `mark_value(T_ARRAY(2))`. Mark handle 2. Recurse on its items.
+4. `mark_value(T_STRING(3))` (from the inner). Mark handle 3. No children to recurse into (strings are leaves).
 5. Back out of inner. Continue with outer's items.
-6. `mark_val(T_STRING(3))` (from the outer). Already marked at step 4. Return immediately.
+6. `mark_value(T_STRING(3))` (from the outer). Already marked at step 4. Return immediately.
 7. Done.
 
 Handles 1, 2, 3 are all marked. Sweep would free anything else.
@@ -259,7 +272,7 @@ If we'd designed the outer's first slot to hold `T_ARRAY(1)` (a self-reference),
 
 ## Part 6: The dictionary as a special root
 
-The first four roots — the three stacks plus `gc_roots` — hold `Val`s directly. Walk the array, call `mark_val` on each. Easy.
+The first four roots — the three stacks plus `gc_roots` — hold `Val`s directly. Walk the array, call `mark_value` on each. Easy.
 
 The dictionary is different. The dictionary is one giant `cell[]` array (an array of `int64_t`s, basically) holding compiled word bodies. A typical word body is a sequence of cells:
 
@@ -288,11 +301,11 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
         if (ref == (cell)interp->vocab->literal_cfa && cursor + 2 < body_end) {
             Tag tag = (Tag)interp->vocab->dict[cursor + 1];
             Val value; value.tag = tag; value.data = interp->vocab->dict[cursor + 2];
-            mark_val(interp, value);
+            mark_value(interp, value);
             cursor += 3;
         } else if (ref == (cell)interp->vocab->dostr_cfa && cursor + 1 < body_end) {
             Val value; value.tag = T_STRING; value.data = interp->vocab->dict[cursor + 1];
-            mark_val(interp, value);
+            mark_value(interp, value);
             cursor += 2;
         } else if ((ref == (cell)interp->vocab->branch_cfa
                     || ref == (cell)interp->vocab->zbranch_cfa) && cursor + 1 < body_end) {
@@ -320,7 +333,7 @@ Walk the body cell by cell. For each cell:
 
 The crucial property: each branch must correctly identify how many cells the op consumes. If the GC miscounts, it could (a) walk past the end of the body, or (b) mistake an operand cell for a CFA on the next iteration and try to read it as a Val. Either is a corruption bug.
 
-This is also why each new compiler-emitted op with inline operands has to be registered here. When word-local variable ops were added (`(enter-locals)`, `(local@)`, etc.), `mark_body` had to learn their shapes. If you ever add a new op with inline operands, this is the first place to update.
+This is also why each new compiler-emitted op with inline operands has to be registered here. When word-local variable ops were added (`(enter-locals)`, `(local@)`, etc.), `mark_body` had to learn how many operand cells each consumes. If you ever add a new op with inline operands, this is the first place to update.
 
 ### How does GC find each word's body range?
 
@@ -340,7 +353,7 @@ for (int i = 0; i < num_cfas; i++) {
         Val value;
         value.tag = (Tag)interp->vocab->dict[body_start];
         value.data = interp->vocab->dict[body_start + 1];
-        mark_val(interp, value);
+        mark_value(interp, value);
     }
 }
 ```
@@ -429,7 +442,7 @@ void gc_root_pop(Interpreter *interp) {
 And in the GC's root-scan code:
 
 ```c
-for (int i = 0; i < interp->n_gc_roots; i++) mark_val(interp, interp->gc_roots[i]);
+for (int i = 0; i < interp->n_gc_roots; i++) mark_value(interp, interp->gc_roots[i]);
 ```
 
 The fix in `p_map`:
@@ -457,7 +470,7 @@ You'll find `gc_root_push` / `gc_root_pop` calls in:
 - `p_map`, `p_mapn`, `p_filter` — building a result array while the user's xt can allocate.
 - `p_load`, `p_save`, `p_save_image`, `p_load_image` — the filename string is held in a local Val while file I/O runs.
 
-Each is the same shape: we have a Val that hasn't reached a stack yet, and we're about to do something that might allocate. Push it to `gc_roots`; do the work; pop.
+Each follows the same pattern: a C primitive holds a Val that hasn't reached a stack yet, and it's about to do something that might allocate. Push it to `gc_roots`; do the work; pop.
 
 ### Why the array is small (and what it costs)
 
@@ -520,6 +533,7 @@ for (int handle = 0; handle < interp->n_objects; handle++) {
         case OBJECT_STRING:       free(obj->bytes); break;
         case OBJECT_SET:
         case OBJECT_ARRAY:        free(obj->items); break;
+        case OBJECT_FRAME:        free(obj->frame.keys); free(obj->frame.values); break;
         case OBJECT_MATRIX:       free(obj->matrix.elements); break;
         case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
     }
@@ -528,7 +542,7 @@ for (int handle = 0; handle < interp->n_objects; handle++) {
 }
 ```
 
-Walk every slot from 0 to `n_objects`. If the slot's already `NULL` (already free), skip. If it's marked (still live), skip. Otherwise free the object: first the kind-specific payload (the bytes, items, elements, or return_slice — whichever applies), then the outer Object struct itself. Null out the slot so it can be reused.
+Walk every slot from 0 to `n_objects`. If the slot's already `NULL` (already free), skip. If it's marked (still live), skip. Otherwise free the object: first the kind-specific payload (the bytes, items, frame keys *and* values, matrix elements, or continuation return_slice — whichever applies), then the outer Object struct itself. Null out the slot so it can be reused. Frames are the only kind with two inner allocations to free.
 
 The next mark cycle starts with `memset(object_mark, 0, ...)`, clearing every survivor's mark bit. They'll be re-marked on the next collection if still reachable.
 
@@ -572,7 +586,7 @@ Three cases:
 
 2. **High water hit, but holes exist.** Linear scan finds a `NULL` slot, reuses it.
 
-3. **No holes either.** Run GC. Scan again for `NULL`. If still nothing, the program is hopelessly stuck holding `MAX_OBJECTS = 65536` live references at once.
+3. **No holes either.** Run GC. Scan again for `NULL`. If still nothing, the program is hopelessly stuck holding `MAX_OBJECTS = 262144` live references at once.
 
 The user can also call GC manually with the `gc` Forth word, which just delegates to the C `gc(interp)` function. This is useful for measuring memory use or for debugging — most user programs never need to.
 
@@ -585,7 +599,7 @@ A more aggressive collector would run periodically: every N allocations, every M
 - **Allocation-count-based**: a counter, fire every N. Reasonable.
 - **On-demand (logicforth's choice)**: zero overhead when not collecting; one large pause when it does.
 
-For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it can take a while — but at the scale of `MAX_OBJECTS = 65536`, "a while" is still well under a millisecond on modern hardware.
+For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it can take a while — but at the scale of `MAX_OBJECTS = 262144`, "a while" is still well under a millisecond on modern hardware.
 
 ---
 
@@ -709,7 +723,7 @@ The details that make it work:
 
 - A small set of roots that captures everything: three stacks, the dictionary, and a temporary-roots array for C-level in-flight Vals.
 - A type-aware mark function that descends into composite Vals (sets, arrays, continuations) and respects already-visited marks (so cycles terminate).
-- A dictionary walker that knows the shape of compiled code well enough to find literals and variable values, and to skip operand cells without misreading them.
+- A dictionary walker that knows the layout of compiled code well enough to find literals and variable values, and to skip operand cells without misreading them.
 - A sweep that frees the right inner allocation per object kind, then the outer struct.
 - A lazy trigger: GC fires only when out of slots, keeping steady-state allocation O(1).
 
@@ -720,13 +734,13 @@ The total size of the GC implementation is under 100 lines. It's a small piece o
 ## Where to look in the source
 
 - **`gc()`** in `src/c/core.c` — the entry point. Reads short.
-- **`mark_val()`** — the recursive marker. The Val tag filter and the mark-bit termination check are the load-bearing pieces.
-- **`mark_body()`** — the dictionary walker. The structure of each branch reflects the shape of compiled code.
+- **`mark_value()`** — the recursive marker. The Val tag filter and the mark-bit termination check are the load-bearing pieces.
+- **`mark_body()`** — the dictionary walker. Each branch in it corresponds to one op-layout in compiled code.
 - **`object_alloc_slot()`** — the only place GC is triggered automatically.
 - **`gc_root_push()` / `gc_root_pop()`** — the in-flight root API. `grep -n gc_root_ src/c/*.c` shows every caller.
 - **The `Object` struct in `src/c/logicforth.h`** — the per-object layout the sweep dispatches on.
 
 For broader context:
 
-- **`docs/continuations.md`** — the same kind of pedagogical primer for the continuation machinery, which the GC interoperates with (continuations are heap-allocated Objects whose `return_slice` is walked by `mark_val`).
-- **`PLAN.md`** — pending work. If you add a new heap-allocated type (a dictionary/hashmap, for instance), the changes you'd make for GC are: add a new `OBJECT_*` enum, add a `mark_val` case if it can contain Vals, and add a sweep case to free its payload.
+- **`docs/continuations.md`** — the same kind of pedagogical primer for the continuation machinery, which the GC interoperates with (continuations are heap-allocated Objects whose `return_slice` is walked by `mark_value`).
+- **`PLAN.md`** — pending work. If you add a new heap-allocated type (a dictionary/hashmap, for instance), the changes you'd make for GC are: add a new `OBJECT_*` enum, add a `mark_value` case if it can contain Vals, and add a sweep case to free its payload.
