@@ -1,62 +1,82 @@
 # Threaded Code in logicforth
 
-This document is a primer on how logicforth dispatches one virtual operation
-to the next — the inner loop that sits at the heart of every interpreter and
-that, in this one, accounts for most of the CPU time. By the end you should
-understand:
+This document is a primer on how interpreters for threaded-code languages
+organize their inner dispatch loop, with logicforth as the worked example.
+By the end you should understand:
 
-- What "threaded code" means, why it has nothing to do with concurrency, and
-  where it sits between an AST walker and a JIT compiler
-- How indirect threading (ITC) works in the abstract, and exactly how
-  logicforth implements it today
-- How direct threading (DTC) works in the abstract, and exactly what
-  logicforth will look like once we make the switch
-- The design wrinkle DTC forces on colon-def and variable references
-  (two-cell call sites) and why it falls out cleanly
-- Everything DTC will touch outside the dispatch loop itself — the GC's
-  dictionary walk, the image save/load format, the trampoline `execute_cfa`
-  uses to call docol-handled words from C
+- What "threaded code" means, why it has nothing to do with concurrency,
+  and where it sits between an AST walker and a JIT compiler
+- How *indirect threading* works in general terms, and how logicforth
+  implements it
+- How *direct threading* works in general terms, and what logicforth's
+  implementation would look like if it adopted it instead
+- What the difference costs at runtime, and what it implies for the
+  surrounding interpreter — the compiler that emits compiled code, the
+  GC's walk over compiled bodies, the image save/load format, the
+  trampoline `execute_cfa` uses to call colon-def words from C
 
-The current implementation lives in `src/c/core.c` (look for `run_inner`,
-`execute_cfa`, `docol`, `dovar`, `dosym`, and `mark_body`) and the per-call
-emission code in `run_outer`. The change is mechanically small — a few
-hundred lines across those surfaces — but conceptually it shifts how every
-compiled word body is encoded, so a careful walk through the model is worth
-the time before any code moves.
+logicforth's current implementation lives in `src/c/core.c` (look for
+`run_inner`, `execute_cfa`, `docol`, `dovar`, `dosym`, and `mark_body`)
+and the per-call emission code in `run_outer`. The differences between
+the two organizations are mechanically small but conceptually shift how
+every compiled word body is encoded, so a careful walk through the model
+is worth the time.
 
 ---
 
-## Part 1: Why dispatch is the hot loop
+## Part 1: The inner loop
 
-Every interpreter has an inner loop. It reads "the next thing to do," figures
-out what code implements that thing, and runs it. Then it does the same
-again. That loop runs once per virtual operation — which, in a program doing
-real work, is many billions of times.
+Take a simple Forth-style program: `1 2 3 4 + + +`. It pushes four
+numbers, applies `+` three times, and leaves their sum on the stack.
 
-When we profiled `bench/profile.l4` (200 iterations of the synthetic
-benchmark, ~12 000 samples at 1 ms via `sample`), the number that came back
-was stark:
+Inside the interpreter, this program is a sequence of seven virtual
+operations: push 1, push 2, push 3, push 4, add, add, add. To run the
+program, the interpreter executes them in order. For each one, it
+figures out which piece of C code implements that operation, then runs
+that code.
 
-> ~74% of CPU is in the dispatch loop body inlined into `execute_cfa`.
+That requires a small loop:
 
-Three-quarters of the program's wall time isn't doing arithmetic, isn't
-walking arrays, isn't allocating frames. It's reading the next op and
-deciding what handler to call. That is — by a wide margin — the largest
-thing in the system. Any improvement that shortens the per-iteration work of
-that loop is amortized across every virtual op the interpreter ever runs.
+```c
+while (running) {
+    /* fetch the next operation */
+    /* find the C function that implements it */
+    /* call the function */
+}
+```
 
-For comparison, native-compiled C on the same machine runs roughly 10× faster
-than CPython on the same kind of workload. Most of that gap is dispatch
-overhead: a native loop has no dispatcher, it just runs CPU instructions.
-The dispatcher *is* the interpretation tax, and the question of "what shape
-should that loop have" is the question of how much tax we pay per op.
+The loop runs once per virtual operation. In a program of any size —
+a few hundred iterations of an inner Forth loop, millions of iterations
+across a benchmark — the loop iterates many millions or billions of
+times. Whatever happens inside it is on the critical path of every
+program the interpreter ever runs.
 
-That shape is what "threaded code" names. Different shapes pay different
-amounts of tax. The model logicforth uses today (*indirect* threading)
-costs two memory reads per dispatched op. The model we're moving to
-(*direct* threading) costs one. On a loop that runs hundreds of millions of
-times per benchmark, halving the read count is meaningful — the literature
-says 10-15%, which lines up with the 74% slice we're attacking.
+How that loop is organized — what it fetches per iteration, what it
+dereferences before knowing the handler, what call mechanism it uses to
+invoke that handler — determines the per-operation overhead of the
+whole language. A loop that does two memory loads per iteration pays
+twice the load cost of one that does a single load. A loop that calls
+through a function pointer pays the indirect-call cost. Each choice is
+small in isolation and significant in aggregate, because of the
+multiplier.
+
+The cost is also bounded below by something. Even with the best
+possible organization of the loop, each virtual operation has to be
+fetched, dispatched, and have its handler invoked. The handler itself
+then does the actual work — popping operands, computing, pushing
+results. The handler's work is unavoidable. What's avoidable, or at
+least minimizable, is the cost of getting from "next instruction in
+the compiled stream" to "the first machine instruction of the handler
+that runs it." That cost is what threaded-code organizations differ
+on.
+
+This document is about two of the most common organizations:
+*indirect threading* and *direct threading*. They differ in how each
+virtual operation in the compiled stream resolves to the C function
+that implements it, and the difference appears directly in the
+per-iteration work the loop does. The exposition walks through each
+in general terms, then shows what each looks like — or would look
+like — inside logicforth.
 
 ---
 
