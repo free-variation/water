@@ -231,25 +231,26 @@ function I'm about to call."
 Why this design? Two practical reasons that mattered enormously when ITC
 was invented and still matter some today:
 
-- **Different word kinds, same body shape.** In Forth, a colon-defined
-  word and a variable are very different things — one has a body to walk,
-  the other is a memory cell whose contents you push. But from the
-  *caller's* point of view, both look identical: emit one token referring
-  to the target. The handler at the code field disambiguates: colon-defs
-  have `docol` as their handler, variables have `dovar`, symbols have
-  `dosym`. The body cells of the caller don't care which.
+- **Different word kinds, identical caller view.** In Forth, a
+  colon-defined word and a variable are different things — one has a
+  body to walk, the other is a memory cell whose contents you push.
+  But from the caller's side, both look identical: emit one token
+  referring to the target. The handler at the code field
+  disambiguates: colon-defs have `docol` as their handler, variables
+  have `dovar`, symbols have `dosym`. The body cells of the caller
+  don't care which kind they reference.
 
 - **Stable cross-process identifiers.** A token can be a small integer
   index, not a memory pointer. Indices don't change when the program is
   saved to disk and loaded later (ASLR randomizes pointers, but indices
-  into a stable array are reproducible). Image save/load is trivial — just
-  dump the cells; on load, the same indices still resolve to the same code
-  fields.
+  into a stable array are reproducible). Image save/load is trivial —
+  dump the cells verbatim; on load, the same indices still resolve to
+  the same code fields.
 
-Both of these matter to logicforth. The first is the reason `: foo bar ;`
-and `variable foo` can coexist in the same vocabulary with the same
-calling convention. The second is the reason `save-image` works as a flat
-copy of the dictionary today.
+Both properties pay off in practice. The first lets `: foo bar ;` and
+`variable foo` coexist in the same vocabulary with a single calling
+convention. The second lets a binary image be a flat copy of the
+dictionary.
 
 The cost is the second read. Every dispatched op pays for it.
 
@@ -282,10 +283,15 @@ That's the entire change in one sentence: replace the index that points at
 a code-field cell with the function pointer that the code-field cell holds.
 
 The benefit is immediate: one less memory load per dispatched op. On a
-loop where 74% of CPU is the dispatch step, removing half the loads from
-that step is the largest single available win.
+dispatch-bound workload — one where the interpreter spends most of its
+time fetching ops and invoking handlers rather than inside long-running
+handler bodies — removing a memory load from each iteration of the loop
+produces a meaningful wall-time win. The literature on threaded-code
+interpreters generally puts it at 10-15% for the change from ITC to
+DTC, with the actual fraction depending on how compute-heavy the
+individual handlers are.
 
-The cost is in three places, all of them manageable:
+The cost shows up in three places:
 
 1. **Body cells now contain absolute function pointers.** Pointers aren't
    stable across runs — every process has a different base address for its
@@ -306,9 +312,8 @@ The cost is in three places, all of them manageable:
    "compare against handler-pointer." Mechanical update, several places.
 
 The change is small in lines of code and large in mental model: every
-compiled body is now a stream of native function pointers, not a stream of
-indices. The next several parts walk through how this lands in
-logicforth specifically.
+compiled body becomes a stream of native function pointers rather than
+a stream of indices.
 
 ---
 
@@ -317,16 +322,15 @@ logicforth specifically.
 It would be easy to read the above and conclude that ITC is a relic — a
 1960s design that survives only by inertia. That's not quite right. ITC's
 extra indirection bought real things, and it's worth being explicit about
-what we're giving up by moving to DTC.
+what an interpreter gives up by adopting DTC instead.
 
-- **Code-field uniformity at the call site.** In ITC, every body cell is
-  the same shape: one token. Whether the target is a primitive, a colon
-  def, a variable, or a symbol, the body cell looks identical. DTC breaks
-  this — primitive references are one cell, but colon-def/variable/symbol
-  references need two (handler pointer + target identity). Bodies become
-  shape-heterogeneous. Compilers and inspectors have to know per-op shape.
-  (Today's `mark_body` already does this for `(literal)` and `(branch)`
-  and the locals ops, so it's not a new burden — just an expanded one.)
+- **Uniform body cells at the call site.** In ITC, every body cell is a
+  single token. Whether the target is a primitive, a colon def, a
+  variable, or a symbol, the body cell looks identical. DTC breaks
+  this — primitive references take one cell, but colon-def, variable,
+  and symbol references take two (handler pointer plus target
+  identity). Compiled bodies become heterogeneous; the compiler and
+  every inspector have to know the cell-layout of each operation.
 
 - **Image portability.** ITC tokens are stable across runs; pointers
   aren't. Today, `save-image` dumps the dict cells raw and the loader
@@ -359,13 +363,16 @@ what we're giving up by moving to DTC.
   lookup is straightforward but slower than reverse-lookup-by-index, and
   needs to walk the dictionary chain.)
 
-So ITC's advantages are real. DTC's only advantage is speed — but on a
-profile where 74% of CPU sits in the dispatch loop, that advantage is
-decisive. The benefits ITC bought are either (a) no longer urgent in
-2026 (cross-platform compactness) or (b) still achievable with a small
-amount of additional machinery (image format, GC dictionary walk). The
-benefit we'd gain — measurable wall-time speedup, plus the foundation for
-further dispatch optimizations like computed-goto — outweighs them.
+So ITC's advantages are real. DTC's single advantage is speed — but on
+an interpreter where dispatch is a large fraction of total CPU, that
+advantage is what tips the design choice. The benefits ITC bought are
+either (a) no longer urgent in 2026 (cross-platform compactness, banked
+memory) or (b) still achievable with a small amount of additional
+machinery (the image format gains a translation step, the GC's
+dictionary walk gains a few more cases). The DTC benefit — a measurable
+wall-time speedup, plus the structural prerequisite for further
+dispatch optimizations like computed-goto — outweighs them for a
+modern 64-bit target.
 
 This is the design tradeoff we're making. It's worth naming it
 explicitly so the next person to read this code understands that ITC
@@ -531,7 +538,8 @@ void run_inner(Interpreter *interp) {
 }
 ```
 
-Read it carefully — this is the loop that took 74% of CPU.
+Read it carefully — this loop runs once per virtual operation across
+every program logicforth ever executes.
 
 1. **First read:** `dict[ip++]` fetches the next body cell at the
    instruction pointer, then advances `ip`. The body cell holds a CFA — a
@@ -676,7 +684,7 @@ reserved dictionary space (`DICT_RESERVED = 2`), constant overhead.
 
 ---
 
-## Part 9: Body shapes for every word kind
+## Part 9: Body layout for every word kind
 
 Now we have the dispatcher and the per-kind handlers. To finish the
 picture of ITC in logicforth, we need to enumerate exactly what shows up
@@ -696,10 +704,10 @@ Example: `+` in a body emits one cell, `cfa_of_+`.
 ### Colon-def references
 
 A body cell referencing a colon-defined word is one cell: that word's
-CFA. Identical shape to a primitive reference at the call site — the
-distinction is in the handler. The dispatcher reads the CFA, dereferences
-it, finds `docol`, calls it. docol then begins walking the target's
-body.
+CFA. Identical to a primitive reference at the call site — the
+distinction is in the handler. The dispatcher reads the CFA,
+dereferences it, finds `docol`, calls it. docol then begins walking
+the target's body.
 
 Example: `square` in a body emits one cell, `cfa_of_square`.
 
@@ -710,9 +718,9 @@ CFA. The dispatcher reads it, dereferences to get `dovar`, calls
 `dovar`, which reads the variable's tag and data from cells past the
 CFA and pushes the corresponding Val.
 
-Example: `count` (referring to a variable named `count`) in a body emits
-one cell, `cfa_of_count`. Same shape as a primitive or colon reference;
-again the handler differentiates.
+Example: `count` (referring to a variable named `count`) in a body
+emits one cell, `cfa_of_count`. Identical at the call site to a
+primitive or colon reference; again the handler differentiates.
 
 ### Symbol references
 
@@ -799,10 +807,10 @@ So body cells fall into three buckets:
    another dispatch cell, but worth naming because every body ends with
    one.
 
-This three-bucket structure is what the GC's `mark_body` walks (it must
-know how many operand cells follow each dispatch cell, to avoid reading
-operands as dispatch tokens) and what the image-save format encodes (the
-encoding shape depends on the bucket).
+This three-bucket structure is what the GC's `mark_body` walks (it
+must know how many operand cells follow each dispatch cell, to avoid
+reading an operand as a dispatch token) and what the image-save format
+encodes (each bucket gets encoded differently).
 
 ---
 
@@ -956,7 +964,7 @@ void dosym(Interpreter *interp, cell *next) {
 }
 ```
 
-Same shape. Read operand, advance, fetch from CFA-relative offset, push.
+Same pattern. Read operand, advance, fetch from CFA-relative offset, push.
 
 ### `emit_call`
 
@@ -995,7 +1003,7 @@ it's just the next cell.
 
 The dispatcher stays dumb. It dispatches one handler per loop iteration
 and passes it the address of the cell that follows. Each handler knows
-its own operand shape and consumes the operands it needs by advancing
+its own operand layout and consumes the operands it needs by advancing
 `ip` itself.
 
 The only asymmetry in the new emission code is: which handlers expect a
@@ -1415,7 +1423,7 @@ For each body cell, classify it as either:
 - **Operand cell**: encode as `(OPERAND_TAG, raw_value)` — written
   verbatim, no resolution needed.
 
-The classification uses the same per-op shape table `mark_body` uses.
+The classification uses the same per-op layout table `mark_body` uses.
 For each known op, after writing the dispatch cell with `HANDLER_TAG`,
 write the following N operand cells with `OPERAND_TAG`. Then advance to
 the next op.
@@ -1444,24 +1452,30 @@ files in the new binary, then `save-image` again).
 
 ## Part 15: Expected performance impact
 
-Direct projections from the profile data:
+Rough projections by phase of `bench/synth.l4`. Per-phase numbers are
+informed by where each phase spends its time — phases dominated by
+tight inner loops of cheap virtual ops see the biggest gain; phases
+that spend most of their time inside a single coarse C kernel (such as
+DGEMM in phase 3) see essentially none.
 
-- **Phase 1** (hand-rolled `begin/until` loop): currently 47 ms. ~74% of
-  CPU is in the dispatch loop; halving the read count in that loop
-  should land roughly a 10-15% wall-time improvement, so 40-42 ms.
+- **Phase 1** (hand-rolled `begin/until` loop): currently 47 ms. Tight
+  inner loop of cheap primitives (locals, arithmetic, comparison,
+  branch). Removing one memory load per dispatch should produce a
+  10-15% wall-time improvement, so 40-42 ms.
 - **Phase 5** (`map` + `reduce` over a range): currently 21 ms; expect
-  18 ms. Same dispatch-bound profile.
-- **Phase 2** (`range → map → filter → reduce`): currently 17 ms; expect
-  15 ms. Similar.
-- **Phase 4** (frame build + walk): currently 6 ms; expect 5 ms. Dispatch
-  is a smaller fraction here because frame ops do more work per dispatch.
-- **Phase 6** (deep nested frames): currently 9 ms; expect 8 ms.
-- **Phase 3** (DGEMM): currently 0.12 ms. *Unaffected* — DGEMM is a
-  single C-kernel call, no dispatch loop involvement.
+  ~18 ms. Same dispatch-bound profile.
+- **Phase 2** (`range → map → filter → reduce`): currently 17 ms;
+  expect ~15 ms. Similar.
+- **Phase 4** (frame build + walk): currently 6 ms; expect ~5 ms.
+  Smaller win because frame ops do more compute per dispatch.
+- **Phase 6** (deep nested frames): currently 9 ms; expect ~8 ms.
+- **Phase 3** (DGEMM): currently 0.12 ms. **Unaffected** — DGEMM is a
+  single C-kernel call; the dispatch loop runs once for the entire
+  matmul.
 
-Total benchmark time projected: from ~99 ms to ~87 ms (~12% wall-time
-improvement). The bulk of the gain is in phases that spend most of their
-time dispatching virtual ops.
+Total benchmark time: from ~99 ms to ~87 ms, roughly 12% off. The
+gain concentrates in phases that spend most of their time dispatching
+virtual ops; phases dominated by handler-body compute see less.
 
 There's a secondary benefit not captured in the read-count analysis:
 branch prediction. The indirect call in the dispatch loop has a single
@@ -1563,16 +1577,16 @@ The details that make it work:
   can invoke docol-handled words from C.
 
 - Mechanical updates to `mark_body` and the image format to know about
-  three new operand-bearing op shapes and to translate handler pointers
-  through a stable handler-id table.
+  three new operand-bearing op variants and to translate handler
+  pointers through a stable handler-id table.
 
 - A version bump on the image file format.
 
 Total size of the change: a few hundred lines across the dispatch path,
 the compiler, the GC body walker, and the image format. The conceptual
 shift is "every body cell that today is an index becomes the value it
-indexed." Once that lands, the next idea (computed-goto) becomes
-addressable.
+indexed." With that in place, computed-goto becomes addressable as
+the next dispatch-level optimization.
 
 ---
 
@@ -1597,7 +1611,7 @@ Indirect-threaded (current):
   `dict[ip++]` in the handler is the pattern other operand-bearing ops
   (branches, locals, `dostr`, `to-var`) all follow.
 - **`mark_body`** in `src/c/core.c` — the dictionary walker. The per-op
-  branches encode the same body-shape knowledge that DTC needs in
+  branches encode the same body-layout knowledge that DTC needs in
   `emit_call` and the image format.
 - **`p_save_image` / `p_load_image`** in `src/c/core.c` — the current
   image format. The `HANDLER_DOCOL` / `HANDLER_DOVAR` / `HANDLER_DOSYM`
@@ -1619,10 +1633,10 @@ Direct-threaded (planned):
 For broader context:
 
 - **`docs/gc.md`** — the GC primer. The `mark_body` walker that DTC
-  also needs to update is documented there with the per-op branches that
-  inform the DTC body-shape table.
+  also needs to update is documented there with the per-op branches
+  that inform the DTC body-layout table.
 - **`docs/continuations.md`** — the continuation primer. The dispatch
   loop's relationship to `run_inner`, `execute_cfa`, and the trampoline
   is covered there in the context of continuation capture; DTC's
-  modifications preserve the same shape, just with one fewer read per
-  dispatched op.
+  modifications preserve the same overall structure, just with one
+  fewer read per dispatched op.
