@@ -186,6 +186,7 @@ typedef struct Vocabulary {
 
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
 	int enter_locals_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
+	int local_fetch_0depth_cfa, local_store_0depth_cfa;
 
 	int init_here, init_latest_cfa, init_names_here;
 	int init_source_here, init_symbol_pool_here;
@@ -435,6 +436,8 @@ void p_enter_locals(Interpreter *interp, cell *cfa);
 void p_leave_locals(Interpreter *interp, cell *cfa);
 void p_local_fetch(Interpreter *interp, cell *cfa);
 void p_local_store(Interpreter *interp, cell *cfa);
+void p_local_fetch_0depth(Interpreter *interp, cell *cfa);
+void p_local_store_0depth(Interpreter *interp, cell *cfa);
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
 double scalar_add(double a, double b);
@@ -639,7 +642,7 @@ Val frame_walk(Interpreter *interp, Val node, Object *path,
 		if (node.tag != T_FRAME) {
 			if (found) *found = 0;
 			if (mode != WALK_PROBE)
-				fail(interp, "%s : cannot descend into %s", op, tag_name(node.tag));
+				fail(interp, "%s: cannot descend into %s", op, tag_name(node.tag));
 			return node;
 		}
 
@@ -655,7 +658,7 @@ Val frame_walk(Interpreter *interp, Val node, Object *path,
 		} else {
 			if (found) *found = 0;
 			if (mode != WALK_PROBE)
-				fail(interp, "%s : no key :%s", op, &interp->vocab->symbol_pool[key]);
+				fail(interp, "%s: no key :%s", op, &interp->vocab->symbol_pool[key]);
 			return node;
 		}
 	}

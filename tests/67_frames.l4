@@ -21,6 +21,18 @@
 \ @ : missing key errors
 { :a 1 } [ :z ] @ . cr
 
+\ @ : symbol form takes the single-key fast path
+{ :a 5 } :a @ . cr
+
+\ @ : dynamic symbol via string>symbol
+{ :k 42 } "k" string>symbol @ . cr
+
+\ @ : symbol form missing key errors
+{ :a 1 } :z @ . cr
+
+\ @ : non-symbol non-array key errors
+{ :a 1 } 42 @ . cr
+
 \ compact single-line form when embedded in an array
 [ { :a 1 } ] . cr
 
@@ -48,6 +60,21 @@
 
 \ ! : empty path errors
 { :a 1 } [ ] 5 ! . cr
+
+\ ! : symbol form overwrites
+{ :a 1 } :a 99 ! . cr
+
+\ ! : symbol form inserts a new key
+{ } :a 5 ! . cr
+
+\ ! : symbol form chains
+{ } :a 1 ! :b 2 ! . cr
+
+\ ! : dynamic symbol via string>symbol
+{ :k 0 } "k" string>symbol 7 ! . cr
+
+\ ! : non-symbol non-array key errors
+{ } 42 5 ! . cr
 
 \ keys : top-level keys as an array (sorted by symbol-id)
 { :b 2 :a 1 } keys . cr
@@ -89,6 +116,18 @@
 \ delete-at : empty path errors
 { :a 1 } [ ] delete-at . cr
 
+\ delete-at : symbol form
+{ :a 1 :b 2 } :a delete-at . cr
+
+\ delete-at : dynamic symbol
+{ :a 1 } "a" string>symbol delete-at . cr
+
+\ delete-at : symbol form, missing key errors
+{ :a 1 } :z delete-at . cr
+
+\ delete-at : non-symbol non-array key errors
+{ :a 1 } 42 delete-at . cr
+
 \ has? : present nested path is true
 { :a { :b 1 } } [ :a :b ] has? . cr
 
@@ -100,6 +139,18 @@
 
 \ has? : consumes frame and path, leaves only the bool
 { :a 1 } [ :a ] has? . cr
+
+\ has? : symbol form, present
+{ :a 1 } :a has? . cr
+
+\ has? : symbol form, absent
+{ :a 1 } :b has? . cr
+
+\ has? : dynamic symbol
+{ :k 7 } "k" string>symbol has? . cr
+
+\ has? : non-symbol non-array key errors
+{ } 5 has? . cr
 
 \ update-at : apply a quotation to a leaf, leaves the frame
 { :n 5 } [ :n ] [: 1 + :] update-at . cr
@@ -118,6 +169,21 @@
 
 \ update-at : empty path errors
 { :n 5 } [ ] [: 1 + :] update-at . cr
+
+\ update-at : symbol form
+{ :a 5 } :a [: 1+ :] update-at . cr
+
+\ update-at : chained symbol form
+{ :a 1 :b 2 } :a [: 1+ :] update-at :b [: 1- :] update-at . cr
+
+\ update-at : dynamic symbol
+{ :k 0 } "k" string>symbol [: 42 + :] update-at . cr
+
+\ update-at : symbol form, missing key
+{ :a 1 } :z [: drop 0 :] update-at . cr
+
+\ update-at : non-symbol non-array key errors
+{ :a 1 } 42 [: drop 0 :] update-at . cr
 
 \ merge : combine two frames, right wins on conflicts
 { :a 1 :b 2 } { :b 3 :c 4 } merge . cr

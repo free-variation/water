@@ -782,9 +782,14 @@ void p_to(Interpreter *interp, cell *cfa) {
 	if (interp->compiling) {
 		int local_depth, local_slot_idx;
 		if (find_local(interp, token, &local_depth, &local_slot_idx)) {
-			emit_call(interp, interp->vocab->local_store_cfa);
-			emit(interp, (cell)local_depth);
-			emit(interp, (cell)local_slot_idx);
+			if (local_depth == 0) {
+				emit_call(interp, interp->vocab->local_store_0depth_cfa);
+				emit(interp, (cell)local_slot_idx);
+			} else {
+				emit_call(interp, interp->vocab->local_store_cfa);
+				emit(interp, (cell)local_depth);
+				emit(interp, (cell)local_slot_idx);
+			}
 			return;
 		}
 	}

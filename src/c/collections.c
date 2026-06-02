@@ -377,7 +377,7 @@ void p_to_frame(Interpreter *interp, cell *cfa) {
 
 static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 	if (path_val.tag != T_ARRAY) {
-		fail(interp, "%s : expected a path (array of symbols), got %s", op, tag_name(path_val.tag));
+		fail(interp, "%s: expected a path (array of symbols), got %s", op, tag_name(path_val.tag));
 		return NULL;
 	}
 	
@@ -404,50 +404,93 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 
 #define REQUIRE_NONEMPTY_PATH(path, op) \
 	if ((path)->len == 0) { \
-		fail(interp, "%s : empty path", (op)); \
+		fail(interp, "%s: empty path", (op)); \
 		return; \
 	}
+
+#define DISPATCH_SYMBOL_OR_PATH(key_or_path, op, symbol_body, path_body) \
+	do { \
+		if ((key_or_path).tag == T_SYMBOL) { \
+			symbol_body; \
+		} else if ((key_or_path).tag == T_ARRAY) { \
+			Object *path = frame_path(interp, (key_or_path), (op)); \
+			if (!path) return; \
+			path_body; \
+		} else { \
+			fail(interp, "%s: expected a symbol or path (array of symbols), got %s", \
+			     (op), tag_name((key_or_path).tag)); \
+			return; \
+		} \
+	} while (0)
 
 void p_frame_get(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_FRAME_PATH(frame, path, "@");
+	PEEK_TYPE_AT(frame_val, 1, "@", T_FRAME);
+	PEEK_AT(key_or_path, 0, "@");
+	Object *frame = interp->objects[frame_val.data];
 
-	Val result = frame_walk(interp, frame, path, path->len, WALK_ERROR, NULL, "@");
-	if (interp->error_flag) return;
-
-	interp->dsp -= 2;
-	push(interp, result);
+	DISPATCH_SYMBOL_OR_PATH(key_or_path, "@", {
+		FRAME_LOOKUP(frame, key_or_path.data, at, present);
+		if (!present) {
+			fail(interp, "@: no key :%s", &interp->vocab->symbol_pool[key_or_path.data]);
+			return;
+		}
+		Val result = frame->frame.values[at];
+		interp->dsp -= 2;
+		push(interp, result);
+	}, {
+		Val result = frame_walk(interp, frame_val, path, path->len, WALK_ERROR, NULL, "@");
+		if (interp->error_flag) return;
+		interp->dsp -= 2;
+		push(interp, result);
+	});
 }
 
 void p_frame_set(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_FRAME_PATH_VALUE(frame, path, value, "!");
-	REQUIRE_NONEMPTY_PATH(path, "!");
+	PEEK_TYPE_AT(frame_val, 2, "!", T_FRAME);
+	PEEK_AT(key_or_path, 1, "!");
+	PEEK_AT(value, 0, "!");
+	Object *frame = interp->objects[frame_val.data];
 
-	Val parent = frame_walk(interp, frame, path, path->len - 1, WALK_VIVIFY, NULL, "!");
-	if (interp->error_flag) return;
-
-	frame_put(interp->objects[parent.data], path->items[path->len - 1].data, value);
-	interp->dsp -= 2;
+	DISPATCH_SYMBOL_OR_PATH(key_or_path, "!", {
+		frame_put(frame, key_or_path.data, value);
+		interp->dsp -= 2;
+	}, {
+		REQUIRE_NONEMPTY_PATH(path, "!");
+		Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_VIVIFY, NULL, "!");
+		if (interp->error_flag) return;
+		frame_put(interp->objects[parent.data], path->items[path->len - 1].data, value);
+		interp->dsp -= 2;
+	});
 }
 
 void p_frame_delete_at(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_FRAME_PATH(frame, path, "delete-at");
-	REQUIRE_NONEMPTY_PATH(path, "delete-at");
+	PEEK_TYPE_AT(frame_val, 1, "delete-at", T_FRAME);
+	PEEK_AT(key_or_path, 0, "delete-at");
+	Object *frame = interp->objects[frame_val.data];
 
-	Val parent = frame_walk(interp, frame, path, path->len - 1, WALK_ERROR, NULL, "delete-at");
-	if (interp->error_flag) return;
-
-	cell leaf = path->items[path->len - 1].data;
-	if (parent.tag != T_FRAME || !frame_delete(interp->objects[parent.data], leaf)) {
-		fail(interp, "delete-at : no key :%s", &interp->vocab->symbol_pool[leaf]);
-		return;
-	}
-	interp->dsp--;
+	DISPATCH_SYMBOL_OR_PATH(key_or_path, "delete-at", {
+		if (!frame_delete(frame, key_or_path.data)) {
+			fail(interp, "delete-at: no key :%s", &interp->vocab->symbol_pool[key_or_path.data]);
+			return;
+		}
+		interp->dsp--;
+	}, {
+		REQUIRE_NONEMPTY_PATH(path, "delete-at");
+		Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_ERROR, NULL, "delete-at");
+		if (interp->error_flag) return;
+		cell leaf = path->items[path->len - 1].data;
+		if (parent.tag != T_FRAME || !frame_delete(interp->objects[parent.data], leaf)) {
+			fail(interp, "delete-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
+			return;
+		}
+		interp->dsp--;
+	});
 }
 
 void p_frame_keys(Interpreter *interp, cell *cfa) {
@@ -523,46 +566,66 @@ void p_frame(Interpreter *interp, cell *cfa) {
 void p_has(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_FRAME_PATH(frame, path, "has?");
-	REQUIRE_NONEMPTY_PATH(path, "has?");
-	int found;
+	PEEK_TYPE_AT(frame_val, 1, "has?", T_FRAME);
+	PEEK_AT(key_or_path, 0, "has?");
+	Object *frame = interp->objects[frame_val.data];
 
-	frame_walk(interp, frame, path, path->len, WALK_PROBE, &found, "has?");
-
-	interp->dsp -= 2;
-	push(interp, make_bool(found));
+	DISPATCH_SYMBOL_OR_PATH(key_or_path, "has?", {
+		FRAME_LOOKUP(frame, key_or_path.data, at, present);
+		(void)at;
+		interp->dsp -= 2;
+		push(interp, make_bool(present));
+	}, {
+		REQUIRE_NONEMPTY_PATH(path, "has?");
+		int found;
+		frame_walk(interp, frame_val, path, path->len, WALK_PROBE, &found, "has?");
+		interp->dsp -= 2;
+		push(interp, make_bool(found));
+	});
 }
 
 void p_update_at(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	PEEK_FRAME_PATH_VALUE(frame, path, xt, "update-at");
-	REQUIRE_NONEMPTY_PATH(path, "update-at");
+	PEEK_TYPE_AT(frame_val, 2, "update-at", T_FRAME);
+	PEEK_AT(key_or_path, 1, "update-at");
+	PEEK_AT(xt, 0, "update-at");
 	if (xt.tag != T_XT) {
 		fail(interp, "update-at: xt required on stack, got %s", tag_name(xt.tag));
 		return;
 	}
+	Object *frame = interp->objects[frame_val.data];
 
-	Val parent = frame_walk(interp, frame, path, path->len - 1, WALK_ERROR, NULL, "update-at");
-	if (interp->error_flag) return;
-	if (parent.tag != T_FRAME) {
-		fail(interp, "update-at: parent is not a frame, got %s", tag_name(parent.tag));
-		return;
-	}
-
-	Object *parent_obj = interp->objects[parent.data];
-	cell leaf = path->items[path->len - 1].data;
-	FRAME_LOOKUP(parent_obj, leaf, at, present);
-	if (!present) {
-		fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
-		return;
-	}
-
-	push(interp, parent_obj->frame.values[at]);
-	execute_cfa(interp, (int)xt.data);
-	parent_obj->frame.values[at] = pop(interp);
-
-	interp->dsp -= 2;
+	DISPATCH_SYMBOL_OR_PATH(key_or_path, "update-at", {
+		FRAME_LOOKUP(frame, key_or_path.data, at, present);
+		if (!present) {
+			fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[key_or_path.data]);
+			return;
+		}
+		push(interp, frame->frame.values[at]);
+		execute_cfa(interp, (int)xt.data);
+		frame->frame.values[at] = pop(interp);
+		interp->dsp -= 2;
+	}, {
+		REQUIRE_NONEMPTY_PATH(path, "update-at");
+		Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_ERROR, NULL, "update-at");
+		if (interp->error_flag) return;
+		if (parent.tag != T_FRAME) {
+			fail(interp, "update-at: parent is not a frame, got %s", tag_name(parent.tag));
+			return;
+		}
+		Object *parent_obj = interp->objects[parent.data];
+		cell leaf = path->items[path->len - 1].data;
+		FRAME_LOOKUP(parent_obj, leaf, at, present);
+		if (!present) {
+			fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
+			return;
+		}
+		push(interp, parent_obj->frame.values[at]);
+		execute_cfa(interp, (int)xt.data);
+		parent_obj->frame.values[at] = pop(interp);
+		interp->dsp -= 2;
+	});
 }
 
 

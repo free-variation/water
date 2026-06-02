@@ -760,6 +760,16 @@ void p_local_store(Interpreter *interp, cell *cfa) {
 	*local_slot(interp) = pop(interp);
 }
 
+void p_local_fetch_0depth(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	push(interp, interp->return_stack[interp->local_base + (int)interp->vocab->dict[interp->ip++]]);
+}
+
+void p_local_store_0depth(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	interp->return_stack[interp->local_base + (int)interp->vocab->dict[interp->ip++]] = pop(interp);
+}
+
 void p_set(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
@@ -894,9 +904,14 @@ void run_outer(Interpreter *interp) {
 		if (interp->compiling) {
 			int local_depth, local_slot_idx;
 			if (find_local(interp, tok, &local_depth, &local_slot_idx)) {
-				emit_call(interp, interp->vocab->local_fetch_cfa);
-				emit(interp, (cell)local_depth);
-				emit(interp, (cell)local_slot_idx);
+				if (local_depth == 0) {
+					emit_call(interp, interp->vocab->local_fetch_0depth_cfa);
+					emit(interp, (cell)local_slot_idx);
+				} else {
+					emit_call(interp, interp->vocab->local_fetch_cfa);
+					emit(interp, (cell)local_depth);
+					emit(interp, (cell)local_slot_idx);
+				}
 				continue;
 			}
 		}
@@ -1169,6 +1184,8 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 	cell leave_locals_ptr = interp->vocab->dict[interp->vocab->leave_locals_cfa];
 	cell local_fetch_ptr  = interp->vocab->dict[interp->vocab->local_fetch_cfa];
 	cell local_store_ptr  = interp->vocab->dict[interp->vocab->local_store_cfa];
+	cell local_fetch_0depth_ptr  = interp->vocab->dict[interp->vocab->local_fetch_0depth_cfa];
+	cell local_store_0depth_ptr  = interp->vocab->dict[interp->vocab->local_store_0depth_cfa];
 
 	int cursor = body_start;
 
@@ -1195,6 +1212,9 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 		} else if ((ref == local_fetch_ptr
 					|| ref == local_store_ptr) && cursor + 2 < body_end) {
 			cursor += 3;
+		} else if ((ref == local_fetch_0depth_ptr
+					|| ref == local_store_0depth_ptr) && cursor + 1 < body_end) {
+			cursor += 2;
 		} else {
 			cursor++;
 		}
@@ -1879,6 +1899,8 @@ int main(void) {
 	interp->vocab->leave_locals_cfa = define_primitive(interp, "(leave-locals)", p_leave_locals, 0);
 	interp->vocab->local_fetch_cfa = define_primitive(interp, "(local@)", p_local_fetch, 0);
 	interp->vocab->local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 0);
+	interp->vocab->local_fetch_0depth_cfa = define_primitive(interp, "(local@0)", p_local_fetch_0depth, 0);
+	interp->vocab->local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 0);
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);

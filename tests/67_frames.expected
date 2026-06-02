@@ -43,7 +43,21 @@
 0 ok
 0 ok
 0 ok
-0|error @ : no key :z
+0|error @: no key :z
+0 ok
+0 ok
+5 
+0 ok
+0 ok
+0 ok
+42 
+0 ok
+0 ok
+0 ok
+0|error @: no key :z
+0 ok
+0 ok
+0|error @: expected a symbol or path (array of symbols), got a float
 0 ok
 0 ok
 [ { :a 1 } ] 
@@ -96,7 +110,39 @@
 0 ok
 0 ok
 0 ok
-0|error ! : empty path
+0|error !: empty path
+0 ok
+0 ok
+{
+  :a 99
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 5
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 1
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :k 7
+}
+
+0 ok
+0 ok
+0 ok
+0|error !: expected a symbol or path (array of symbols), got a float
 0 ok
 0 ok
 [ :a :b ] 
@@ -167,10 +213,29 @@
 0 ok
 0 ok
 0 ok
-0|error delete-at : no key :z
+0|error delete-at: no key :z
 0 ok
 0 ok
-0|error delete-at : empty path
+0|error delete-at: empty path
+0 ok
+0 ok
+{
+  :b 2
+}
+
+0 ok
+0 ok
+0 ok
+{
+}
+
+0 ok
+0 ok
+0 ok
+0|error delete-at: no key :z
+0 ok
+0 ok
+0|error delete-at: expected a symbol or path (array of symbols), got a float
 0 ok
 0 ok
 -1 
@@ -187,6 +252,21 @@
 0 ok
 -1 
 0 ok
+0 ok
+0 ok
+-1 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+-1 
+0 ok
+0 ok
+0 ok
+0|error has?: expected a symbol or path (array of symbols), got a float
 0 ok
 0 ok
 {
@@ -215,7 +295,35 @@
 0|error update-at: xt required on stack, got a float
 0 ok
 0 ok
-0|error update-at : empty path
+0|error update-at: empty path
+0 ok
+0 ok
+{
+  :a 6
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :a 2
+  :b 1
+}
+
+0 ok
+0 ok
+0 ok
+{
+  :k 42
+}
+
+0 ok
+0 ok
+0 ok
+0|error update-at: no key :z
+0 ok
+0 ok
+0|error update-at: expected a symbol or path (array of symbols), got a float
 0 ok
 0 ok
 {

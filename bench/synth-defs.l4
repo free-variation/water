@@ -31,12 +31,12 @@
 : make-rec ( i -- frame )
   | i |
   to i
-  { } /id i ! /sq i sq ! /tri i i 1+ * 2 / ! ;
+  { } :id i ! :sq i sq ! :tri i i 1+ * 2 / ! ;
 
 : phase4 ( -- sum )
   0 ITER4 range
   [: make-rec :] map
-  [: /sq @ :] map
+  [: :sq @ :] map
   0 [: + :] reduce ;
 
 : phase5 ( -- sum )
@@ -110,9 +110,9 @@
 \ pre-built frame). Output is a 5-row table revealing the crossover with
 \ Python's hash-table dict.
 \
-\ Lookup uses the compile-time path literal /k0, so the 1-element path array
-\ is allocated once at parse time and reused — the per-lookup measurement is
-\ pure frame_walk cost (binary search + cell compares), not per-call malloc.
+\ Lookup uses the symbol literal :k0, so each access takes the single-key
+\ fast path — the per-lookup measurement is one binary-search frame_find,
+\ skipping path validation and frame_walk's outer loop.
 
 : build-keys ( n -- keys-array )
   0 swap 1- range [: "k{0}" string>symbol :] map ;
@@ -136,7 +136,7 @@
   size build-vals to vals
   keys vals frame to f
   now to t0
-  [: f /k0 @ drop :] passes times
+  [: f :k0 @ drop :] passes times
   now t0 - ;
 
 : scale-row ( size build-reps lookup-passes -- )

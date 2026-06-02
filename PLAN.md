@@ -5,205 +5,94 @@ git history is the place to look for what's been built.
 
 ---
 
-## Interpreter performance — next up
+## Interpreter performance
 
-`sample` on `bench/profile.l4` (a 200× loop over `bench`, ~12k samples) shows
-~74% of CPU in the dispatch loop inlined into `execute_cfa`. The single
-biggest lever — and the next step in development — is direct threading.
-Float-fast-paths and super-instructions are smaller, opportunistic wins that
-stack on top.
+The interpreter is ~4× faster than pure CPython on `bench/synth.l4`
+(see `bench/baseline-post-shortcuts.md` for the current snapshot, and
+`bench/baseline-post-dtc.md` for a historical comparison). Further
+gains beyond what's listed here are diminishing returns absent a
+specific workload that puts dispatch back on the critical path.
 
-### Direct threading
+### Done
 
-Today the inner interpreter does two memory reads per virtual op:
+- **Direct threading (DTC)** — body cells hold handler pointers
+  directly; dispatch is one read per op. Full design treatment in
+  `docs/threading.md`.
+- **`times` and `i-times` combinators** — counted-loop primitives in
+  `src/c/functional.c`, factored through a `COUNTED_LOOP` macro.
+  Replaced the `begin/until + locals + arithmetic` pattern that used
+  to drive tight inner loops.
+- **Float fast-path on `lt` / `gt` / `eq`** — inline the
+  `T_FLOAT`/`T_FLOAT` case so the common numeric case skips
+  `val_cmp`. Factored into a `COMPARISON_PRIMITIVE` macro.
+- **Inline frame access helpers** — `frame_find` and `frame_walk` are
+  `static inline __attribute__((always_inline))` in `logicforth.h`.
+- **`1+` / `1-` / `sq`** as float-only primitives, factored through a
+  `UNARY_FLOAT_PRIMITIVE` macro.
 
-```
-int cfa_index = (int)dict[ip++];                   // body cell holds a cfa index
-cfa_handler h = (cfa_handler)dict[cfa_index];      // handler is at dict[cfa]
-h(interp, &dict[cfa_index]);
-```
+### Pending — small additions
 
-In a direct-threaded build, the body cell holds the handler pointer itself:
+Independent of each other; implement in any order.
 
-```
-cfa_handler h = (cfa_handler)dict[ip++];
-h(interp, &dict[ip]);
-```
+#### `key@` / `key!`
 
-One read instead of two on the dispatch hot path, which the profile says is
-74% of CPU. Per the interpreter-perf literature this lands roughly 10-15%
-wall-time, larger than any individual super-instruction and across every
-primitive instead of one pattern.
+Single-key frame access taking the symbol directly:
 
-**What changes:**
+- `key@` ( frame symbol -- value ) — calls `frame_find` once; skips
+  path validation and `frame_walk`'s outer loop.
+- `key!` ( frame value symbol -- frame ) — symmetric to `key@`.
 
-- **`emit` for body references**: `: foo + 1 ;` today writes
-  `[cfa_of_+, cfa_of_(lit), T_FLOAT, 0x3ff0..., cfa_of_exit]`. After this
-  change it writes `[handler_of_+, handler_of_(lit), T_FLOAT, 0x3ff0...,
-  handler_of_exit]`. Single-cell call sites for primitives.
-- **Colon-call sites are two cells**: a colon-def reference compiles to
-  `[docol_ptr, target_body_ip]`. `docol` reads the next cell as the resume
-  target, advances `ip` past it, then pushes the current `ip` to the return
-  stack and jumps to the body. Primitives stay one cell; only colon-call
-  sites grow.
-- **Header layout is unchanged**: `link`/`flags`/`name`/`source` plus the cfa
-  slot (which holds the handler for primitives or `docol` for colon defs)
-  are still walked by `find`, `forget`, and the dictionary chain in `gc`.
-  Only the per-call-site emission inside *bodies* changes shape.
+Unlocks dynamic single-key lookup (`myframe sym key@`) in addition to
+the speed gain over `/key @`. ~15 lines each in `collections.c`.
+Expected: single-key lookup at small frame sizes drops from ~11 ns
+(current) to ~5-7 ns.
 
-**Surfaces that need updating:**
+#### `(local@0)` / `(local!0)`
 
-- `emit_call(target_cfa)` — the new core compile-time helper that writes one
-  cell for a primitive target or two cells for a colon-def target. Used by
-  `run_outer` when it sees a known word, by `p_tick`, by the literal/branch
-  emitters (where applicable).
-- `docol` — reads `dict[ip++]` as the body-start address instead of computing
-  it from its `cfa` parameter.
-- `gc::mark_body` and `forget`'s body walk — currently identify literal/branch
-  ops by comparing dict cells against `literal_cfa`, `dostr_cfa`, etc. After
-  the change those comparisons are against the corresponding handler pointers
-  (`(cell)&p_literal`, `(cell)&p_dostr`, …). Mechanical rename, same logic.
-- `save-image` — the on-disk dict cells today are cfa indices, stable across
-  runs. After the change they're function pointers, which are addresses that
-  change between binaries. The image writer must translate each body cell on
-  save into a portable handler-id (a small enum like the existing
-  `HANDLER_DOCOL`/`HANDLER_DOVAR`/`HANDLER_DOSYM`, extended to cover every
-  primitive) and the reader must translate back to the live handler pointer
-  on load. Version bump on the image format. Text `save` is unaffected
-  because it works from `WORD_SOURCE`, not the compiled body.
+Depth-zero local fetch/store. The compiler knows the resolved local
+depth at emit time; when depth is 0 (the universal case outside
+closures), emit a primitive that takes only a slot operand and skips
+the depth-walk loop in `local_slot`.
 
-### Computed-goto threading
+- Two new primitives in `core.c` (~10 lines each).
+- Emit-site changes: `run_outer`'s locals-read branch and `p_to`'s
+  locals-write branch add `if (local_depth == 0)` and emit the new
+  variant. ~4 lines per site.
+- `mark_body` update: two new ops, each 2 cells (handler + slot).
 
-The architectural follow-on to direct threading. Each handler ends with
-its own `goto *dict[ip++]` instead of returning to a central dispatch
-loop. The central loop disappears entirely — what was
+~50 lines total. Expected gain: 5-7% on phase 1.
 
-```c
-while (running) {
-    cfa_handler h = (cfa_handler)dict[ip++];
-    h(interp, &dict[ip]);
-}
-```
+#### `(?0branch)`
 
-becomes inline at the end of each handler body, expressed with GCC/Clang
-labels-as-values:
+Collapse `dup 0= if` into one op.
 
-```c
-goto *dict[ip++];
+- New primitive `p_qzbranch` in `words.c` (~10 lines): reads its
+  branch-offset operand; tests `data_stack[dsp - 1]` without popping;
+  branches if zero.
+- Emit-site change in `p_if`: before emitting `(0branch)`, check the
+  prior 2 cells against the cached `dup` and `0=` handler pointers.
+  If both match, verify `here - 2 >=
+  local_scope_dict_starts[current_scope]` (so the rewind doesn't
+  cross a `[: … :]` or definition boundary), then rewind 2 cells and
+  emit `(?0branch) <slot>` instead. ~15 lines.
+- `mark_body` update: one new op (2 cells: handler + offset).
 
-L_p_add:
-    /* ... p_add work ... */
-    goto *dict[ip++];
+~30 lines total. Expected gain: 2-3%.
 
-L_p_mul:
-    /* ... p_mul work ... */
-    goto *dict[ip++];
-```
+### Deferred — computed-goto threading
 
-The dispatch transition between two ops is one indirect jump from the
-end of one handler to the start of the next — no function-call or return
-overhead, no central-loop iteration counter, and (the bigger win) the
-branch predictor sees a *distinct* call site for each (current-op, next-op)
-pair. Direct threading still has one indirect-call site whose target
-varies; the predictor has a single history slot. Computed-goto gives
-each handler-to-handler edge its own predictor entry, so a tight inner
-loop with a repeating op sequence trains the predictor and runs near
-branch-perfect.
+The architectural follow-on to DTC: each handler ends with its own
+`goto *dict[ip++]` instead of returning to a central loop, using
+GCC/Clang labels-as-values. CPython 3.11 reported 15-25% from
+adopting it. Full design treatment in `docs/threading.md`.
 
-CPython adopted this in 3.11 and reported 15-25% improvement. For
-logicforth, 15-20% on dispatch-heavy code is in line.
-
-**The architectural cost.** Every primitive handler must live as a
-label inside one giant function. logicforth's primitives are currently
-spread across `core.c`, `words.c`, `collections.c`, `matrix.c`,
-`functional.c` as separate `void p_X(Interpreter*, cell*)` functions. To
-adopt computed-goto, the handler bodies need to be consolidated — either
-inlined at their labels in one master function (the maximally fast
-version), or kept as `static inline` functions called from labels (a
-smaller refactor that loses some of the cross-handler optimization).
-
-Build portability: labels-as-values is GCC/Clang only — MSVC doesn't
-support it. A compile-time fallback to the plain DTC dispatch loop is
-needed for non-GCC builds (a single `#ifdef __GNUC__` switch).
-
-**Direct threading is the prerequisite.** Computed-goto needs body cells
-to be direct dispatch targets, not indices that require dereferencing
-before the jump. The DTC infrastructure (`emit_call`, handler-id image
-encoding, two-cell call sites) carries forward unchanged; computed-goto
-just changes what the handler does at its tail end.
-
-### Float-fast-path the comparison primitives
-
-`val_cmp` (~3% of CPU per the `bench/synth.l4` profile, split across
-`p_lt` / `p_gt` / `p_eq`) does a tag-equality check and kind-switch even
-when both operands are floats — the universal case in numeric kernels.
-
-The fix: in each of `p_lt` / `p_gt` / `p_eq`, fast-path the `T_FLOAT` /
-`T_FLOAT` case inline (unpack and compare), and only fall through to
-`val_cmp` for mixed or heap types. ~20 lines of C across three primitives.
-Expected wall win on numeric loops: 3–5%.
-
-### Super-instructions
-
-Common 2- and 3-op idioms become single dispatched ops, removing one
-dispatch each. Each is a small C primitive; the wins compound. The cleaner
-version is a small peephole pass in the colon-compile path that recognizes
-the source pattern and emits the super-instruction in place of the
-expanded sequence.
-
-Candidates ranked by call frequency in the benchmark profile:
-
-- **`(local@0)` / `(local!0)`** — depth-zero local fetch/store, taking only
-  the slot as an operand. Replaces the general `(local@) <depth> <slot>` /
-  `(local!) <depth> <slot>` whenever depth resolves to 0 at compile time —
-  every reference in a non-nested colon body, which is the universal case
-  outside closures. Drops one operand-fetch per access and the depth-walk
-  loop in `local_slot`. Phase 1 of `bench/synth.l4` spends ~10% of CPU in
-  `p_local_fetch` + `p_local_store` between them; this catches the lot.
-- **`(@k)` / `(!k)`** — single-key frame get/set, taking the symbol as an
-  operand. Replaces the general `@` / `!` whenever the path is a compile-time
-  literal of length 1 — `frame /k @` and `frame /k val !`, which is the
-  common "look up one key" pattern. Skips the `frame_path` validation loop
-  (currently tag-checks every path element on every call), the `frame_walk`
-  function call, and the 1-iteration walk loop; the body becomes just
-  `frame_find` + push/store. Peephole detection: when emitting `@` / `!` and
-  the prior emitted op is a literal pointing at an array of length 1 with a
-  single `T_SYMBOL` element, rewrite to `(@k) <sym>` / `(!k) <sym>` and
-  delete the literal. The `scale-frames` table in `bench/synth.l4` shows
-  single-key lookup at ~37 ns vs Python's ~17 ns; this closes ~10-15 ns of
-  that gap.
-- **`+!`** — add to a variable in place. STALE: the old form `@ <expr> + !`
-  assumed `@`/`!` as variable fetch/store, which are now frame ops. Re-derive
-  against the `to` / auto-deref model — the accumulate pattern is now
-  `x <expr> + to x` (cf. `accum` in `bench/frames.l4`).
-- **`1+`** ( n -- n+1 ) — specialized increment. Replaces `1 +`.
-- **`dup *`** ( x -- x x*x ) — squaring. Hot on numeric kernels.
-- **`@+`** — STALE for the same reason; the read-then-increment idiom is now
-  `x 1 + to x`, not `@ 1 +`. Re-derive before implementing.
-- **`?0branch`** — `dup 0= if` collapsed into one op (test top non-destructively
-  and branch if zero). Saves 2 dispatches per non-destructive test.
-
-The first two items (`(local@0)` / `(local!0)` and `(@k)` / `(!k)`) are
-ranked by the current `bench/synth.l4` profile. The remaining items
-(`+!`, `1+`, `dup *`, `@+`, `?0branch`) are carried forward from an
-earlier mandelbrot-style benchmark that predates the `@` / `!` →
-frame-op rename and the `<` / `>` → `lt` / `gt` rename; the patterns
-they target are still valid (the items aren't stale), but their ranking
-against the current benchmark suite should be refreshed before
-committing implementation order.
-
-Each is ~10 lines of C. Adding the peephole pass is another ~50 lines. Together
-plausibly 5–10% on the benchmark and any numeric / control-heavy kernel.
-
-### Inline the frame access helpers
-
-`frame_find` and `frame_walk` are short leaf routines hit on every `@` / `!`,
-called via the cross-file extern path (declared in `logicforth.h`, defined in
-`collections.c`). Move the definitions to the header as `static inline` so the
-compiler can integrate them into `p_frame_get` / `p_frame_set` / `(@k)` /
-`(!k)`. Per-call function-call setup disappears; branch prediction sees the
-binary-search loop inlined in the primitive's hot body. ~2 ns per access, near
-zero implementation cost.
+Deferred because the language already runs ~4× faster than pure
+CPython without it. The cost — ~1000-1500 lines of mechanical primitive
+consolidation, the tail-merging defense, a non-trivial debugging
+regression (one giant function vs ~70 separate handlers) — isn't
+justified by the remaining performance gap for the workloads on the
+table. Revisit if dispatch becomes the bottleneck for a specific
+workload, or as a craft exercise.
 
 ### Optional type annotations
 
