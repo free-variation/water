@@ -1,0 +1,27 @@
+0 ok
+0 ok
+0 ok
+0 1 2 3 4 
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+
+0 ok
+0 ok
+0 ok
+0 ok
+45 
+0 ok
+0 ok
+0 ok
+0 ok
+30 
+0 ok
+0 ok
+0 ok
+0|error i-times: count must be non-negative, got -1
+0|error i-times: expected a float count, got an execution token
+0|error i-times: expected an execution token, got a float

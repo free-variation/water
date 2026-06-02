@@ -447,6 +447,9 @@ void p_sub(Interpreter *interp, cell *cfa);
 void p_mul(Interpreter *interp, cell *cfa);
 void p_div(Interpreter *interp, cell *cfa);
 void p_neg(Interpreter *interp, cell *cfa);
+void p_inc(Interpreter *interp, cell *cfa);
+void p_dec(Interpreter *interp, cell *cfa);
+void p_sq(Interpreter *interp, cell *cfa);
 Val make_bool(int is_true);
 int truthy(Val value);
 void p_eq(Interpreter *interp, cell *cfa);
@@ -524,6 +527,8 @@ void p_map(Interpreter *interp, cell *cfa);
 void p_mapn(Interpreter *interp, cell *cfa);
 void p_filter(Interpreter *interp, cell *cfa);
 void p_reduce(Interpreter *interp, cell *cfa);
+void p_times(Interpreter *interp, cell *cfa);
+void p_i_times(Interpreter *interp, cell *cfa);
 void p_words(Interpreter *interp, cell *cfa);
 void p_see(Interpreter *interp, cell *cfa);
 void p_semi(Interpreter *interp, cell *cfa);
@@ -586,7 +591,6 @@ void p_take(Interpreter *interp, cell *cfa);
 void p_reverse(Interpreter *interp, cell *cfa);
 void p_concat(Interpreter *interp, cell *cfa);
 void p_range(Interpreter *interp, cell *cfa);
-int frame_find(Object *frame, cell key);
 void frame_put(Object *frame, cell key, Val value);
 int frame_delete(Object *frame, cell key);
 void p_to_frame(Interpreter *interp, cell *cfa);
@@ -602,6 +606,62 @@ void p_tan(Interpreter *interp, cell *cfa);
 void p_tanh(Interpreter *interp, cell *cfa);
 void p_now(Interpreter *interp, cell *cfa);
 Interpreter *interp_new(void);
+
+typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
+
+static inline __attribute__((always_inline))
+int frame_find(Object *frame, cell key) {
+	int low = 0;
+	int high = frame->len;
+	int mid;
+	cell mid_key;
+
+	while (low < high) {
+		mid = (low + high) / 2;
+		mid_key = frame->frame.keys[mid];
+		if (mid_key < key)
+			low = mid + 1;
+		else
+			high = mid;
+	}
+
+	return low;
+}
+
+#define FRAME_LOOKUP(obj, key, at, present) \
+	int at = frame_find((obj), (key)); \
+	int present = (at) < (obj)->len && (obj)->frame.keys[at] == (key)
+
+static inline __attribute__((always_inline))
+Val frame_walk(Interpreter *interp, Val node, Object *path,
+		int count, FrameWalkMode mode, int *found, const char *op) {
+	for (int i = 0; i < count; i++) {
+		if (node.tag != T_FRAME) {
+			if (found) *found = 0;
+			if (mode != WALK_PROBE)
+				fail(interp, "%s : cannot descend into %s", op, tag_name(node.tag));
+			return node;
+		}
+
+		cell key = path->items[i].data;
+		Object *frame = interp->objects[node.data];
+		FRAME_LOOKUP(frame, key, at, present);
+		if (present && (mode != WALK_VIVIFY || frame->frame.values[at].tag == T_FRAME)) {
+			node = frame->frame.values[at];
+		} else if (mode == WALK_VIVIFY) {
+			int child = object_new_frame(interp);
+			frame_put(interp->objects[node.data], key, make_frame(child));
+			node = make_frame(child);
+		} else {
+			if (found) *found = 0;
+			if (mode != WALK_PROBE)
+				fail(interp, "%s : no key :%s", op, &interp->vocab->symbol_pool[key]);
+			return node;
+		}
+	}
+	if (found) *found = 1;
+	return node;
+}
 
 #endif
 

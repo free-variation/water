@@ -1787,6 +1787,9 @@ int main(void) {
 	define_primitive(interp, "*", p_mul, 0);
 	define_primitive(interp, "/", p_div, 0);
 	define_primitive(interp, "negate", p_neg, 0);
+	define_primitive(interp, "1+", p_inc, 0);
+	define_primitive(interp, "1-", p_dec, 0);
+	define_primitive(interp, "sq", p_sq, 0);
 	define_primitive(interp, "dup", p_dup, 0);
 	define_primitive(interp, "drop", p_drop, 0);
 	define_primitive(interp, "swap", p_swap, 0);
@@ -1859,6 +1862,9 @@ int main(void) {
 	define_primitive(interp, "mapn", p_mapn, 0);
 	define_primitive(interp, "filter", p_filter, 0);
 	define_primitive(interp, "reduce", p_reduce, 0);
+	define_primitive(interp, "times", p_times, 0);
+	define_primitive(interp, "i-times", p_i_times, 0);
+
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
 

@@ -157,5 +157,20 @@ void p_reduce(Interpreter *interp, cell *cfa) {
 	push(interp, result_val);
 }
 
+#define COUNTED_LOOP(name, word_name, per_iter) \
+	void name(Interpreter *interp, cell *cfa) { \
+		(void)cfa; \
+		POP_INT(n, word_name, "count"); \
+		POP_XT(xt, word_name); \
+		if (n < 0) { \
+			fail(interp, word_name ": count must be non-negative, got %d", n); \
+			return; \
+		} \
+		for (int i = 0; i < n && !interp->error_flag; i++) { \
+			per_iter; \
+			execute_cfa(interp, xt); \
+		} \
+	}
 
-
+COUNTED_LOOP(p_times,   "times",   (void)i)
+COUNTED_LOOP(p_i_times, "i-times", push(interp, make_float((double)i)))

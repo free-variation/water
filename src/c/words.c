@@ -119,29 +119,36 @@ Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
 
 int truthy(Val value) { return (value.tag == T_FLOAT) ? (unpack_float(value) != 0.0) : (value.data != 0); }
 
-void p_eq(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+#define COMPARISON_PRIMITIVE(name, op) \
+	void name(Interpreter *interp, cell *cfa) { \
+		(void)cfa; \
+		POP(right); \
+		POP(left); \
+		if (left.tag == T_FLOAT && right.tag == T_FLOAT) \
+			push(interp, make_bool(unpack_float(left) op unpack_float(right))); \
+		else \
+			push(interp, make_bool(val_cmp(interp, left, right) op 0)); \
+	}
 
-	POP(right);
-	POP(left);
-	push(interp, make_bool(val_cmp(interp, left, right) == 0));
-}
+COMPARISON_PRIMITIVE(p_eq, ==)
+COMPARISON_PRIMITIVE(p_lt, <)
+COMPARISON_PRIMITIVE(p_gt, >)
 
-void p_lt(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+#define UNARY_FLOAT_PRIMITIVE(name, word_name, expr) \
+	void name(Interpreter *interp, cell *cfa) { \
+		(void)cfa; \
+		POP(operand); \
+		if (operand.tag != T_FLOAT) { \
+			fail(interp, word_name ": expected a float, got %s", tag_name(operand.tag)); \
+			return; \
+		} \
+		double n = unpack_float(operand); \
+		push(interp, make_float(expr)); \
+	}
 
-	POP(right);
-	POP(left);
-	push(interp, make_bool(val_cmp(interp, left, right) < 0));
-}
-
-void p_gt(Interpreter *interp, cell *cfa) {
-	(void)cfa;
-
-	POP(right);
-	POP(left);
-	push(interp, make_bool(val_cmp(interp, left, right) > 0));
-}
+UNARY_FLOAT_PRIMITIVE(p_inc, "1+", n + 1.0)
+UNARY_FLOAT_PRIMITIVE(p_dec, "1-", n - 1.0)
+UNARY_FLOAT_PRIMITIVE(p_sq,  "sq", n * n)
 
 void p_zeq(Interpreter *interp, cell *cfa) {
 	(void)cfa;

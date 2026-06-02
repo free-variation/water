@@ -13,16 +13,12 @@
   | i acc |
   0 to acc
   1 to i
-  begin
-    acc i i * + to acc
-    i 1 + to i
-    i ITER1 gt
-  until
+  [: acc i sq + to acc  i 1+ to i :] ITER1 times
   acc ;
 
 : phase2 ( -- sum )
   1 ITER2 range
-  [: dup * :] map
+  [: sq :] map
   [: 10000 gt :] filter
   0 [: + :] reduce ;
 
@@ -35,7 +31,7 @@
 : make-rec ( i -- frame )
   | i |
   to i
-  { } /id i ! /sq i i * ! /tri i i 1 + * 2 / ! ;
+  { } /id i ! /sq i sq ! /tri i i 1+ * 2 / ! ;
 
 : phase4 ( -- sum )
   0 ITER4 range
@@ -45,7 +41,7 @@
 
 : phase5 ( -- sum )
   1 ITER5 range
-  [: dup * :] map
+  [: sq :] map
   0 [: + :] reduce ;
 
 \ Phase 6: deeply-nested frames built via auto-vivifying ! along five paths
@@ -119,10 +115,10 @@
 \ pure frame_walk cost (binary search + cell compares), not per-call malloc.
 
 : build-keys ( n -- keys-array )
-  0 swap 1 - range [: "k{0}" string>symbol :] map ;
+  0 swap 1- range [: "k{0}" string>symbol :] map ;
 
 : build-vals ( n -- vals-array )
-  0 swap 1 - range ;
+  0 swap 1- range ;
 
 : bench-build ( size reps -- elapsed )
   | size reps keys vals t0 |
@@ -130,11 +126,7 @@
   size build-keys to keys
   size build-vals to vals
   now to t0
-  begin
-    keys vals frame drop
-    reps 1 - to reps
-    reps 0 =
-  until
+  [: keys vals frame drop :] reps times
   now t0 - ;
 
 : bench-lookup ( size passes -- elapsed )
@@ -144,11 +136,7 @@
   size build-vals to vals
   keys vals frame to f
   now to t0
-  begin
-    f /k0 @ drop
-    passes 1 - to passes
-    passes 0 =
-  until
+  [: f /k0 @ drop :] passes times
   now t0 - ;
 
 : scale-row ( size build-reps lookup-passes -- )
