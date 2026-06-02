@@ -29,55 +29,21 @@ specific workload that puts dispatch back on the critical path.
   `static inline __attribute__((always_inline))` in `logicforth.h`.
 - **`1+` / `1-` / `sq`** as float-only primitives, factored through a
   `UNARY_FLOAT_PRIMITIVE` macro.
-
-### Pending — small additions
-
-Independent of each other; implement in any order.
-
-#### `key@` / `key!`
-
-Single-key frame access taking the symbol directly:
-
-- `key@` ( frame symbol -- value ) — calls `frame_find` once; skips
-  path validation and `frame_walk`'s outer loop.
-- `key!` ( frame value symbol -- frame ) — symmetric to `key@`.
-
-Unlocks dynamic single-key lookup (`myframe sym key@`) in addition to
-the speed gain over `/key @`. ~15 lines each in `collections.c`.
-Expected: single-key lookup at small frame sizes drops from ~11 ns
-(current) to ~5-7 ns.
-
-#### `(local@0)` / `(local!0)`
-
-Depth-zero local fetch/store. The compiler knows the resolved local
-depth at emit time; when depth is 0 (the universal case outside
-closures), emit a primitive that takes only a slot operand and skips
-the depth-walk loop in `local_slot`.
-
-- Two new primitives in `core.c` (~10 lines each).
-- Emit-site changes: `run_outer`'s locals-read branch and `p_to`'s
-  locals-write branch add `if (local_depth == 0)` and emit the new
-  variant. ~4 lines per site.
-- `mark_body` update: two new ops, each 2 cells (handler + slot).
-
-~50 lines total. Expected gain: 5-7% on phase 1.
-
-#### `(?0branch)`
-
-Collapse `dup 0= if` into one op.
-
-- New primitive `p_qzbranch` in `words.c` (~10 lines): reads its
-  branch-offset operand; tests `data_stack[dsp - 1]` without popping;
-  branches if zero.
-- Emit-site change in `p_if`: before emitting `(0branch)`, check the
-  prior 2 cells against the cached `dup` and `0=` handler pointers.
-  If both match, verify `here - 2 >=
-  local_scope_dict_starts[current_scope]` (so the rewind doesn't
-  cross a `[: … :]` or definition boundary), then rewind 2 cells and
-  emit `(?0branch) <slot>` instead. ~15 lines.
-- `mark_body` update: one new op (2 cells: handler + offset).
-
-~30 lines total. Expected gain: 2-3%.
+- **Polymorphic `@` / `!` / `has?` / `delete-at` / `update-at`** —
+  each accepts either a single symbol (fast path: one `frame_find`,
+  skipping path validation and `frame_walk`'s outer loop) or a path
+  array (existing behavior). Dispatch factored through a
+  `DISPATCH_SYMBOL_OR_PATH` macro in `collections.c`. Also unlocks
+  dynamic single-key lookup (`myframe sym @`).
+- **`(local@0)` / `(local!0)`** — depth-zero local fetch/store. The
+  compiler emits the specialized variant when `find_local` returns
+  depth 0 (the universal case outside closures); the runtime drops
+  the depth-walk loop. Two cells in the threaded stream instead of
+  three.
+- **`?if`** — peek-if: enters the body when the top of stack is
+  non-zero, branches over the body when zero. Top stays on the
+  stack (peek, not pop). Underlying primitive `(?0branch)` shares
+  its body with `(0branch)` via a `ZBRANCH_BODY` macro in `core.c`.
 
 ### Deferred — computed-goto threading
 

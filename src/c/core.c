@@ -701,14 +701,21 @@ void p_branch(Interpreter *interp, cell *cfa) {
 	interp->ip += (int)interp->vocab->dict[interp->ip];
 }
 
+#define ZBRANCH_BODY(get_condition) \
+	cell offset = interp->vocab->dict[interp->ip++]; \
+	get_condition; \
+	int is_false = (condition.tag == T_FLOAT) ? (unpack_float(condition) == 0.0) \
+		: (condition.data == 0); \
+	if (is_false) interp->ip += offset - 1
+
 void p_0branch(Interpreter *interp, cell *cfa) {
 	(void)cfa;
+	ZBRANCH_BODY(POP(condition));
+}
 
-	cell offset = interp->vocab->dict[interp->ip++];
-	POP(condition);
-	int is_false = (condition.tag == T_FLOAT) ? (unpack_float(condition) == 0.0)
-		: (condition.data == 0);
-	if (is_false) interp->ip += offset - 1;
+void p_qzbranch(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	ZBRANCH_BODY(PEEK_AT(condition, 0, "?if"));
 }
 
 void p_dostr(Interpreter *interp, cell *cfa) {
@@ -1179,6 +1186,7 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 	cell dostr_ptr        = interp->vocab->dict[interp->vocab->dostr_cfa];
 	cell branch_ptr       = interp->vocab->dict[interp->vocab->branch_cfa];
 	cell zbranch_ptr      = interp->vocab->dict[interp->vocab->zbranch_cfa];
+	cell qzbranch_ptr     = interp->vocab->dict[interp->vocab->qzbranch_cfa];
 	cell to_var_ptr       = interp->vocab->dict[interp->vocab->to_var_cfa];
 	cell enter_locals_ptr = interp->vocab->dict[interp->vocab->enter_locals_cfa];
 	cell leave_locals_ptr = interp->vocab->dict[interp->vocab->leave_locals_cfa];
@@ -1203,7 +1211,7 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 			value.data = interp->vocab->dict[cursor + 1];
 			mark_value(interp, value);
 			cursor += 2;
-		} else if ((ref == branch_ptr || ref == zbranch_ptr) && cursor + 1 < body_end) {
+		} else if ((ref == branch_ptr || ref == zbranch_ptr || ref == qzbranch_ptr) && cursor + 1 < body_end) {
 			cursor += 2;
 		} else if ((ref == to_var_ptr
 					|| ref == enter_locals_ptr
@@ -1892,6 +1900,7 @@ int main(void) {
 	interp->vocab->literal_cfa = define_primitive(interp, "(lit)", p_literal, 0);
 	interp->vocab->branch_cfa = define_primitive(interp, "(branch)", p_branch, 0);
 	interp->vocab->zbranch_cfa = define_primitive(interp, "(0branch)", p_0branch, 0);
+	interp->vocab->qzbranch_cfa = define_primitive(interp, "(?0branch)", p_qzbranch, 0);
 	interp->vocab->dostr_cfa = define_primitive(interp, "(dostr)", p_dostr, 0);
 	interp->vocab->stop_cfa = define_primitive(interp, "(stop)", p_stop, 0);
 	interp->vocab->to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 0);
@@ -1912,6 +1921,7 @@ int main(void) {
 
 	define_primitive(interp, ";", p_semi, 1);
 	define_primitive(interp, "if", p_if, 1);
+	define_primitive(interp, "?if", p_qif, 1);
 	define_primitive(interp, "then", p_then, 1);
 	define_primitive(interp, "else", p_else, 1);
 	define_primitive(interp, "begin", p_begin, 1);

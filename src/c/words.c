@@ -538,6 +538,14 @@ void p_if(Interpreter *interp, cell *cfa) {
 	emit(interp, 0);
 }
 
+void p_qif(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	emit_call(interp, interp->vocab->qzbranch_cfa);
+	push(interp, make_float((double)interp->vocab->here));
+	emit(interp, 0);
+}
+
 void p_then(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 

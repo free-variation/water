@@ -1,0 +1,34 @@
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+yes 
+0 ok
+
+0 ok
+0 ok
+0 ok
+0 ok
+6 
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+0 ok
+truthy 
+0 ok
+falsy 
+0 ok
+0 ok
+0 ok
+0 ok
+16 
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+0 ok
+0|error ?if: stack too shallow

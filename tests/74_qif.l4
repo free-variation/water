@@ -1,0 +1,26 @@
+\ ?if : peek-if. Enters body when top is non-zero (truthy); branches over
+\ body when top is zero. Value stays on the stack — not popped.
+
+\ basic truthy / falsy
+: maybe-yes ?if "yes" . then ;
+3 maybe-yes drop cr               \ yes
+0 maybe-yes drop cr               \ (nothing, just newline)
+
+\ value preserved inside body — common use: act on the value conditionally
+: doubled ?if 2 * then ;
+3 doubled . cr                    \ 6
+0 doubled . cr                    \ 0
+
+\ ?if … else … then works (else uses the same slot mechanism)
+: truthy ?if "truthy" . else "falsy" . then drop ;
+1 truthy cr                       \ truthy
+0 truthy cr                       \ falsy
+
+\ peek semantics: body sees the original value still on top
+: keeps ?if dup * then ;
+4 keeps . cr                      \ 16
+0 keeps . cr                      \ 0
+
+\ empty stack underflow when executing body
+: oops ?if 99 . then ;
+oops

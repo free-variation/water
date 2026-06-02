@@ -187,6 +187,7 @@ typedef struct Vocabulary {
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
 	int enter_locals_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
 	int local_fetch_0depth_cfa, local_store_0depth_cfa;
+	int qzbranch_cfa;
 
 	int init_here, init_latest_cfa, init_names_here;
 	int init_source_here, init_symbol_pool_here;
@@ -431,6 +432,7 @@ void p_stop(Interpreter *interp, cell *cfa);
 void p_literal(Interpreter *interp, cell *cfa);
 void p_branch(Interpreter *interp, cell *cfa);
 void p_0branch(Interpreter *interp, cell *cfa);
+void p_qzbranch(Interpreter *interp, cell *cfa);
 void p_dostr(Interpreter *interp, cell *cfa);
 void p_enter_locals(Interpreter *interp, cell *cfa);
 void p_leave_locals(Interpreter *interp, cell *cfa);
@@ -536,6 +538,7 @@ void p_words(Interpreter *interp, cell *cfa);
 void p_see(Interpreter *interp, cell *cfa);
 void p_semi(Interpreter *interp, cell *cfa);
 void p_if(Interpreter *interp, cell *cfa);
+void p_qif(Interpreter *interp, cell *cfa);
 void p_then(Interpreter *interp, cell *cfa);
 void p_else(Interpreter *interp, cell *cfa);
 void p_begin(Interpreter *interp, cell *cfa);
