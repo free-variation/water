@@ -1,0 +1,23 @@
+\ 1+ ( n -- n+1 ), 1- ( n -- n-1 ), sq ( n -- n*n ) — float-only fast paths.
+
+\ basic
+5 1+ . cr             \ 6
+5 1- . cr             \ 4
+5 sq . cr             \ 25
+
+\ composes
+3 1+ sq . cr          \ 16
+10 sq 1- . cr         \ 99
+0 1- 1- 1- . cr       \ -3
+
+\ floats with fractions
+0.5 1+ . cr           \ 1.5
+0.25 sq . cr          \ 0.0625
+
+\ inside a quotation, with times
+[: | n | 0 to n  [: n 1+ to n :] 7 times  n . cr :] execute
+
+\ wrong type errors
+"hi" 1+
+[ 1 2 3 ] 1-
+{ :a 1 } sq

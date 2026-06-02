@@ -318,28 +318,6 @@ void p_range(Interpreter *interp, cell *cfa) {
 	push(interp, make_array(result_handle));
 }
 
-int frame_find(Object *frame, cell key) {
-	int low = 0;
-	int high = frame->len;
-	int mid;
-	cell mid_key;
-
-	while (low < high) {
-		mid = (low + high) / 2;
-		mid_key = frame->frame.keys[mid];
-		if (mid_key < key)
-			low = mid + 1;
-		else 
-			high = mid;
-	}
-
-	return low;
-}
-
-#define FRAME_LOOKUP(obj, key, at, present) \
-	int at = frame_find((obj), (key)); \
-	int present = (at) < (obj)->len && (obj)->frame.keys[at] == (key)
-
 void frame_put(Object *frame, cell key, Val value) {
 	FRAME_LOOKUP(frame, key, at, present);
 	if (present) {
@@ -411,38 +389,6 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 		}
 	}
 	return path;
-}
-
-typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
-
-static Val frame_walk(Interpreter *interp, Val node, Object *path,
-		int count, FrameWalkMode mode, int *found, const char *op) {
-	for (int i = 0; i < count; i++) {
-		if (node.tag != T_FRAME) {
-			if (found) *found = 0;
-			if (mode != WALK_PROBE)
-				fail(interp, "%s : cannot descend into %s", op, tag_name(node.tag));
-			return node;
-		}
-
-		cell key = path->items[i].data;
-		Object *frame = interp->objects[node.data];
-		FRAME_LOOKUP(frame, key, at, present);
-		if (present && (mode != WALK_VIVIFY || frame->frame.values[at].tag == T_FRAME)) {
-			node = frame->frame.values[at];
-		} else if (mode == WALK_VIVIFY) {
-			int child = object_new_frame(interp);
-			frame_put(interp->objects[node.data], key, make_frame(child));
-			node = make_frame(child);
-		} else {
-			if (found) *found = 0;
-			if (mode != WALK_PROBE)
-				fail(interp, "%s : no key :%s", op, &interp->vocab->symbol_pool[key]);
-			return node;
-		}
-	}
-	if (found) *found = 1;
-	return node;
 }
 
 #define PEEK_FRAME_PATH(frame, path, op) \
