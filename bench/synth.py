@@ -19,13 +19,13 @@ runs its own hand-coded C kernel, so this is the apples-to-apples comparison:
 import time
 from functools import reduce
 
-ITER1 = 1_000_000
-ITER2 = 500_000
+ITER1 = 10_000_000
+ITER2 = 5_000_000
 MAT_DIM = 100
 MAT_ELEMS = MAT_DIM * MAT_DIM
-ITER4 = 50_000
-ITER5 = 1_000_000
-ITER6 = 20_000
+ITER4 = 500_000
+ITER5 = 10_000_000
+ITER6 = 200_000
 
 
 def phase1():

@@ -905,6 +905,34 @@ leaks until process exit. Acceptable.
 
 ---
 
+## Foreign function interface
+
+Once in, user code can load any `.so` / `.dylib` on the system, look
+up symbols by name, declare a C signature at the Forth level, and call
+— with nothing about the target library known at logicforth's compile
+time. Targets like LAPACK, full PCRE, libcurl, libgit2 become bindable
+without writing per-library C code.
+
+Mechanism: link against `libdl` (for `dlopen` / `dlsym`) and `libffi`
+(for runtime-described calls). User code declares each function's
+signature; libffi handles per-architecture calling-convention details
+at call time.
+
+Performance: `libffi` adds ~30-100 ns per call vs ~1 ns for a static
+native call. Negligible for chunky-operation libraries (matmul, regex
+compile, DB query); meaningful only for tight loops calling trivial C
+functions.
+
+Implementation cost: ~250-400 lines of C glue. Build adds `-ldl -lffi`.
+
+Open questions to settle at implementation time: word-level API
+surface; signature declaration syntax; the C type set the marshalling
+supports; how to represent opaque C pointers in the Val tag space;
+ownership of C-allocated buffers; whether to support callbacks from C
+back into logicforth; whether to support struct-by-value arguments.
+
+---
+
 ## Unification + nondeterminism (microKanren-flavored, on continuations)
 
 Once delimited continuations are in, a logic-programming layer becomes

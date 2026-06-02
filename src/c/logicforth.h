@@ -18,7 +18,7 @@ typedef int64_t cell;
 #define NAME_POOL   			32768
 #define DATA_STACK_DEPTH		256
 #define RETURN_STACK_DEPTH  	256
-#define MAX_OBJECTS    			262144
+#define MAX_OBJECTS    			2097152
 #define INPUT_BUFFER_SIZE    			16384
 #define SOURCE_POOL 			1048576
 #define SYMBOL_POOL 			32768

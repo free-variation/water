@@ -1,13 +1,13 @@
 \ Definitions for the synthetic benchmark — see bench/synth.l4 for the
 \ one-shot driver and bench/profile.l4 for the looped profiling driver.
 
-1000000 to ITER1
-500000  to ITER2
-100     to MAT_DIM
-10000   to MAT_ELEMS
-50000   to ITER4
-1000000 to ITER5
-20000   to ITER6
+10000000 to ITER1
+5000000  to ITER2
+100      to MAT_DIM
+10000    to MAT_ELEMS
+500000   to ITER4
+10000000 to ITER5
+200000   to ITER6
 
 : phase1 ( -- sum )
   | i acc |
