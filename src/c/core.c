@@ -110,13 +110,13 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 
 int val_cmp(Interpreter *interp, Val left, Val right) {
 
-	if (left.tag != right.tag)
-		return (int)left.tag - (int)right.tag;
+	if (VAL_TAG(left) != VAL_TAG(right))
+		return (int)VAL_TAG(left) - (int)VAL_TAG(right);
 
-	switch (left.tag) {
+	switch (VAL_TAG(left)) {
 		case T_FLOAT: {
-						  double left_value = (left).number;
-						  double right_value = (right).number;
+						  double left_value = VAL_NUMBER(left);
+						  double right_value = VAL_NUMBER(right);
 						  if (left_value < right_value)
 						  	return -1;
 						  if (left_value > right_value)
@@ -125,14 +125,14 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 					  }
 		case T_SYMBOL: case T_XT: case T_ADDR:
 
-					  if (left.data < right.data)
+					  if (VAL_DATA(left) < VAL_DATA(right))
 					  	return -1;
-					  if (left.data > right.data)
+					  if (VAL_DATA(left) > VAL_DATA(right))
 					  	return 1;
 					  return 0;
 		case T_STRING: {
-						   Object *left_string = interp->objects[left.data];
-						   Object *right_string = interp->objects[right.data];
+						   Object *left_string = interp->objects[VAL_DATA(left)];
+						   Object *right_string = interp->objects[VAL_DATA(right)];
 						   int compare_length = MIN(left_string->len, right_string->len);
 						   int byte_diff = memcmp(left_string->bytes, right_string->bytes,
 								   (size_t)compare_length);
@@ -142,8 +142,8 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 						   return left_string->len - right_string->len;
 					   }
 		case T_SET: case T_ARRAY: {
-									  Object *left_collection = interp->objects[left.data];
-									  Object *right_collection = interp->objects[right.data];
+									  Object *left_collection = interp->objects[VAL_DATA(left)];
+									  Object *right_collection = interp->objects[VAL_DATA(right)];
 									  int compare_length = MIN(left_collection->len, right_collection->len);
 									  for (int i = 0; i < compare_length; i++) {
 										  int element_cmp = val_cmp(interp, left_collection->items[i],
@@ -155,8 +155,8 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 									  return left_collection->len - right_collection->len;
 								  }
 		case T_MATRIX: {
-						   Object *left_matrix = interp->objects[left.data];
-						   Object *right_matrix = interp->objects[right.data];
+						   Object *left_matrix = interp->objects[VAL_DATA(left)];
+						   Object *right_matrix = interp->objects[VAL_DATA(right)];
 
 						   if (left_matrix->matrix.rows != right_matrix->matrix.rows)
 							   return left_matrix->matrix.rows - right_matrix->matrix.rows;
@@ -174,8 +174,8 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 						   return 0;
 					   }
 		case T_FRAME: {
-						  Object *left_frame = interp->objects[left.data];
-						  Object *right_frame = interp->objects[right.data];
+						  Object *left_frame = interp->objects[VAL_DATA(left)];
+						  Object *right_frame = interp->objects[VAL_DATA(right)];
 						  if (left_frame->len != right_frame->len)
 							  return left_frame->len - right_frame->len;
 						  for (int i = 0; i < left_frame->len; i++) {
@@ -322,28 +322,28 @@ void print_matrix_grid(Object *m) {
 }
 
 void print_val(Interpreter *interp, Val value) {
-	switch (value.tag) {
-		case T_FLOAT: print_double((value).number); break;
-		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[value.data]); break;
-		case T_STRING: fputs(interp->objects[value.data]->bytes, stdout); break;
+	switch (VAL_TAG(value)) {
+		case T_FLOAT: print_double(VAL_NUMBER(value)); break;
+		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[VAL_DATA(value)]); break;
+		case T_STRING: fputs(interp->objects[VAL_DATA(value)]->bytes, stdout); break;
 		case T_SET:
 					   print_depth_enter();
 					   fputs("< ", stdout);
-					   print_items(interp, interp->objects[value.data]);
+					   print_items(interp, interp->objects[VAL_DATA(value)]);
 					   putchar('>');
 					   print_depth_leave();
 					   break;
 		case T_ARRAY:
 					   print_depth_enter();
 					   fputs("[ ", stdout);
-					   print_items(interp, interp->objects[value.data]);
+					   print_items(interp, interp->objects[VAL_DATA(value)]);
 					   putchar(']');
 					   print_depth_leave();
 					   break;
-		case T_XT: printf("<xt %lld>", (long long)value.data); break;
-		case T_ADDR: printf("<addr %lld>", (long long)value.data); break;
+		case T_XT: printf("<xt %lld>", (long long)VAL_DATA(value)); break;
+		case T_ADDR: printf("<addr %lld>", (long long)VAL_DATA(value)); break;
 		case T_MATRIX: {
-						   Object *matrix = interp->objects[value.data];
+						   Object *matrix = interp->objects[VAL_DATA(value)];
 						   print_depth_enter();
 						   printf("<matrix %dx%d: ", matrix->matrix.rows, matrix->matrix.columns);
 						   print_corners(matrix);
@@ -352,7 +352,7 @@ void print_val(Interpreter *interp, Val value) {
 						   break;
 					   }
 		case T_FRAME: {
-						  Object *frame = interp->objects[value.data];
+						  Object *frame = interp->objects[VAL_DATA(value)];
 						  print_depth_enter();
 						  fputs("{ ", stdout);
 						  for (int i = 0; i < frame->len; i++) {
@@ -369,9 +369,9 @@ void print_val(Interpreter *interp, Val value) {
 }
 
 void print_val_compact(Interpreter *interp, Val value) {
-	switch (value.tag) {
+	switch (VAL_TAG(value)) {
 		case T_FLOAT: {
-						  double number = (value).number;
+						  double number = VAL_NUMBER(value);
 						  if (number == (double)(int64_t)number && number > -1e12 && number < 1e12)
 							  printf("%lld", (long long)number);
 						  else
@@ -379,7 +379,7 @@ void print_val_compact(Interpreter *interp, Val value) {
 						  break;
 					  }
 		case T_STRING: {
-						   Object *obj = interp->objects[value.data];
+						   Object *obj = interp->objects[VAL_DATA(value)];
 						   if (obj->len <= 10)
 						   	printf("\"%.*s\"", obj->len, obj->bytes);
 						   else
@@ -387,7 +387,7 @@ void print_val_compact(Interpreter *interp, Val value) {
 						   break;
 					   }
 		case T_SYMBOL: {
-						   const char *name = &interp->vocab->symbol_pool[value.data];
+						   const char *name = &interp->vocab->symbol_pool[VAL_DATA(value)];
 						   int len = (int)strlen(name);
 						   if (len <= 10)
 						   	printf(":%s", name);
@@ -397,28 +397,28 @@ void print_val_compact(Interpreter *interp, Val value) {
 					   }
 		case T_SET:
 					   print_depth_enter();
-					   printf("<%d>", interp->objects[value.data]->len);
+					   printf("<%d>", interp->objects[VAL_DATA(value)]->len);
 					   print_depth_leave();
 					   break;
 		case T_ARRAY:
 					   print_depth_enter();
-					   printf("[%d]", interp->objects[value.data]->len);
+					   printf("[%d]", interp->objects[VAL_DATA(value)]->len);
 					   print_depth_leave();
 					   break;
 		case T_FRAME:
 					   print_depth_enter();
-					   printf("{%d}", interp->objects[value.data]->len);
+					   printf("{%d}", interp->objects[VAL_DATA(value)]->len);
 					   print_depth_leave();
 					   break;
 		case T_MATRIX: {
-						   Object *m = interp->objects[value.data];
+						   Object *m = interp->objects[VAL_DATA(value)];
 						   print_depth_enter();
 						   printf("M%dx%d", m->matrix.rows, m->matrix.columns);
 						   print_depth_leave();
 						   break;
 					   }
 		case T_XT: {
-					   int target = (int)value.data;
+					   int target = (int)VAL_DATA(value);
 					   const char *name = NULL;
 					   for (int cfa = interp->vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
 						   if (cfa == target) {
@@ -437,7 +437,7 @@ void print_val_compact(Interpreter *interp, Val value) {
 					   }
 					   break;
 				   }
-		case T_ADDR: printf("@%lld", (long long)value.data); break;
+		case T_ADDR: printf("@%lld", (long long)VAL_DATA(value)); break;
 		case T_CONT: fputs("k", stdout); break;
 		default: fputs("?", stdout); break;
 	}
@@ -450,8 +450,8 @@ void print_frame_pretty(Interpreter *interp, Object *frame, int indent) {
 			putchar(' ');
 		printf(":%s ", &interp->vocab->symbol_pool[frame->frame.keys[i]]);
 		Val value = frame->frame.values[i];
-		if (value.tag == T_FRAME)
-			print_frame_pretty(interp, interp->objects[value.data], indent + 2);
+		if (VAL_TAG(value) == T_FRAME)
+			print_frame_pretty(interp, interp->objects[VAL_DATA(value)], indent + 2);
 		else
 			print_val(interp, value);
 		putchar('\n');
@@ -493,10 +493,9 @@ int find(Interpreter *interp, const char *name) {
 }
 
 static inline __attribute__((always_inline)) void push_variable(Interpreter *interp, int var_cfa) {
-	Val v;
-	v.tag = (Tag)interp->vocab->dict[var_cfa + 1];
-	v.data = interp->vocab->dict[var_cfa + 2];
-	push(interp, v);
+	Val value;
+	value.bits = (uint64_t)interp->vocab->dict[var_cfa + 1];
+	push(interp, value);
 };
 
 static inline __attribute__((always_inline)) void push_symbol(Interpreter *interp, int sym_cfa) {
@@ -531,12 +530,12 @@ void run_inner(Interpreter *interp) {
 				break;
 
 			Val frame = interp->return_stack[--interp->rsp];
-			if (frame.tag == T_MARK && (int)frame.data == interp->unwind_target) {
+			if (VAL_TAG(frame) == T_MARK && (int)VAL_DATA(frame) == interp->unwind_target) {
 				interp->unwinding = 0;
 
 				if (interp->rsp > 0) {
 					Val ret = interp->return_stack[--interp->rsp];
-					interp->ip = (int)ret.data;
+					interp->ip = (int)VAL_DATA(ret);
 				}
 				continue;
 			}
@@ -670,8 +669,8 @@ void emit_call(Interpreter *interp, int target_cfa) {
 
 void emit_val_literal(Interpreter *interp, Val value) {
 	emit_call(interp, interp->vocab->literal_cfa);
-	emit(interp, (cell)value.tag);
-	emit(interp, value.data);
+	emit(interp, (cell)VAL_TAG(value));
+	emit(interp, VAL_DATA(value));
 }
 
 void fail(Interpreter *interp, const char *fmt, ...) {
@@ -702,7 +701,7 @@ const char *tag_name(Tag t) {
 
 void p_exit(Interpreter *interp) {
 
-	while (interp->rsp > 0 && interp->return_stack[interp->rsp - 1].tag == T_MARK) 
+	while (interp->rsp > 0 && VAL_TAG(interp->return_stack[interp->rsp - 1]) == T_MARK) 
 		interp->rsp--;
 
 	if (interp->rsp <= 0) {
@@ -711,7 +710,7 @@ void p_exit(Interpreter *interp) {
 	}
 
 	Val saved_ip = interp->return_stack[--interp->rsp];
-	interp->ip = (int)saved_ip.data;
+	interp->ip = (int)VAL_DATA(saved_ip);
 	DISPATCH(interp);
 }
 
@@ -720,12 +719,9 @@ void p_stop(Interpreter *interp) {
 }
 
 void p_literal(Interpreter *interp) {
-	Val literal;
-
-	literal.tag = (Tag)interp->vocab->dict[interp->ip++];
-	literal.data = interp->vocab->dict[interp->ip++];
-
-	push(interp, literal);
+	Tag tag = (Tag)interp->vocab->dict[interp->ip++];
+	int64_t data = interp->vocab->dict[interp->ip++];
+	push(interp, make_tagged(tag, data));
 	DISPATCH(interp);
 }
 
@@ -737,8 +733,8 @@ void p_branch(Interpreter *interp) {
 #define ZBRANCH_BODY(get_condition) \
 	cell offset = interp->vocab->dict[interp->ip++]; \
 	get_condition; \
-	int is_false = (condition.tag == T_FLOAT) ? ((condition).number == 0.0) \
-	: (condition.data == 0); \
+	int is_false = (VAL_TAG(condition) == T_FLOAT) ? (VAL_NUMBER(condition) == 0.0) \
+	: (VAL_DATA(condition) == 0); \
 	if (is_false) \
 		interp->ip += offset - 1
 
@@ -827,7 +823,7 @@ void p_leave_locals(Interpreter *interp) {
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	interp->rsp -= n_locals;
 	Val saved = rpop(interp);
-	interp->local_base = (int)saved.data;
+	interp->local_base = (int)VAL_DATA(saved);
 	DISPATCH(interp);
 }
 
@@ -837,7 +833,7 @@ static Val *local_slot(Interpreter *interp) {
 
 	int base = interp->local_base;
 	for (int i = 0; i < depth; i++)
-		base = (int)interp->return_stack[base - 1].data;
+		base = (int)VAL_DATA(interp->return_stack[base - 1]);
 
 	return &interp->return_stack[base + slot];
 }
@@ -866,11 +862,11 @@ void p_local_store_0depth(Interpreter *interp) {
 	void name(Interpreter *interp) { \
 		int slot = (int)interp->vocab->dict[interp->ip++]; \
 		Val *p = &interp->return_stack[interp->local_base + slot]; \
-		if (p->tag != T_FLOAT) { \
-			fail(interp, word_name ": expected a float local; got %s", tag_name(p->tag)); \
+		if (VAL_TAG(*p) != T_FLOAT) { \
+			fail(interp, word_name ": expected a float local; got %s", tag_name(VAL_TAG(*p))); \
 			return; \
 		} \
-		double n = (*p).number; \
+		double n = VAL_NUMBER(*p); \
 		*p = make_float(expr); \
 	}
 LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
@@ -1209,14 +1205,14 @@ void p_reload(Interpreter *interp) {
 }
 
 void mark_value(Interpreter *interp, Val value) {
-	if (value.tag != T_STRING &&
-			value.tag != T_SET &&
-			value.tag != T_ARRAY &&
-			value.tag != T_FRAME &&
-			value.tag != T_MATRIX &&
-			value.tag != T_CONT) return;
+	if (VAL_TAG(value) != T_STRING &&
+			VAL_TAG(value) != T_SET &&
+			VAL_TAG(value) != T_ARRAY &&
+			VAL_TAG(value) != T_FRAME &&
+			VAL_TAG(value) != T_MATRIX &&
+			VAL_TAG(value) != T_CONT) return;
 
-	int handle = (int)value.data;
+	int handle = (int)VAL_DATA(value);
 	if (handle < 0 || handle >= MAX_OBJECTS || !interp->objects[handle] || interp->object_mark[handle])
 		return;
 
@@ -1237,9 +1233,9 @@ void mark_value(Interpreter *interp, Val value) {
 void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 	int i, copy_handle;
 
-	switch(source_val.tag) {
+	switch(VAL_TAG(source_val)) {
 		case T_STRING: {
-						   Object *source = interp->objects[source_val.data];
+						   Object *source = interp->objects[VAL_DATA(source_val)];
 						   copy_handle = object_new_string(interp, source->bytes, source->len);
 						   if (interp->error_flag)
 						   	return;
@@ -1248,7 +1244,7 @@ void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 					   }
 
 		case T_MATRIX: {
-						   Object *source = interp->objects[source_val.data];
+						   Object *source = interp->objects[VAL_DATA(source_val)];
 						   copy_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
 						   if (interp->error_flag)
 						   	return;
@@ -1260,8 +1256,8 @@ void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 
 		case T_ARRAY:
 		case T_SET: {
-						Object *source = interp->objects[source_val.data];
-						copy_handle = (source_val.tag == T_ARRAY) ? object_new_array(interp, source->len) : object_new_set(interp);
+						Object *source = interp->objects[VAL_DATA(source_val)];
+						copy_handle = (VAL_TAG(source_val) == T_ARRAY) ? object_new_array(interp, source->len) : object_new_set(interp);
 						if (interp->error_flag)
 							return;
 
@@ -1274,14 +1270,14 @@ void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 
 						memset(copy->items, 0, sizeof(Val) * (size_t)source->len);
 						copy->len = source->len;
-						*copy_val = (source_val.tag == T_ARRAY) ? make_array(copy_handle) : make_set(copy_handle);
+						*copy_val = (VAL_TAG(source_val) == T_ARRAY) ? make_array(copy_handle) : make_set(copy_handle);
 						for (i = 0; i < source->len; i++)
 							copy_value(interp, source->items[i], &copy->items[i]);
 						return;
 					}
 
 		case T_FRAME: {
-						  Object *source = interp->objects[source_val.data];
+						  Object *source = interp->objects[VAL_DATA(source_val)];
 						  copy_handle = object_new_frame(interp);
 						  if (interp->error_flag)
 						  	return;
@@ -1404,14 +1400,11 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 		int n = op_cell_count(vocab, vocab->dict, cursor);
 
 		if (handler == literal_ptr) {
-			Val value;
-			value.tag = (Tag)vocab->dict[cursor + 1];
-			value.data = vocab->dict[cursor + 2];
+			Val value = make_tagged((Tag)vocab->dict[cursor + 1],
+			                        vocab->dict[cursor + 2]);
 			mark_value(interp, value);
 		} else if (handler == dostr_ptr) {
-			Val value;
-			value.tag = T_STRING;
-			value.data = vocab->dict[cursor + 1];
+			Val value = make_string((int)vocab->dict[cursor + 1]);
 			mark_value(interp, value);
 		}
 
@@ -1458,10 +1451,9 @@ void gc(Interpreter *interp) {
 		cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
 		if (handler == docol) {
 			mark_body(interp, body_start, body_end);
-		} else if (handler == dovar && body_start + 1 < body_end) {
+		} else if (handler == dovar && body_start < body_end) {
 			Val value;
-			value.tag = (Tag)interp->vocab->dict[body_start];
-			value.data = interp->vocab->dict[body_start + 1];
+			value.bits = (uint64_t)interp->vocab->dict[body_start];
 			mark_value(interp, value);
 		}
 
@@ -1548,9 +1540,9 @@ void w_i32(FILE *f, int32_t v) { fwrite(&v, 4, 1, f); }
 
 void w_i64(FILE *f, int64_t v) { fwrite(&v, 8, 1, f); }
 
-void w_val(FILE *f, Val v) {
-	w_i32(f, (int32_t)v.tag);
-	w_i64(f, v.data);
+void w_val(FILE *f, Val value) {
+	w_i32(f, (int32_t)VAL_TAG(value));
+	w_i64(f, VAL_DATA(value));
 }
 
 int r_u8 (FILE *f, uint8_t *v) { return fread(v, 1, 1, f) == 1; }
@@ -1566,8 +1558,7 @@ int r_val(FILE *f, Val *v) {
 	int64_t data;
 	if (!r_i32(f, &tag) || !r_i64(f, &data))
 		return 0;
-	v->tag = (Tag)tag;
-	v->data = data;
+	*v = make_tagged((Tag)tag, data);
 	return 1;
 }
 

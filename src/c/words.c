@@ -19,85 +19,84 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 }
 
 void p_add(Interpreter *interp) {
-
 	POP(right);
 	POP(left);
 
-	if (left.tag == T_FLOAT && right.tag == T_FLOAT)
-		push(interp, make_float((left).number + (right).number));
-	else if (left.tag == T_STRING && right.tag == T_STRING)
-		push(interp, make_string(string_concat(interp, (int)left.data, (int)right.data)));
-	else if (left.tag == T_SET && right.tag == T_SET)
-		push(interp, make_set(set_union(interp, (int)left.data, (int)right.data)));
-	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT)
+		push(interp, make_float(VAL_NUMBER(left) + VAL_NUMBER(right)));
+	else if (VAL_TAG(left) == T_STRING && VAL_TAG(right) == T_STRING)
+		push(interp, make_string(string_concat(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
+		push(interp, make_set(set_union(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_add);
 		if (target_handle < 0)
 			return;
 		push(interp, make_matrix(target_handle));
 	}
-	else if (left.tag == T_ARRAY && right.tag == T_ARRAY) {
+	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY) {
 		push(interp, left);
 		push(interp, right);
 		execute_cfa(interp, find(interp, "concat"));
 	}
 	else
-		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, or two arrays; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, or two arrays; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+
 	DISPATCH(interp);
 }
 
 void p_sub(Interpreter *interp) {
-
 	POP(right);
 	POP(left);
 
-	if (left.tag == T_FLOAT && right.tag == T_FLOAT)
-		push(interp, make_float((left).number - (right).number));
-	else if (left.tag == T_SET && right.tag == T_SET)
-		push(interp, make_set(set_difference(interp, (int)left.data, (int)right.data)));
-	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT)
+		push(interp, make_float(VAL_NUMBER(left) - VAL_NUMBER(right)));
+	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
+		push(interp, make_set(set_difference(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_subtract);
 		if (target_handle < 0)
 			return;
 		push(interp, make_matrix(target_handle));
 	}
 	else
-		fail(interp, "- : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+		fail(interp, "- : expected two floats, two sets, or two matrices; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+
 	DISPATCH(interp);
 }
 
 void p_mul(Interpreter *interp) {
-
 	POP(right);
 	POP(left);
 
-	if (left.tag == T_FLOAT && right.tag == T_FLOAT)
-		push(interp, make_float((left).number * (right).number));
-	else if (left.tag == T_SET && right.tag == T_SET)
-		push(interp, make_set(set_intersect(interp, (int)left.data, (int)right.data)));
-	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT)
+		push(interp, make_float(VAL_NUMBER(left) * VAL_NUMBER(right)));
+	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
+		push(interp, make_set(set_intersect(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_multiply);
 		if (target_handle < 0)
 			return;
 		push(interp, make_matrix(target_handle));
 	}
 	else
-		fail(interp, "* : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+		fail(interp, "* : expected two floats, two sets, or two matrices; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+
 	DISPATCH(interp);
 }
 
 void p_div(Interpreter *interp) {
-
 	POP(right);
 	POP(left);
-	if (left.tag == T_FLOAT && right.tag == T_FLOAT) {
-		if ((right).number == 0.0) {
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		if (VAL_NUMBER(right) == 0.0) {
 			fail(interp, "/ : division by zero");
 			return;
 		}
-		push(interp, make_float((left).number / (right).number));
+		push(interp, make_float(VAL_NUMBER(left) / VAL_NUMBER(right)));
 	}
-	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
-		Object *divisor = interp->objects[right.data];
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
+		Object *divisor = interp->objects[VAL_DATA(right)];
 		int n = divisor->matrix.rows * divisor->matrix.columns;
 		for (int i = 0; i < n; i++) {
 			if (divisor->matrix.elements[i] == 0.0) {
@@ -111,7 +110,8 @@ void p_div(Interpreter *interp) {
 		push(interp, make_matrix(target_handle));
 	}
 	else
-		fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+		fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	
 	DISPATCH(interp);
 }
 
@@ -133,7 +133,6 @@ BINARY_FLOAT_PRIMITIVE(p_sub_f, "-f", -)
 BINARY_FLOAT_PRIMITIVE(p_mul_f, "*f", *)
 
 void p_fmul_add(Interpreter *interp) {
-
 	if (interp->dsp < 3) {
 		fail(interp, "f*+: data stack underflow");
 		return;
@@ -143,11 +142,11 @@ void p_fmul_add(Interpreter *interp) {
 	Val *c = &interp->data_stack[interp->dsp - 1];
 	a->number = a->number * b->number + c->number;
 	interp->dsp -= 2;
+	
 	DISPATCH(interp);
 }
 
 void p_fmul_sub(Interpreter *interp) {
-
 	if (interp->dsp < 3) {
 		fail(interp, "f*-: data stack underflow");
 		return;
@@ -157,11 +156,11 @@ void p_fmul_sub(Interpreter *interp) {
 	Val *c = &interp->data_stack[interp->dsp - 1];
 	a->number = c->number - a->number * b->number;
 	interp->dsp -= 2;
+	
 	DISPATCH(interp);
 }
 
 void p_div_f(Interpreter *interp) {
-
 	if (interp->dsp < 2) {
 		fail(interp, "/f: data stack underflow");
 		return;
@@ -174,6 +173,7 @@ void p_div_f(Interpreter *interp) {
 	}
 	left->number = left->number / right->number;
 	interp->dsp--;
+
 	DISPATCH(interp);
 }
 
@@ -185,16 +185,20 @@ void p_neg(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
+Val make_bool(int is_true) {
+	return make_float(is_true ? -1.0 : 0.0); 
+}
 
-int truthy(Val value) { return (value.tag == T_FLOAT) ? ((value).number != 0.0) : (value.data != 0); }
+int truthy(Val value) {
+	return (VAL_TAG(value) == T_FLOAT) ? (VAL_NUMBER(value) != 0.0) : (VAL_DATA(value) != 0); 
+}
 
 #define COMPARISON_PRIMITIVE(name, op) \
 	void name(Interpreter *interp) { \
 		POP(right); \
 		POP(left); \
-		if (left.tag == T_FLOAT && right.tag == T_FLOAT) \
-			push(interp, make_bool((left).number op (right).number)); \
+		if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) \
+			push(interp, make_bool(VAL_NUMBER(left) op VAL_NUMBER(right))); \
 		else \
 			push(interp, make_bool(val_cmp(interp, left, right) op 0)); \
 		DISPATCH(interp); \
@@ -207,11 +211,11 @@ COMPARISON_PRIMITIVE(p_gt, >)
 #define UNARY_FLOAT_PRIMITIVE(name, word_name, expr) \
 	void name(Interpreter *interp) { \
 		POP(operand); \
-		if (operand.tag != T_FLOAT) { \
-			fail(interp, word_name ": expected a float; got %s", tag_name(operand.tag)); \
+		if (VAL_TAG(operand) != T_FLOAT) { \
+			fail(interp, word_name ": expected a float; got %s", tag_name(VAL_TAG(operand))); \
 			return; \
 		} \
-		double n = (operand).number; \
+		double n = VAL_NUMBER(operand); \
 		push(interp, make_float(expr)); \
 		DISPATCH(interp); \
 	}
@@ -286,19 +290,19 @@ void p_roll(Interpreter *interp) {
 	}
 
 	int src = interp->dsp - 1 - n;
-	Val v = interp->data_stack[src];
+	Val value = interp->data_stack[src];
 	memmove(&interp->data_stack[src], &interp->data_stack[src + 1], (size_t)n * sizeof(Val));
-	interp->data_stack[interp->dsp - 1] = v;
+	interp->data_stack[interp->dsp - 1] = value;
 	DISPATCH(interp);
 }
 
 void p_dot(Interpreter *interp) {
 
 	POP(value);
-	if (value.tag == T_MATRIX) {
-		print_matrix_grid(interp->objects[value.data]);
-	} else if (value.tag == T_FRAME) {
-		print_frame_pretty(interp, interp->objects[value.data], 0);
+	if (VAL_TAG(value) == T_MATRIX) {
+		print_matrix_grid(interp->objects[VAL_DATA(value)]);
+	} else if (VAL_TAG(value) == T_FRAME) {
+		print_frame_pretty(interp, interp->objects[VAL_DATA(value)], 0);
 		putchar('\n');
 	} else {
 		print_val(interp, value);
@@ -313,8 +317,8 @@ void p_dot_all(Interpreter *interp) {
 	int saved = print_truncate;
 	print_truncate = 0;
 	POP(value);
-	if (value.tag == T_MATRIX) {
-		print_matrix_grid(interp->objects[value.data]);
+	if (VAL_TAG(value) == T_MATRIX) {
+		print_matrix_grid(interp->objects[VAL_DATA(value)]);
 	} else {
 		print_val(interp, value);
 		putchar(' ');
@@ -426,15 +430,14 @@ void p_execute(Interpreter *interp) {
 
 void p_reset(Interpreter *interp) {
 
-	Val mark = make_mark();
-	mark.data = interp->next_mark_id++;
+	Val mark = make_tagged(T_MARK, interp->next_mark_id++);
 	rpush(interp, mark);
 	DISPATCH(interp);
 }
 
 int capture_continuation(Interpreter *interp, int *out_mark_index) {
 	int mark_index = interp->rsp - 1;
-	while (mark_index >= 0 && interp->return_stack[mark_index].tag != T_MARK) {
+	while (mark_index >= 0 && VAL_TAG(interp->return_stack[mark_index]) != T_MARK) {
 		mark_index--;
 	}
 	if (mark_index < 0) {
@@ -459,7 +462,7 @@ int capture_continuation(Interpreter *interp, int *out_mark_index) {
 static void restore_local_base_below(Interpreter *interp, int mark_index) {
 	int base = interp->local_base;
 	while (base > mark_index)
-		base = (int)interp->return_stack[base - 1].data;
+		base = (int)VAL_DATA(interp->return_stack[base - 1]);
 	interp->local_base = base;
 }
 
@@ -485,7 +488,7 @@ void p_shift_with(Interpreter *interp) {
 	if (cont_slot < 0)
 		return;
 
-	interp->unwind_target = (int)interp->return_stack[mark_index].data;
+	interp->unwind_target = (int)VAL_DATA(interp->return_stack[mark_index]);
 	interp->rsp = mark_index + 1;
 	restore_local_base_below(interp, mark_index);
 	push(interp, make_continuation(cont_slot));
@@ -500,12 +503,12 @@ void p_shift_with(Interpreter *interp) {
 void p_resume(Interpreter *interp) {
 
 	POP(k);
-	if (k.tag != T_CONT) {
-		fail(interp, "resume: expected a continuation; got %s", tag_name(k.tag));
+	if (VAL_TAG(k) != T_CONT) {
+		fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(k)));
 		return;
 	}
 
-	Object *cont = interp->objects[k.data];
+	Object *cont = interp->objects[VAL_DATA(k)];
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
 	int saved_local_base = interp->local_base;
@@ -570,9 +573,10 @@ void p_see(Interpreter *interp) {
 				printf(": %s ... ;  \\ no source captured\n", name);
 		}
 	} else if (handler == dovar) {
-		Val val; val.tag = (Tag)interp->vocab->dict[target_cfa + 1]; val.data = interp->vocab->dict[target_cfa + 2];
+		Val value;
+		value.bits = (uint64_t)interp->vocab->dict[target_cfa + 1];
 		printf("variable %s  \\ current value: ", name ? name : "?");
-		print_val(interp, val);
+		print_val(interp, value);
 		putchar('\n');
 	} else if (handler == dosym) {
 		printf("symbol %s\n", name ? name : "?");
@@ -628,7 +632,7 @@ void p_qif(Interpreter *interp) {
 void p_then(Interpreter *interp) {
 
 	POP(slot_val);
-	int slot = (int)(slot_val).number;
+	int slot = (int)VAL_NUMBER(slot_val);
 	interp->vocab->dict[slot] = (interp->vocab->here - slot);
 	DISPATCH(interp);
 }
@@ -636,7 +640,7 @@ void p_then(Interpreter *interp) {
 void p_else(Interpreter *interp) {
 
 	POP(slot_val);
-	int slot = (int)(slot_val).number;
+	int slot = (int)VAL_NUMBER(slot_val);
 	emit_call(interp, interp->vocab->branch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
@@ -652,7 +656,7 @@ void p_begin(Interpreter *interp) {
 void p_until(Interpreter *interp) {
 
 	POP(back_val);
-	int back = (int)(back_val).number;
+	int back = (int)VAL_NUMBER(back_val);
 	emit_call(interp, interp->vocab->zbranch_cfa);
 	emit(interp, back - interp->vocab->here);
 	DISPATCH(interp);
@@ -661,7 +665,7 @@ void p_until(Interpreter *interp) {
 void p_again(Interpreter *interp) {
 
 	POP(back_val);
-	int back = (int)(back_val).number;
+	int back = (int)VAL_NUMBER(back_val);
 	emit_call(interp, interp->vocab->branch_cfa);
 	emit(interp, back - interp->vocab->here);
 	DISPATCH(interp);
@@ -690,8 +694,8 @@ void p_qsemi(Interpreter *interp) {
 	emit_call(interp, interp->vocab->exit_cfa);
 	POP(branch_slot_val);
 	POP(anon_cfa_val);
-	int branch_slot = (int)(branch_slot_val).number;
-	int anon_cfa = (int)(anon_cfa_val).number;
+	int branch_slot = (int)VAL_NUMBER(branch_slot_val);
+	int anon_cfa = (int)VAL_NUMBER(anon_cfa_val);
 	if (branch_slot < 0) {
 		interp->compiling = 0;
 		push(interp, make_xt(anon_cfa));
@@ -776,12 +780,7 @@ void p_colon(Interpreter *interp) {
 int create_variable(Interpreter *interp, const char *name) {
 	create_header(interp, name, 0);
 	emit(interp, (cell)&dovar);
-	emit(interp, (cell)T_FLOAT);
-
-	double zero_value = 0.0;
-	cell zero_bits;
-	memcpy(&zero_bits, &zero_value, 8);
-	emit(interp, zero_bits);
+	emit(interp, (cell)make_float(0.0).bits);
 
 	return interp->vocab->latest_cfa;
 }
@@ -896,8 +895,7 @@ void p_bar_to(Interpreter *interp) {
 void p_to_var(Interpreter *interp) {
 	int var_cfa = (int)interp->vocab->dict[interp->ip++];
 	POP(v);
-	interp->vocab->dict[var_cfa + 1] = (cell)v.tag;
-	interp->vocab->dict[var_cfa + 2] = v.data;
+	interp->vocab->dict[var_cfa + 1] = (cell)v.bits;
 	DISPATCH(interp);
 }
 
@@ -942,9 +940,8 @@ void p_to(Interpreter *interp) {
 		emit_call(interp, interp->vocab->to_var_cfa);
 		emit(interp, (cell)target_cfa);
 	} else {
-		POP(v);
-		interp->vocab->dict[target_cfa + 1] = (cell)v.tag;
-		interp->vocab->dict[target_cfa + 2] = v.data;
+		POP(value);
+		interp->vocab->dict[target_cfa + 1] = (cell)value.bits;
 	}
 	DISPATCH(interp);
 }
@@ -1128,10 +1125,10 @@ int interpolate(Interpreter *interp, int template_handle) {
 					return object_new_string(interp, "", 0);
 				}
 				Val value = interp->data_stack[stack_index];
-				switch (value.tag) {
+				switch (VAL_TAG(value)) {
 					case T_FLOAT: {
 						char rendered[64];
-						double number = (value).number;
+						double number = VAL_NUMBER(value);
 						int n;
 						if (number == (double)(int64_t)number && number > -1e15 && number < 1e15) {
 							n = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
@@ -1142,12 +1139,12 @@ int interpolate(Interpreter *interp, int template_handle) {
 						break;
 					}
 					case T_SYMBOL: {
-						const char *name = &interp->vocab->symbol_pool[value.data];
+						const char *name = &interp->vocab->symbol_pool[VAL_DATA(value)];
 						interp_append(&out_buffer, &capacity, &out_length, name, (int)strlen(name));
 						break;
 					}
 					case T_STRING: {
-						Object *string_obj = interp->objects[value.data];
+						Object *string_obj = interp->objects[VAL_DATA(value)];
 						interp_append(&out_buffer, &capacity, &out_length, string_obj->bytes, string_obj->len);
 						break;
 					}
@@ -1188,10 +1185,10 @@ void p_clear(Interpreter *interp) {
 }
 
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name) {
-	if (operand.tag == T_FLOAT) {
-		push(interp, make_float(function((operand).number)));
-	} else if (operand.tag == T_MATRIX) {
-		Object *source = interp->objects[operand.data];
+	if (VAL_TAG(operand) == T_FLOAT) {
+		push(interp, make_float(function(VAL_NUMBER(operand))));
+	} else if (VAL_TAG(operand) == T_MATRIX) {
+		Object *source = interp->objects[VAL_DATA(operand)];
 		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
 		if (interp->error_flag)
 			return;
@@ -1203,7 +1200,7 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 
 		push(interp, make_matrix(target_handle));
 	} else {
-		fail(interp, "%s: expected a float or a matrix; got %s", name, tag_name(operand.tag));
+		fail(interp, "%s: expected a float or a matrix; got %s", name, tag_name(VAL_TAG(operand)));
 	}
 }
 

@@ -4,7 +4,7 @@ void p_map(Interpreter *interp) {
 
 	POP_XT(xt, "map");
 	PEEK_SEQUENCE_AT(source_val, 0, "map");
-	Object *source = interp->objects[source_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
 	int source_index = interp->dsp - 1;
 
 	NEW_ARRAY(result_handle, result, source->len);
@@ -48,11 +48,11 @@ void p_mapn(Interpreter *interp) {
 	int first_source = interp->dsp - arity;
 	int row_count = -1;
 	for (int i = 0; i < arity; i++) {
-		if (interp->data_stack[first_source + i].tag != T_ARRAY) {
-			fail(interp, "mapn: source %d is %s, expected an array", i, tag_name(interp->data_stack[first_source + i].tag));
+		if (VAL_TAG(interp->data_stack[first_source + i]) != T_ARRAY) {
+			fail(interp, "mapn: source %d is %s, expected an array", i, tag_name(VAL_TAG(interp->data_stack[first_source + i])));
 			return;
 		}
-		Object *source = interp->objects[interp->data_stack[first_source + i].data];
+		Object *source = interp->objects[VAL_DATA(interp->data_stack[first_source + i])];
 		if (row_count < 0) row_count = source->len;
 		else if (source->len != row_count) {
 			fail(interp, "mapn: source arrays differ in length (%d vs %d)", source->len, row_count);
@@ -68,7 +68,7 @@ void p_mapn(Interpreter *interp) {
 	for (int row = 0; row < row_count && !interp->error_flag; row++) {
 		int dsp_before = interp->dsp;
 		for (int source_index = 0; source_index < arity; source_index++) {
-			Object *source = interp->objects[interp->data_stack[first_source + source_index].data];
+			Object *source = interp->objects[VAL_DATA(interp->data_stack[first_source + source_index])];
 			push(interp, source->items[row]);
 		}
 		execute_cfa(interp, xt);
@@ -93,7 +93,7 @@ void p_filter(Interpreter *interp) {
 
 	POP_XT(xt, "filter");
 	PEEK_SEQUENCE_AT(source_val, 0, "filter");
-	Object *source = interp->objects[source_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
 	int source_index = interp->dsp - 1;
 
 	int *keep = malloc((size_t)MAX(source->len, 1) * sizeof(int));
@@ -139,7 +139,7 @@ void p_reduce(Interpreter *interp) {
 	POP_XT(combiner, "reduce");
 	POP(init_val);
 	PEEK_SEQUENCE_AT(source_val, 0, "reduce");
-	Object *source = interp->objects[source_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
 
 	Val result_val = init_val;
 	for (int i = 0; i < source->len; i++) {

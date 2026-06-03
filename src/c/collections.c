@@ -80,7 +80,7 @@ void p_setopen(Interpreter *interp) {
 void p_setclose(Interpreter *interp) {
 
 	int mark_index = interp->dsp;
-	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
+	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
 	if (mark_index == 0) {
 		fail(interp, "> : no matching < on the stack");
 		return;
@@ -104,7 +104,7 @@ void p_frameopen(Interpreter *interp) {
 void p_frameclose(Interpreter *interp) {
 
 	int mark_index = interp->dsp;
-	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
+	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
 	if (mark_index == 0) {
 		fail(interp, "} : no matching { on the stack");
 		return;
@@ -119,11 +119,11 @@ void p_frameclose(Interpreter *interp) {
 
 	NEW_FRAME(frame_handle, frame);
 	for (int i = mark_index; i < interp->dsp; i += 2) {
-		if (interp->data_stack[i].tag != T_SYMBOL) {
-			fail(interp, "} : frame keys must be symbols; got %s", tag_name(interp->data_stack[i].tag));
+		if (VAL_TAG(interp->data_stack[i]) != T_SYMBOL) {
+			fail(interp, "} : frame keys must be symbols; got %s", tag_name(VAL_TAG(interp->data_stack[i])));
 			return;
 		}
-		frame_put(frame, interp->data_stack[i].data, interp->data_stack[i + 1]);
+		frame_put(frame, VAL_DATA(interp->data_stack[i]), interp->data_stack[i + 1]);
 	}
 
 	interp->dsp = mark_index - 1;
@@ -139,7 +139,7 @@ void p_array_open(Interpreter *interp) {
 void p_array_close(Interpreter *interp) {
 
 	int mark_index = interp->dsp;
-	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
+	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
 	if (mark_index == 0) {
 		fail(interp, "] : no matching [ on the stack");
 		return;
@@ -175,12 +175,12 @@ void p_array(Interpreter *interp) {
 void p_size(Interpreter *interp) {
 
 	POP(collection);
-	if (collection.tag == T_SET ||
-			collection.tag == T_ARRAY ||
-			collection.tag == T_STRING ||
-			collection.tag == T_FRAME)
-		push(interp, make_float((double)interp->objects[collection.data]->len));
-	else fail(interp, "size: expected a set, array, string, or frame; got %s", tag_name(collection.tag));
+	if (VAL_TAG(collection) == T_SET ||
+			VAL_TAG(collection) == T_ARRAY ||
+			VAL_TAG(collection) == T_STRING ||
+			VAL_TAG(collection) == T_FRAME)
+		push(interp, make_float((double)interp->objects[VAL_DATA(collection)]->len));
+	else fail(interp, "size: expected a set, array, string, or frame; got %s", tag_name(VAL_TAG(collection)));
 	DISPATCH(interp);
 }
 
@@ -188,11 +188,11 @@ void p_member(Interpreter *interp) {
 
 	POP(value);
 	POP(set_value);
-	if (set_value.tag != T_SET) {
-		fail(interp, "member?: expected a set; got %s", tag_name(set_value.tag));
+	if (VAL_TAG(set_value) != T_SET) {
+		fail(interp, "member?: expected a set; got %s", tag_name(VAL_TAG(set_value)));
 		return;
 	}
-	push(interp, make_bool(set_member(interp, (int)set_value.data, value)));
+	push(interp, make_bool(set_member(interp, (int)VAL_DATA(set_value), value)));
 	DISPATCH(interp);
 }
 
@@ -200,11 +200,11 @@ void p_union(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
-	if (left.tag != T_SET || right.tag != T_SET) {
-		fail(interp, "union: expected two sets; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	if (VAL_TAG(left) != T_SET || VAL_TAG(right) != T_SET) {
+		fail(interp, "union: expected two sets; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 		return;
 	}
-	push(interp, make_set(set_union(interp, (int)left.data, (int)right.data)));
+	push(interp, make_set(set_union(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
 	DISPATCH(interp);
 }
 
@@ -212,11 +212,11 @@ void p_intersect(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
-	if (left.tag != T_SET || right.tag != T_SET) {
-		fail(interp, "intersection: expected two sets; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	if (VAL_TAG(left) != T_SET || VAL_TAG(right) != T_SET) {
+		fail(interp, "intersection: expected two sets; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 		return;
 	}
-	push(interp, make_set(set_intersect(interp, (int)left.data, (int)right.data)));
+	push(interp, make_set(set_intersect(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
 	DISPATCH(interp);
 }
 
@@ -224,11 +224,11 @@ void p_difference(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
-	if (left.tag != T_SET || right.tag != T_SET) {
-		fail(interp, "difference: expected two sets; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	if (VAL_TAG(left) != T_SET || VAL_TAG(right) != T_SET) {
+		fail(interp, "difference: expected two sets; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 		return;
 	}
-	push(interp, make_set(set_difference(interp, (int)left.data, (int)right.data)));
+	push(interp, make_set(set_difference(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
 	DISPATCH(interp);
 }
 
@@ -256,7 +256,7 @@ void p_take(Interpreter *interp) {
 	if (n_items < 0) n_items = 0;
 
 	PEEK_SEQUENCE_AT(source_val, 0, "take");
-	Object *source = interp->objects[source_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
 	if (n_items > source->len) n_items = source->len;
 
 	NEW_ARRAY(result_handle, result, n_items);
@@ -271,7 +271,7 @@ void p_take(Interpreter *interp) {
 void p_reverse(Interpreter *interp) {
 
 	PEEK_SEQUENCE_AT(source_val, 0, "reverse");
-	Object *source = interp->objects[source_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
 
 	NEW_ARRAY(result_handle, result, source->len);
 
@@ -287,8 +287,8 @@ void p_concat(Interpreter *interp) {
 
 	PEEK_SEQUENCE_AT(b_val, 0, "concat");
 	PEEK_SEQUENCE_AT(a_val, 1, "concat");
-	Object *b = interp->objects[b_val.data];
-	Object *a = interp->objects[a_val.data];
+	Object *b = interp->objects[VAL_DATA(b_val)];
+	Object *a = interp->objects[VAL_DATA(a_val)];
 
 	NEW_ARRAY(result_handle, result, a->len + b->len);
 
@@ -351,11 +351,11 @@ int frame_delete(Object *frame, cell key) {
 void p_to_frame(Interpreter *interp) {
 
 	PEEK_SEQUENCE_AT(source_val, 0, ">frame");
-	if (source_val.tag != T_ARRAY) {
-		fail(interp, ">frame: expected an array; got %s", tag_name(source_val.tag));
+	if (VAL_TAG(source_val) != T_ARRAY) {
+		fail(interp, ">frame: expected an array; got %s", tag_name(VAL_TAG(source_val)));
 		return;
 	}
-	Object *source = interp->objects[source_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
 	if (source->len % 2 != 0) {
 		fail(interp, ">frame: array needs an even number of kv pairs");
 		return;
@@ -363,11 +363,11 @@ void p_to_frame(Interpreter *interp) {
 
 	NEW_FRAME(frame_handle, frame);
 	for (int i = 0; i < source->len; i += 2) {
-		if (source->items[i].tag != T_SYMBOL) {
-			fail(interp, ">frame: keys must be symbols; got %s", tag_name(source->items[i].tag));
+		if (VAL_TAG(source->items[i]) != T_SYMBOL) {
+			fail(interp, ">frame: keys must be symbols; got %s", tag_name(VAL_TAG(source->items[i])));
 			return;
 		}
-		frame_put(frame, source->items[i].data, source->items[i + 1]);
+		frame_put(frame, VAL_DATA(source->items[i]), source->items[i + 1]);
 	}
 
 	interp->dsp--;
@@ -376,15 +376,15 @@ void p_to_frame(Interpreter *interp) {
 }
 
 static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
-	if (path_val.tag != T_ARRAY) {
-		fail(interp, "%s: expected a path (array of symbols); got %s", op, tag_name(path_val.tag));
+	if (VAL_TAG(path_val) != T_ARRAY) {
+		fail(interp, "%s: expected a path (array of symbols); got %s", op, tag_name(VAL_TAG(path_val)));
 		return NULL;
 	}
 
-	Object *path = interp->objects[path_val.data];
+	Object *path = interp->objects[VAL_DATA(path_val)];
 	for (int i = 0; i < path->len; i++) {
-		if (path->items[i].tag != T_SYMBOL) {
-			fail(interp, "%s: path elements must be symbols; got %s", op, tag_name(path->items[i].tag));
+		if (VAL_TAG(path->items[i]) != T_SYMBOL) {
+			fail(interp, "%s: path elements must be symbols; got %s", op, tag_name(VAL_TAG(path->items[i])));
 			return NULL;
 		}
 	}
@@ -410,15 +410,15 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 
 #define DISPATCH_SYMBOL_OR_PATH(key_or_path, op, symbol_body, path_body) \
 	do { \
-		if ((key_or_path).tag == T_SYMBOL) { \
+		if (VAL_TAG(key_or_path) == T_SYMBOL) { \
 			symbol_body; \
-		} else if ((key_or_path).tag == T_ARRAY) { \
+		} else if (VAL_TAG(key_or_path) == T_ARRAY) { \
 			Object *path = frame_path(interp, (key_or_path), (op)); \
 			if (!path) return; \
 			path_body; \
 		} else { \
 			fail(interp, "%s: expected a symbol or path (array of symbols); got %s", \
-					(op), tag_name((key_or_path).tag)); \
+					(op), tag_name(VAL_TAG(key_or_path))); \
 			return; \
 		} \
 	} while (0)
@@ -427,12 +427,12 @@ void p_frame_get(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 1, "@", T_FRAME);
 	PEEK_AT(key_or_path, 0, "@");
-	Object *frame = interp->objects[frame_val.data];
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "@", {
-			FRAME_LOOKUP(frame, key_or_path.data, at, present);
+			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
 			if (!present) {
-			fail(interp, "@: no key :%s", &interp->vocab->symbol_pool[key_or_path.data]);
+			fail(interp, "@: no key :%s", &interp->vocab->symbol_pool[VAL_DATA(key_or_path)]);
 			return;
 			}
 			Val result = frame->frame.values[at];
@@ -452,16 +452,16 @@ void p_frame_set(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 2, "!", T_FRAME);
 	PEEK_AT(key_or_path, 1, "!");
 	PEEK_AT(value, 0, "!");
-	Object *frame = interp->objects[frame_val.data];
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "!", {
-			frame_put(frame, key_or_path.data, value);
+			frame_put(frame, VAL_DATA(key_or_path), value);
 			interp->dsp -= 2;
 			}, {
 			REQUIRE_NONEMPTY_PATH(path, "!");
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_VIVIFY, NULL, "!");
 			if (interp->error_flag) return;
-			frame_put(interp->objects[parent.data], path->items[path->len - 1].data, value);
+			frame_put(interp->objects[VAL_DATA(parent)], VAL_DATA(path->items[path->len - 1]), value);
 			interp->dsp -= 2;
 			});
 	DISPATCH(interp);
@@ -471,11 +471,11 @@ void p_frame_delete_at(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 1, "delete-at", T_FRAME);
 	PEEK_AT(key_or_path, 0, "delete-at");
-	Object *frame = interp->objects[frame_val.data];
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "delete-at", {
-			if (!frame_delete(frame, key_or_path.data)) {
-			fail(interp, "delete-at: no key :%s", &interp->vocab->symbol_pool[key_or_path.data]);
+			if (!frame_delete(frame, VAL_DATA(key_or_path))) {
+			fail(interp, "delete-at: no key :%s", &interp->vocab->symbol_pool[VAL_DATA(key_or_path)]);
 			return;
 			}
 			interp->dsp--;
@@ -483,8 +483,8 @@ void p_frame_delete_at(Interpreter *interp) {
 			REQUIRE_NONEMPTY_PATH(path, "delete-at");
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_ERROR, NULL, "delete-at");
 			if (interp->error_flag) return;
-			cell leaf = path->items[path->len - 1].data;
-			if (parent.tag != T_FRAME || !frame_delete(interp->objects[parent.data], leaf)) {
+			cell leaf = VAL_DATA(path->items[path->len - 1]);
+			if (VAL_TAG(parent) != T_FRAME || !frame_delete(interp->objects[VAL_DATA(parent)], leaf)) {
 			fail(interp, "delete-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
 			return;
 			}
@@ -496,7 +496,7 @@ void p_frame_delete_at(Interpreter *interp) {
 void p_frame_keys(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 0, "keys", T_FRAME);
-	Object *frame = interp->objects[frame_val.data];
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
 	NEW_ARRAY(result_handle, result, frame->len);
 
 	for (int i = 0; i < frame->len; i++)
@@ -509,7 +509,7 @@ void p_frame_keys(Interpreter *interp) {
 void p_frame_values(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 0, "values", T_FRAME);
-	Object *frame = interp->objects[frame_val.data];
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
 	NEW_ARRAY(result_handle, result, frame->len);
 
 	for (int i = 0; i < frame->len; i++)
@@ -523,8 +523,8 @@ void p_merge(Interpreter *interp) {
 
 	PEEK_TYPE_AT(right, 0, "merge", T_FRAME);
 	PEEK_TYPE_AT(left, 1, "merge", T_FRAME);
-	Object *right_frame = interp->objects[right.data];
-	Object *left_frame = interp->objects[left.data];
+	Object *right_frame = interp->objects[VAL_DATA(right)];
+	Object *left_frame = interp->objects[VAL_DATA(left)];
 
 	NEW_FRAME(result_handle, result);
 	for (int i = 0; i < left_frame->len; i++)
@@ -541,22 +541,22 @@ void p_frame(Interpreter *interp) {
 
 	PEEK_TYPE_AT(values_val, 0, "frame", T_ARRAY);
 	PEEK_SEQUENCE_AT(keys_val, 1, "frame");
-	Object *values = interp->objects[values_val.data];
-	Object *keys = interp->objects[keys_val.data];
+	Object *values = interp->objects[VAL_DATA(values_val)];
+	Object *keys = interp->objects[VAL_DATA(keys_val)];
 	if (keys->len != values->len) {
 		fail(interp, "frame: keys and values must be the same length (%d vs %d)", keys->len, values->len);
 		return;
 	}
 	for (int i = 0; i < keys->len; i++) {
-		if (keys->items[i].tag != T_SYMBOL) {
-			fail(interp, "frame: keys must be symbols; got %s", tag_name(keys->items[i].tag));
+		if (VAL_TAG(keys->items[i]) != T_SYMBOL) {
+			fail(interp, "frame: keys must be symbols; got %s", tag_name(VAL_TAG(keys->items[i])));
 			return;
 		}
 	}
 
 	NEW_FRAME(frame_handle, frame);
 	for (int i = 0; i < keys->len; i++)
-		frame_put(frame, keys->items[i].data, values->items[i]);
+		frame_put(frame, VAL_DATA(keys->items[i]), values->items[i]);
 
 	interp->dsp -= 2;
 	push(interp, make_frame(frame_handle));
@@ -567,10 +567,10 @@ void p_has(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 1, "has?", T_FRAME);
 	PEEK_AT(key_or_path, 0, "has?");
-	Object *frame = interp->objects[frame_val.data];
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "has?", {
-			FRAME_LOOKUP(frame, key_or_path.data, at, present);
+			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
 			(void)at;
 			interp->dsp -= 2;
 			push(interp, make_bool(present));
@@ -589,39 +589,39 @@ void p_update_at(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 2, "update-at", T_FRAME);
 	PEEK_AT(key_or_path, 1, "update-at");
 	PEEK_AT(xt, 0, "update-at");
-	if (xt.tag != T_XT) {
-		fail(interp, "update-at: xt required on stack; got %s", tag_name(xt.tag));
+	if (VAL_TAG(xt) != T_XT) {
+		fail(interp, "update-at: xt required on stack; got %s", tag_name(VAL_TAG(xt)));
 		return;
 	}
-	Object *frame = interp->objects[frame_val.data];
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "update-at", {
-			FRAME_LOOKUP(frame, key_or_path.data, at, present);
+			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
 			if (!present) {
-			fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[key_or_path.data]);
+			fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[VAL_DATA(key_or_path)]);
 			return;
 			}
 			push(interp, frame->frame.values[at]);
-			execute_cfa(interp, (int)xt.data);
+			execute_cfa(interp, (int)VAL_DATA(xt));
 			frame->frame.values[at] = pop(interp);
 			interp->dsp -= 2;
 			}, {
 			REQUIRE_NONEMPTY_PATH(path, "update-at");
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_ERROR, NULL, "update-at");
 			if (interp->error_flag) return;
-			if (parent.tag != T_FRAME) {
-			fail(interp, "update-at: parent is not a frame; got %s", tag_name(parent.tag));
+			if (VAL_TAG(parent) != T_FRAME) {
+			fail(interp, "update-at: parent is not a frame; got %s", tag_name(VAL_TAG(parent)));
 			return;
 			}
-			Object *parent_obj = interp->objects[parent.data];
-			cell leaf = path->items[path->len - 1].data;
+			Object *parent_obj = interp->objects[VAL_DATA(parent)];
+			cell leaf = VAL_DATA(path->items[path->len - 1]);
 			FRAME_LOOKUP(parent_obj, leaf, at, present);
 			if (!present) {
 				fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
 				return;
 			}
 			push(interp, parent_obj->frame.values[at]);
-			execute_cfa(interp, (int)xt.data);
+			execute_cfa(interp, (int)VAL_DATA(xt));
 			parent_obj->frame.values[at] = pop(interp);
 			interp->dsp -= 2;
 			});
@@ -631,11 +631,11 @@ void p_update_at(Interpreter *interp) {
 void p_destruct(Interpreter *interp) {
 
 	PEEK_COLLECTION_AT(source_val, 0, "destruct");
-	Object *source = interp->objects[source_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
 	interp->dsp--;
 
 	for (int i = 0; i < source->len; i++) {
-		if (source_val.tag == T_FRAME) {
+		if (VAL_TAG(source_val) == T_FRAME) {
 			push(interp, make_symbol((int)source->frame.keys[i]));
 			push(interp, source->frame.values[i]);
 		} else {
@@ -646,21 +646,20 @@ void p_destruct(Interpreter *interp) {
 }
 
 void p_destruct_to(Interpreter *interp) {
-
 	POP(target_val);
 	POP(source_val);
 
-	if (source_val.tag != T_ARRAY) {
-                fail(interp, "destruct-to: source must be an array; got %s", tag_name(source_val.tag));
+	if (VAL_TAG(source_val) != T_ARRAY) {
+                fail(interp, "destruct-to: source must be an array; got %s", tag_name(VAL_TAG(source_val)));
                 return;
 	}
-	if (target_val.tag != T_ARRAY) {
-		fail(interp, "destruct-to: target must be an array; got %s", tag_name(target_val.tag));
+	if (VAL_TAG(target_val) != T_ARRAY) {
+		fail(interp, "destruct-to: target must be an array; got %s", tag_name(VAL_TAG(target_val)));
 		return;
 	}
 	
-	Object *source = interp->objects[source_val.data];
-	Object *target = interp->objects[target_val.data];
+	Object *source = interp->objects[VAL_DATA(source_val)];
+	Object *target = interp->objects[VAL_DATA(target_val)];
 	if (source->len != target->len) {
 		fail(interp, "destruct-to: length mismatch (source %d, target %d)", source->len, target->len);
 		return;
@@ -670,10 +669,10 @@ void p_destruct_to(Interpreter *interp) {
 		int var_cfa;
 
 		Val item = target->items[i];
-		if (item.tag == T_XT) {
-			var_cfa = (int)item.data;
-		} else if (item.tag == T_SYMBOL) {
-			const char *name = &interp->vocab->symbol_pool[item.data];
+		if (VAL_TAG(item) == T_XT) {
+			var_cfa = (int)VAL_DATA(item);
+		} else if (VAL_TAG(item) == T_SYMBOL) {
+			const char *name = &interp->vocab->symbol_pool[VAL_DATA(item)];
 			var_cfa = find(interp, name);
 			if (!var_cfa)
 				var_cfa = create_variable(interp, name);
@@ -681,7 +680,7 @@ void p_destruct_to(Interpreter *interp) {
 			target->items[i] = make_xt(var_cfa);
 		} else {
 			fail(interp, "destruct-to: target item at index %d must be symbol or xt; got %s",
-					i, tag_name(item.tag));
+					i, tag_name(VAL_TAG(item)));
 			return;
 		}
 
@@ -690,8 +689,7 @@ void p_destruct_to(Interpreter *interp) {
 			return;
 		}
 
-		interp->vocab->dict[var_cfa + 1] = (cell)source->items[i].tag;
-		interp->vocab->dict[var_cfa + 2] = source->items[i].data;
+		interp->vocab->dict[var_cfa + 1] = (cell)source->items[i].bits;
 	}
 	DISPATCH(interp);
 }
@@ -702,15 +700,15 @@ void p_slice_store(Interpreter *interp) {
 	POP_INT(sstep, "slice!", "step");
 	POP_INT(sstart, "slice!", "source-start");
 	POP(src_val);
-	if (src_val.tag != T_ARRAY && src_val.tag != T_SET) {
-		fail(interp, "slice!: source must be an array or set; got %s", tag_name(src_val.tag));
+	if (VAL_TAG(src_val) != T_ARRAY && VAL_TAG(src_val) != T_SET) {
+		fail(interp, "slice!: source must be an array or set; got %s", tag_name(VAL_TAG(src_val)));
 		return;
 	}
 	POP_INT(tstart, "slice!", "target-start");
 	PEEK_TYPE_AT(target_val, 0, "slice!", T_ARRAY);
 
-	Object *target = interp->objects[target_val.data];
-	Object *src    = interp->objects[src_val.data];
+	Object *target = interp->objects[VAL_DATA(target_val)];
+	Object *src    = interp->objects[VAL_DATA(src_val)];
 
 	if (slen < 0) {
 		fail(interp, "slice!: length must be non-negative; got %d", slen);
@@ -768,7 +766,7 @@ void p_to_slice(Interpreter *interp) {
 	POP_INT(n, "to-slice", "count");
 	POP_INT(offset, "to-slice", "offset");
 	PEEK_TYPE_AT(target_val, 0, "to-slice", T_ARRAY);
-	Object *target = interp->objects[target_val.data];
+	Object *target = interp->objects[VAL_DATA(target_val)];
 
 	if (n < 0) {
 		fail(interp, "to-slice: count must be non-negative; got %d", n);

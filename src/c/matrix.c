@@ -9,8 +9,8 @@ double scalar_multiply(double a, double b) { return a * b; }
 double scalar_divide(double a, double b) { return a / b; }
 
 int matrix_scalar_op(Interpreter *interp, Val left_val, Val right_val, scalar_operator op) {
-	Object *left = interp->objects[left_val.data];
-	Object *right = interp->objects[right_val.data];
+	Object *left = interp->objects[VAL_DATA(left_val)];
+	Object *right = interp->objects[VAL_DATA(right_val)];
 
 	if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) {
 		fail(interp, "element-wise op: matrix shapes differ (%dx%d vs %dx%d)",
@@ -37,16 +37,16 @@ void p_at_i(Interpreter *interp) {
 	POP_INT(index, "@i", "index");
 
 	POP(source_val);
-	if (source_val.tag == T_ARRAY) {
-		Object *array = interp->objects[source_val.data];
+	if (VAL_TAG(source_val) == T_ARRAY) {
+		Object *array = interp->objects[VAL_DATA(source_val)];
 		if (index < 0 || index >= array->len) {
 			fail(interp, "@i: array index %d out of bounds (length %d)", index, array->len);
 			return;
 		}
 
 		push(interp, array->items[index]);
-	} else if (source_val.tag == T_MATRIX) {
-		Object *source = interp->objects[source_val.data];
+	} else if (VAL_TAG(source_val) == T_MATRIX) {
+		Object *source = interp->objects[VAL_DATA(source_val)];
 		if (index < 0 || index >= source->matrix.rows) {
 			fail(interp, "@i: row index %d out of bounds (%d rows)", index, source->matrix.rows);
 			return;
@@ -59,7 +59,7 @@ void p_at_i(Interpreter *interp) {
 
 		push(interp, make_matrix(row_handle));
 	} else {
-		fail(interp, "@i: expected an array or matrix; got %s", tag_name(source_val.tag));
+		fail(interp, "@i: expected an array or matrix; got %s", tag_name(VAL_TAG(source_val)));
 	}
 	DISPATCH(interp);
 }
@@ -68,14 +68,14 @@ void p_store_i(Interpreter *interp) {
 
 	PEEK_TYPE_AT(array_val, 2, "!i", T_ARRAY);
 	PEEK_AT(index_val, 1, "!i");
-	if (index_val.tag != T_FLOAT) {
-		fail(interp, "!i: expected a float index; got %s", tag_name(index_val.tag));
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		fail(interp, "!i: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
 		return;
 	}
-	int index = (int)(index_val).number;
+	int index = (int)VAL_NUMBER(index_val);
 	PEEK_AT(value, 0, "!i");
 
-	Object *array = interp->objects[array_val.data];
+	Object *array = interp->objects[VAL_DATA(array_val)];
 	if (index < 0 || index >= array->len) {
 		fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
 		return;
@@ -201,22 +201,22 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	POP(a_val);
 	POP(alpha_val);
 
-	if (alpha_val.tag != T_FLOAT || beta_val.tag != T_FLOAT) {
+	if (VAL_TAG(alpha_val) != T_FLOAT || VAL_TAG(beta_val) != T_FLOAT) {
 		fail(interp, "dgemm: alpha and beta must be floats; got %s and %s",
-				tag_name(alpha_val.tag), tag_name(beta_val.tag));
+				tag_name(VAL_TAG(alpha_val)), tag_name(VAL_TAG(beta_val)));
 		return;
 	}
-	if (a_val.tag != T_MATRIX || b_val.tag != T_MATRIX || c_val.tag != T_MATRIX) {
+	if (VAL_TAG(a_val) != T_MATRIX || VAL_TAG(b_val) != T_MATRIX || VAL_TAG(c_val) != T_MATRIX) {
 		fail(interp, "dgemm: A, B, C must be matrices; got %s, %s, %s",
-				tag_name(a_val.tag), tag_name(b_val.tag), tag_name(c_val.tag));
+				tag_name(VAL_TAG(a_val)), tag_name(VAL_TAG(b_val)), tag_name(VAL_TAG(c_val)));
 		return;
 	}
 
 	int matmult_handle = dgemm_kernel(interp, transpose_a, transpose_b,
-			(alpha_val).number,
-			(int)a_val.data, (int)b_val.data,
-			(beta_val).number,
-			(int)c_val.data);
+			VAL_NUMBER(alpha_val),
+			(int)VAL_DATA(a_val), (int)VAL_DATA(b_val),
+			VAL_NUMBER(beta_val),
+			(int)VAL_DATA(c_val));
 	if (interp->error_flag) return;
 	push(interp, make_matrix(matmult_handle));
 }
@@ -288,14 +288,14 @@ int create_matrix(Interpreter *interp) {
 	if (interp->error_flag) return -1;
 	Val left = pop(interp);
 	if (interp->error_flag) return -1;
-	if (left.tag != T_FLOAT || right.tag != T_FLOAT) {
+	if (VAL_TAG(left) != T_FLOAT || VAL_TAG(right) != T_FLOAT) {
 		fail(interp, "matrix dimensions: expected two floats (rows cols); got %s and %s",
-				tag_name(left.tag), tag_name(right.tag));
+				tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 		return -1;
 	}
 
-	int num_rows = (int)((left).number);
-	int num_columns = (int)((right).number);
+	int num_rows = (int)(VAL_NUMBER(left));
+	int num_columns = (int)(VAL_NUMBER(right));
 	if (num_rows < 0 || num_columns < 0) {
 		fail(interp, "matrix dimensions: must be non-negative; got %dx%d", num_rows, num_columns);
 		return -1;
@@ -324,13 +324,13 @@ void p_diagonal_matrix(Interpreter *interp) {
 	if (interp->error_flag) return;
 
 	POP(diag_val);
-	if (diag_val.tag != T_FLOAT) {
-		fail(interp, "diagonal-matrix: expected a float fill value; got %s", tag_name(diag_val.tag));
+	if (VAL_TAG(diag_val) != T_FLOAT) {
+		fail(interp, "diagonal-matrix: expected a float fill value; got %s", tag_name(VAL_TAG(diag_val)));
 		return;
 	}
 
 	Object *diag_matrix = interp->objects[diag_matrix_handle];
-	double diag_element = (diag_val).number;
+	double diag_element = VAL_NUMBER(diag_val);
 	for (int i = 0; i < diag_matrix->matrix.rows; i++) {
 		MAT(diag_matrix, i, i) = diag_element;
 	}
@@ -383,29 +383,29 @@ void p_matrix(Interpreter *interp) {
 	}
 	Val top = interp->data_stack[interp->dsp - 1];
 	Val below = interp->data_stack[interp->dsp - 2];
-	if (top.tag != T_FLOAT) {
-		fail(interp, "matrix: expected a float dimension on top; got %s", tag_name(top.tag));
+	if (VAL_TAG(top) != T_FLOAT) {
+		fail(interp, "matrix: expected a float dimension on top; got %s", tag_name(VAL_TAG(top)));
 		return;
 	}
 
 	int num_rows, num_cols;
 	Val arr_val;
-	if (below.tag == T_FLOAT) {
+	if (VAL_TAG(below) == T_FLOAT) {
 		if (interp->dsp < 3) {
 			fail(interp, "matrix: stack too shallow (expected array below two dimensions)");
 			return;
 		}
 		arr_val = interp->data_stack[interp->dsp - 3];
-		if (arr_val.tag != T_ARRAY) {
-			fail(interp, "matrix: expected an array; got %s", tag_name(arr_val.tag));
+		if (VAL_TAG(arr_val) != T_ARRAY) {
+			fail(interp, "matrix: expected an array; got %s", tag_name(VAL_TAG(arr_val)));
 			return;
 		}
-		num_rows = (int)(below).number;
-		num_cols = (int)(top).number;
+		num_rows = (int)VAL_NUMBER(below);
+		num_cols = (int)VAL_NUMBER(top);
 		interp->dsp -= 3;
-	} else if (below.tag == T_ARRAY) {
-		num_rows = (int)(top).number;
-		Object *arr = interp->objects[below.data];
+	} else if (VAL_TAG(below) == T_ARRAY) {
+		num_rows = (int)VAL_NUMBER(top);
+		Object *arr = interp->objects[VAL_DATA(below)];
 		if (num_rows <= 0 || arr->len % num_rows != 0) {
 			fail(interp, "matrix: %d elements does not divide evenly into %d rows", arr->len, num_rows);
 			return;
@@ -414,7 +414,7 @@ void p_matrix(Interpreter *interp) {
 		arr_val = below;
 		interp->dsp -= 2;
 	} else {
-		fail(interp, "matrix: expected an array below the dimension(s); got %s", tag_name(below.tag));
+		fail(interp, "matrix: expected an array below the dimension(s); got %s", tag_name(VAL_TAG(below)));
 		return;
 	}
 
@@ -426,7 +426,7 @@ void p_matrix(Interpreter *interp) {
 
 	POP(array_val);
 	Object *matrix = interp->objects[matrix_handle];
-	Object *input_array = interp->objects[array_val.data];
+	Object *input_array = interp->objects[VAL_DATA(array_val)];
 	int num_elements = matrix->matrix.rows * matrix->matrix.columns;
 	if (input_array->len != num_elements) {
 		fail(interp, "matrix: array has %d elements but %dx%d needs %d",
@@ -435,11 +435,11 @@ void p_matrix(Interpreter *interp) {
 	}
 
 	for (int i = 0; i < num_elements; i++) {
-		if (input_array->items[i].tag != T_FLOAT) {
-			fail(interp, "matrix: element %d is %s, expected a float", i, tag_name(input_array->items[i].tag));
+		if (VAL_TAG(input_array->items[i]) != T_FLOAT) {
+			fail(interp, "matrix: element %d is %s, expected a float", i, tag_name(VAL_TAG(input_array->items[i])));
 			return;
 		}
-		matrix->matrix.elements[i] = (input_array->items[i]).number;
+		matrix->matrix.elements[i] = VAL_NUMBER(input_array->items[i]);
 	}
 
 	push(interp, make_matrix(matrix_handle));

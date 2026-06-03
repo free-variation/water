@@ -47,90 +47,53 @@ typedef enum {
 	T_MARK
 } Tag;
 
-typedef struct {
-	Tag tag;
-	union {
-		int64_t data;
-		double  number;
-	};
+typedef union {
+	uint64_t bits;
+	double number;
 } Val;
+
+#define NAN_BOX_PREFIX 0x7FF8000000000000ULL
+#define NAN_BOX_MASK 0xFFFF000000000000ULL
+#define VAL_TAG_SHIFT 44
+#define VAL_TAG_MASK 0x000F000000000000ULL
+#define VAL_DATA_MASK 0x00000FFFFFFFFFFFULL
+
+#define VAL_IS_FLOAT(v) (((v).bits & NAN_BOX_MASK) != NAN_BOX_PREFIX)
+#define VAL_TAG(v) (VAL_IS_FLOAT(v) ? T_FLOAT : (Tag)(((v).bits >> VAL_TAG_SHIFT) & 0xF))
+#define VAL_NUMBER(v) ((v).number)
+#define VAL_DATA(v) ((int64_t)(VAL_IS_FLOAT(v) ? (v).bits : ((v).bits & VAL_DATA_MASK)))
+
+static inline Val make_tagged(Tag tag, int64_t data) {
+	Val value;
+	if (tag == T_FLOAT) {
+		value.bits = (uint64_t)data;
+	} else {
+		value.bits = NAN_BOX_PREFIX
+			| ((uint64_t)tag << VAL_TAG_SHIFT)
+			| ((uint64_t)data & VAL_DATA_MASK);
+	}
+	return value;
+}
 
 static inline Val make_float(double number) {
 	Val value;
-	value.tag = T_FLOAT;
 	value.number = number;
+	if ((value.bits & NAN_BOX_MASK) == NAN_BOX_PREFIX) {
+		value.bits = NAN_BOX_PREFIX | VAL_DATA_MASK;
+	}
 	return value;
 }
 
-static inline Val make_symbol(int cfa) {
-	Val value;
-	value.tag = T_SYMBOL;
-	value.data = cfa;
-	return value;
-}
-
-static inline Val make_string(int handle) {
-	Val value;
-	value.tag = T_STRING;
-	value.data = handle;
-	return value;
-}
-
-static inline Val make_set(int handle) {
-	Val value;
-	value.tag = T_SET;
-	value.data = handle;
-	return value;
-}
-
-static inline Val make_array(int handle) {
-	Val value;
-	value.tag = T_ARRAY;
-	value.data = handle;
-	return value;
-}
-
-static inline Val make_frame(int handle) {
-	Val value;
-	value.tag = T_FRAME;
-	value.data = handle;
-	return value;
-}
-
-static inline Val make_matrix(int handle) {
-	Val value;
-	value.tag = T_MATRIX;
-	value.data = handle;
-	return value;
-}
-
-static inline Val make_xt(int cfa) {
-	Val value;
-	value.tag = T_XT;
-	value.data = cfa;
-	return value;
-}
-
-static inline Val make_addr(int cell_index) {
-	Val value;
-	value.tag = T_ADDR;
-	value.data = cell_index;
-	return value;
-}
-
-static inline Val make_continuation(int handle) {
-	Val value;
-	value.tag = T_CONT;
-	value.data = handle;
-	return value;
-}
-
-static inline Val make_mark(void) {
-	Val value;
-	value.tag = T_MARK;
-	value.data = 0;
-	return value;
-}
+static inline Val make_symbol(int cfa) { return make_tagged(T_SYMBOL, cfa); }
+static inline Val make_string(int handle) { return make_tagged(T_STRING, handle); }
+static inline Val make_set(int handle) { return make_tagged(T_SET, handle); }
+static inline Val make_array(int handle) { return make_tagged(T_ARRAY, handle); }
+static inline Val make_frame(int handle) { return make_tagged(T_FRAME, handle); }
+static inline Val make_matrix(int handle) { return make_tagged(T_MATRIX, handle); }
+static inline Val make_xt(int cfa) { return make_tagged(T_XT, cfa); }
+static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_index); }
+static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
+static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
 
 typedef enum {
 	OBJECT_STRING = 0,
@@ -282,7 +245,7 @@ static inline Val pop(Interpreter *interp) {
 		return interp->data_stack[--interp->dsp];
 	}
 	fail(interp, "data stack underflow");
-	Val none = { T_NONE, { 0 } };
+	Val none = make_tagged(T_NONE, 0);
 	return none;
 }
 
@@ -299,7 +262,7 @@ static inline Val rpop(Interpreter *interp) {
 		return interp->return_stack[--interp->rsp];
 	}
 	fail(interp, "return stack underflow");
-	Val none = { T_NONE, { 0 } };
+	Val none = make_tagged(T_NONE, 0);
 	return none;
 }
 
@@ -308,47 +271,47 @@ static inline Val rpop(Interpreter *interp) {
 #define POP_INT(name, op, what) \
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
-	if (name##_val.tag != T_FLOAT) { \
-		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(name##_val.tag)); \
+	if (VAL_TAG(name##_val) != T_FLOAT) { \
+		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	int name = (int)(name##_val).number
+	int name = (int)VAL_NUMBER(name##_val)
 
 #define POP_XT(name, op) \
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
-	if (name##_val.tag != T_XT) { \
-		fail(interp, "%s: expected an execution token; got %s", (op), tag_name(name##_val.tag)); \
+	if (VAL_TAG(name##_val) != T_XT) { \
+		fail(interp, "%s: expected an execution token; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	int name = (int)name##_val.data
+	int name = (int)VAL_DATA(name##_val)
 
 #define POP_MATRIX(name, op) \
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
-	if (name##_val.tag != T_MATRIX) { \
-		fail(interp, "%s: expected a matrix; got %s", (op), tag_name(name##_val.tag)); \
+	if (VAL_TAG(name##_val) != T_MATRIX) { \
+		fail(interp, "%s: expected a matrix; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	Object *name = interp->objects[name##_val.data]
+	Object *name = interp->objects[VAL_DATA(name##_val)]
 
 #define POP_STRING(name, op) \
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
-	if (name##_val.tag != T_STRING) { \
-		fail(interp, "%s: expected a string; got %s", (op), tag_name(name##_val.tag)); \
+	if (VAL_TAG(name##_val) != T_STRING) { \
+		fail(interp, "%s: expected a string; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	Object *name = interp->objects[name##_val.data]
+	Object *name = interp->objects[VAL_DATA(name##_val)]
 
 #define POP_COLLECTION(name, op) \
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
-	if (name##_val.tag != T_ARRAY && name##_val.tag != T_SET) { \
-		fail(interp, "%s: expected an array or set; got %s", (op), tag_name(name##_val.tag)); \
+	if (VAL_TAG(name##_val) != T_ARRAY && VAL_TAG(name##_val) != T_SET) { \
+		fail(interp, "%s: expected an array or set; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	Object *name = interp->objects[name##_val.data]
+	Object *name = interp->objects[VAL_DATA(name##_val)]
 
 #define NEW_MATRIX(handle, obj, rows, cols) \
 	int handle = object_new_matrix(interp, (rows), (cols)); \
@@ -379,23 +342,23 @@ static inline Val rpop(Interpreter *interp) {
 
 #define PEEK_TYPE_AT(var, depth, op, type) \
 	PEEK_AT(var, depth, op); \
-	if (var.tag != (type)) { \
-		fail(interp, "%s: expected %s; got %s", (op), tag_name(type), tag_name(var.tag)); \
+	if (VAL_TAG(var) != (type)) { \
+		fail(interp, "%s: expected %s; got %s", (op), tag_name(type), tag_name(VAL_TAG(var))); \
 		return; \
 	}
 
 #define PEEK_SEQUENCE_AT(var, depth, op) \
 	PEEK_AT(var, depth, op); \
-	if (var.tag != T_ARRAY && var.tag != T_SET) { \
-		fail(interp, "%s: expected array or set; got %s", (op), tag_name(var.tag)); \
+	if (VAL_TAG(var) != T_ARRAY && VAL_TAG(var) != T_SET) { \
+		fail(interp, "%s: expected array or set; got %s", (op), tag_name(VAL_TAG(var))); \
 		return; \
 	}
 
 
 #define PEEK_COLLECTION_AT(var, depth, op) \
 	PEEK_AT(var, depth, op); \
-	if (var.tag != T_ARRAY && var.tag != T_SET && var.tag != T_FRAME) { \
-		fail(interp, "%s: expected array, set, or frame; got %s", (op), tag_name(var.tag)); \
+	if (VAL_TAG(var) != T_ARRAY && VAL_TAG(var) != T_SET && VAL_TAG(var) != T_FRAME) { \
+		fail(interp, "%s: expected array, set, or frame; got %s", (op), tag_name(VAL_TAG(var))); \
 		return; \
 	}
 
@@ -605,7 +568,7 @@ void p_save(Interpreter *interp);
 void w_u8 (FILE *f, uint8_t v);
 void w_i32(FILE *f, int32_t v);
 void w_i64(FILE *f, int64_t v);
-void w_val(FILE *f, Val v);
+void w_val(FILE *f, Val value);
 int r_u8 (FILE *f, uint8_t *v);
 int r_u32(FILE *f, uint32_t *v);
 int r_i32(FILE *f, int32_t *v);
@@ -676,21 +639,21 @@ static inline __attribute__((always_inline))
 Val frame_walk(Interpreter *interp, Val node, Object *path,
 		int count, FrameWalkMode mode, int *found, const char *op) {
 	for (int i = 0; i < count; i++) {
-		if (node.tag != T_FRAME) {
+		if (VAL_TAG(node) != T_FRAME) {
 			if (found) *found = 0;
 			if (mode != WALK_PROBE)
-				fail(interp, "%s: cannot descend into %s", op, tag_name(node.tag));
+				fail(interp, "%s: cannot descend into %s", op, tag_name(VAL_TAG(node)));
 			return node;
 		}
 
-		cell key = path->items[i].data;
-		Object *frame = interp->objects[node.data];
+		cell key = VAL_DATA(path->items[i]);
+		Object *frame = interp->objects[VAL_DATA(node)];
 		FRAME_LOOKUP(frame, key, at, present);
-		if (present && (mode != WALK_VIVIFY || frame->frame.values[at].tag == T_FRAME)) {
+		if (present && (mode != WALK_VIVIFY || VAL_TAG(frame->frame.values[at]) == T_FRAME)) {
 			node = frame->frame.values[at];
 		} else if (mode == WALK_VIVIFY) {
 			int child = object_new_frame(interp);
-			frame_put(interp->objects[node.data], key, make_frame(child));
+			frame_put(interp->objects[VAL_DATA(node)], key, make_frame(child));
 			node = make_frame(child);
 		} else {
 			if (found) *found = 0;
