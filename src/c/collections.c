@@ -71,14 +71,13 @@ int set_difference(Interpreter *interp, int handle_a, int handle_b) {
 	return difference_handle;
 }
 
-void p_setopen(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_setopen(Interpreter *interp) {
 
 	push(interp, make_mark());
+	DISPATCH(interp);
 }
 
-void p_setclose(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_setclose(Interpreter *interp) {
 
 	int mark_index = interp->dsp;
 	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
@@ -93,16 +92,16 @@ void p_setclose(Interpreter *interp, cell *cfa) {
 	}
 	interp->dsp = mark_index - 1;
 	push(interp, make_set(set_handle));
+	DISPATCH(interp);
 }
 
-void p_frameopen(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frameopen(Interpreter *interp) {
 
 	push(interp, make_mark());
+	DISPATCH(interp);
 }
 
-void p_frameclose(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frameclose(Interpreter *interp) {
 
 	int mark_index = interp->dsp;
 	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
@@ -115,6 +114,7 @@ void p_frameclose(Interpreter *interp, cell *cfa) {
 	if (count % 2 != 0) {
 		fail(interp, "} : frame needs key/value pairs");
 		return;
+	DISPATCH(interp);
 	}
 
 	NEW_FRAME(frame_handle, frame);
@@ -130,14 +130,13 @@ void p_frameclose(Interpreter *interp, cell *cfa) {
 	push(interp, make_frame(frame_handle));
 }
 
-void p_array_open(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_array_open(Interpreter *interp) {
 
 	push(interp, make_mark());
+	DISPATCH(interp);
 }
 
-void p_array_close(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_array_close(Interpreter *interp) {
 
 	int mark_index = interp->dsp;
 	while (mark_index > 0 && interp->data_stack[mark_index - 1].tag != T_MARK) mark_index--;
@@ -151,10 +150,10 @@ void p_array_close(Interpreter *interp, cell *cfa) {
 		array->items[i] = interp->data_stack[mark_index + i];
 	interp->dsp = mark_index - 1;
 	push(interp, make_array(array_handle));
+	DISPATCH(interp);
 }
 
-void p_array(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_array(Interpreter *interp) {
 
 	POP_INT(count, "array", "count");
 	if (count < 0 || count > interp->dsp) {
@@ -170,10 +169,10 @@ void p_array(Interpreter *interp, cell *cfa) {
 	interp->dsp = first_item;
 
 	push(interp, make_array(array_handle));
+	DISPATCH(interp);
 }
 
-void p_size(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_size(Interpreter *interp) {
 
 	POP(collection);
 	if (collection.tag == T_SET ||
@@ -182,10 +181,10 @@ void p_size(Interpreter *interp, cell *cfa) {
 			collection.tag == T_FRAME)
 		push(interp, make_float((double)interp->objects[collection.data]->len));
 	else fail(interp, "size: expected a set, array, string, or frame; got %s", tag_name(collection.tag));
+	DISPATCH(interp);
 }
 
-void p_member(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_member(Interpreter *interp) {
 
 	POP(value);
 	POP(set_value);
@@ -194,10 +193,10 @@ void p_member(Interpreter *interp, cell *cfa) {
 		return;
 	}
 	push(interp, make_bool(set_member(interp, (int)set_value.data, value)));
+	DISPATCH(interp);
 }
 
-void p_union(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_union(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
@@ -206,10 +205,10 @@ void p_union(Interpreter *interp, cell *cfa) {
 		return;
 	}
 	push(interp, make_set(set_union(interp, (int)left.data, (int)right.data)));
+	DISPATCH(interp);
 }
 
-void p_intersect(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_intersect(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
@@ -218,10 +217,10 @@ void p_intersect(Interpreter *interp, cell *cfa) {
 		return;
 	}
 	push(interp, make_set(set_intersect(interp, (int)left.data, (int)right.data)));
+	DISPATCH(interp);
 }
 
-void p_difference(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_difference(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
@@ -230,10 +229,10 @@ void p_difference(Interpreter *interp, cell *cfa) {
 		return;
 	}
 	push(interp, make_set(set_difference(interp, (int)left.data, (int)right.data)));
+	DISPATCH(interp);
 }
 
-void p_array_of(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_array_of(Interpreter *interp) {
 
 	POP_INT(array_len, "array-of", "length");
 	POP(init_val);
@@ -244,14 +243,14 @@ void p_array_of(Interpreter *interp, cell *cfa) {
 	}
 
 	push(interp, make_array(array_handle));
+	DISPATCH(interp);
 }
 
 static void replace_top_with_array(Interpreter *interp, int handle) {
 	interp->data_stack[interp->dsp - 1] = make_array(handle);
 }
 
-void p_take(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_take(Interpreter *interp) {
 
 	POP_INT(n_items, "take", "length");
 	if (n_items < 0) n_items = 0;
@@ -266,10 +265,10 @@ void p_take(Interpreter *interp, cell *cfa) {
 		result->items[i] = source->items[i];
 
 	replace_top_with_array(interp, result_handle);
+	DISPATCH(interp);
 }
 
-void p_reverse(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_reverse(Interpreter *interp) {
 
 	PEEK_SEQUENCE_AT(source_val, 0, "reverse");
 	Object *source = interp->objects[source_val.data];
@@ -280,10 +279,10 @@ void p_reverse(Interpreter *interp, cell *cfa) {
 		result->items[source->len - i - 1] = source->items[i];
 
 	replace_top_with_array(interp, result_handle);
+	DISPATCH(interp);
 }
 
-void p_concat(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_concat(Interpreter *interp) {
 	int i;
 
 	PEEK_SEQUENCE_AT(b_val, 0, "concat");
@@ -300,10 +299,10 @@ void p_concat(Interpreter *interp, cell *cfa) {
 
 	interp->data_stack[interp->dsp - 2] = make_array(result_handle);
 	interp->dsp--;
+	DISPATCH(interp);
 }
 
-void p_range(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_range(Interpreter *interp) {
 
 	POP_INT(range_to, "range", "to");
 	POP_INT(range_from, "range", "from");
@@ -316,6 +315,7 @@ void p_range(Interpreter *interp, cell *cfa) {
 		result->items[i] = make_float(range_from + i * step);
 
 	push(interp, make_array(result_handle));
+	DISPATCH(interp);
 }
 
 void frame_put(Object *frame, cell key, Val value) {
@@ -348,8 +348,7 @@ int frame_delete(Object *frame, cell key) {
 }
 
 
-void p_to_frame(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_to_frame(Interpreter *interp) {
 
 	PEEK_SEQUENCE_AT(source_val, 0, ">frame");
 	if (source_val.tag != T_ARRAY) {
@@ -373,6 +372,7 @@ void p_to_frame(Interpreter *interp, cell *cfa) {
 
 	interp->dsp--;
 	push(interp, make_frame(frame_handle));
+	DISPATCH(interp);
 }
 
 static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
@@ -423,8 +423,7 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 		} \
 	} while (0)
 
-void p_frame_get(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frame_get(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 1, "@", T_FRAME);
 	PEEK_AT(key_or_path, 0, "@");
@@ -445,10 +444,10 @@ void p_frame_get(Interpreter *interp, cell *cfa) {
 			interp->dsp -= 2;
 			push(interp, result);
 			});
+	DISPATCH(interp);
 }
 
-void p_frame_set(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frame_set(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 2, "!", T_FRAME);
 	PEEK_AT(key_or_path, 1, "!");
@@ -465,10 +464,10 @@ void p_frame_set(Interpreter *interp, cell *cfa) {
 			frame_put(interp->objects[parent.data], path->items[path->len - 1].data, value);
 			interp->dsp -= 2;
 			});
+	DISPATCH(interp);
 }
 
-void p_frame_delete_at(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frame_delete_at(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 1, "delete-at", T_FRAME);
 	PEEK_AT(key_or_path, 0, "delete-at");
@@ -491,10 +490,10 @@ void p_frame_delete_at(Interpreter *interp, cell *cfa) {
 			}
 			interp->dsp--;
 			});
+	DISPATCH(interp);
 }
 
-void p_frame_keys(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frame_keys(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 0, "keys", T_FRAME);
 	Object *frame = interp->objects[frame_val.data];
@@ -504,10 +503,10 @@ void p_frame_keys(Interpreter *interp, cell *cfa) {
 		result->items[i] = make_symbol((int)frame->frame.keys[i]);
 
 	replace_top_with_array(interp, result_handle);
+	DISPATCH(interp);
 }
 
-void p_frame_values(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frame_values(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 0, "values", T_FRAME);
 	Object *frame = interp->objects[frame_val.data];
@@ -517,10 +516,10 @@ void p_frame_values(Interpreter *interp, cell *cfa) {
 		result->items[i] = frame->frame.values[i];
 
 	replace_top_with_array(interp, result_handle);
+	DISPATCH(interp);
 }
 
-void p_merge(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_merge(Interpreter *interp) {
 
 	PEEK_TYPE_AT(right, 0, "merge", T_FRAME);
 	PEEK_TYPE_AT(left, 1, "merge", T_FRAME);
@@ -535,10 +534,10 @@ void p_merge(Interpreter *interp, cell *cfa) {
 
 	interp->dsp -= 2;
 	push(interp, make_frame(result_handle));
+	DISPATCH(interp);
 }
 
-void p_frame(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_frame(Interpreter *interp) {
 
 	PEEK_TYPE_AT(values_val, 0, "frame", T_ARRAY);
 	PEEK_SEQUENCE_AT(keys_val, 1, "frame");
@@ -561,10 +560,10 @@ void p_frame(Interpreter *interp, cell *cfa) {
 
 	interp->dsp -= 2;
 	push(interp, make_frame(frame_handle));
+	DISPATCH(interp);
 }
 
-void p_has(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_has(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 1, "has?", T_FRAME);
 	PEEK_AT(key_or_path, 0, "has?");
@@ -582,10 +581,10 @@ void p_has(Interpreter *interp, cell *cfa) {
 			interp->dsp -= 2;
 			push(interp, make_bool(found));
 			});
+	DISPATCH(interp);
 }
 
-void p_update_at(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_update_at(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 2, "update-at", T_FRAME);
 	PEEK_AT(key_or_path, 1, "update-at");
@@ -626,10 +625,10 @@ void p_update_at(Interpreter *interp, cell *cfa) {
 			parent_obj->frame.values[at] = pop(interp);
 			interp->dsp -= 2;
 			});
+	DISPATCH(interp);
 }
 
-void p_destruct(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_destruct(Interpreter *interp) {
 
 	PEEK_COLLECTION_AT(source_val, 0, "destruct");
 	Object *source = interp->objects[source_val.data];
@@ -643,10 +642,10 @@ void p_destruct(Interpreter *interp, cell *cfa) {
 			push(interp, source->items[i]);
 		}
 	}
+	DISPATCH(interp);
 }
 
-void p_destruct_to(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_destruct_to(Interpreter *interp) {
 
 	POP(target_val);
 	POP(source_val);
@@ -694,10 +693,10 @@ void p_destruct_to(Interpreter *interp, cell *cfa) {
 		interp->vocab->dict[var_cfa + 1] = (cell)source->items[i].tag;
 		interp->vocab->dict[var_cfa + 2] = source->items[i].data;
 	}
+	DISPATCH(interp);
 }
 
-void p_slice_store(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_slice_store(Interpreter *interp) {
 
 	POP_INT(slen, "slice!", "length");
 	POP_INT(sstep, "slice!", "step");
@@ -761,10 +760,10 @@ void p_slice_store(Interpreter *interp, cell *cfa) {
 		for (int i = 0; i < slen; i++)
 			target->items[tstart + i] = src->items[sstart + i * sstep];
 	}
+	DISPATCH(interp);
 }
 
-void p_to_slice(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_to_slice(Interpreter *interp) {
 
 	POP_INT(n, "to-slice", "count");
 	POP_INT(offset, "to-slice", "offset");
@@ -790,6 +789,7 @@ void p_to_slice(Interpreter *interp, cell *cfa) {
 	}
 	interp->data_stack[start] = target_val;
 	interp->dsp -= n;
+	DISPATCH(interp);
 }
 		
 	

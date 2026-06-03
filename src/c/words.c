@@ -18,8 +18,7 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 	return result_handle;
 }
 
-void p_add(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_add(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
@@ -39,14 +38,14 @@ void p_add(Interpreter *interp, cell *cfa) {
 	else if (left.tag == T_ARRAY && right.tag == T_ARRAY) {
 		push(interp, left);
 		push(interp, right);
-		p_concat(interp, NULL);
+		execute_cfa(interp, find(interp, "concat"));
 	}
 	else
 		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, or two arrays; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	DISPATCH(interp);
 }
 
-void p_sub(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_sub(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
@@ -63,10 +62,10 @@ void p_sub(Interpreter *interp, cell *cfa) {
 	}
 	else
 		fail(interp, "- : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	DISPATCH(interp);
 }
 
-void p_mul(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_mul(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
@@ -83,10 +82,10 @@ void p_mul(Interpreter *interp, cell *cfa) {
 	}
 	else
 		fail(interp, "* : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	DISPATCH(interp);
 }
 
-void p_div(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_div(Interpreter *interp) {
 
 	POP(right);
 	POP(left);
@@ -113,11 +112,11 @@ void p_div(Interpreter *interp, cell *cfa) {
 	}
 	else
 		fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	DISPATCH(interp);
 }
 
 #define BINARY_FLOAT_PRIMITIVE(name, opname, op) \
-	void name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void name(Interpreter *interp) { \
 		if (interp->dsp < 2) { \
 			fail(interp, "%s: data stack underflow", opname); \
 			return; \
@@ -126,14 +125,14 @@ void p_div(Interpreter *interp, cell *cfa) {
 		Val *right = &interp->data_stack[interp->dsp - 1]; \
 		left->number = left->number op right->number; \
 		interp->dsp--; \
+		DISPATCH(interp); \
 	}
 
 BINARY_FLOAT_PRIMITIVE(p_add_f, "+f", +)
 BINARY_FLOAT_PRIMITIVE(p_sub_f, "-f", -)
 BINARY_FLOAT_PRIMITIVE(p_mul_f, "*f", *)
 
-void p_fmul_add(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_fmul_add(Interpreter *interp) {
 
 	if (interp->dsp < 3) {
 		fail(interp, "f*+: data stack underflow");
@@ -144,10 +143,10 @@ void p_fmul_add(Interpreter *interp, cell *cfa) {
 	Val *c = &interp->data_stack[interp->dsp - 1];
 	a->number = a->number * b->number + c->number;
 	interp->dsp -= 2;
+	DISPATCH(interp);
 }
 
-void p_fmul_sub(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_fmul_sub(Interpreter *interp) {
 
 	if (interp->dsp < 3) {
 		fail(interp, "f*-: data stack underflow");
@@ -158,10 +157,10 @@ void p_fmul_sub(Interpreter *interp, cell *cfa) {
 	Val *c = &interp->data_stack[interp->dsp - 1];
 	a->number = c->number - a->number * b->number;
 	interp->dsp -= 2;
+	DISPATCH(interp);
 }
 
-void p_div_f(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_div_f(Interpreter *interp) {
 
 	if (interp->dsp < 2) {
 		fail(interp, "/f: data stack underflow");
@@ -175,14 +174,15 @@ void p_div_f(Interpreter *interp, cell *cfa) {
 	}
 	left->number = left->number / right->number;
 	interp->dsp--;
+	DISPATCH(interp);
 }
 
 static double scalar_negate(double x) { return -x; }
 
-void p_neg(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_neg(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, scalar_negate, "negate");
+	DISPATCH(interp);
 }
 
 Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
@@ -190,14 +190,14 @@ Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
 int truthy(Val value) { return (value.tag == T_FLOAT) ? ((value).number != 0.0) : (value.data != 0); }
 
 #define COMPARISON_PRIMITIVE(name, op) \
-	void name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void name(Interpreter *interp) { \
 		POP(right); \
 		POP(left); \
 		if (left.tag == T_FLOAT && right.tag == T_FLOAT) \
 			push(interp, make_bool((left).number op (right).number)); \
 		else \
 			push(interp, make_bool(val_cmp(interp, left, right) op 0)); \
+		DISPATCH(interp); \
 	}
 
 COMPARISON_PRIMITIVE(p_eq, ==)
@@ -205,8 +205,7 @@ COMPARISON_PRIMITIVE(p_lt, <)
 COMPARISON_PRIMITIVE(p_gt, >)
 
 #define UNARY_FLOAT_PRIMITIVE(name, word_name, expr) \
-	void name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void name(Interpreter *interp) { \
 		POP(operand); \
 		if (operand.tag != T_FLOAT) { \
 			fail(interp, word_name ": expected a float; got %s", tag_name(operand.tag)); \
@@ -214,54 +213,54 @@ COMPARISON_PRIMITIVE(p_gt, >)
 		} \
 		double n = (operand).number; \
 		push(interp, make_float(expr)); \
+		DISPATCH(interp); \
 	}
 
 UNARY_FLOAT_PRIMITIVE(p_inc, "1+", n + 1.0)
 UNARY_FLOAT_PRIMITIVE(p_dec, "1-", n - 1.0)
 UNARY_FLOAT_PRIMITIVE(p_sq,  "sq", n * n)
 
-void p_zeq(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_zeq(Interpreter *interp) {
 
 	POP(operand);
 	push(interp, make_bool(!truthy(operand)));
+	DISPATCH(interp);
 }
 
-void p_dup(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dup(Interpreter *interp) {
 
 	POP(top);
 	push(interp, top);
 	push(interp, top);
+	DISPATCH(interp);
 }
 
-void p_drop(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_drop(Interpreter *interp) {
 
 	(void)pop(interp);
+	DISPATCH(interp);
 }
 
-void p_swap(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_swap(Interpreter *interp) {
 
 	POP(top);
 	POP(second);
 	push(interp, top);
 	push(interp, second);
+	DISPATCH(interp);
 }
 
-void p_over(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_over(Interpreter *interp) {
 
 	POP(top);
 	POP(second);
 	push(interp, second);
 	push(interp, top);
 	push(interp, second);
+	DISPATCH(interp);
 }
 
-void p_rot(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_rot(Interpreter *interp) {
 
 	POP(top);
 	POP(middle);
@@ -269,16 +268,16 @@ void p_rot(Interpreter *interp, cell *cfa) {
 	push(interp, middle);
 	push(interp, top);
 	push(interp, bottom);
+	DISPATCH(interp);
 }
 
-void p_depth(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_depth(Interpreter *interp) {
 
 	push(interp, make_float((double)interp->dsp));
+	DISPATCH(interp);
 }
 
-void p_roll(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_roll(Interpreter *interp) {
 
 	POP_INT(n, "roll", "depth");
 	if (n < 0 || n >= interp->dsp) {
@@ -290,10 +289,10 @@ void p_roll(Interpreter *interp, cell *cfa) {
 	Val v = interp->data_stack[src];
 	memmove(&interp->data_stack[src], &interp->data_stack[src + 1], (size_t)n * sizeof(Val));
 	interp->data_stack[interp->dsp - 1] = v;
+	DISPATCH(interp);
 }
 
-void p_dot(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dot(Interpreter *interp) {
 
 	POP(value);
 	if (value.tag == T_MATRIX) {
@@ -306,10 +305,10 @@ void p_dot(Interpreter *interp, cell *cfa) {
 		putchar(' ');
 	}
 	fflush(stdout);
+	DISPATCH(interp);
 }
 
-void p_dot_all(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dot_all(Interpreter *interp) {
 
 	int saved = print_truncate;
 	print_truncate = 0;
@@ -322,65 +321,64 @@ void p_dot_all(Interpreter *interp, cell *cfa) {
 	}
 	fflush(stdout);
 	print_truncate = saved;
+	DISPATCH(interp);
 }
 
-void p_cr(Interpreter *interp, cell *cfa) {
+void p_cr(Interpreter *interp) {
 	(void)interp;
-	(void)cfa;
 
 	putchar('\n');
 	fflush(stdout);
+	DISPATCH(interp);
 }
 
-void p_emit_(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_emit_(Interpreter *interp) {
 
 	POP_INT(c, "emit", "character code");
 	putchar(c);
 	fflush(stdout);
+	DISPATCH(interp);
 }
 
-void p_dots(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dots(Interpreter *interp) {
 
 	for (int i = 0; i < interp->dsp; i++) {
 		print_val(interp, interp->data_stack[i]);
 		putchar(' ');
 	}
 	fflush(stdout);
+	DISPATCH(interp);
 }
 
-void p_bye(Interpreter *interp, cell *cfa) {
+void p_bye(Interpreter *interp) {
 	(void)interp;
-	(void)cfa;
 
 	exit(0);
 }
 
-void p_tor(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_tor(Interpreter *interp) {
 
 	POP(value);
 	rpush(interp, value);
+	DISPATCH(interp);
 }
 
-void p_rfrom(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_rfrom(Interpreter *interp) {
 
 	push(interp, rpop(interp));
+	DISPATCH(interp);
 }
 
-void p_rfetch(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_rfetch(Interpreter *interp) {
 
 	if (interp->rsp > 0)
 		push(interp, interp->return_stack[interp->rsp - 1]);
 	else
 		fail(interp, "r@: return stack is empty");
+	DISPATCH(interp);
 }
 
-void p_to_side(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_to_side(Interpreter *interp) {
 
 	POP(value);
 	if (interp->side_dsp >= SIDESTACK_DEPTH) {
@@ -388,49 +386,50 @@ void p_to_side(Interpreter *interp, cell *cfa) {
 		return;
 	}
 	interp->side_stack[interp->side_dsp++] = value;
+	DISPATCH(interp);
 }
 
-void p_side_to(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_side_to(Interpreter *interp) {
 
 	if (interp->side_dsp <= 0) {
 		fail(interp, "side>: side stack is empty");
 		return;
 	}
 	push(interp, interp->side_stack[--interp->side_dsp]);
+	DISPATCH(interp);
 }
 
-void p_side_drop(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_side_drop(Interpreter *interp) {
 
 	if (interp->side_dsp <= 0) {
 		fail(interp, "side-drop: side stack is empty");
 		return;
 	}
 	interp->side_dsp--;
+	DISPATCH(interp);
 }
 
-void p_side_depth(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_side_depth(Interpreter *interp) {
 
 	push(interp, make_float((double)interp->side_dsp));
+	DISPATCH(interp);
 }
 
 
 
-void p_execute(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_execute(Interpreter *interp) {
 
 	POP_XT(value, "execute");
 	execute_cfa(interp, value);
+	DISPATCH(interp);
 }
 
-void p_reset(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_reset(Interpreter *interp) {
 
 	Val mark = make_mark();
 	mark.data = interp->next_mark_id++;
 	rpush(interp, mark);
+	DISPATCH(interp);
 }
 
 int capture_continuation(Interpreter *interp, int *out_mark_index) {
@@ -464,8 +463,7 @@ static void restore_local_base_below(Interpreter *interp, int mark_index) {
 	interp->local_base = base;
 }
 
-void p_shift(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_shift(Interpreter *interp) {
 
 	int mark_index;
 	int cont_slot = capture_continuation(interp, &mark_index);
@@ -475,10 +473,10 @@ void p_shift(Interpreter *interp, cell *cfa) {
 	interp->rsp = mark_index;
 	restore_local_base_below(interp, mark_index);
 	push(interp, make_continuation(cont_slot));
+	DISPATCH(interp);
 }
 
-void p_shift_with(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_shift_with(Interpreter *interp) {
 
 	POP_XT(handler, "shift-with");
 
@@ -499,8 +497,7 @@ void p_shift_with(Interpreter *interp, cell *cfa) {
 	interp->unwinding = 1;
 }
 
-void p_resume(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_resume(Interpreter *interp) {
 
 	POP(k);
 	if (k.tag != T_CONT) {
@@ -531,10 +528,10 @@ void p_resume(Interpreter *interp, cell *cfa) {
 	interp->running = saved_running;
 	interp->ip = saved_ip;
 	interp->local_base = saved_local_base;
+	DISPATCH(interp);
 }
 
-void p_words(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_words(Interpreter *interp) {
 
 	int cnt = 0;
 	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
@@ -546,10 +543,10 @@ void p_words(Interpreter *interp, cell *cfa) {
 	if (cnt % 8)
 		putchar('\n');
 	fflush(stdout);
+	DISPATCH(interp);
 }
 
-void p_see(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_see(Interpreter *interp) {
 
 	POP_XT(target_cfa, "see");
 
@@ -583,10 +580,10 @@ void p_see(Interpreter *interp, cell *cfa) {
 		printf("%s is a primitive\n", name ? name : "?");
 	}
 	fflush(stdout);
+	DISPATCH(interp);
 }
 
-void p_semi(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_semi(Interpreter *interp) {
 
 	leave_compile_scope(interp);
 	emit_call(interp, interp->vocab->exit_cfa);
@@ -609,34 +606,34 @@ void p_semi(Interpreter *interp, cell *cfa) {
 	}
 	interp->compiling = 0;
 	interp->compiling_src_start = 0;
+	DISPATCH(interp);
 }
 
-void p_if(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_if(Interpreter *interp) {
 
 	emit_call(interp, interp->vocab->zbranch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
+	DISPATCH(interp);
 }
 
-void p_qif(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_qif(Interpreter *interp) {
 
 	emit_call(interp, interp->vocab->qzbranch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
+	DISPATCH(interp);
 }
 
-void p_then(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_then(Interpreter *interp) {
 
 	POP(slot_val);
 	int slot = (int)(slot_val).number;
 	interp->vocab->dict[slot] = (interp->vocab->here - slot);
+	DISPATCH(interp);
 }
 
-void p_else(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_else(Interpreter *interp) {
 
 	POP(slot_val);
 	int slot = (int)(slot_val).number;
@@ -644,33 +641,33 @@ void p_else(Interpreter *interp, cell *cfa) {
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
 	interp->vocab->dict[slot] = (interp->vocab->here - slot);
+	DISPATCH(interp);
 }
 
-void p_begin(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_begin(Interpreter *interp) {
 	push(interp, make_float((double)interp->vocab->here));
+	DISPATCH(interp);
 }
 
-void p_until(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_until(Interpreter *interp) {
 
 	POP(back_val);
 	int back = (int)(back_val).number;
 	emit_call(interp, interp->vocab->zbranch_cfa);
 	emit(interp, back - interp->vocab->here);
+	DISPATCH(interp);
 }
 
-void p_again(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_again(Interpreter *interp) {
 
 	POP(back_val);
 	int back = (int)(back_val).number;
 	emit_call(interp, interp->vocab->branch_cfa);
 	emit(interp, back - interp->vocab->here);
+	DISPATCH(interp);
 }
 
-void p_qcolon(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_qcolon(Interpreter *interp) {
 
 	int branch_slot = -1;
 	if (interp->compiling) {
@@ -684,10 +681,10 @@ void p_qcolon(Interpreter *interp, cell *cfa) {
 	interp->compiling = 1;
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
+	DISPATCH(interp);
 }
 
-void p_qsemi(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_qsemi(Interpreter *interp) {
 
 	leave_compile_scope(interp);
 	emit_call(interp, interp->vocab->exit_cfa);
@@ -702,10 +699,10 @@ void p_qsemi(Interpreter *interp, cell *cfa) {
 		interp->vocab->dict[branch_slot] = (interp->vocab->here - branch_slot);
 		emit_val_literal(interp, make_xt(anon_cfa));
 	}
+	DISPATCH(interp);
 }
 
-void p_tick(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_tick(Interpreter *interp) {
 
 	char *token = next_token(interp);
 	if (!token) {
@@ -722,6 +719,7 @@ void p_tick(Interpreter *interp, cell *cfa) {
 		emit_val_literal(interp, value);
 	else
 		push(interp, value);
+	DISPATCH(interp);
 }
 
 static void enter_compile_scope(Interpreter *interp) {
@@ -758,8 +756,7 @@ static void leave_compile_scope(Interpreter *interp) {
 	interp->n_local_names = saved_n_names;
 }
 
-void p_colon(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_colon(Interpreter *interp) {
 
 	char *token = next_token(interp);
 	if (!token) {
@@ -773,6 +770,7 @@ void p_colon(Interpreter *interp, cell *cfa) {
 	interp->compiling = 1;
 
 	interp->compiling_src_start = interp->input_buffer_pos;
+	DISPATCH(interp);
 }
 
 int create_variable(Interpreter *interp, const char *name) {
@@ -789,8 +787,7 @@ int create_variable(Interpreter *interp, const char *name) {
 }
 
 
-void p_variable(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_variable(Interpreter *interp) {
 
 	char *token = next_token(interp);
 	if (!token) {
@@ -799,6 +796,7 @@ void p_variable(Interpreter *interp, cell *cfa) {
 	}
 
 	create_variable(interp, token);
+	DISPATCH(interp);
 }
 
 static void compile_locals_decl(Interpreter *interp, const char *opener, int force_all_receive) {
@@ -885,26 +883,25 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 	}
 }
 
-void p_bar(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_bar(Interpreter *interp) {
 	compile_locals_decl(interp, "|", 0);
+	DISPATCH(interp);
 }
 
-void p_bar_to(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_bar_to(Interpreter *interp) {
 	compile_locals_decl(interp, "|>", 1);
+	DISPATCH(interp);
 }
 
-void p_to_var(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_to_var(Interpreter *interp) {
 	int var_cfa = (int)interp->vocab->dict[interp->ip++];
 	POP(v);
 	interp->vocab->dict[var_cfa + 1] = (cell)v.tag;
 	interp->vocab->dict[var_cfa + 2] = v.data;
+	DISPATCH(interp);
 }
 
-void p_to(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_to(Interpreter *interp) {
 	char *token = next_token(interp);
 	if (!token) {
 		fail(interp, "to: expected a name"); 
@@ -949,6 +946,7 @@ void p_to(Interpreter *interp, cell *cfa) {
 		interp->vocab->dict[target_cfa + 1] = (cell)v.tag;
 		interp->vocab->dict[target_cfa + 2] = v.data;
 	}
+	DISPATCH(interp);
 }
 
 static void compile_local_unary(Interpreter *interp, const char *op,
@@ -981,22 +979,21 @@ static void compile_local_unary(Interpreter *interp, const char *op,
 	}
 }
 
-void p_increment(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_increment(Interpreter *interp) {
 	compile_local_unary(interp, "++",
 	                    interp->vocab->local_incr_0depth_cfa,
 	                    interp->vocab->inc_cfa);
+	DISPATCH(interp);
 }
 
-void p_decrement(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_decrement(Interpreter *interp) {
 	compile_local_unary(interp, "--",
 	                    interp->vocab->local_decr_0depth_cfa,
 	                    interp->vocab->dec_cfa);
+	DISPATCH(interp);
 }
 
-void p_inline(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_inline(Interpreter *interp) {
 
 	int latest = interp->vocab->latest_cfa;
 	if (!latest) {
@@ -1005,10 +1002,10 @@ void p_inline(Interpreter *interp, cell *cfa) {
 	}
 
 	WORD_FLAGS(interp->vocab, latest) |= 2;
+	DISPATCH(interp);
 }
 
-void p_symbol(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_symbol(Interpreter *interp) {
 
 	char *token = next_token(interp);
 	if (!token) {
@@ -1022,17 +1019,17 @@ void p_symbol(Interpreter *interp, cell *cfa) {
 	emit(interp, (cell)&dosym);
 
 	emit(interp, (cell)intern_symbol(interp, token));
+	DISPATCH(interp);
 }
 
-void p_string_to_symbol(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_string_to_symbol(Interpreter *interp) {
 
 	POP_STRING(string, "string>symbol");
 	push(interp, make_symbol(intern_symbol(interp, string->bytes)));
+	DISPATCH(interp);
 }
 
-void p_forget(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_forget(Interpreter *interp) {
 
 	char *token = next_token(interp);
 	if (!token) {
@@ -1058,6 +1055,7 @@ void p_forget(Interpreter *interp, cell *cfa) {
 		}
 	}
 	interp->vocab->source_here = max_src_end;
+	DISPATCH(interp);
 }
 
 int read_string_literal(Interpreter *interp) {
@@ -1177,16 +1175,16 @@ int interpolate(Interpreter *interp, int template_handle) {
 	return result_handle;
 }
 
-void p_gc(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_gc(Interpreter *interp) {
 
 	gc(interp);
+	DISPATCH(interp);
 }
 
-void p_clear(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_clear(Interpreter *interp) {
 
 	interp->dsp = 0;
+	DISPATCH(interp);
 }
 
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name) {
@@ -1209,58 +1207,58 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 	}
 }
 
-void p_abs(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_abs(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, fabs, "abs");
+	DISPATCH(interp);
 }
 
-void p_sqrt(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_sqrt(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, sqrt, "sqrt");
+	DISPATCH(interp);
 }
 
-void p_exp(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_exp(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, exp, "exp");
+	DISPATCH(interp);
 }
 
-void p_log(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_log(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, log, "log");
+	DISPATCH(interp);
 }
 
-void p_sin(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_sin(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, sin, "sin");
+	DISPATCH(interp);
 }
 
-void p_cos(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_cos(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, cos, "cos");
+	DISPATCH(interp);
 }
 
-void p_tan(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_tan(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, tan, "tan");
+	DISPATCH(interp);
 }
 
-void p_tanh(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_tanh(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, tanh, "tanh");
+	DISPATCH(interp);
 }
 
-void p_now(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_now(Interpreter *interp) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	push(interp, make_float((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));
+	DISPATCH(interp);
 }
 

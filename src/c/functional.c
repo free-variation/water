@@ -1,7 +1,6 @@
 #include "logicforth.h"
 
-void p_map(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_map(Interpreter *interp) {
 
 	POP_XT(xt, "map");
 	PEEK_SEQUENCE_AT(source_val, 0, "map");
@@ -30,10 +29,10 @@ void p_map(Interpreter *interp, cell *cfa) {
 		interp->dsp = source_index;
 		push(interp, make_array(result_handle));
 	}
+	DISPATCH(interp);
 }
 
-void p_mapn(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_mapn(Interpreter *interp) {
 
 	POP_INT(arity, "mapn", "arity");
 	if (arity < 1) {
@@ -87,10 +86,10 @@ void p_mapn(Interpreter *interp, cell *cfa) {
 		interp->dsp = first_source;
 		push(interp, make_array(result_handle));
 	}
+	DISPATCH(interp);
 }
 
-void p_filter(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_filter(Interpreter *interp) {
 
 	POP_XT(xt, "filter");
 	PEEK_SEQUENCE_AT(source_val, 0, "filter");
@@ -132,10 +131,10 @@ void p_filter(Interpreter *interp, cell *cfa) {
 	free(keep);
 	interp->dsp = source_index;
 	push(interp, make_array(result_handle));
+	DISPATCH(interp);
 }
 
-void p_reduce(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_reduce(Interpreter *interp) {
 
 	POP_XT(combiner, "reduce");
 	POP(init_val);
@@ -155,11 +154,11 @@ void p_reduce(Interpreter *interp, cell *cfa) {
 
 	pop(interp);
 	push(interp, result_val);
+	DISPATCH(interp);
 }
 
 #define COUNTED_LOOP(name, word_name, per_iter) \
-	void name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void name(Interpreter *interp) { \
 		POP_INT(n, word_name, "count"); \
 		POP_XT(xt, word_name); \
 		if (n < 0) { \
@@ -170,6 +169,7 @@ void p_reduce(Interpreter *interp, cell *cfa) {
 			per_iter; \
 			execute_cfa(interp, xt); \
 		} \
+		DISPATCH(interp); \
 	}
 
 COUNTED_LOOP(p_times,   "times",   (void)i)

@@ -32,8 +32,7 @@ int matrix_scalar_op(Interpreter *interp, Val left_val, Val right_val, scalar_op
 	return target_handle;
 }
 
-void p_at_i(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_at_i(Interpreter *interp) {
 
 	POP_INT(index, "@i", "index");
 
@@ -62,10 +61,10 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 	} else {
 		fail(interp, "@i: expected an array or matrix; got %s", tag_name(source_val.tag));
 	}
+	DISPATCH(interp);
 }
 
-void p_store_i(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_store_i(Interpreter *interp) {
 
 	PEEK_TYPE_AT(array_val, 2, "!i", T_ARRAY);
 	PEEK_AT(index_val, 1, "!i");
@@ -83,10 +82,10 @@ void p_store_i(Interpreter *interp, cell *cfa) {
 	}
 	array->items[index] = value;
 	interp->dsp -= 2;
+	DISPATCH(interp);
 }
 
-void p_at_j(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_at_j(Interpreter *interp) {
 
 	POP_INT(index, "@j", "index");
 	POP_MATRIX(source, "@j");
@@ -102,10 +101,10 @@ void p_at_j(Interpreter *interp, cell *cfa) {
 		MAT(col, i, 0) = MAT(source, i, index);
 
 	push(interp, make_matrix(col_handle));
+	DISPATCH(interp);
 }
 
-void p_at_ij(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_at_ij(Interpreter *interp) {
 
 	POP_INT(j, "@i,j", "column index");
 	POP_INT(i, "@i,j", "row index");
@@ -121,6 +120,7 @@ void p_at_ij(Interpreter *interp, cell *cfa) {
 	}
 
 	push(interp, make_float(MAT(source, i, j)));
+	DISPATCH(interp);
 }
 
 int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
@@ -221,24 +221,24 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	push(interp, make_matrix(matmult_handle));
 }
 
-void p_dgemm_nn(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dgemm_nn(Interpreter *interp) {
 	p_dgemm_helper(interp, 0, 0);
+	DISPATCH(interp);
 }
 
-void p_dgemm_tn(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dgemm_tn(Interpreter *interp) {
 	p_dgemm_helper(interp, 1, 0);
+	DISPATCH(interp);
 }
 
-void p_dgemm_nt(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dgemm_nt(Interpreter *interp) {
 	p_dgemm_helper(interp, 0, 1);
+	DISPATCH(interp);
 }
 
-void p_dgemm_tt(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dgemm_tt(Interpreter *interp) {
 	p_dgemm_helper(interp, 1, 1);
+	DISPATCH(interp);
 }
 
 double reduce_add(double accumulator, double element) { return accumulator + element; }
@@ -308,17 +308,18 @@ int create_matrix(Interpreter *interp) {
 	return object_new_matrix(interp, num_rows, num_columns);
 }
 
-void p_0_matrix(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_0_matrix(Interpreter *interp) {
 	int matrix_handle = create_matrix(interp);
 	if (interp->error_flag) return;
 	push(interp, make_matrix(matrix_handle));
+	DISPATCH(interp);
 }
 
-void p_diagonal_matrix(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_diagonal_matrix(Interpreter *interp) {
 
-	p_dup(interp, NULL);
+	if (interp->dsp > 0) {
+		push(interp, interp->data_stack[interp->dsp - 1]);
+	}
 	int diag_matrix_handle = create_matrix(interp);
 	if (interp->error_flag) return;
 
@@ -335,10 +336,10 @@ void p_diagonal_matrix(Interpreter *interp, cell *cfa) {
 	}
 
 	push(interp, make_matrix(diag_matrix_handle));
+	DISPATCH(interp);
 }
 
-void p_diagonal(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_diagonal(Interpreter *interp) {
 
 	POP_MATRIX(source, "diagonal");
 
@@ -349,10 +350,10 @@ void p_diagonal(Interpreter *interp, cell *cfa) {
 		diagonal->matrix.elements[i] = MAT(source, i, i);
 
 	push(interp, make_matrix(diag_handle));
+	DISPATCH(interp);
 }
 
-void p_reshape(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_reshape(Interpreter *interp) {
 
 	POP_INT(new_cols, "reshape", "column count");
 	POP_INT(new_rows, "reshape", "row count");
@@ -371,10 +372,10 @@ void p_reshape(Interpreter *interp, cell *cfa) {
 			(size_t)total * sizeof(double));
 
 	push(interp, make_matrix(target_handle));
+	DISPATCH(interp);
 }
 
-void p_matrix(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_matrix(Interpreter *interp) {
 
 	if (interp->dsp < 2) {
 		fail(interp, "matrix: stack too shallow (expected array and at least one dimension)");
@@ -442,18 +443,18 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 	}
 
 	push(interp, make_matrix(matrix_handle));
+	DISPATCH(interp);
 }
 
-void p_dim(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dim(Interpreter *interp) {
 
 	POP_MATRIX(m, "dim");
 	push(interp, make_float(m->matrix.rows));
 	push(interp, make_float(m->matrix.columns));
+	DISPATCH(interp);
 }
 
-void p_transpose(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_transpose(Interpreter *interp) {
 
 	POP_MATRIX(source, "transpose");
 	NEW_MATRIX(target_handle, target, source->matrix.columns, source->matrix.rows);
@@ -462,27 +463,25 @@ void p_transpose(Interpreter *interp, cell *cfa) {
 			MAT(target, j, i) = MAT(source, i, j);
 
 	push(interp, make_matrix(target_handle));
+	DISPATCH(interp);
 }
 
 
 #define REDUCE_OVERALL(primitive_name, word_name, fn, identity) \
-	void primitive_name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void primitive_name(Interpreter *interp) { \
 		POP_MATRIX(source, word_name); \
 		push(interp, make_float(matrix_reduce_overall(source, fn, identity))); \
 	}
 
 #define REDUCE_ROWS(primitive_name, word_name, fn, identity) \
-	void primitive_name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void primitive_name(Interpreter *interp) { \
 		POP_MATRIX(source, word_name); \
 		int target_handle = matrix_reduce_rows(interp, source, fn, identity); \
 		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \
 	}
 
 #define REDUCE_COLUMNS(primitive_name, word_name, fn, identity) \
-	void primitive_name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void primitive_name(Interpreter *interp) { \
 		POP_MATRIX(source, word_name); \
 		int target_handle = matrix_reduce_columns(interp, source, fn, identity); \
 		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \

@@ -503,21 +503,23 @@ static inline __attribute__((always_inline)) void push_symbol(Interpreter *inter
 	push(interp, make_symbol((int)interp->vocab->dict[sym_cfa + 1]));
 }
 
-void docol(Interpreter *interp, cell *next) {
-	interp->ip++;
+void docol(Interpreter *interp) {
+	int target_cfa = (int)interp->vocab->dict[interp->ip++];
 	rpush(interp, make_addr(interp->ip));
-	interp->ip = (int)*next + 1;
+	interp->ip = target_cfa + 1;
+	DISPATCH(interp);
 }
 
-void dosym(Interpreter *interp, cell *next) {
-	push_symbol(interp, (int)*next);
-	interp->ip++;
+void dosym(Interpreter *interp) {
+	int sym_cfa = (int)interp->vocab->dict[interp->ip++];
+	push_symbol(interp, sym_cfa);
+	DISPATCH(interp);
 }
 
-void dovar(Interpreter *interp, cell *next) {
-	push_variable(interp, (int)*next);	
-	interp->ip++;
-
+void dovar(Interpreter *interp) {
+	int var_cfa = (int)interp->vocab->dict[interp->ip++];
+	push_variable(interp, var_cfa);
+	DISPATCH(interp);
 }
 
 void run_inner(Interpreter *interp) {
@@ -542,7 +544,7 @@ void run_inner(Interpreter *interp) {
 		}
 
 		cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
-		handler(interp, &interp->vocab->dict[interp->ip]);
+		handler(interp);
 	}
 }
 
@@ -559,16 +561,22 @@ void execute_cfa(Interpreter *interp, int cfa) {
 		return;
 	}
 
-	if (handler != docol) {
-		handler(interp, &interp->vocab->dict[cfa]);
-		return;
-	}
-
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
-	interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)docol;
-	interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;
-	interp->vocab->dict[TRAMPOLINE_SLOT + 2] = interp->vocab->dict[interp->vocab->stop_cfa];
+	cell saved_slot_0 = interp->vocab->dict[TRAMPOLINE_SLOT];
+	cell saved_slot_1 = interp->vocab->dict[TRAMPOLINE_SLOT + 1];
+	cell saved_slot_2 = interp->vocab->dict[TRAMPOLINE_SLOT + 2];
+	cell stop_handler = interp->vocab->dict[interp->vocab->stop_cfa];
+
+	if (handler == docol) {
+		interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)docol;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+	} else {
+		interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)handler;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 1] = stop_handler;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+	}
 	interp->ip = TRAMPOLINE_SLOT;
 	interp->running = 1;
 
@@ -576,6 +584,9 @@ void execute_cfa(Interpreter *interp, int cfa) {
 
 	interp->running = saved_running;
 	interp->ip = saved_ip;
+	interp->vocab->dict[TRAMPOLINE_SLOT] = saved_slot_0;
+	interp->vocab->dict[TRAMPOLINE_SLOT + 1] = saved_slot_1;
+	interp->vocab->dict[TRAMPOLINE_SLOT + 2] = saved_slot_2;
 }
 
 
@@ -689,8 +700,7 @@ const char *tag_name(Tag t) {
 	}
 }
 
-void p_exit(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_exit(Interpreter *interp) {
 
 	while (interp->rsp > 0 && interp->return_stack[interp->rsp - 1].tag == T_MARK) 
 		interp->rsp--;
@@ -702,26 +712,26 @@ void p_exit(Interpreter *interp, cell *cfa) {
 
 	Val saved_ip = interp->return_stack[--interp->rsp];
 	interp->ip = (int)saved_ip.data;
+	DISPATCH(interp);
 }
 
-void p_stop(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_stop(Interpreter *interp) {
 	interp->running = 0;
 }
 
-void p_literal(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_literal(Interpreter *interp) {
 	Val literal;
 
 	literal.tag = (Tag)interp->vocab->dict[interp->ip++];
 	literal.data = interp->vocab->dict[interp->ip++];
 
 	push(interp, literal);
+	DISPATCH(interp);
 }
 
-void p_branch(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_branch(Interpreter *interp) {
 	interp->ip += (int)interp->vocab->dict[interp->ip];
+	DISPATCH(interp);
 }
 
 #define ZBRANCH_BODY(get_condition) \
@@ -732,25 +742,24 @@ void p_branch(Interpreter *interp, cell *cfa) {
 	if (is_false) \
 		interp->ip += offset - 1
 
-void p_0branch(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_0branch(Interpreter *interp) {
 	ZBRANCH_BODY(POP(condition));
+	DISPATCH(interp);
 }
 
-void p_qzbranch(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_qzbranch(Interpreter *interp) {
 	ZBRANCH_BODY(PEEK_AT(condition, 0, "?if"));
+	DISPATCH(interp);
 }
 
-void p_dostr(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_dostr(Interpreter *interp) {
 
 	int template_handle = (int)interp->vocab->dict[interp->ip++];
 	push(interp, make_string(interpolate(interp, template_handle)));
+	DISPATCH(interp);
 }
 
-void p_enter_locals(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_enter_locals(Interpreter *interp) {
 
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
@@ -760,10 +769,10 @@ void p_enter_locals(Interpreter *interp, cell *cfa) {
 	interp->return_stack[interp->rsp++] = make_addr(interp->local_base);
 	interp->rsp += n_locals;
 	interp->local_base = interp->rsp - n_locals;
+	DISPATCH(interp);
 }
 
-void p_enter_locals_to(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_enter_locals_to(Interpreter *interp) {
 
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
@@ -783,10 +792,10 @@ void p_enter_locals_to(Interpreter *interp, cell *cfa) {
 	interp->dsp -= n_locals;
 	interp->local_base = interp->rsp;
 	interp->rsp += n_locals;
+	DISPATCH(interp);
 }
 
-void p_enter_locals_mixed(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_enter_locals_mixed(Interpreter *interp) {
 
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	int n_received = (int)interp->vocab->dict[interp->ip++];
@@ -810,15 +819,16 @@ void p_enter_locals_mixed(Interpreter *interp, cell *cfa) {
 		interp->return_stack[interp->local_base + slot] = interp->data_stack[data_start + i];
 	}
 	interp->dsp -= n_received;
+	DISPATCH(interp);
 }
 
-void p_leave_locals(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_leave_locals(Interpreter *interp) {
 
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	interp->rsp -= n_locals;
 	Val saved = rpop(interp);
 	interp->local_base = (int)saved.data;
+	DISPATCH(interp);
 }
 
 static Val *local_slot(Interpreter *interp) {
@@ -832,29 +842,28 @@ static Val *local_slot(Interpreter *interp) {
 	return &interp->return_stack[base + slot];
 }
 
-void p_local_fetch(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_local_fetch(Interpreter *interp) {
 	push(interp, *local_slot(interp));
+	DISPATCH(interp);
 }
 
-void p_local_store(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_local_store(Interpreter *interp) {
 	*local_slot(interp) = pop(interp);
+	DISPATCH(interp);
 }
 
-void p_local_fetch_0depth(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_local_fetch_0depth(Interpreter *interp) {
 	push(interp, interp->return_stack[interp->local_base + (int)interp->vocab->dict[interp->ip++]]);
+	DISPATCH(interp);
 }
 
-void p_local_store_0depth(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_local_store_0depth(Interpreter *interp) {
 	interp->return_stack[interp->local_base + (int)interp->vocab->dict[interp->ip++]] = pop(interp);
+	DISPATCH(interp);
 }
 
 #define LOCAL_ARITH_0DEPTH(name, word_name, expr) \
-	void name(Interpreter *interp, cell *cfa) { \
-		(void)cfa; \
+	void name(Interpreter *interp) { \
 		int slot = (int)interp->vocab->dict[interp->ip++]; \
 		Val *p = &interp->return_stack[interp->local_base + slot]; \
 		if (p->tag != T_FLOAT) { \
@@ -867,8 +876,7 @@ void p_local_store_0depth(Interpreter *interp, cell *cfa) {
 LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
 LOCAL_ARITH_0DEPTH(p_local_decr_0depth, "(local-!)", n - 1.0)
 
-void p_set(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_set(Interpreter *interp) {
 
 	POP_INT(count, "set", "count");
 	if (count < 0 || count > interp->dsp) {
@@ -886,6 +894,7 @@ void p_set(Interpreter *interp, cell *cfa) {
 	interp->dsp = first_item;
 
 	push(interp, make_set(set_handle));
+	DISPATCH(interp);
 }
 
 void inbuf_reset(Interpreter *interp) {
@@ -1173,8 +1182,7 @@ void load_file(Interpreter *interp, const char *filename) {
 	free(saved_inbuf_contents);
 }
 
-void p_load(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_load(Interpreter *interp) {
 
 	POP_STRING(filename_obj, "load");
 	gc_root_push(interp, filename_obj_val);
@@ -1185,10 +1193,10 @@ void p_load(Interpreter *interp, cell *cfa) {
 	load_file(interp, filename);
 
 	gc_root_pop(interp);
+	DISPATCH(interp);
 }
 
-void p_reload(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_reload(Interpreter *interp) {
 
 	forget_user(interp);
 
@@ -1197,6 +1205,7 @@ void p_reload(Interpreter *interp, cell *cfa) {
 		if (interp->error_flag)
 			return;
 	}
+	DISPATCH(interp);
 }
 
 void mark_value(Interpreter *interp, Val value) {
@@ -1300,8 +1309,7 @@ void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 	}
 }
 
-void p_copy(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_copy(Interpreter *interp) {
 
 	PEEK_AT(source_val, 0, "copy");
 	gc_root_push(interp, source_val);
@@ -1315,6 +1323,7 @@ void p_copy(Interpreter *interp, cell *cfa) {
 		return;
 
 	interp->data_stack[interp->dsp - 1] = copy_val;
+	DISPATCH(interp);
 }
 
 static int op_cell_count(Vocabulary *vocab, cell *dict, int cursor) {
@@ -1480,8 +1489,7 @@ void gc(Interpreter *interp) {
 	}
 }
 
-void p_save(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_save(Interpreter *interp) {
 
 	POP_STRING(filename_obj, "save");
 	gc_root_push(interp, filename_obj_val);
@@ -1522,6 +1530,7 @@ void p_save(Interpreter *interp, cell *cfa) {
 
 	fclose(file);
 	gc_root_pop(interp);
+	DISPATCH(interp);
 }
 
 #define IMAGE_MAGIC "LF4I"
@@ -1562,8 +1571,7 @@ int r_val(FILE *f, Val *v) {
 	return 1;
 }
 
-void p_save_image(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_save_image(Interpreter *interp) {
 
 	POP_STRING(filename_obj, "save-image");
 	gc_root_push(interp, filename_obj_val);
@@ -1683,6 +1691,7 @@ void p_save_image(Interpreter *interp, cell *cfa) {
 
 	fclose(file);
 	gc_root_pop(interp);
+	DISPATCH(interp);
 }
 
 void free_one_object(Object *obj) {
@@ -1715,8 +1724,7 @@ void forget_user(Interpreter *interp) {
 	interp->vocab->symbol_pool_here = interp->vocab->init_symbol_pool_here;
 }
 
-void p_load_image(Interpreter *interp, cell *cfa) {
-	(void)cfa;
+void p_load_image(Interpreter *interp) {
 
 	POP_STRING(filename_obj, "load-image");
 
@@ -1980,6 +1988,7 @@ void p_load_image(Interpreter *interp, cell *cfa) {
 
 done:
 	fclose(file);
+	DISPATCH(interp);
 }
 
 Interpreter *interp_new(void) {
@@ -2178,7 +2187,7 @@ int main(void) {
 	interp->vocab->init_symbol_pool_here = interp->vocab->symbol_pool_here;
 
 	push(interp, make_string(object_new_string(interp, "src/forth/lib.l4", 16)));
-	p_load(interp, NULL);
+	execute_cfa(interp, find(interp, "load"));
 	if (interp->error_flag) {
 		printf("lib.l4 load error\n");
 		return 1;
