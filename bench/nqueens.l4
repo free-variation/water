@@ -11,22 +11,21 @@ variable SOLUTIONS
 variable BOARD
 
 : bswap ( a b -- )
-  | a b tmp |
-  to b  to a
-  BOARD a @i to tmp
+  |> a b |
+  BOARD a @i
   BOARD a  BOARD b @i  !i drop
-  BOARD b  tmp        !i drop ;
+  BOARD b  rot         !i drop ;
+inline
 
 : valid?
   | n |
   QUEENS to n
-  < [: | i | to i  BOARD i @i i + :] n i-times > size n =
-  < [: | i | to i  BOARD i @i i - :] n i-times > size n =
+  < [: |> i | BOARD i @i i + :] n i-times > size n =
+  < [: |> i | BOARD i @i i - :] n i-times > size n =
   * ;
 
 : permute
-  | start n i |
-  to start
+  | >start n i |
   QUEENS to n
   start n 1 - = if
     valid? if  SOLUTIONS 1+ to SOLUTIONS  then
@@ -44,7 +43,7 @@ variable BOARD
 : nqueens-run
   | t0 |
   0 QUEENS array-of to BOARD
-  [: | i | to i  BOARD i i !i drop :] QUEENS i-times
+  [: |> i | BOARD i i !i drop :] QUEENS i-times
   0 to SOLUTIONS
   now to t0
   0 permute

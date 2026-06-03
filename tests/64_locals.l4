@@ -31,3 +31,46 @@ ex 3 swap resume . cr
 \ -- 7: multi-shot — the same continuation resumed twice, local intact each time
 ex dup  5 swap resume . cr
         6 swap resume . cr
+
+\ -- 8: |> single local, receives from stack at the bar
+: sq2 |> x | x x * ;
+5 sq2 . cr
+
+\ -- 9: |> two locals — slot order matches declaration (a, then b)
+: hyp2 |> a b | a a * b b * + ;
+3 4 hyp2 . cr
+
+\ -- 10: |> three locals — verifies (a b c -- ...) order
+: combo |> a b c | a 100 *  b 10 *  c  + + ;
+1 2 3 combo . cr
+
+\ -- 11: |> inside a recursion (own frame per call)
+: fact2 |> n | n 1 lt if 1 else n  n 1 - fact2 * then ;
+6 fact2 . cr
+
+\ -- 12: |> outer local visible from nested quotation
+: nest2 |> x | [ 10 20 30 ] [: x + :] map ;
+100 nest2 . cr
+
+\ -- 13: |> across a shift/resume (frame relocation)
+: worker2 |> x | shifter  x * ;
+: ex2 reset 7 worker2 ;
+ex2 3 swap resume . cr
+
+\ -- 14: > marker on every local — same as |>
+: all-recv | >a >b >c | a 100 *  b 10 *  c + + ;
+1 2 3 all-recv . cr
+
+\ -- 15: mixed — only middle local receives
+: only-mid | x >y z | 7 to x  9 to z  x 1000 *  y 100 *  z 10 * + + ;
+5 only-mid . cr
+
+\ -- 16: mixed — first and last receive, middle local set later
+: first-last | >a b >c | 4 to b  a 1000 *  b 100 *  c 10 * + + ;
+2 8 first-last . cr
+
+\ -- 17: mixed op inlined into caller body
+: inlinee | x >y z | 10 to x  30 to z  x 100 *  y 10 *  z + + ;
+inline
+: outer-inline  77 inlinee ;
+outer-inline . cr

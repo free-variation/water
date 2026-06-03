@@ -185,7 +185,7 @@ typedef struct Vocabulary {
 	int symbol_pool_here;
 
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
-	int enter_locals_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
+	int enter_locals_cfa, enter_locals_to_cfa, enter_locals_mixed_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
 	int local_fetch_0depth_cfa, local_store_0depth_cfa;
 	int local_incr_0depth_cfa, local_decr_0depth_cfa, inc_cfa, dec_cfa;
 	int qzbranch_cfa;
@@ -249,6 +249,7 @@ typedef double (*reducer)(double accumulator, double element);
 #define WORD_NAME(v, cfa) ((v)->dict[(cfa) - 2])
 #define WORD_SOURCE(v, cfa) ((v)->dict[(cfa) - 1])
 #define WORD_IS_IMMEDIATE(v, cfa) (WORD_FLAGS(v, cfa) & 1)
+#define WORD_IS_INLINE(v, cfa) (WORD_FLAGS(v, cfa) & 2)
 
 extern int print_truncate;
 void fail(Interpreter *interp, const char *fmt, ...);
@@ -443,6 +444,8 @@ void p_0branch(Interpreter *interp, cell *cfa);
 void p_qzbranch(Interpreter *interp, cell *cfa);
 void p_dostr(Interpreter *interp, cell *cfa);
 void p_enter_locals(Interpreter *interp, cell *cfa);
+void p_enter_locals_to(Interpreter *interp, cell *cfa);
+void p_enter_locals_mixed(Interpreter *interp, cell *cfa);
 void p_leave_locals(Interpreter *interp, cell *cfa);
 void p_local_fetch(Interpreter *interp, cell *cfa);
 void p_local_store(Interpreter *interp, cell *cfa);
@@ -452,6 +455,8 @@ void p_local_incr_0depth(Interpreter *interp, cell *cfa);
 void p_local_decr_0depth(Interpreter *interp, cell *cfa);
 void p_increment(Interpreter *interp, cell *cfa);
 void p_decrement(Interpreter *interp, cell *cfa);
+void p_inline(Interpreter *interp, cell *cfa);
+void inline_word_body(Interpreter *interp, int target_cfa);
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
 double scalar_add(double a, double b);
@@ -565,6 +570,7 @@ void p_variable(Interpreter *interp, cell *cfa);
 void p_to(Interpreter *interp, cell *cfa);
 void p_to_var(Interpreter *interp, cell *cfa);
 void p_bar(Interpreter *interp, cell *cfa);
+void p_bar_to(Interpreter *interp, cell *cfa);
 void p_symbol(Interpreter *interp, cell *cfa);
 void p_string_to_symbol(Interpreter *interp, cell *cfa);
 void p_forget(Interpreter *interp, cell *cfa);

@@ -717,7 +717,8 @@ void p_slice_store(Interpreter *interp, cell *cfa) {
 		fail(interp, "slice!: length must be non-negative; got %d", slen);
 		return;
 	}
-	if (slen == 0) return;
+	if (slen == 0)
+		return;
 
 	if (tstart < 0 || tstart + slen > target->len) {
 		fail(interp, "slice!: target [%d, %d) out of bounds for length %d",

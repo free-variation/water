@@ -11,16 +11,14 @@ variable v_mat
 variable zero_col
 
 : eval_A ( i j -- A_ij )
-  | i j s |
-  to j  to i
-  i j + to s
-  1.0  s  s 1+ *  2 /  i +  1 +  / ;
+  |> i j |
+  i j +  dup 1+ *  2 /  i +  1 +  1.0 swap / ;
 
 : build-A
   | flat |
   0 N N * array-of to flat
-  [: | i | to i
-     [: | j | to j
+  [: |> i |
+     [: |> j |
         flat  i N * j +  i j eval_A  !i drop
      :] N i-times
   :] N i-times
@@ -35,10 +33,9 @@ variable zero_col
 
 \ AtA_times ( x -- AtA*x ): compute A*x with dgemm-nn, then At*(...) with dgemm-tn
 : AtA_times
-  | x ax |
-  to x
-  1 A_mat x  0 zero_col  dgemm-nn to ax
-  1 A_mat ax 0 zero_col  dgemm-tn ;
+  |> x |
+  1 A_mat x  0 zero_col  dgemm-nn
+  1 A_mat rot 0 zero_col dgemm-tn ;
 
 : one-loop
   build-u
@@ -54,7 +51,7 @@ variable zero_col
   "elapsed: " . now t0 - . "s" . cr
 
   0 to vBv  0 to vv
-  [: | i | to i
+  [: |> i |
      u_mat i 0 @i,j  v_mat i 0 @i,j  *  vBv + to vBv
      v_mat i 0 @i,j  dup *  vv + to vv :] N i-times
   "spectral norm estimate: " . vBv vv / sqrt . cr ;

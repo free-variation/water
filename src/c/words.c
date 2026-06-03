@@ -32,7 +32,8 @@ void p_add(Interpreter *interp, cell *cfa) {
 		push(interp, make_set(set_union(interp, (int)left.data, (int)right.data)));
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_add);
-		if (target_handle < 0) return;
+		if (target_handle < 0)
+			return;
 		push(interp, make_matrix(target_handle));
 	}
 	else if (left.tag == T_ARRAY && right.tag == T_ARRAY) {
@@ -40,7 +41,8 @@ void p_add(Interpreter *interp, cell *cfa) {
 		push(interp, right);
 		p_concat(interp, NULL);
 	}
-	else fail(interp, "+ : expected two floats, two strings, two sets, two matrices, or two arrays; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	else
+		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, or two arrays; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 void p_sub(Interpreter *interp, cell *cfa) {
@@ -55,10 +57,12 @@ void p_sub(Interpreter *interp, cell *cfa) {
 		push(interp, make_set(set_difference(interp, (int)left.data, (int)right.data)));
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_subtract);
-		if (target_handle < 0) return;
+		if (target_handle < 0)
+			return;
 		push(interp, make_matrix(target_handle));
 	}
-	else fail(interp, "- : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	else
+		fail(interp, "- : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 void p_mul(Interpreter *interp, cell *cfa) {
@@ -73,10 +77,12 @@ void p_mul(Interpreter *interp, cell *cfa) {
 		push(interp, make_set(set_intersect(interp, (int)left.data, (int)right.data)));
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_multiply);
-		if (target_handle < 0) return;
+		if (target_handle < 0)
+			return;
 		push(interp, make_matrix(target_handle));
 	}
-	else fail(interp, "* : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	else
+		fail(interp, "* : expected two floats, two sets, or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 void p_div(Interpreter *interp, cell *cfa) {
@@ -101,10 +107,12 @@ void p_div(Interpreter *interp, cell *cfa) {
 			}
 		}
 		int target_handle = matrix_scalar_op(interp, left, right, scalar_divide);
-		if (target_handle < 0) return;
+		if (target_handle < 0)
+			return;
 		push(interp, make_matrix(target_handle));
 	}
-	else fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
+	else
+		fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
 static double scalar_negate(double x) { return -x; }
@@ -303,8 +311,10 @@ void p_rfrom(Interpreter *interp, cell *cfa) {
 void p_rfetch(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
-	if (interp->rsp > 0) push(interp, interp->return_stack[interp->rsp - 1]);
-	else fail(interp, "r@: return stack is empty");
+	if (interp->rsp > 0)
+		push(interp, interp->return_stack[interp->rsp - 1]);
+	else
+		fail(interp, "r@: return stack is empty");
 }
 
 void p_to_side(Interpreter *interp, cell *cfa) {
@@ -375,7 +385,8 @@ int capture_continuation(Interpreter *interp, int *out_mark_index) {
 	int resume_ip = interp->ip;
 	int slot = object_new_continuation(interp, &interp->return_stack[mark_index + 1],
 			return_len, resume_ip);
-	if (interp->error_flag) return -1;
+	if (interp->error_flag)
+		return -1;
 
 	interp->objects[slot]->continuation.local_base_offset =
 		interp->local_base - (mark_index + 1);
@@ -396,7 +407,8 @@ void p_shift(Interpreter *interp, cell *cfa) {
 
 	int mark_index;
 	int cont_slot = capture_continuation(interp, &mark_index);
-	if (cont_slot < 0) return;
+	if (cont_slot < 0)
+		return;
 
 	interp->rsp = mark_index;
 	restore_local_base_below(interp, mark_index);
@@ -410,7 +422,8 @@ void p_shift_with(Interpreter *interp, cell *cfa) {
 
 	int mark_index;
 	int cont_slot = capture_continuation(interp, &mark_index);
-	if (cont_slot < 0) return;
+	if (cont_slot < 0)
+		return;
 
 	interp->unwind_target = (int)interp->return_stack[mark_index].data;
 	interp->rsp = mark_index + 1;
@@ -418,7 +431,8 @@ void p_shift_with(Interpreter *interp, cell *cfa) {
 	push(interp, make_continuation(cont_slot));
 
 	execute_cfa(interp, handler);
-	if (interp->error_flag) return;
+	if (interp->error_flag)
+		return;
 
 	interp->unwinding = 1;
 }
@@ -464,9 +478,11 @@ void p_words(Interpreter *interp, cell *cfa) {
 	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
 		fputs(&interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)], stdout);
 		putchar(' ');
-		if (++cnt % 8 == 0) putchar('\n');
+		if (++cnt % 8 == 0)
+			putchar('\n');
 	}
-	if (cnt % 8) putchar('\n');
+	if (cnt % 8)
+		putchar('\n');
 	fflush(stdout);
 }
 
@@ -489,8 +505,10 @@ void p_see(Interpreter *interp, cell *cfa) {
 			printf("[: ... :]  \\ anonymous, no source\n");
 		} else {
 			int src_idx = (int)WORD_SOURCE(interp->vocab, target_cfa);
-			if (src_idx > 0) printf(": %s%s;\n", name, &interp->vocab->source_pool[src_idx]);
-			else printf(": %s ... ;  \\ no source captured\n", name);
+			if (src_idx > 0)
+				printf(": %s%s;\n", name, &interp->vocab->source_pool[src_idx]);
+			else
+				printf(": %s ... ;  \\ no source captured\n", name);
 		}
 	} else if (handler == dovar) {
 		Val val; val.tag = (Tag)interp->vocab->dict[target_cfa + 1]; val.data = interp->vocab->dict[target_cfa + 2];
@@ -513,7 +531,8 @@ void p_semi(Interpreter *interp, cell *cfa) {
 	if (interp->compiling_src_start > 0 && interp->vocab->latest_cfa != 0) {
 		int src_end = interp->input_buffer_pos - 1;
 		int src_len = src_end - interp->compiling_src_start;
-		if (src_len < 0) src_len = 0;
+		if (src_len < 0)
+			src_len = 0;
 		if (interp->vocab->source_here + src_len + 1 > SOURCE_POOL) {
 			fail(interp, "source pool full (max %d bytes); definition source too large to store", SOURCE_POOL);
 		} else {
@@ -637,8 +656,10 @@ void p_tick(Interpreter *interp, cell *cfa) {
 		return;
 	}
 	Val value = make_xt(target_cfa);
-	if (interp->compiling) emit_val_literal(interp, value);
-	else push(interp, value);
+	if (interp->compiling)
+		emit_val_literal(interp, value);
+	else
+		push(interp, value);
 }
 
 static void enter_compile_scope(Interpreter *interp) {
@@ -653,7 +674,8 @@ static void enter_compile_scope(Interpreter *interp) {
 }
 
 static void leave_compile_scope(Interpreter *interp) {
-	if (interp->n_local_scopes <= 0) return;
+	if (interp->n_local_scopes <= 0)
+		return;
 
 	interp->n_local_scopes--;
 	int saved_n_names = interp->local_scope_starts[interp->n_local_scopes];
@@ -717,58 +739,98 @@ void p_variable(Interpreter *interp, cell *cfa) {
 	create_variable(interp, token);
 }
 
-void p_bar(Interpreter *interp, cell *cfa) {
-	(void)cfa;
-
+static void compile_locals_decl(Interpreter *interp, const char *opener, int force_all_receive) {
 	if (!interp->compiling || interp->n_local_scopes <= 0) {
-		fail(interp, "|: only valid inside a colon definition or quotation");
+		fail(interp, "%s: only valid inside a colon definition or quotation", opener);
 		return;
 	}
 
 	int scope_idx = interp->n_local_scopes - 1;
 	if (interp->vocab->here != interp->local_scope_dict_starts[scope_idx]) {
-		fail(interp, "|: locals must be declared at the head of the body");
+		fail(interp, "%s: locals must be declared at the head of the body", opener);
 		return;
 	}
 
 	int scope_start = interp->local_scope_starts[scope_idx];
+	int receive_slots[MAX_LOCAL_NAMES];
+	int n_received = 0;
+
 	while (1) {
 		char *token = next_token(interp);
 		if (!token) {
-			fail(interp, "|: unterminated locals declaration (no closing |)");
+			fail(interp, "%s: unterminated locals declaration (no closing |)", opener);
 			return;
 		}
-		if (strcmp(token, "|") == 0) break;
+		if (strcmp(token, "|") == 0)
+			break;
+
+		int has_receive_marker = 0;
+		if (token[0] == '>' && token[1] != 0) {
+			has_receive_marker = 1;
+			token++;
+		}
 
 		for (int i = scope_start; i < interp->n_local_names; i++) {
 			if (strcmp(token, &interp->local_names_pool[interp->local_name_offsets[i]]) == 0) {
-				fail(interp, "|: local '%s' declared twice", token);
+				fail(interp, "%s: local '%s' declared twice", opener, token);
 				return;
 			}
 		}
 
 		int name_len = (int)strlen(token);
 		if (interp->local_names_pool_here + name_len + 1 > LOCAL_NAMES_POOL_SIZE) {
-			fail(interp, "|: local names pool full");
+			fail(interp, "%s: local names pool full", opener);
 			return;
 		}
 		if (interp->n_local_names >= MAX_LOCAL_NAMES) {
-			fail(interp, "|: too many local names (max %d)", MAX_LOCAL_NAMES);
+			fail(interp, "%s: too many local names (max %d)", opener, MAX_LOCAL_NAMES);
 			return;
 		}
+
+		int slot = interp->n_local_names - scope_start;
 
 		int offset = interp->local_names_pool_here;
 		memcpy(&interp->local_names_pool[offset], token, (size_t)name_len);
 		interp->local_names_pool[offset + name_len] = 0;
 		interp->local_names_pool_here += name_len + 1;
 		interp->local_name_offsets[interp->n_local_names++] = offset;
+
+		if (has_receive_marker)
+			receive_slots[n_received++] = slot;
 	}
 
 	int n_declared = interp->n_local_names - scope_start;
-	if (n_declared > 0) {
+	if (n_declared == 0)
+		return;
+
+	if (force_all_receive && n_received > 0) {
+		fail(interp, "%s: do not use > markers; %s already implies all-receive", opener, opener);
+		return;
+	}
+
+	if (force_all_receive || n_received == n_declared) {
+		emit_call(interp, interp->vocab->enter_locals_to_cfa);
+		emit(interp, (cell)n_declared);
+	} else if (n_received == 0) {
 		emit_call(interp, interp->vocab->enter_locals_cfa);
 		emit(interp, (cell)n_declared);
+	} else {
+		emit_call(interp, interp->vocab->enter_locals_mixed_cfa);
+		emit(interp, (cell)n_declared);
+		emit(interp, (cell)n_received);
+		for (int i = 0; i < n_received; i++)
+			emit(interp, (cell)receive_slots[i]);
 	}
+}
+
+void p_bar(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	compile_locals_decl(interp, "|", 0);
+}
+
+void p_bar_to(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	compile_locals_decl(interp, "|>", 1);
 }
 
 void p_to_var(Interpreter *interp, cell *cfa) {
@@ -871,6 +933,18 @@ void p_decrement(Interpreter *interp, cell *cfa) {
 	                    interp->vocab->dec_cfa);
 }
 
+void p_inline(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	int latest = interp->vocab->latest_cfa;
+	if (!latest) {
+		fail(interp, "inline: no recent definition");
+		return;
+	}
+
+	WORD_FLAGS(interp->vocab, latest) |= 2;
+}
+
 void p_symbol(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
@@ -879,7 +953,8 @@ void p_symbol(Interpreter *interp, cell *cfa) {
 		fail(interp, "symbol: expected a name");
 		return;
 	}
-	if (token[0] == ':') token++;
+	if (token[0] == ':')
+		token++;
 
 	create_header(interp, token, 0);
 	emit(interp, (cell)&dosym);
@@ -916,7 +991,8 @@ void p_forget(Interpreter *interp, cell *cfa) {
 		int src_offset = (int)WORD_SOURCE(interp->vocab, surviving_cfa);
 		if (src_offset > 0) {
 			int src_end = src_offset + (int)strlen(&interp->vocab->source_pool[src_offset]) + 1;
-			if (src_end > max_src_end) max_src_end = src_end;
+			if (src_end > max_src_end)
+				max_src_end = src_end;
 		}
 	}
 	interp->vocab->source_here = max_src_end;
@@ -925,7 +1001,8 @@ void p_forget(Interpreter *interp, cell *cfa) {
 int read_string_literal(Interpreter *interp) {
 	int start = interp->input_buffer_pos + 1;
 	int cursor = start;
-	while (cursor < interp->input_buffer_len && interp->input_buffer[cursor] != '"') cursor++;
+	while (cursor < interp->input_buffer_len && interp->input_buffer[cursor] != '"')
+		cursor++;
 	if (cursor >= interp->input_buffer_len) {
 		interp->need_more = 1;
 		return -1;
@@ -961,7 +1038,8 @@ int interpolate(Interpreter *interp, int template_handle) {
 				saw_digit = 1;
 			}
 			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
-				if (digit_value > max_ref) max_ref = digit_value;
+				if (digit_value > max_ref)
+					max_ref = digit_value;
 				any_placeholders = 1;
 				cursor = scan + 1;
 				continue;
@@ -1027,7 +1105,8 @@ int interpolate(Interpreter *interp, int template_handle) {
 
 	if (any_placeholders && max_ref >= 0) {
 		int items_to_drop = max_ref + 1;
-		if (items_to_drop > interp->dsp) items_to_drop = interp->dsp;
+		if (items_to_drop > interp->dsp)
+			items_to_drop = interp->dsp;
 		interp->dsp -= items_to_drop;
 	}
 
@@ -1054,7 +1133,8 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 	} else if (operand.tag == T_MATRIX) {
 		Object *source = interp->objects[operand.data];
 		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
-		if (interp->error_flag) return;
+		if (interp->error_flag)
+			return;
 
 		Object *target = interp->objects[target_handle];
 		int num_elements = source->matrix.rows * source->matrix.columns;

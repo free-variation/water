@@ -8,25 +8,24 @@ variable BOARD
 variable CYCLES
 
 : bswap ( a b -- )
-  | a b tmp |
-  to b  to a
-  BOARD a @i to tmp
+  |> a b |
+  BOARD a @i
   BOARD a  BOARD b @i  !i drop
-  BOARD b  tmp        !i drop ;
+  BOARD b  rot         !i drop ;
 
 : valid?
   | n |
   QUEENS to n
-  < [: | i | to i  BOARD i @i i + :] n i-times > size n =
-  < [: | i | to i  BOARD i @i i - :] n i-times > size n =
+  < [: |> i | BOARD i @i i + :] n i-times > size n =
+  < [: |> i | BOARD i @i i - :] n i-times > size n =
   * ;
 
 : check-perm
   valid? if SOLUTIONS 1+ to SOLUTIONS then ;
 
 : rotate-left ( i -- )
-  | i n tmp j |
-  to i  QUEENS to n
+  | >i n tmp j |
+  QUEENS to n
   i n 1 - = if
     \ single-element rotate is a no-op
   else
@@ -44,9 +43,9 @@ variable CYCLES
   | n |
   QUEENS to n
   0 n array-of to BOARD
-  [: | k | to k  BOARD k k !i drop :] n i-times
+  [: |> k | BOARD k k !i drop :] n i-times
   0 n array-of to CYCLES
-  [: | k | to k  CYCLES k  n k -  !i drop :] n i-times ;
+  [: |> k | CYCLES k  n k -  !i drop :] n i-times ;
 
 : permute-all
   | n i j yielded done inner-done |

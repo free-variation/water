@@ -16,21 +16,20 @@ variable MAX_FLIPS
   | n |
   N to n
   0 n array-of to PERM1
-  [: | k | to k  PERM1 k k !i drop :] n i-times
+  [: |> k | PERM1 k k !i drop :] n i-times
   0 n array-of to PERM
-  [: | k | to k  PERM k k !i drop :] n i-times
+  [: |> k | PERM k k !i drop :] n i-times
   0 n array-of to COUNT
-  [: | k | to k  COUNT k  k 1+  !i drop :] n i-times ;
+  [: |> k | COUNT k  k 1+  !i drop :] n i-times ;
 
 : copy-perm1
-  | n |
-  N to n
-  [: | k | to k  PERM k  PERM1 k @i  !i drop :] n i-times ;
+  PERM 0 PERM1 0 1 N slice! drop ;
+inline
 
 : flip-perm ( k -- )
-  | k |
-  to k
-  PERM 0 PERM k -1 k 1+ slice! drop ;
+  >r
+  PERM 0 PERM r@ -1 r> 1+ slice! drop ;
+inline
 
 : count-flips ( -- flips )
   | flips |
@@ -49,14 +48,15 @@ variable MAX_FLIPS
   flips ;
 
 : rotate-perm1 ( r -- )
-  | r tmp |
-  to r
-  r 0 = if
+  dup 0 = if
+    drop
   else
-    PERM1 0 @i to tmp
-    PERM1 0 PERM1 1 1 r slice! drop
-    PERM1 r tmp !i drop
+    PERM1 0 @i >r
+    >r
+    PERM1 0 PERM1 1 1 r@ slice! drop
+    PERM1 r> r> !i drop
   then ;
+inline
 
 : update-max ( flips -- )
   dup MAX_FLIPS gt if to MAX_FLIPS else drop then ;

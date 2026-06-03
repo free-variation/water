@@ -83,7 +83,7 @@ variable b2-targets
   | px py pz sun |
   0 to px  0 to py  0 to pz
   BODIES 0 @i to sun
-  [: | i | to i
+  [: |> i |
      BODIES i @i 3 @i  BODIES i @i 6 @i *  px + to px
      BODIES i @i 4 @i  BODIES i @i 6 @i *  py + to py
      BODIES i @i 5 @i  BODIES i @i 6 @i *  pz + to pz
@@ -93,12 +93,12 @@ variable b2-targets
   sun 5  pz negate SOLAR_MASS /  !i drop ;
 
 : kinetic ( b -- ke )
-  | b | to b
+  |> b |
   b 3 @i sq  b 4 @i sq +  b 5 @i sq +
   b 6 @i *  0.5 * ;
 
 : pair-potential ( b1 b2 -- pe )
-  | b1 b2 | to b2 to b1
+  |> b1 b2 |
   b1 0 @i b2 0 @i - sq
   b1 1 @i b2 1 @i - sq +
   b1 2 @i b2 2 @i - sq +
@@ -109,8 +109,8 @@ variable b2-targets
   | e |
   0 to e
   [: BODIES swap @i kinetic e + to e :] 5 i-times
-  [: | i | to i
-     [: | j | to j
+  [: |> i |
+     [: |> j |
         i j lt if
           BODIES i @i  BODIES j @i  pair-potential  e + to e
         then :]
@@ -121,8 +121,7 @@ variable b2-targets
 \ pair-force: load both bodies into globals via destruct-to,
 \ compute, write velocities back to source arrays.
 : pair-force ( b1 b2 dt -- )
-  | b1 b2 dt |
-  to dt to b2 to b1
+  |> b1 b2 dt |
   b1 b1-targets destruct-to
   b2 b2-targets destruct-to
   x1 x2 - to dx
@@ -140,13 +139,13 @@ variable b2-targets
   vx2 vy2 vz2 b2 3 3 to-slice drop ;
 
 : integrate-pos ( b dt -- )
-  | b dt | to dt to b
+  |> b dt |
   b 0  b 0 @i  dt b 3 @i * +  !i drop
   b 1  b 1 @i  dt b 4 @i * +  !i drop
   b 2  b 2 @i  dt b 5 @i * +  !i drop ;
 
 : advance ( dt -- )
-  | dt | to dt
+  |> dt |
   B0 B1 dt pair-force
   B0 B2 dt pair-force
   B0 B3 dt pair-force
