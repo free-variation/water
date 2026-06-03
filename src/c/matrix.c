@@ -33,7 +33,6 @@ int matrix_scalar_op(Interpreter *interp, Val left_val, Val right_val, scalar_op
 }
 
 void p_at_i(Interpreter *interp) {
-
 	POP_INT(index, "@i", "index");
 
 	POP(source_val);
@@ -61,11 +60,11 @@ void p_at_i(Interpreter *interp) {
 	} else {
 		fail(interp, "@i: expected an array or matrix; got %s", tag_name(VAL_TAG(source_val)));
 	}
+
 	DISPATCH(interp);
 }
 
 void p_store_i(Interpreter *interp) {
-
 	PEEK_TYPE_AT(array_val, 2, "!i", T_ARRAY);
 	PEEK_AT(index_val, 1, "!i");
 	if (VAL_TAG(index_val) != T_FLOAT) {
@@ -82,11 +81,11 @@ void p_store_i(Interpreter *interp) {
 	}
 	array->items[index] = value;
 	interp->dsp -= 2;
+
 	DISPATCH(interp);
 }
 
 void p_at_j(Interpreter *interp) {
-
 	POP_INT(index, "@j", "index");
 	POP_MATRIX(source, "@j");
 
@@ -101,11 +100,11 @@ void p_at_j(Interpreter *interp) {
 		MAT(col, i, 0) = MAT(source, i, index);
 
 	push(interp, make_matrix(col_handle));
+
 	DISPATCH(interp);
 }
 
 void p_at_ij(Interpreter *interp) {
-
 	POP_INT(j, "@i,j", "column index");
 	POP_INT(i, "@i,j", "row index");
 	POP_MATRIX(source, "@i,j");
@@ -120,6 +119,7 @@ void p_at_ij(Interpreter *interp) {
 	}
 
 	push(interp, make_float(MAT(source, i, j)));
+
 	DISPATCH(interp);
 }
 
@@ -223,21 +223,25 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 
 void p_dgemm_nn(Interpreter *interp) {
 	p_dgemm_helper(interp, 0, 0);
+
 	DISPATCH(interp);
 }
 
 void p_dgemm_tn(Interpreter *interp) {
 	p_dgemm_helper(interp, 1, 0);
+
 	DISPATCH(interp);
 }
 
 void p_dgemm_nt(Interpreter *interp) {
 	p_dgemm_helper(interp, 0, 1);
+
 	DISPATCH(interp);
 }
 
 void p_dgemm_tt(Interpreter *interp) {
 	p_dgemm_helper(interp, 1, 1);
+
 	DISPATCH(interp);
 }
 
@@ -312,11 +316,11 @@ void p_0_matrix(Interpreter *interp) {
 	int matrix_handle = create_matrix(interp);
 	if (interp->error_flag) return;
 	push(interp, make_matrix(matrix_handle));
+
 	DISPATCH(interp);
 }
 
 void p_diagonal_matrix(Interpreter *interp) {
-
 	if (interp->dsp > 0) {
 		push(interp, interp->data_stack[interp->dsp - 1]);
 	}
@@ -336,11 +340,11 @@ void p_diagonal_matrix(Interpreter *interp) {
 	}
 
 	push(interp, make_matrix(diag_matrix_handle));
+
 	DISPATCH(interp);
 }
 
 void p_diagonal(Interpreter *interp) {
-
 	POP_MATRIX(source, "diagonal");
 
 	int diag_len = MIN(source->matrix.rows, source->matrix.columns);
@@ -350,11 +354,11 @@ void p_diagonal(Interpreter *interp) {
 		diagonal->matrix.elements[i] = MAT(source, i, i);
 
 	push(interp, make_matrix(diag_handle));
+
 	DISPATCH(interp);
 }
 
 void p_reshape(Interpreter *interp) {
-
 	POP_INT(new_cols, "reshape", "column count");
 	POP_INT(new_rows, "reshape", "row count");
 	POP_MATRIX(source, "reshape");
@@ -372,11 +376,11 @@ void p_reshape(Interpreter *interp) {
 			(size_t)total * sizeof(double));
 
 	push(interp, make_matrix(target_handle));
+
 	DISPATCH(interp);
 }
 
 void p_matrix(Interpreter *interp) {
-
 	if (interp->dsp < 2) {
 		fail(interp, "matrix: stack too shallow (expected array and at least one dimension)");
 		return;
@@ -443,19 +447,19 @@ void p_matrix(Interpreter *interp) {
 	}
 
 	push(interp, make_matrix(matrix_handle));
+
 	DISPATCH(interp);
 }
 
 void p_dim(Interpreter *interp) {
-
 	POP_MATRIX(m, "dim");
 	push(interp, make_float(m->matrix.rows));
 	push(interp, make_float(m->matrix.columns));
+
 	DISPATCH(interp);
 }
 
 void p_transpose(Interpreter *interp) {
-
 	POP_MATRIX(source, "transpose");
 	NEW_MATRIX(target_handle, target, source->matrix.columns, source->matrix.rows);
 	for (int i = 0; i < source->matrix.rows; i++)
@@ -463,6 +467,7 @@ void p_transpose(Interpreter *interp) {
 			MAT(target, j, i) = MAT(source, i, j);
 
 	push(interp, make_matrix(target_handle));
+
 	DISPATCH(interp);
 }
 

@@ -506,18 +506,21 @@ void docol(Interpreter *interp) {
 	int target_cfa = (int)interp->vocab->dict[interp->ip++];
 	rpush(interp, make_addr(interp->ip));
 	interp->ip = target_cfa + 1;
+
 	DISPATCH(interp);
 }
 
 void dosym(Interpreter *interp) {
 	int sym_cfa = (int)interp->vocab->dict[interp->ip++];
 	push_symbol(interp, sym_cfa);
+
 	DISPATCH(interp);
 }
 
 void dovar(Interpreter *interp) {
 	int var_cfa = (int)interp->vocab->dict[interp->ip++];
 	push_variable(interp, var_cfa);
+
 	DISPATCH(interp);
 }
 
@@ -700,7 +703,6 @@ const char *tag_name(Tag t) {
 }
 
 void p_exit(Interpreter *interp) {
-
 	while (interp->rsp > 0 && VAL_TAG(interp->return_stack[interp->rsp - 1]) == T_MARK) 
 		interp->rsp--;
 
@@ -711,6 +713,7 @@ void p_exit(Interpreter *interp) {
 
 	Val saved_ip = interp->return_stack[--interp->rsp];
 	interp->ip = (int)VAL_DATA(saved_ip);
+
 	DISPATCH(interp);
 }
 
@@ -722,11 +725,13 @@ void p_literal(Interpreter *interp) {
 	Tag tag = (Tag)interp->vocab->dict[interp->ip++];
 	int64_t data = interp->vocab->dict[interp->ip++];
 	push(interp, make_tagged(tag, data));
+
 	DISPATCH(interp);
 }
 
 void p_branch(Interpreter *interp) {
 	interp->ip += (int)interp->vocab->dict[interp->ip];
+
 	DISPATCH(interp);
 }
 
@@ -740,23 +745,24 @@ void p_branch(Interpreter *interp) {
 
 void p_0branch(Interpreter *interp) {
 	ZBRANCH_BODY(POP(condition));
+
 	DISPATCH(interp);
 }
 
 void p_qzbranch(Interpreter *interp) {
 	ZBRANCH_BODY(PEEK_AT(condition, 0, "?if"));
+
 	DISPATCH(interp);
 }
 
 void p_dostr(Interpreter *interp) {
-
 	int template_handle = (int)interp->vocab->dict[interp->ip++];
 	push(interp, make_string(interpolate(interp, template_handle)));
+
 	DISPATCH(interp);
 }
 
 void p_enter_locals(Interpreter *interp) {
-
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
 		fail(interp, "return stack overflow");
@@ -765,11 +771,11 @@ void p_enter_locals(Interpreter *interp) {
 	interp->return_stack[interp->rsp++] = make_addr(interp->local_base);
 	interp->rsp += n_locals;
 	interp->local_base = interp->rsp - n_locals;
+
 	DISPATCH(interp);
 }
 
 void p_enter_locals_to(Interpreter *interp) {
-
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
 		fail(interp, "(enter-locals-to): return stack overflow");
@@ -784,15 +790,15 @@ void p_enter_locals_to(Interpreter *interp) {
 	int data_start = interp->dsp - n_locals;
 	for (int i = 0; i < n_locals; i++)
 		interp->return_stack[interp->rsp + i] = interp->data_stack[data_start + i];
-	
+
 	interp->dsp -= n_locals;
 	interp->local_base = interp->rsp;
 	interp->rsp += n_locals;
+
 	DISPATCH(interp);
 }
 
 void p_enter_locals_mixed(Interpreter *interp) {
-
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	int n_received = (int)interp->vocab->dict[interp->ip++];
 
@@ -815,15 +821,16 @@ void p_enter_locals_mixed(Interpreter *interp) {
 		interp->return_stack[interp->local_base + slot] = interp->data_stack[data_start + i];
 	}
 	interp->dsp -= n_received;
+
 	DISPATCH(interp);
 }
 
 void p_leave_locals(Interpreter *interp) {
-
 	int n_locals = (int)interp->vocab->dict[interp->ip++];
 	interp->rsp -= n_locals;
 	Val saved = rpop(interp);
 	interp->local_base = (int)VAL_DATA(saved);
+
 	DISPATCH(interp);
 }
 
@@ -840,21 +847,25 @@ static Val *local_slot(Interpreter *interp) {
 
 void p_local_fetch(Interpreter *interp) {
 	push(interp, *local_slot(interp));
+
 	DISPATCH(interp);
 }
 
 void p_local_store(Interpreter *interp) {
 	*local_slot(interp) = pop(interp);
+
 	DISPATCH(interp);
 }
 
 void p_local_fetch_0depth(Interpreter *interp) {
 	push(interp, interp->return_stack[interp->local_base + (int)interp->vocab->dict[interp->ip++]]);
+
 	DISPATCH(interp);
 }
 
 void p_local_store_0depth(Interpreter *interp) {
 	interp->return_stack[interp->local_base + (int)interp->vocab->dict[interp->ip++]] = pop(interp);
+
 	DISPATCH(interp);
 }
 
@@ -873,7 +884,6 @@ LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
 LOCAL_ARITH_0DEPTH(p_local_decr_0depth, "(local-!)", n - 1.0)
 
 void p_set(Interpreter *interp) {
-
 	POP_INT(count, "set", "count");
 	if (count < 0 || count > interp->dsp) {
 		fail(interp, "set: count %d out of range (stack has %d available)", count, interp->dsp);
@@ -890,6 +900,7 @@ void p_set(Interpreter *interp) {
 	interp->dsp = first_item;
 
 	push(interp, make_set(set_handle));
+
 	DISPATCH(interp);
 }
 
@@ -1179,7 +1190,6 @@ void load_file(Interpreter *interp, const char *filename) {
 }
 
 void p_load(Interpreter *interp) {
-
 	POP_STRING(filename_obj, "load");
 	gc_root_push(interp, filename_obj_val);
 
@@ -1189,11 +1199,11 @@ void p_load(Interpreter *interp) {
 	load_file(interp, filename);
 
 	gc_root_pop(interp);
+
 	DISPATCH(interp);
 }
 
 void p_reload(Interpreter *interp) {
-
 	forget_user(interp);
 
 	for (int i = 0; i < interp->n_loaded_files; i++) {
@@ -1201,6 +1211,7 @@ void p_reload(Interpreter *interp) {
 		if (interp->error_flag)
 			return;
 	}
+
 	DISPATCH(interp);
 }
 
@@ -1306,7 +1317,6 @@ void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 }
 
 void p_copy(Interpreter *interp) {
-
 	PEEK_AT(source_val, 0, "copy");
 	gc_root_push(interp, source_val);
 	if (interp->error_flag)
@@ -1319,6 +1329,7 @@ void p_copy(Interpreter *interp) {
 		return;
 
 	interp->data_stack[interp->dsp - 1] = copy_val;
+
 	DISPATCH(interp);
 }
 
@@ -1482,7 +1493,6 @@ void gc(Interpreter *interp) {
 }
 
 void p_save(Interpreter *interp) {
-
 	POP_STRING(filename_obj, "save");
 	gc_root_push(interp, filename_obj_val);
 	const char *filename = filename_obj->bytes;
@@ -1522,6 +1532,7 @@ void p_save(Interpreter *interp) {
 
 	fclose(file);
 	gc_root_pop(interp);
+
 	DISPATCH(interp);
 }
 
@@ -1563,7 +1574,6 @@ int r_val(FILE *f, Val *v) {
 }
 
 void p_save_image(Interpreter *interp) {
-
 	POP_STRING(filename_obj, "save-image");
 	gc_root_push(interp, filename_obj_val);
 	const char *filename = filename_obj->bytes;
@@ -1682,6 +1692,7 @@ void p_save_image(Interpreter *interp) {
 
 	fclose(file);
 	gc_root_pop(interp);
+
 	DISPATCH(interp);
 }
 
@@ -1716,7 +1727,6 @@ void forget_user(Interpreter *interp) {
 }
 
 void p_load_image(Interpreter *interp) {
-
 	POP_STRING(filename_obj, "load-image");
 
 	char filename[4096];
@@ -1979,6 +1989,7 @@ void p_load_image(Interpreter *interp) {
 
 done:
 	fclose(file);
+
 	DISPATCH(interp);
 }
 

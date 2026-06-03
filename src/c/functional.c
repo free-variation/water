@@ -1,7 +1,6 @@
 #include "logicforth.h"
 
 void p_map(Interpreter *interp) {
-
 	POP_XT(xt, "map");
 	PEEK_SEQUENCE_AT(source_val, 0, "map");
 	Object *source = interp->objects[VAL_DATA(source_val)];
@@ -29,11 +28,11 @@ void p_map(Interpreter *interp) {
 		interp->dsp = source_index;
 		push(interp, make_array(result_handle));
 	}
+
 	DISPATCH(interp);
 }
 
 void p_mapn(Interpreter *interp) {
-
 	POP_INT(arity, "mapn", "arity");
 	if (arity < 1) {
 		fail(interp, "mapn: arity must be >= 1; got %d", arity);
@@ -86,11 +85,11 @@ void p_mapn(Interpreter *interp) {
 		interp->dsp = first_source;
 		push(interp, make_array(result_handle));
 	}
+
 	DISPATCH(interp);
 }
 
 void p_filter(Interpreter *interp) {
-
 	POP_XT(xt, "filter");
 	PEEK_SEQUENCE_AT(source_val, 0, "filter");
 	Object *source = interp->objects[VAL_DATA(source_val)];
@@ -131,11 +130,11 @@ void p_filter(Interpreter *interp) {
 	free(keep);
 	interp->dsp = source_index;
 	push(interp, make_array(result_handle));
+
 	DISPATCH(interp);
 }
 
 void p_reduce(Interpreter *interp) {
-
 	POP_XT(combiner, "reduce");
 	POP(init_val);
 	PEEK_SEQUENCE_AT(source_val, 0, "reduce");
@@ -154,6 +153,7 @@ void p_reduce(Interpreter *interp) {
 
 	pop(interp);
 	push(interp, result_val);
+
 	DISPATCH(interp);
 }
 

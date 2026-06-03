@@ -111,7 +111,8 @@ void p_div(Interpreter *interp) {
 	}
 	else
 		fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
-	
+
+
 	DISPATCH(interp);
 }
 
@@ -142,7 +143,8 @@ void p_fmul_add(Interpreter *interp) {
 	Val *c = &interp->data_stack[interp->dsp - 1];
 	a->number = a->number * b->number + c->number;
 	interp->dsp -= 2;
-	
+
+
 	DISPATCH(interp);
 }
 
@@ -156,7 +158,8 @@ void p_fmul_sub(Interpreter *interp) {
 	Val *c = &interp->data_stack[interp->dsp - 1];
 	a->number = c->number - a->number * b->number;
 	interp->dsp -= 2;
-	
+
+
 	DISPATCH(interp);
 }
 
@@ -182,6 +185,7 @@ static double scalar_negate(double x) { return -x; }
 void p_neg(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, scalar_negate, "negate");
+
 	DISPATCH(interp);
 }
 
@@ -225,64 +229,63 @@ UNARY_FLOAT_PRIMITIVE(p_dec, "1-", n - 1.0)
 UNARY_FLOAT_PRIMITIVE(p_sq,  "sq", n * n)
 
 void p_zeq(Interpreter *interp) {
-
 	POP(operand);
 	push(interp, make_bool(!truthy(operand)));
+
 	DISPATCH(interp);
 }
 
 void p_dup(Interpreter *interp) {
-
 	POP(top);
 	push(interp, top);
 	push(interp, top);
+
 	DISPATCH(interp);
 }
 
 void p_drop(Interpreter *interp) {
-
 	(void)pop(interp);
+
 	DISPATCH(interp);
 }
 
 void p_swap(Interpreter *interp) {
-
 	POP(top);
 	POP(second);
 	push(interp, top);
 	push(interp, second);
+
 	DISPATCH(interp);
 }
 
 void p_over(Interpreter *interp) {
-
 	POP(top);
 	POP(second);
 	push(interp, second);
 	push(interp, top);
 	push(interp, second);
+
 	DISPATCH(interp);
 }
 
 void p_rot(Interpreter *interp) {
-
 	POP(top);
 	POP(middle);
 	POP(bottom);
 	push(interp, middle);
 	push(interp, top);
 	push(interp, bottom);
+
 	DISPATCH(interp);
 }
 
 void p_depth(Interpreter *interp) {
-
 	push(interp, make_float((double)interp->dsp));
+
 	DISPATCH(interp);
 }
 
 void p_roll(Interpreter *interp) {
-
 	POP_INT(n, "roll", "depth");
 	if (n < 0 || n >= interp->dsp) {
 		fail(interp, "roll: depth %d out of range (stack has %d below it)", n, interp->dsp);
@@ -293,11 +296,11 @@ void p_roll(Interpreter *interp) {
 	Val value = interp->data_stack[src];
 	memmove(&interp->data_stack[src], &interp->data_stack[src + 1], (size_t)n * sizeof(Val));
 	interp->data_stack[interp->dsp - 1] = value;
+
 	DISPATCH(interp);
 }
 
 void p_dot(Interpreter *interp) {
-
 	POP(value);
 	if (VAL_TAG(value) == T_MATRIX) {
 		print_matrix_grid(interp->objects[VAL_DATA(value)]);
@@ -309,11 +312,11 @@ void p_dot(Interpreter *interp) {
 		putchar(' ');
 	}
 	fflush(stdout);
+
 	DISPATCH(interp);
 }
 
 void p_dot_all(Interpreter *interp) {
-
 	int saved = print_truncate;
 	print_truncate = 0;
 	POP(value);
@@ -325,6 +328,7 @@ void p_dot_all(Interpreter *interp) {
 	}
 	fflush(stdout);
 	print_truncate = saved;
+
 	DISPATCH(interp);
 }
 
@@ -333,24 +337,25 @@ void p_cr(Interpreter *interp) {
 
 	putchar('\n');
 	fflush(stdout);
+
 	DISPATCH(interp);
 }
 
 void p_emit_(Interpreter *interp) {
-
 	POP_INT(c, "emit", "character code");
 	putchar(c);
 	fflush(stdout);
+
 	DISPATCH(interp);
 }
 
 void p_dots(Interpreter *interp) {
-
 	for (int i = 0; i < interp->dsp; i++) {
 		print_val(interp, interp->data_stack[i]);
 		putchar(' ');
 	}
 	fflush(stdout);
+
 	DISPATCH(interp);
 }
 
@@ -361,77 +366,77 @@ void p_bye(Interpreter *interp) {
 }
 
 void p_tor(Interpreter *interp) {
-
 	POP(value);
 	rpush(interp, value);
+
 	DISPATCH(interp);
 }
 
 void p_rfrom(Interpreter *interp) {
-
 	push(interp, rpop(interp));
+
 	DISPATCH(interp);
 }
 
 void p_rfetch(Interpreter *interp) {
-
 	if (interp->rsp > 0)
 		push(interp, interp->return_stack[interp->rsp - 1]);
 	else
 		fail(interp, "r@: return stack is empty");
+
 	DISPATCH(interp);
 }
 
 void p_to_side(Interpreter *interp) {
-
 	POP(value);
 	if (interp->side_dsp >= SIDESTACK_DEPTH) {
 		fail(interp, ">side: side stack overflow (max %d)", SIDESTACK_DEPTH);
 		return;
 	}
 	interp->side_stack[interp->side_dsp++] = value;
+
 	DISPATCH(interp);
 }
 
 void p_side_to(Interpreter *interp) {
-
 	if (interp->side_dsp <= 0) {
 		fail(interp, "side>: side stack is empty");
 		return;
 	}
 	push(interp, interp->side_stack[--interp->side_dsp]);
+
 	DISPATCH(interp);
 }
 
 void p_side_drop(Interpreter *interp) {
-
 	if (interp->side_dsp <= 0) {
 		fail(interp, "side-drop: side stack is empty");
 		return;
 	}
 	interp->side_dsp--;
+
 	DISPATCH(interp);
 }
 
 void p_side_depth(Interpreter *interp) {
-
 	push(interp, make_float((double)interp->side_dsp));
+
 	DISPATCH(interp);
 }
 
 
 
 void p_execute(Interpreter *interp) {
-
 	POP_XT(value, "execute");
 	execute_cfa(interp, value);
+
 	DISPATCH(interp);
 }
 
 void p_reset(Interpreter *interp) {
-
 	Val mark = make_tagged(T_MARK, interp->next_mark_id++);
 	rpush(interp, mark);
+
 	DISPATCH(interp);
 }
 
@@ -467,7 +472,6 @@ static void restore_local_base_below(Interpreter *interp, int mark_index) {
 }
 
 void p_shift(Interpreter *interp) {
-
 	int mark_index;
 	int cont_slot = capture_continuation(interp, &mark_index);
 	if (cont_slot < 0)
@@ -476,11 +480,11 @@ void p_shift(Interpreter *interp) {
 	interp->rsp = mark_index;
 	restore_local_base_below(interp, mark_index);
 	push(interp, make_continuation(cont_slot));
+
 	DISPATCH(interp);
 }
 
 void p_shift_with(Interpreter *interp) {
-
 	POP_XT(handler, "shift-with");
 
 	int mark_index;
@@ -501,7 +505,6 @@ void p_shift_with(Interpreter *interp) {
 }
 
 void p_resume(Interpreter *interp) {
-
 	POP(k);
 	if (VAL_TAG(k) != T_CONT) {
 		fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(k)));
@@ -531,11 +534,11 @@ void p_resume(Interpreter *interp) {
 	interp->running = saved_running;
 	interp->ip = saved_ip;
 	interp->local_base = saved_local_base;
+
 	DISPATCH(interp);
 }
 
 void p_words(Interpreter *interp) {
-
 	int cnt = 0;
 	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
 		fputs(&interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)], stdout);
@@ -546,11 +549,11 @@ void p_words(Interpreter *interp) {
 	if (cnt % 8)
 		putchar('\n');
 	fflush(stdout);
+
 	DISPATCH(interp);
 }
 
 void p_see(Interpreter *interp) {
-
 	POP_XT(target_cfa, "see");
 
 	const char *name = NULL;
@@ -584,11 +587,11 @@ void p_see(Interpreter *interp) {
 		printf("%s is a primitive\n", name ? name : "?");
 	}
 	fflush(stdout);
+
 	DISPATCH(interp);
 }
 
 void p_semi(Interpreter *interp) {
-
 	leave_compile_scope(interp);
 	emit_call(interp, interp->vocab->exit_cfa);
 	if (interp->compiling_src_start > 0 && interp->vocab->latest_cfa != 0) {
@@ -610,69 +613,70 @@ void p_semi(Interpreter *interp) {
 	}
 	interp->compiling = 0;
 	interp->compiling_src_start = 0;
+
 	DISPATCH(interp);
 }
 
 void p_if(Interpreter *interp) {
-
 	emit_call(interp, interp->vocab->zbranch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
+
 	DISPATCH(interp);
 }
 
 void p_qif(Interpreter *interp) {
-
 	emit_call(interp, interp->vocab->qzbranch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
+
 	DISPATCH(interp);
 }
 
 void p_then(Interpreter *interp) {
-
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
 	interp->vocab->dict[slot] = (interp->vocab->here - slot);
+
 	DISPATCH(interp);
 }
 
 void p_else(Interpreter *interp) {
-
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
 	emit_call(interp, interp->vocab->branch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
 	interp->vocab->dict[slot] = (interp->vocab->here - slot);
+
 	DISPATCH(interp);
 }
 
 void p_begin(Interpreter *interp) {
 	push(interp, make_float((double)interp->vocab->here));
+
 	DISPATCH(interp);
 }
 
 void p_until(Interpreter *interp) {
-
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
 	emit_call(interp, interp->vocab->zbranch_cfa);
 	emit(interp, back - interp->vocab->here);
+
 	DISPATCH(interp);
 }
 
 void p_again(Interpreter *interp) {
-
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
 	emit_call(interp, interp->vocab->branch_cfa);
 	emit(interp, back - interp->vocab->here);
+
 	DISPATCH(interp);
 }
 
 void p_qcolon(Interpreter *interp) {
-
 	int branch_slot = -1;
 	if (interp->compiling) {
 		emit_call(interp, interp->vocab->branch_cfa);
@@ -685,11 +689,11 @@ void p_qcolon(Interpreter *interp) {
 	interp->compiling = 1;
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
+
 	DISPATCH(interp);
 }
 
 void p_qsemi(Interpreter *interp) {
-
 	leave_compile_scope(interp);
 	emit_call(interp, interp->vocab->exit_cfa);
 	POP(branch_slot_val);
@@ -703,11 +707,11 @@ void p_qsemi(Interpreter *interp) {
 		interp->vocab->dict[branch_slot] = (interp->vocab->here - branch_slot);
 		emit_val_literal(interp, make_xt(anon_cfa));
 	}
+
 	DISPATCH(interp);
 }
 
 void p_tick(Interpreter *interp) {
-
 	char *token = next_token(interp);
 	if (!token) {
 		fail(interp, "' : expected a word name");
@@ -723,6 +727,7 @@ void p_tick(Interpreter *interp) {
 		emit_val_literal(interp, value);
 	else
 		push(interp, value);
+
 	DISPATCH(interp);
 }
 
@@ -761,7 +766,6 @@ static void leave_compile_scope(Interpreter *interp) {
 }
 
 void p_colon(Interpreter *interp) {
-
 	char *token = next_token(interp);
 	if (!token) {
 		fail(interp, ": expected a name for the new definition");
@@ -774,6 +778,7 @@ void p_colon(Interpreter *interp) {
 	interp->compiling = 1;
 
 	interp->compiling_src_start = interp->input_buffer_pos;
+
 	DISPATCH(interp);
 }
 
@@ -787,7 +792,6 @@ int create_variable(Interpreter *interp, const char *name) {
 
 
 void p_variable(Interpreter *interp) {
-
 	char *token = next_token(interp);
 	if (!token) {
 		fail(interp, "variable: expected a name");
@@ -795,6 +799,7 @@ void p_variable(Interpreter *interp) {
 	}
 
 	create_variable(interp, token);
+
 	DISPATCH(interp);
 }
 
@@ -884,11 +889,13 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 
 void p_bar(Interpreter *interp) {
 	compile_locals_decl(interp, "|", 0);
+
 	DISPATCH(interp);
 }
 
 void p_bar_to(Interpreter *interp) {
 	compile_locals_decl(interp, "|>", 1);
+
 	DISPATCH(interp);
 }
 
@@ -896,6 +903,7 @@ void p_to_var(Interpreter *interp) {
 	int var_cfa = (int)interp->vocab->dict[interp->ip++];
 	POP(v);
 	interp->vocab->dict[var_cfa + 1] = (cell)v.bits;
+
 	DISPATCH(interp);
 }
 
@@ -943,6 +951,7 @@ void p_to(Interpreter *interp) {
 		POP(value);
 		interp->vocab->dict[target_cfa + 1] = (cell)value.bits;
 	}
+
 	DISPATCH(interp);
 }
 
@@ -980,6 +989,7 @@ void p_increment(Interpreter *interp) {
 	compile_local_unary(interp, "++",
 	                    interp->vocab->local_incr_0depth_cfa,
 	                    interp->vocab->inc_cfa);
+
 	DISPATCH(interp);
 }
 
@@ -987,11 +997,11 @@ void p_decrement(Interpreter *interp) {
 	compile_local_unary(interp, "--",
 	                    interp->vocab->local_decr_0depth_cfa,
 	                    interp->vocab->dec_cfa);
+
 	DISPATCH(interp);
 }
 
 void p_inline(Interpreter *interp) {
-
 	int latest = interp->vocab->latest_cfa;
 	if (!latest) {
 		fail(interp, "inline: no recent definition");
@@ -999,11 +1009,11 @@ void p_inline(Interpreter *interp) {
 	}
 
 	WORD_FLAGS(interp->vocab, latest) |= 2;
+
 	DISPATCH(interp);
 }
 
 void p_symbol(Interpreter *interp) {
-
 	char *token = next_token(interp);
 	if (!token) {
 		fail(interp, "symbol: expected a name");
@@ -1016,18 +1026,18 @@ void p_symbol(Interpreter *interp) {
 	emit(interp, (cell)&dosym);
 
 	emit(interp, (cell)intern_symbol(interp, token));
+
 	DISPATCH(interp);
 }
 
 void p_string_to_symbol(Interpreter *interp) {
-
 	POP_STRING(string, "string>symbol");
 	push(interp, make_symbol(intern_symbol(interp, string->bytes)));
+
 	DISPATCH(interp);
 }
 
 void p_forget(Interpreter *interp) {
-
 	char *token = next_token(interp);
 	if (!token) {
 		fail(interp, "forget: expected a name");
@@ -1052,6 +1062,7 @@ void p_forget(Interpreter *interp) {
 		}
 	}
 	interp->vocab->source_here = max_src_end;
+
 	DISPATCH(interp);
 }
 
@@ -1173,14 +1184,14 @@ int interpolate(Interpreter *interp, int template_handle) {
 }
 
 void p_gc(Interpreter *interp) {
-
 	gc(interp);
+
 	DISPATCH(interp);
 }
 
 void p_clear(Interpreter *interp) {
-
 	interp->dsp = 0;
+
 	DISPATCH(interp);
 }
 
@@ -1207,48 +1218,56 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 void p_abs(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, fabs, "abs");
+
 	DISPATCH(interp);
 }
 
 void p_sqrt(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, sqrt, "sqrt");
+
 	DISPATCH(interp);
 }
 
 void p_exp(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, exp, "exp");
+
 	DISPATCH(interp);
 }
 
 void p_log(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, log, "log");
+
 	DISPATCH(interp);
 }
 
 void p_sin(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, sin, "sin");
+
 	DISPATCH(interp);
 }
 
 void p_cos(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, cos, "cos");
+
 	DISPATCH(interp);
 }
 
 void p_tan(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, tan, "tan");
+
 	DISPATCH(interp);
 }
 
 void p_tanh(Interpreter *interp) {
 	POP(operand);
 	unary_op(interp, operand, tanh, "tanh");
+
 	DISPATCH(interp);
 }
 
@@ -1256,6 +1275,7 @@ void p_now(Interpreter *interp) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	push(interp, make_float((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));
+
 	DISPATCH(interp);
 }
 
