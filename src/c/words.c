@@ -25,7 +25,7 @@ void p_add(Interpreter *interp, cell *cfa) {
 	POP(left);
 
 	if (left.tag == T_FLOAT && right.tag == T_FLOAT)
-		push(interp, make_float(unpack_float(left) + unpack_float(right)));
+		push(interp, make_float((left).number + (right).number));
 	else if (left.tag == T_STRING && right.tag == T_STRING)
 		push(interp, make_string(string_concat(interp, (int)left.data, (int)right.data)));
 	else if (left.tag == T_SET && right.tag == T_SET)
@@ -52,7 +52,7 @@ void p_sub(Interpreter *interp, cell *cfa) {
 	POP(left);
 
 	if (left.tag == T_FLOAT && right.tag == T_FLOAT)
-		push(interp, make_float(unpack_float(left) - unpack_float(right)));
+		push(interp, make_float((left).number - (right).number));
 	else if (left.tag == T_SET && right.tag == T_SET)
 		push(interp, make_set(set_difference(interp, (int)left.data, (int)right.data)));
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
@@ -72,7 +72,7 @@ void p_mul(Interpreter *interp, cell *cfa) {
 	POP(left);
 
 	if (left.tag == T_FLOAT && right.tag == T_FLOAT)
-		push(interp, make_float(unpack_float(left) * unpack_float(right)));
+		push(interp, make_float((left).number * (right).number));
 	else if (left.tag == T_SET && right.tag == T_SET)
 		push(interp, make_set(set_intersect(interp, (int)left.data, (int)right.data)));
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
@@ -91,11 +91,11 @@ void p_div(Interpreter *interp, cell *cfa) {
 	POP(right);
 	POP(left);
 	if (left.tag == T_FLOAT && right.tag == T_FLOAT) {
-		if (unpack_float(right) == 0.0) {
+		if ((right).number == 0.0) {
 			fail(interp, "/ : division by zero");
 			return;
 		}
-		push(interp, make_float(unpack_float(left) / unpack_float(right)));
+		push(interp, make_float((left).number / (right).number));
 	}
 	else if (left.tag == T_MATRIX && right.tag == T_MATRIX) {
 		Object *divisor = interp->objects[right.data];
@@ -115,6 +115,68 @@ void p_div(Interpreter *interp, cell *cfa) {
 		fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(left.tag), tag_name(right.tag));
 }
 
+#define BINARY_FLOAT_PRIMITIVE(name, opname, op) \
+	void name(Interpreter *interp, cell *cfa) { \
+		(void)cfa; \
+		if (interp->dsp < 2) { \
+			fail(interp, "%s: data stack underflow", opname); \
+			return; \
+		} \
+		Val *left = &interp->data_stack[interp->dsp - 2]; \
+		Val *right = &interp->data_stack[interp->dsp - 1]; \
+		left->number = left->number op right->number; \
+		interp->dsp--; \
+	}
+
+BINARY_FLOAT_PRIMITIVE(p_add_f, "+f", +)
+BINARY_FLOAT_PRIMITIVE(p_sub_f, "-f", -)
+BINARY_FLOAT_PRIMITIVE(p_mul_f, "*f", *)
+
+void p_fmul_add(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	if (interp->dsp < 3) {
+		fail(interp, "f*+: data stack underflow");
+		return;
+	}
+	Val *a = &interp->data_stack[interp->dsp - 3];
+	Val *b = &interp->data_stack[interp->dsp - 2];
+	Val *c = &interp->data_stack[interp->dsp - 1];
+	a->number = a->number * b->number + c->number;
+	interp->dsp -= 2;
+}
+
+void p_fmul_sub(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	if (interp->dsp < 3) {
+		fail(interp, "f*-: data stack underflow");
+		return;
+	}
+	Val *a = &interp->data_stack[interp->dsp - 3];
+	Val *b = &interp->data_stack[interp->dsp - 2];
+	Val *c = &interp->data_stack[interp->dsp - 1];
+	a->number = c->number - a->number * b->number;
+	interp->dsp -= 2;
+}
+
+void p_div_f(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	if (interp->dsp < 2) {
+		fail(interp, "/f: data stack underflow");
+		return;
+	}
+	Val *left = &interp->data_stack[interp->dsp - 2];
+	Val *right = &interp->data_stack[interp->dsp - 1];
+	if (right->number == 0.0) {
+		fail(interp, "/f: division by zero");
+		return;
+	}
+	left->number = left->number / right->number;
+	interp->dsp--;
+}
+
 static double scalar_negate(double x) { return -x; }
 
 void p_neg(Interpreter *interp, cell *cfa) {
@@ -125,7 +187,7 @@ void p_neg(Interpreter *interp, cell *cfa) {
 
 Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
 
-int truthy(Val value) { return (value.tag == T_FLOAT) ? (unpack_float(value) != 0.0) : (value.data != 0); }
+int truthy(Val value) { return (value.tag == T_FLOAT) ? ((value).number != 0.0) : (value.data != 0); }
 
 #define COMPARISON_PRIMITIVE(name, op) \
 	void name(Interpreter *interp, cell *cfa) { \
@@ -133,7 +195,7 @@ int truthy(Val value) { return (value.tag == T_FLOAT) ? (unpack_float(value) != 
 		POP(right); \
 		POP(left); \
 		if (left.tag == T_FLOAT && right.tag == T_FLOAT) \
-			push(interp, make_bool(unpack_float(left) op unpack_float(right))); \
+			push(interp, make_bool((left).number op (right).number)); \
 		else \
 			push(interp, make_bool(val_cmp(interp, left, right) op 0)); \
 	}
@@ -150,7 +212,7 @@ COMPARISON_PRIMITIVE(p_gt, >)
 			fail(interp, word_name ": expected a float; got %s", tag_name(operand.tag)); \
 			return; \
 		} \
-		double n = unpack_float(operand); \
+		double n = (operand).number; \
 		push(interp, make_float(expr)); \
 	}
 
@@ -569,7 +631,7 @@ void p_then(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP(slot_val);
-	int slot = (int)unpack_float(slot_val);
+	int slot = (int)(slot_val).number;
 	interp->vocab->dict[slot] = (interp->vocab->here - slot);
 }
 
@@ -577,7 +639,7 @@ void p_else(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP(slot_val);
-	int slot = (int)unpack_float(slot_val);
+	int slot = (int)(slot_val).number;
 	emit_call(interp, interp->vocab->branch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
@@ -593,7 +655,7 @@ void p_until(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP(back_val);
-	int back = (int)unpack_float(back_val);
+	int back = (int)(back_val).number;
 	emit_call(interp, interp->vocab->zbranch_cfa);
 	emit(interp, back - interp->vocab->here);
 }
@@ -602,7 +664,7 @@ void p_again(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP(back_val);
-	int back = (int)unpack_float(back_val);
+	int back = (int)(back_val).number;
 	emit_call(interp, interp->vocab->branch_cfa);
 	emit(interp, back - interp->vocab->here);
 }
@@ -631,8 +693,8 @@ void p_qsemi(Interpreter *interp, cell *cfa) {
 	emit_call(interp, interp->vocab->exit_cfa);
 	POP(branch_slot_val);
 	POP(anon_cfa_val);
-	int branch_slot = (int)unpack_float(branch_slot_val);
-	int anon_cfa = (int)unpack_float(anon_cfa_val);
+	int branch_slot = (int)(branch_slot_val).number;
+	int anon_cfa = (int)(anon_cfa_val).number;
 	if (branch_slot < 0) {
 		interp->compiling = 0;
 		push(interp, make_xt(anon_cfa));
@@ -1071,7 +1133,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 				switch (value.tag) {
 					case T_FLOAT: {
 						char rendered[64];
-						double number = unpack_float(value);
+						double number = (value).number;
 						int n;
 						if (number == (double)(int64_t)number && number > -1e15 && number < 1e15) {
 							n = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
@@ -1129,7 +1191,7 @@ void p_clear(Interpreter *interp, cell *cfa) {
 
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name) {
 	if (operand.tag == T_FLOAT) {
-		push(interp, make_float(function(unpack_float(operand))));
+		push(interp, make_float(function((operand).number)));
 	} else if (operand.tag == T_MATRIX) {
 		Object *source = interp->objects[operand.data];
 		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);

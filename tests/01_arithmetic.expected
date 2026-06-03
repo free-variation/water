@@ -3,3 +3,24 @@
 42 0 ok
 4 0 ok
 -5 0 ok
+0 ok
+0 ok
+5 0 ok
+6 0 ok
+42 0 ok
+4 0 ok
+0 ok
+0 ok
+5 99 0 ok
+0 ok
+0 ok
+0|error /f: division by zero
+0 ok
+0 ok
+10 0 ok
+150 0 ok
+10 99 0 ok
+0 ok
+0 ok
+-17 0 ok
+-496 0 ok

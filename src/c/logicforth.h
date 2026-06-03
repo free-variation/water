@@ -49,19 +49,16 @@ typedef enum {
 
 typedef struct {
 	Tag tag;
-	int64_t data;
+	union {
+		int64_t data;
+		double  number;
+	};
 } Val;
-
-static inline double unpack_float(Val packed) {
-	double number;
-	memcpy(&number, &packed.data, 8);
-	return number;
-}
 
 static inline Val make_float(double number) {
 	Val value;
 	value.tag = T_FLOAT;
-	memcpy(&value.data, &number, 8);
+	value.number = number;
 	return value;
 }
 
@@ -277,7 +274,7 @@ static inline Val pop(Interpreter *interp) {
 		return interp->data_stack[--interp->dsp];
 	}
 	fail(interp, "data stack underflow");
-	Val none = { T_NONE, 0 };
+	Val none = { T_NONE, { 0 } };
 	return none;
 }
 
@@ -294,7 +291,7 @@ static inline Val rpop(Interpreter *interp) {
 		return interp->return_stack[--interp->rsp];
 	}
 	fail(interp, "return stack underflow");
-	Val none = { T_NONE, 0 };
+	Val none = { T_NONE, { 0 } };
 	return none;
 }
 
@@ -307,7 +304,7 @@ static inline Val rpop(Interpreter *interp) {
 		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(name##_val.tag)); \
 		return; \
 	} \
-	int name = (int)unpack_float(name##_val)
+	int name = (int)(name##_val).number
 
 #define POP_XT(name, op) \
 	Val name##_val = pop(interp); \
@@ -468,6 +465,12 @@ void p_add(Interpreter *interp, cell *cfa);
 void p_sub(Interpreter *interp, cell *cfa);
 void p_mul(Interpreter *interp, cell *cfa);
 void p_div(Interpreter *interp, cell *cfa);
+void p_add_f(Interpreter *interp, cell *cfa);
+void p_sub_f(Interpreter *interp, cell *cfa);
+void p_mul_f(Interpreter *interp, cell *cfa);
+void p_div_f(Interpreter *interp, cell *cfa);
+void p_fmul_add(Interpreter *interp, cell *cfa);
+void p_fmul_sub(Interpreter *interp, cell *cfa);
 void p_neg(Interpreter *interp, cell *cfa);
 void p_inc(Interpreter *interp, cell *cfa);
 void p_dec(Interpreter *interp, cell *cfa);

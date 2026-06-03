@@ -230,6 +230,44 @@ super-instructions on top: another ~15-20% on numeric inner loops.
 Combined ceiling: roughly 25-30% additional speedup on the
 type-annotated parts of a program. The two items are designed together.
 
+### Possible optimizations
+
+Smaller-scale interpreter perf ideas not yet acted on. Each entry
+records the observation, the proposed change, and the expected payoff
+so the next pass through the file can prioritize.
+
+#### Cached destruct-to targets
+
+`destruct-to` resolves each target on its first call (symbol → XT,
+validate that the XT names a variable) and rewrites the target array
+in place. Subsequent calls still pay per-element checks — tag check
+on each item, handler check against `dovar` — even though the
+resolution has already happened and won't change.
+
+**Change.** Add a `flags` field to `Object` and one bit
+`OBJ_FLAG_DESTRUCT_TARGETS`. After the first `destruct-to` call
+finishes resolving and validating all target slots, set the flag.
+Future calls with the same target hit a fast path that skips per-item
+tag and handler checks — three memory accesses per element (read XT,
+write tag, write data), no branches.
+
+**Invalidation.** Every primitive that mutates an array's `items[]`
+must clear the flag. Sites today: `p_array_store`, `p_array_append`,
+`p_to_slice`, `p_slice_store`, and the set-word literal builder.
+Centralize via `array_invalidate_caches(Object *)`. A discipline note
+in the code style: any new array mutator must call the helper.
+
+**Payoff.** Measured on `bench/nbody-destruct-to.l4`: two destruct-to
+calls per `pair-force`, ~500K `pair-force` calls per 50K-step run.
+Slow path is ~3-5 ns per element; fast path ~1-2.5 ns. 7 elements ×
+2 calls × 500K = 7M element iterations, saving ~2-3 ns each → ~15-20 ms.
+At nbody's ~0.20 s scale, that's roughly 8-10% of total runtime, and
+narrows the gap to CPython 3.14 by a similar margin.
+
+The same caching pattern generalizes to any primitive that resolves
+symbol → XT once per target. If more such primitives appear, a shared
+`OBJ_FLAG_RESOLVED_TARGETS` covers them.
+
 ---
 
 ## Matrix — remaining work

@@ -73,7 +73,7 @@ void p_store_i(Interpreter *interp, cell *cfa) {
 		fail(interp, "!i: expected a float index; got %s", tag_name(index_val.tag));
 		return;
 	}
-	int index = (int)unpack_float(index_val);
+	int index = (int)(index_val).number;
 	PEEK_AT(value, 0, "!i");
 
 	Object *array = interp->objects[array_val.data];
@@ -213,9 +213,9 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	}
 
 	int matmult_handle = dgemm_kernel(interp, transpose_a, transpose_b,
-			unpack_float(alpha_val),
+			(alpha_val).number,
 			(int)a_val.data, (int)b_val.data,
-			unpack_float(beta_val),
+			(beta_val).number,
 			(int)c_val.data);
 	if (interp->error_flag) return;
 	push(interp, make_matrix(matmult_handle));
@@ -294,8 +294,8 @@ int create_matrix(Interpreter *interp) {
 		return -1;
 	}
 
-	int num_rows = (int)(unpack_float(left));
-	int num_columns = (int)(unpack_float(right));
+	int num_rows = (int)((left).number);
+	int num_columns = (int)((right).number);
 	if (num_rows < 0 || num_columns < 0) {
 		fail(interp, "matrix dimensions: must be non-negative; got %dx%d", num_rows, num_columns);
 		return -1;
@@ -329,7 +329,7 @@ void p_diagonal_matrix(Interpreter *interp, cell *cfa) {
 	}
 
 	Object *diag_matrix = interp->objects[diag_matrix_handle];
-	double diag_element = unpack_float(diag_val);
+	double diag_element = (diag_val).number;
 	for (int i = 0; i < diag_matrix->matrix.rows; i++) {
 		MAT(diag_matrix, i, i) = diag_element;
 	}
@@ -399,11 +399,11 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 			fail(interp, "matrix: expected an array; got %s", tag_name(arr_val.tag));
 			return;
 		}
-		num_rows = (int)unpack_float(below);
-		num_cols = (int)unpack_float(top);
+		num_rows = (int)(below).number;
+		num_cols = (int)(top).number;
 		interp->dsp -= 3;
 	} else if (below.tag == T_ARRAY) {
-		num_rows = (int)unpack_float(top);
+		num_rows = (int)(top).number;
 		Object *arr = interp->objects[below.data];
 		if (num_rows <= 0 || arr->len % num_rows != 0) {
 			fail(interp, "matrix: %d elements does not divide evenly into %d rows", arr->len, num_rows);
@@ -438,7 +438,7 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 			fail(interp, "matrix: element %d is %s, expected a float", i, tag_name(input_array->items[i].tag));
 			return;
 		}
-		matrix->matrix.elements[i] = unpack_float(input_array->items[i]);
+		matrix->matrix.elements[i] = (input_array->items[i]).number;
 	}
 
 	push(interp, make_matrix(matrix_handle));

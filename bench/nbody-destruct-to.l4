@@ -124,17 +124,17 @@ variable b2-targets
   |> b1 b2 dt |
   b1 b1-targets destruct-to
   b2 b2-targets destruct-to
-  x1 x2 - to dx
-  y1 y2 - to dy
-  z1 z2 - to dz
-  dx sq  dy sq +  dz sq +  to d2
-  dt d2 d2 sqrt * / to mag
-  vx1 dx m2 * mag * - to vx1
-  vy1 dy m2 * mag * - to vy1
-  vz1 dz m2 * mag * - to vz1
-  vx2 dx m1 * mag * + to vx2
-  vy2 dy m1 * mag * + to vy2
-  vz2 dz m1 * mag * + to vz2
+  x1 x2 -f to dx
+  y1 y2 -f to dy
+  z1 z2 -f to dz
+  dx sq  dy sq +f  dz sq +f  to d2
+  dt d2 d2 sqrt *f /f to mag
+  dx m2 *f mag vx1 f*- to vx1
+  dy m2 *f mag vy1 f*- to vy1
+  dz m2 *f mag vz1 f*- to vz1
+  dx m1 *f mag vx2 f*+ to vx2
+  dy m1 *f mag vy2 f*+ to vy2
+  dz m1 *f mag vz2 f*+ to vz2
   vx1 vy1 vz1 b1 3 3 to-slice drop
   vx2 vy2 vz2 b2 3 3 to-slice drop ;
 

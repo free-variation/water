@@ -115,8 +115,8 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 
 	switch (left.tag) {
 		case T_FLOAT: {
-						  double left_value = unpack_float(left);
-						  double right_value = unpack_float(right);
+						  double left_value = (left).number;
+						  double right_value = (right).number;
 						  if (left_value < right_value)
 						  	return -1;
 						  if (left_value > right_value)
@@ -323,7 +323,7 @@ void print_matrix_grid(Object *m) {
 
 void print_val(Interpreter *interp, Val value) {
 	switch (value.tag) {
-		case T_FLOAT: print_double(unpack_float(value)); break;
+		case T_FLOAT: print_double((value).number); break;
 		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[value.data]); break;
 		case T_STRING: fputs(interp->objects[value.data]->bytes, stdout); break;
 		case T_SET:
@@ -371,7 +371,7 @@ void print_val(Interpreter *interp, Val value) {
 void print_val_compact(Interpreter *interp, Val value) {
 	switch (value.tag) {
 		case T_FLOAT: {
-						  double number = unpack_float(value);
+						  double number = (value).number;
 						  if (number == (double)(int64_t)number && number > -1e12 && number < 1e12)
 							  printf("%lld", (long long)number);
 						  else
@@ -727,7 +727,7 @@ void p_branch(Interpreter *interp, cell *cfa) {
 #define ZBRANCH_BODY(get_condition) \
 	cell offset = interp->vocab->dict[interp->ip++]; \
 	get_condition; \
-	int is_false = (condition.tag == T_FLOAT) ? (unpack_float(condition) == 0.0) \
+	int is_false = (condition.tag == T_FLOAT) ? ((condition).number == 0.0) \
 	: (condition.data == 0); \
 	if (is_false) \
 		interp->ip += offset - 1
@@ -861,7 +861,7 @@ void p_local_store_0depth(Interpreter *interp, cell *cfa) {
 			fail(interp, word_name ": expected a float local; got %s", tag_name(p->tag)); \
 			return; \
 		} \
-		double n = unpack_float(*p); \
+		double n = (*p).number; \
 		*p = make_float(expr); \
 	}
 LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
@@ -2000,6 +2000,12 @@ int main(void) {
 	define_primitive(interp, "-", p_sub, 0);
 	define_primitive(interp, "*", p_mul, 0);
 	define_primitive(interp, "/", p_div, 0);
+	define_primitive(interp, "+f", p_add_f, 0);
+	define_primitive(interp, "-f", p_sub_f, 0);
+	define_primitive(interp, "*f", p_mul_f, 0);
+	define_primitive(interp, "/f", p_div_f, 0);
+	define_primitive(interp, "f*+", p_fmul_add, 0);
+	define_primitive(interp, "f*-", p_fmul_sub, 0);
 	define_primitive(interp, "negate", p_neg, 0);
 	interp->vocab->inc_cfa = define_primitive(interp, "1+", p_inc, 0);
 	interp->vocab->dec_cfa = define_primitive(interp, "1-", p_dec, 0);
