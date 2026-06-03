@@ -30,7 +30,7 @@
 99 1|99 ok
 1|99 ok
 1|99 ok
-0|error range: expected a float from, got a string
-0|error range: expected a float to, got a string
+0|error range: expected a float from; got a string
+0|error range: expected a float to; got a string
 0|error data stack underflow
 0|error data stack underflow

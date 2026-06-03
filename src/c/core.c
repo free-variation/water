@@ -777,6 +777,21 @@ void p_local_store_0depth(Interpreter *interp, cell *cfa) {
 	interp->return_stack[interp->local_base + (int)interp->vocab->dict[interp->ip++]] = pop(interp);
 }
 
+#define LOCAL_ARITH_0DEPTH(name, word_name, expr) \
+	void name(Interpreter *interp, cell *cfa) { \
+		(void)cfa; \
+		int slot = (int)interp->vocab->dict[interp->ip++]; \
+		Val *p = &interp->return_stack[interp->local_base + slot]; \
+		if (p->tag != T_FLOAT) { \
+			fail(interp, word_name ": expected a float local; got %s", tag_name(p->tag)); \
+			return; \
+		} \
+		double n = unpack_float(*p); \
+		*p = make_float(expr); \
+	}
+LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
+LOCAL_ARITH_0DEPTH(p_local_decr_0depth, "(local-!)", n - 1.0)
+
 void p_set(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
@@ -1194,6 +1209,8 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 	cell local_store_ptr  = interp->vocab->dict[interp->vocab->local_store_cfa];
 	cell local_fetch_0depth_ptr  = interp->vocab->dict[interp->vocab->local_fetch_0depth_cfa];
 	cell local_store_0depth_ptr  = interp->vocab->dict[interp->vocab->local_store_0depth_cfa];
+	cell local_incr_0depth_ptr   = interp->vocab->dict[interp->vocab->local_incr_0depth_cfa];
+	cell local_decr_0depth_ptr   = interp->vocab->dict[interp->vocab->local_decr_0depth_cfa];
 
 	int cursor = body_start;
 
@@ -1221,7 +1238,9 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 					|| ref == local_store_ptr) && cursor + 2 < body_end) {
 			cursor += 3;
 		} else if ((ref == local_fetch_0depth_ptr
-					|| ref == local_store_0depth_ptr) && cursor + 1 < body_end) {
+					|| ref == local_store_0depth_ptr
+					|| ref == local_incr_0depth_ptr
+					|| ref == local_decr_0depth_ptr) && cursor + 1 < body_end) {
 			cursor += 2;
 		} else {
 			cursor++;
@@ -1815,8 +1834,8 @@ int main(void) {
 	define_primitive(interp, "*", p_mul, 0);
 	define_primitive(interp, "/", p_div, 0);
 	define_primitive(interp, "negate", p_neg, 0);
-	define_primitive(interp, "1+", p_inc, 0);
-	define_primitive(interp, "1-", p_dec, 0);
+	interp->vocab->inc_cfa = define_primitive(interp, "1+", p_inc, 0);
+	interp->vocab->dec_cfa = define_primitive(interp, "1-", p_dec, 0);
 	define_primitive(interp, "sq", p_sq, 0);
 	define_primitive(interp, "dup", p_dup, 0);
 	define_primitive(interp, "drop", p_drop, 0);
@@ -1878,6 +1897,10 @@ int main(void) {
 	define_primitive(interp, "take", p_take, 0);
 	define_primitive(interp, "reverse", p_reverse, 0);
 	define_primitive(interp, "concat", p_concat, 0);
+	define_primitive(interp, "destruct", p_destruct, 0);
+	define_primitive(interp, "destruct-to", p_destruct_to, 0);
+	define_primitive(interp, "slice!", p_slice_store, 0);
+	define_primitive(interp, "to-slice", p_to_slice, 0);
 	define_primitive(interp, "range", p_range, 0);
 	define_primitive(interp, "size", p_size, 0);
 	define_primitive(interp, "member?", p_member, 0);
@@ -1910,6 +1933,8 @@ int main(void) {
 	interp->vocab->local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 0);
 	interp->vocab->local_fetch_0depth_cfa = define_primitive(interp, "(local@0)", p_local_fetch_0depth, 0);
 	interp->vocab->local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 0);
+	interp->vocab->local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 0);
+	interp->vocab->local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 0);
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);
@@ -1918,6 +1943,8 @@ int main(void) {
 	define_primitive(interp, "forget", p_forget, 0);
 	define_primitive(interp, "'", p_tick, 1);
 	define_primitive(interp, "to", p_to, 1);
+	define_primitive(interp, "++", p_increment, 1);
+	define_primitive(interp, "--", p_decrement, 1);
 
 	define_primitive(interp, ";", p_semi, 1);
 	define_primitive(interp, "if", p_if, 1);
@@ -1937,6 +1964,7 @@ int main(void) {
 	define_primitive(interp, "transpose", p_transpose, 0);
 	define_primitive(interp, "diagonal-matrix", p_diagonal_matrix, 0);
 	define_primitive(interp, "@i", p_at_i, 0);
+	define_primitive(interp, "!i", p_store_i, 0);
 	define_primitive(interp, "@j", p_at_j, 0);
 	define_primitive(interp, "@i,j", p_at_ij, 0);
 	define_primitive(interp, "diagonal", p_diagonal, 0);

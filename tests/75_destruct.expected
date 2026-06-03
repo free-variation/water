@@ -1,0 +1,55 @@
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+10 20 30 
+0 ok
+0 ok
+0 ok
+
+0 ok
+0 ok
+0 ok
+42 
+0 ok
+0 ok
+0 ok
+a 5 :sym 
+0 ok
+0 ok
+0 ok
+[ 1 2 ] [ 3 4 ] 
+0 ok
+0 ok
+0 ok
+1 2 3 
+0 ok
+0 ok
+0 ok
+
+0 ok
+0 ok
+0 ok
+:a 1 :b 2 
+0 ok
+0 ok
+0 ok
+:x 10 
+0 ok
+0 ok
+0 ok
+
+0 ok
+0 ok
+0 ok
+[ 1 2 3 ] 
+0 ok
+0 ok
+0 ok
+0|error destruct: expected array, set, or frame; got a float
+0|error destruct: expected array, set, or frame; got a string
+0|error destruct: expected array, set, or frame; got a symbol
+0 ok
+0 ok
+0|error destruct: stack too shallow

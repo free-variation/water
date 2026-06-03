@@ -60,8 +60,29 @@ void p_at_i(Interpreter *interp, cell *cfa) {
 
 		push(interp, make_matrix(row_handle));
 	} else {
-		fail(interp, "@i: expected an array or matrix, got %s", tag_name(source_val.tag));
+		fail(interp, "@i: expected an array or matrix; got %s", tag_name(source_val.tag));
 	}
+}
+
+void p_store_i(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+
+	PEEK_TYPE_AT(array_val, 2, "!i", T_ARRAY);
+	PEEK_AT(index_val, 1, "!i");
+	if (index_val.tag != T_FLOAT) {
+		fail(interp, "!i: expected a float index; got %s", tag_name(index_val.tag));
+		return;
+	}
+	int index = (int)unpack_float(index_val);
+	PEEK_AT(value, 0, "!i");
+
+	Object *array = interp->objects[array_val.data];
+	if (index < 0 || index >= array->len) {
+		fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
+		return;
+	}
+	array->items[index] = value;
+	interp->dsp -= 2;
 }
 
 void p_at_j(Interpreter *interp, cell *cfa) {
@@ -181,12 +202,12 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	POP(alpha_val);
 
 	if (alpha_val.tag != T_FLOAT || beta_val.tag != T_FLOAT) {
-		fail(interp, "dgemm: alpha and beta must be floats, got %s and %s",
+		fail(interp, "dgemm: alpha and beta must be floats; got %s and %s",
 				tag_name(alpha_val.tag), tag_name(beta_val.tag));
 		return;
 	}
 	if (a_val.tag != T_MATRIX || b_val.tag != T_MATRIX || c_val.tag != T_MATRIX) {
-		fail(interp, "dgemm: A, B, C must be matrices, got %s, %s, %s",
+		fail(interp, "dgemm: A, B, C must be matrices; got %s, %s, %s",
 				tag_name(a_val.tag), tag_name(b_val.tag), tag_name(c_val.tag));
 		return;
 	}
@@ -268,7 +289,7 @@ int create_matrix(Interpreter *interp) {
 	Val left = pop(interp);
 	if (interp->error_flag) return -1;
 	if (left.tag != T_FLOAT || right.tag != T_FLOAT) {
-		fail(interp, "matrix dimensions: expected two floats (rows cols), got %s and %s",
+		fail(interp, "matrix dimensions: expected two floats (rows cols); got %s and %s",
 				tag_name(left.tag), tag_name(right.tag));
 		return -1;
 	}
@@ -276,7 +297,7 @@ int create_matrix(Interpreter *interp) {
 	int num_rows = (int)(unpack_float(left));
 	int num_columns = (int)(unpack_float(right));
 	if (num_rows < 0 || num_columns < 0) {
-		fail(interp, "matrix dimensions: must be non-negative, got %dx%d", num_rows, num_columns);
+		fail(interp, "matrix dimensions: must be non-negative; got %dx%d", num_rows, num_columns);
 		return -1;
 	}
 	if (num_columns != 0 && num_rows > INT_MAX / num_columns) {
@@ -303,7 +324,7 @@ void p_diagonal_matrix(Interpreter *interp, cell *cfa) {
 
 	POP(diag_val);
 	if (diag_val.tag != T_FLOAT) {
-		fail(interp, "diagonal-matrix: expected a float fill value, got %s", tag_name(diag_val.tag));
+		fail(interp, "diagonal-matrix: expected a float fill value; got %s", tag_name(diag_val.tag));
 		return;
 	}
 
@@ -362,7 +383,7 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 	Val top = interp->data_stack[interp->dsp - 1];
 	Val below = interp->data_stack[interp->dsp - 2];
 	if (top.tag != T_FLOAT) {
-		fail(interp, "matrix: expected a float dimension on top, got %s", tag_name(top.tag));
+		fail(interp, "matrix: expected a float dimension on top; got %s", tag_name(top.tag));
 		return;
 	}
 
@@ -375,7 +396,7 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 		}
 		arr_val = interp->data_stack[interp->dsp - 3];
 		if (arr_val.tag != T_ARRAY) {
-			fail(interp, "matrix: expected an array, got %s", tag_name(arr_val.tag));
+			fail(interp, "matrix: expected an array; got %s", tag_name(arr_val.tag));
 			return;
 		}
 		num_rows = (int)unpack_float(below);
@@ -392,7 +413,7 @@ void p_matrix(Interpreter *interp, cell *cfa) {
 		arr_val = below;
 		interp->dsp -= 2;
 	} else {
-		fail(interp, "matrix: expected an array below the dimension(s), got %s", tag_name(below.tag));
+		fail(interp, "matrix: expected an array below the dimension(s); got %s", tag_name(below.tag));
 		return;
 	}
 

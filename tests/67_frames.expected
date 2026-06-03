@@ -57,7 +57,7 @@
 0|error @: no key :z
 0 ok
 0 ok
-0|error @: expected a symbol or path (array of symbols), got a float
+0|error @: expected a symbol or path (array of symbols); got a float
 0 ok
 0 ok
 [ { :a 1 } ] 
@@ -142,7 +142,7 @@
 0 ok
 0 ok
 0 ok
-0|error !: expected a symbol or path (array of symbols), got a float
+0|error !: expected a symbol or path (array of symbols); got a float
 0 ok
 0 ok
 [ :a :b ] 
@@ -235,7 +235,7 @@
 0|error delete-at: no key :z
 0 ok
 0 ok
-0|error delete-at: expected a symbol or path (array of symbols), got a float
+0|error delete-at: expected a symbol or path (array of symbols); got a float
 0 ok
 0 ok
 -1 
@@ -266,7 +266,7 @@
 0 ok
 0 ok
 0 ok
-0|error has?: expected a symbol or path (array of symbols), got a float
+0|error has?: expected a symbol or path (array of symbols); got a float
 0 ok
 0 ok
 {
@@ -292,7 +292,7 @@
 0|error update-at: no key :z
 0 ok
 0 ok
-0|error update-at: xt required on stack, got a float
+0|error update-at: xt required on stack; got a float
 0 ok
 0 ok
 0|error update-at: empty path
@@ -323,7 +323,7 @@
 0|error update-at: no key :z
 0 ok
 0 ok
-0|error update-at: expected a symbol or path (array of symbols), got a float
+0|error update-at: expected a symbol or path (array of symbols); got a float
 0 ok
 0 ok
 {

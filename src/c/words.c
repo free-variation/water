@@ -139,7 +139,7 @@ COMPARISON_PRIMITIVE(p_gt, >)
 		(void)cfa; \
 		POP(operand); \
 		if (operand.tag != T_FLOAT) { \
-			fail(interp, word_name ": expected a float, got %s", tag_name(operand.tag)); \
+			fail(interp, word_name ": expected a float; got %s", tag_name(operand.tag)); \
 			return; \
 		} \
 		double n = unpack_float(operand); \
@@ -428,7 +428,7 @@ void p_resume(Interpreter *interp, cell *cfa) {
 
 	POP(k);
 	if (k.tag != T_CONT) {
-		fail(interp, "resume: expected a continuation, got %s", tag_name(k.tag));
+		fail(interp, "resume: expected a continuation; got %s", tag_name(k.tag));
 		return;
 	}
 
@@ -691,7 +691,7 @@ void p_colon(Interpreter *interp, cell *cfa) {
 	interp->compiling_src_start = interp->input_buffer_pos;
 }
 
-static int create_variable(Interpreter *interp, const char *name) {
+int create_variable(Interpreter *interp, const char *name) {
 	create_header(interp, name, 0);
 	emit(interp, (cell)&dovar);
 	emit(interp, (cell)T_FLOAT);
@@ -825,6 +825,50 @@ void p_to(Interpreter *interp, cell *cfa) {
 		interp->vocab->dict[target_cfa + 1] = (cell)v.tag;
 		interp->vocab->dict[target_cfa + 2] = v.data;
 	}
+}
+
+static void compile_local_unary(Interpreter *interp, const char *op,
+                                int depth0_cfa, int fallback_cfa) {
+	char *token = next_token(interp);
+	if (!token) {
+		fail(interp, "%s: expected a local name", op);
+		return;
+	}
+	if (!interp->compiling) {
+		fail(interp, "%s: only valid inside a colon definition", op);
+		return;
+	}
+	int depth, slot;
+	if (!find_local(interp, token, &depth, &slot)) {
+		fail(interp, "%s: %s is not a local", op, token);
+		return;
+	}
+	if (depth == 0) {
+		emit_call(interp, depth0_cfa);
+		emit(interp, (cell)slot);
+	} else {
+		emit_call(interp, interp->vocab->local_fetch_cfa);
+		emit(interp, (cell)depth);
+		emit(interp, (cell)slot);
+		emit_call(interp, fallback_cfa);
+		emit_call(interp, interp->vocab->local_store_cfa);
+		emit(interp, (cell)depth);
+		emit(interp, (cell)slot);
+	}
+}
+
+void p_increment(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	compile_local_unary(interp, "++",
+	                    interp->vocab->local_incr_0depth_cfa,
+	                    interp->vocab->inc_cfa);
+}
+
+void p_decrement(Interpreter *interp, cell *cfa) {
+	(void)cfa;
+	compile_local_unary(interp, "--",
+	                    interp->vocab->local_decr_0depth_cfa,
+	                    interp->vocab->dec_cfa);
 }
 
 void p_symbol(Interpreter *interp, cell *cfa) {
@@ -1019,7 +1063,7 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 
 		push(interp, make_matrix(target_handle));
 	} else {
-		fail(interp, "%s: expected a float or a matrix, got %s", name, tag_name(operand.tag));
+		fail(interp, "%s: expected a float or a matrix; got %s", name, tag_name(operand.tag));
 	}
 }
 

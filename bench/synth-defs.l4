@@ -13,7 +13,7 @@
   | i acc |
   0 to acc
   1 to i
-  [: acc i sq + to acc  i 1+ to i :] ITER1 times
+  [: acc i sq + to acc  ++ i :] ITER1 times
   acc ;
 
 : phase2 ( -- sum )

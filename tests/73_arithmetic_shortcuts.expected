@@ -27,6 +27,6 @@
 0 ok
 0 ok
 0 ok
-0|error 1+: expected a float, got a string
-0|error 1-: expected a float, got an array
-0|error sq: expected a float, got a frame
+0|error 1+: expected a float; got a string
+0|error 1-: expected a float; got an array
+0|error sq: expected a float; got a frame

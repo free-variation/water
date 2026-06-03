@@ -56,6 +56,6 @@
 0|error matrix: 5 elements does not divide evenly into 2 rows
 0|error matrix: 3 elements does not divide evenly into 0 rows
 0|error matrix: 3 elements does not divide evenly into -1 rows
-0|error matrix: expected an array below the dimension(s), got a string
+0|error matrix: expected an array below the dimension(s); got a string
 0|error matrix: stack too shallow (expected array and at least one dimension)
 0|error matrix: stack too shallow (expected array and at least one dimension)

@@ -18,5 +18,5 @@
 0 ok
 0 ok
 0 ok
-0|error negate: expected a float or a matrix, got a string
-0|error negate: expected a float or a matrix, got a set
+0|error negate: expected a float or a matrix; got a string
+0|error negate: expected a float or a matrix; got a set
