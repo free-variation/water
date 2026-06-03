@@ -4,7 +4,7 @@ void p_map(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP_XT(xt, "map");
-	PEEK_COLLECTION_AT(source_val, 0, "map");
+	PEEK_SEQUENCE_AT(source_val, 0, "map");
 	Object *source = interp->objects[source_val.data];
 	int source_index = interp->dsp - 1;
 
@@ -37,7 +37,7 @@ void p_mapn(Interpreter *interp, cell *cfa) {
 
 	POP_INT(arity, "mapn", "arity");
 	if (arity < 1) {
-		fail(interp, "mapn: arity must be >= 1, got %d", arity);
+		fail(interp, "mapn: arity must be >= 1; got %d", arity);
 		return;
 	}
 	POP_XT(xt, "mapn");
@@ -93,7 +93,7 @@ void p_filter(Interpreter *interp, cell *cfa) {
 	(void)cfa;
 
 	POP_XT(xt, "filter");
-	PEEK_COLLECTION_AT(source_val, 0, "filter");
+	PEEK_SEQUENCE_AT(source_val, 0, "filter");
 	Object *source = interp->objects[source_val.data];
 	int source_index = interp->dsp - 1;
 
@@ -139,7 +139,7 @@ void p_reduce(Interpreter *interp, cell *cfa) {
 
 	POP_XT(combiner, "reduce");
 	POP(init_val);
-	PEEK_COLLECTION_AT(source_val, 0, "reduce");
+	PEEK_SEQUENCE_AT(source_val, 0, "reduce");
 	Object *source = interp->objects[source_val.data];
 
 	Val result_val = init_val;
@@ -163,7 +163,7 @@ void p_reduce(Interpreter *interp, cell *cfa) {
 		POP_INT(n, word_name, "count"); \
 		POP_XT(xt, word_name); \
 		if (n < 0) { \
-			fail(interp, word_name ": count must be non-negative, got %d", n); \
+			fail(interp, word_name ": count must be non-negative; got %d", n); \
 			return; \
 		} \
 		for (int i = 0; i < n && !interp->error_flag; i++) { \

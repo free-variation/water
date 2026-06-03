@@ -50,6 +50,6 @@
 0 ok
 0 ok
 0 ok
-0|error abs: expected a float or a matrix, got a string
-0|error sqrt: expected a float or a matrix, got a string
-0|error exp: expected a float or a matrix, got a set
+0|error abs: expected a float or a matrix; got a string
+0|error sqrt: expected a float or a matrix; got a string
+0|error exp: expected a float or a matrix; got a set

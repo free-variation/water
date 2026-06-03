@@ -1,0 +1,42 @@
+\ destruct-to ( source target -- )
+\ Writes each item of source into the variable named by the corresponding
+\ target item. Target items may be symbols (auto-create variable if missing,
+\ cache as XT on the way) or XTs (used directly, must reference a variable).
+\ Source and target must be arrays of equal length.
+
+\ Basic: auto-create three new variables from symbol targets
+[ 1 2 3 ] [ :dta :dtb :dtc ] destruct-to
+dta . dtb . dtc . cr                            \ 1 2 3
+
+\ Re-use existing variables
+[ 10 20 30 ] [ :dta :dtb :dtc ] destruct-to
+dta . dtb . dtc . cr                            \ 10 20 30
+
+\ Caching: re-using the same target array across calls — first call resolves
+\ symbols, subsequent calls hit the cached XTs.
+variable dt-targets
+[ :dtd :dte ] to dt-targets
+[ 7 8 ] dt-targets destruct-to                  \ first call resolves
+[ 11 12 ] dt-targets destruct-to                \ second call uses cached XTs
+dtd . dte . cr                                  \ 11 12
+
+\ Mixed targets: XT (pre-declared) and symbol (auto-create) in same array
+variable dtf
+[ 100 200 300 ] [ ' dtf :dtg :dth ] destruct-to
+dtf . dtg . dth . cr                            \ 100 200 300
+
+\ Mixed value types: any Val tag works on the source side
+[ "hi" :sym 42 ] [ :dt-str :dt-sym :dt-num ] destruct-to
+dt-str . dt-sym . dt-num . cr                   \ hi :sym 42
+
+\ Length mismatch — error
+[ 1 2 ] [ :dtx :dty :dtz ] destruct-to
+
+\ Non-array source — error
+42 [ :dtx ] destruct-to
+
+\ Non-array target — error
+[ 1 ] 42 destruct-to
+
+\ Bad target item (neither symbol nor xt) — error
+[ 1 ] [ 99 ] destruct-to

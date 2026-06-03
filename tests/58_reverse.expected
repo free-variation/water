@@ -18,6 +18,6 @@
 1 2 2|2 ok
 2|2 ok
 2|2 ok
-0|error reverse: expected array or set, got a float
-0|error reverse: expected array or set, got a string
+0|error reverse: expected array or set; got a float
+0|error reverse: expected array or set; got a string
 0|error reverse: stack too shallow

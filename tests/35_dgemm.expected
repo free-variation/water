@@ -110,10 +110,10 @@
 0 ok
 0 ok
 0 ok
-0|error dgemm: alpha and beta must be floats, got a string and a float
+0|error dgemm: alpha and beta must be floats; got a string and a float
 0 ok
 0 ok
-0|error dgemm: A, B, C must be matrices, got a float, a matrix, a matrix
+0|error dgemm: A, B, C must be matrices; got a float, a matrix, a matrix
 0 ok
 0 ok
-0|error dgemm: A, B, C must be matrices, got a matrix, a matrix, a string
+0|error dgemm: A, B, C must be matrices; got a matrix, a matrix, a string

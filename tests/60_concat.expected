@@ -29,7 +29,7 @@
 [ 1 2 3 4 5 6 ] 1|9 ok
 1|9 ok
 1|9 ok
-0|error concat: expected array or set, got a float
-0|error concat: expected array or set, got a float
+0|error concat: expected array or set; got a float
+0|error concat: expected array or set; got a float
 0|error concat: stack too shallow
 0|error concat: stack too shallow

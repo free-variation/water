@@ -1,0 +1,55 @@
+\ nqueens — port of pyperformance bm_nqueens.
+\ Brute-force enumeration of all permutations of [0..N-1] (using recursive
+\ in-place swaps) and counting those that satisfy the diagonal constraint
+\ |BOARD[i] - BOARD[j]| != |i - j| for all i < j. The permutation property
+\ guarantees rows/columns; the diagonal check is the only validity test.
+
+variable QUEENS
+8 to QUEENS
+
+variable SOLUTIONS
+variable BOARD
+
+: bswap ( a b -- )
+  | a b tmp |
+  to b  to a
+  BOARD a @i to tmp
+  BOARD a  BOARD b @i  !i drop
+  BOARD b  tmp        !i drop ;
+
+: valid?
+  | n |
+  QUEENS to n
+  < [: | i | to i  BOARD i @i i + :] n i-times > size n =
+  < [: | i | to i  BOARD i @i i - :] n i-times > size n =
+  * ;
+
+: permute
+  | start n i |
+  to start
+  QUEENS to n
+  start n 1 - = if
+    valid? if  SOLUTIONS 1+ to SOLUTIONS  then
+  else
+    start to i
+    begin
+      start i bswap
+      start 1+ permute
+      start i bswap
+      ++ i
+      i n =
+    until
+  then ;
+
+: nqueens-run
+  | t0 |
+  0 QUEENS array-of to BOARD
+  [: | i | to i  BOARD i i !i drop :] QUEENS i-times
+  0 to SOLUTIONS
+  now to t0
+  0 permute
+  "elapsed: " . now t0 - . "s" . cr
+  "solutions: " . SOLUTIONS . cr ;
+
+nqueens-run
+bye

@@ -61,6 +61,6 @@
 -1 0 ok
 0 ok
 0 ok
-0|error max: expected a matrix, got a string
-0|error min: expected a matrix, got a set
-0|error row-maxes: expected a matrix, got an array
+0|error max: expected a matrix; got a string
+0|error min: expected a matrix; got a set
+0|error row-maxes: expected a matrix; got an array

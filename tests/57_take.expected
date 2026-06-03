@@ -24,6 +24,6 @@
 [ 3 2 1 ] 3|3 ok
 3|3 ok
 3|3 ok
-0|error take: expected a float length, got a string
-0|error take: expected a float length, got an array
-0|error take: expected array or set, got a float
+0|error take: expected a float length; got a string
+0|error take: expected a float length; got an array
+0|error take: expected array or set; got a float

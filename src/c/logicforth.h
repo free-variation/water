@@ -187,6 +187,7 @@ typedef struct Vocabulary {
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
 	int enter_locals_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
 	int local_fetch_0depth_cfa, local_store_0depth_cfa;
+	int local_incr_0depth_cfa, local_decr_0depth_cfa, inc_cfa, dec_cfa;
 	int qzbranch_cfa;
 
 	int init_here, init_latest_cfa, init_names_here;
@@ -302,7 +303,7 @@ static inline Val rpop(Interpreter *interp) {
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
 	if (name##_val.tag != T_FLOAT) { \
-		fail(interp, "%s: expected a float %s, got %s", (op), (what), tag_name(name##_val.tag)); \
+		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(name##_val.tag)); \
 		return; \
 	} \
 	int name = (int)unpack_float(name##_val)
@@ -311,7 +312,7 @@ static inline Val rpop(Interpreter *interp) {
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
 	if (name##_val.tag != T_XT) { \
-		fail(interp, "%s: expected an execution token, got %s", (op), tag_name(name##_val.tag)); \
+		fail(interp, "%s: expected an execution token; got %s", (op), tag_name(name##_val.tag)); \
 		return; \
 	} \
 	int name = (int)name##_val.data
@@ -320,7 +321,7 @@ static inline Val rpop(Interpreter *interp) {
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
 	if (name##_val.tag != T_MATRIX) { \
-		fail(interp, "%s: expected a matrix, got %s", (op), tag_name(name##_val.tag)); \
+		fail(interp, "%s: expected a matrix; got %s", (op), tag_name(name##_val.tag)); \
 		return; \
 	} \
 	Object *name = interp->objects[name##_val.data]
@@ -329,7 +330,7 @@ static inline Val rpop(Interpreter *interp) {
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
 	if (name##_val.tag != T_STRING) { \
-		fail(interp, "%s: expected a string, got %s", (op), tag_name(name##_val.tag)); \
+		fail(interp, "%s: expected a string; got %s", (op), tag_name(name##_val.tag)); \
 		return; \
 	} \
 	Object *name = interp->objects[name##_val.data]
@@ -338,7 +339,7 @@ static inline Val rpop(Interpreter *interp) {
 	Val name##_val = pop(interp); \
 	if (interp->error_flag) return; \
 	if (name##_val.tag != T_ARRAY && name##_val.tag != T_SET) { \
-		fail(interp, "%s: expected an array or set, got %s", (op), tag_name(name##_val.tag)); \
+		fail(interp, "%s: expected an array or set; got %s", (op), tag_name(name##_val.tag)); \
 		return; \
 	} \
 	Object *name = interp->objects[name##_val.data]
@@ -373,21 +374,28 @@ static inline Val rpop(Interpreter *interp) {
 #define PEEK_TYPE_AT(var, depth, op, type) \
 	PEEK_AT(var, depth, op); \
 	if (var.tag != (type)) { \
-		fail(interp, "%s: expected %s, got %s", (op), tag_name(type), tag_name(var.tag)); \
+		fail(interp, "%s: expected %s; got %s", (op), tag_name(type), tag_name(var.tag)); \
 		return; \
 	}
+
+#define PEEK_SEQUENCE_AT(var, depth, op) \
+	PEEK_AT(var, depth, op); \
+	if (var.tag != T_ARRAY && var.tag != T_SET) { \
+		fail(interp, "%s: expected array or set; got %s", (op), tag_name(var.tag)); \
+		return; \
+	}
+
 
 #define PEEK_COLLECTION_AT(var, depth, op) \
 	PEEK_AT(var, depth, op); \
-	if (var.tag != T_ARRAY && var.tag != T_SET) { \
-		fail(interp, "%s: expected array or set, got %s", (op), tag_name(var.tag)); \
+	if (var.tag != T_ARRAY && var.tag != T_SET && var.tag != T_FRAME) { \
+		fail(interp, "%s: expected array, set, or frame; got %s", (op), tag_name(var.tag)); \
 		return; \
 	}
 
 
-
-
 /* ---- internal cross-file prototypes ---- */
+int create_variable(Interpreter *interp, const char *name);
 void gc_root_push(Interpreter *interp, Val value);
 void gc_root_pop(Interpreter *interp);
 int object_alloc_slot(Interpreter *interp);
@@ -440,6 +448,10 @@ void p_local_fetch(Interpreter *interp, cell *cfa);
 void p_local_store(Interpreter *interp, cell *cfa);
 void p_local_fetch_0depth(Interpreter *interp, cell *cfa);
 void p_local_store_0depth(Interpreter *interp, cell *cfa);
+void p_local_incr_0depth(Interpreter *interp, cell *cfa);
+void p_local_decr_0depth(Interpreter *interp, cell *cfa);
+void p_increment(Interpreter *interp, cell *cfa);
+void p_decrement(Interpreter *interp, cell *cfa);
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
 double scalar_add(double a, double b);
@@ -501,6 +513,7 @@ void p_array(Interpreter *interp, cell *cfa);
 void p_size(Interpreter *interp, cell *cfa);
 void p_member(Interpreter *interp, cell *cfa);
 void p_at_i(Interpreter *interp, cell *cfa);
+void p_store_i(Interpreter *interp, cell *cfa);
 void p_at_j(Interpreter *interp, cell *cfa);
 void p_at_ij(Interpreter *interp, cell *cfa);
 int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
@@ -596,6 +609,10 @@ void p_array_of(Interpreter *interp, cell *cfa);
 void p_take(Interpreter *interp, cell *cfa);
 void p_reverse(Interpreter *interp, cell *cfa);
 void p_concat(Interpreter *interp, cell *cfa);
+void p_destruct(Interpreter *interp, cell *cfa);
+void p_destruct_to(Interpreter *interp, cell *cfa);
+void p_slice_store(Interpreter *interp, cell *cfa);
+void p_to_slice(Interpreter *interp, cell *cfa);
 void p_range(Interpreter *interp, cell *cfa);
 void frame_put(Object *frame, cell key, Val value);
 int frame_delete(Object *frame, cell key);
