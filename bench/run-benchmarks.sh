@@ -81,6 +81,7 @@ ratio() {
 # --- logicforth command wrappers (each prints a full bench run) ------------
 lf_synth()    { "$bin" < "$here/synth.l4"; }
 lf_leibniz()  { "$bin" < "$here/leibniz.l4"; }
+lf_leibniz_matrix() { "$bin" < "$here/leibniz-matrix.l4"; }
 lf_nqueens()  { "$bin" < "$here/nqueens.l4"; }
 lf_fannkuch() { "$bin" < "$here/fannkuch.l4"; }
 lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/nbody.l4"; } | "$bin"; }
@@ -178,8 +179,9 @@ run_reps spectral_py py_spectral "$reps_py"
 
 have_leibniz=0
 if [ "$skip_leibniz" != 1 ]; then
-	log "== leibniz (slow) =="
+	log "== leibniz + leibniz-matrix (slow) =="
 	run_reps leibniz_lf lf_leibniz "$reps"
+	run_reps leibniz_matrix_lf lf_leibniz_matrix "$reps"
 	if run_leibniz_py; then have_leibniz=1; fi
 fi
 
@@ -238,6 +240,7 @@ row() {
 
 if [ "$have_leibniz" = 1 ]; then
 	row "leibniz" "${leibniz_rounds} iterations" leibniz_lf "$leibniz_py_elapsed"
+	row "leibniz-matrix" "${leibniz_rounds}, vectorized" leibniz_matrix_lf "$leibniz_py_elapsed"
 fi
 row "nqueens" "N = $nqueens_n" nqueens_lf "$(median_elapsed nqueens_py)"
 row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
@@ -256,6 +259,7 @@ emit "| fannkuch | $(result_line fannkuch_lf 'max flips') | $(result_line fannku
 emit "| spectral-norm | $(result_line spectral_lf 'estimate') | $(result_line spectral_py 'estimate') |"
 if [ "$have_leibniz" = 1 ]; then
 	emit "| leibniz | $(result_line leibniz_lf 'pi:') | pi = $leibniz_py_result |"
+	emit "| leibniz-matrix | $(result_line leibniz_matrix_lf 'pi:') | pi = $leibniz_py_result |"
 fi
 emit ""
 

@@ -56,14 +56,18 @@ produce identical results. logicforth is the median of repeated runs; Python
 is the median of 3–5 runs. nbody uses array storage with `destruct-to` field
 access. leibniz has no pyperformance port; its Python figure is the reference
 `leibniz.py` from niklas-heer/speed-comparison run under python3.14.
+leibniz-matrix is logicforth's vectorized variant of the same computation
+(build the denominator sequence as a 1×N matrix, broadcast-divide, sum); it is
+compared against the same scalar Python reference at the same 1e9 size.
 
-| benchmark      | size           | logicforth | python 3.14 | py / lf |
-|:---------------|:---------------|-----------:|------------:|--------:|
-| leibniz        | 1e9 iterations |   17.23 s  |   40.02 s   | 2.32×   |
-| nqueens        | N = 8          |   0.0331 s |   0.0423 s  | 1.28×   |
-| nbody          | 20_000 steps   |   0.0476 s |   0.0499 s  | 1.05×   |
-| fannkuch       | N = 9          |   0.2046 s |   0.1890 s  | 0.92×   |
-| spectral-norm  | N = 130, 50×   |   2.645 s  |   2.566 s   | 0.97×   |
+| benchmark      | size            | logicforth | python 3.14 | py / lf |
+|:---------------|:----------------|-----------:|------------:|--------:|
+| leibniz        | 1e9 iterations  |   17.23 s  |   40.02 s   | 2.32×   |
+| leibniz-matrix | 1e9, vectorized |    2.06 s  |   40.02 s   | ~19×    |
+| nqueens        | N = 8           |   0.0331 s |   0.0423 s  | 1.28×   |
+| nbody          | 20_000 steps    |   0.0476 s |   0.0499 s  | 1.05×   |
+| fannkuch       | N = 9           |   0.2046 s |   0.1890 s  | 0.92×   |
+| spectral-norm  | N = 130, 50×    |   2.645 s  |   2.566 s   | 0.97×   |
 
 logicforth wins leibniz, nqueens, and nbody; CPython 3.14 leads fannkuch and
 spectral-norm, both now within ~10% (spectral-norm closed from 0.87× to a
@@ -73,12 +77,16 @@ with no single dominant cost left to target.
 
 ## Reproduce
 
+`make bench` runs the whole comparison and emits this report; the steps below
+are the individual commands it wraps.
+
 ```bash
 make clean && make && make test
 ./logicforth < bench/synth.l4 | grep -E "^phase"
 python3.14 bench/synth.py | grep -E "^phase"
 
 ./logicforth < bench/leibniz.l4 | grep -i elapsed
+./logicforth < bench/leibniz-matrix.l4 | grep -i elapsed
 ./logicforth < bench/nqueens.l4 | grep -i elapsed
 ./logicforth < bench/fannkuch.l4 | grep -i elapsed
 { echo "variable ITERATIONS 20000 to ITERATIONS"; cat bench/nbody.l4; } \
