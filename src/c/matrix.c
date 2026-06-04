@@ -247,7 +247,7 @@ void p_dgemm_tt(Interpreter *interp) {
 /* Overall reduction: four-way accumulator unroll so float-sum (non-associative)
  * can still vectorize. Associative ops (max, min) also tolerate the
  * unrolling. */
-#define MATRIX_REDUCE_OVERALL_FN(name, init_value, combine) \
+#define MATRIX_REDUCE_OVERALL_OP(name, init_value, combine) \
 	double name(Object *source) { \
 		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
 		const double * restrict elements = source->matrix.elements; \
@@ -269,7 +269,7 @@ void p_dgemm_tt(Interpreter *interp) {
 		return accumulator; \
 	}
 
-#define MATRIX_REDUCE_ROWS_FN(name, init_value, combine) \
+#define MATRIX_REDUCE_ROWS_OP(name, init_value, combine) \
 	int name(Interpreter *interp, Object *source) { \
 		int rows = source->matrix.rows; \
 		int cols = source->matrix.columns; \
@@ -286,7 +286,7 @@ void p_dgemm_tt(Interpreter *interp) {
 		return target_handle; \
 	}
 
-#define MATRIX_REDUCE_COLUMNS_FN(name, init_value, combine) \
+#define MATRIX_REDUCE_COLUMNS_OP(name, init_value, combine) \
 	int name(Interpreter *interp, Object *source) { \
 		int rows = source->matrix.rows; \
 		int cols = source->matrix.columns; \
@@ -303,17 +303,19 @@ void p_dgemm_tt(Interpreter *interp) {
 		return target_handle; \
 	}
 
-MATRIX_REDUCE_OVERALL_FN(matrix_sum_overall, 0.0, ADD)
-MATRIX_REDUCE_OVERALL_FN(matrix_max_overall, -INFINITY, MAX)
-MATRIX_REDUCE_OVERALL_FN(matrix_min_overall, INFINITY, MIN)
+#pragma float_control(precise, off, push)
+MATRIX_REDUCE_OVERALL_OP(matrix_sum_overall, 0.0, ADD)
+MATRIX_REDUCE_OVERALL_OP(matrix_max_overall, -INFINITY, MAX)
+MATRIX_REDUCE_OVERALL_OP(matrix_min_overall, INFINITY, MIN)
 
-MATRIX_REDUCE_ROWS_FN(matrix_sum_rows, 0.0, ADD)
-MATRIX_REDUCE_ROWS_FN(matrix_max_rows, -INFINITY, MAX)
-MATRIX_REDUCE_ROWS_FN(matrix_min_rows, INFINITY, MIN)
+MATRIX_REDUCE_ROWS_OP(matrix_sum_rows, 0.0, ADD)
+MATRIX_REDUCE_ROWS_OP(matrix_max_rows, -INFINITY, MAX)
+MATRIX_REDUCE_ROWS_OP(matrix_min_rows, INFINITY, MIN)
 
-MATRIX_REDUCE_COLUMNS_FN(matrix_sum_columns, 0.0, ADD)
-MATRIX_REDUCE_COLUMNS_FN(matrix_max_columns, -INFINITY, MAX)
-MATRIX_REDUCE_COLUMNS_FN(matrix_min_columns, INFINITY, MIN)
+MATRIX_REDUCE_COLUMNS_OP(matrix_sum_columns, 0.0, ADD)
+MATRIX_REDUCE_COLUMNS_OP(matrix_max_columns, -INFINITY, MAX)
+MATRIX_REDUCE_COLUMNS_OP(matrix_min_columns, INFINITY, MIN)
+#pragma float_control(pop)
 
 int create_matrix(Interpreter *interp) {
 	Val right = pop(interp);

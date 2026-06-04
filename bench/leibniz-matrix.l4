@@ -5,10 +5,9 @@
 \ Assumes ROUNDS is even (true for the benchmark's 1e9). For odd
 \ ROUNDS the start would be -2*ROUNDS+3 instead of -2*ROUNDS+1.
 \
-\ Memory: a 1xN matrix of doubles (8 GB at N=1e9), plus the division
-\ result the scalar/matrix broadcast produces (8 GB) = ~16 GB peak. The
-\ denominator becomes unreachable after the division, but lforth's GC is
-\ manual; call `gc` to reclaim between phases if needed.
+\ Memory: a 1xN matrix of doubles (8 GB at N=1e9). The in-place divide
+\ (/!) reuses that buffer for the quotient, so peak stays at one array
+\ (~8 GB) rather than allocating a second.
 
 variable ROUNDS
 1000000000 to ROUNDS
@@ -20,7 +19,7 @@ variable T0
   ROUNDS -2.0 f* 1.0 f+       \ start = -2*ROUNDS + 1
   ROUNDS 2.0 f*                \ end   = 2*ROUNDS
   4.0 matrix1d-range             \ build denominator sequence
-  4.0 swap /                   \ scalar / matrix (broadcast via p_div)
+  4.0 swap /!                  \ scalar / matrix, in place (reuses the sequence)
   sum                          \ accumulate
   now T0 - "elapsed: {0}s" . cr
   "pi: {0}" . cr ;

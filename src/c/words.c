@@ -166,6 +166,50 @@ void p_div(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+#define INPLACE_OP(name, word, op) \
+	void name(Interpreter *interp) { \
+		POP(right); \
+		POP(left); \
+		if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) { \
+			Object *left_matrix = interp->objects[VAL_DATA(left)]; \
+			Object *right_matrix = interp->objects[VAL_DATA(right)]; \
+			if (left_matrix->matrix.rows != right_matrix->matrix.rows || left_matrix->matrix.columns != right_matrix->matrix.columns) { \
+				fail(interp, word ": matrix shapes differ (%dx%d vs %dx%d)", left_matrix->matrix.rows, left_matrix->matrix.columns, right_matrix->matrix.rows, right_matrix->matrix.columns); \
+				return; \
+			} \
+			size_t num_elements = (size_t)left_matrix->matrix.rows * (size_t)left_matrix->matrix.columns; \
+			double * restrict left_elements = left_matrix->matrix.elements; \
+			const double * restrict right_elements = right_matrix->matrix.elements; \
+			for (size_t i = 0; i < num_elements; i++) \
+				left_elements[i] = left_elements[i] op right_elements[i]; \
+			push(interp, left); \
+		} else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT) { \
+			double scalar = VAL_NUMBER(right); \
+			Object *matrix = interp->objects[VAL_DATA(left)]; \
+			size_t num_elements = (size_t)matrix->matrix.rows * (size_t)matrix->matrix.columns; \
+			double * restrict elements = matrix->matrix.elements; \
+			for (size_t i = 0; i < num_elements; i++) \
+				elements[i] = elements[i] op scalar; \
+			push(interp, left); \
+		} else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX) { \
+			double scalar = VAL_NUMBER(left); \
+			Object *matrix = interp->objects[VAL_DATA(right)]; \
+			size_t num_elements = (size_t)matrix->matrix.rows * (size_t)matrix->matrix.columns; \
+			double * restrict elements = matrix->matrix.elements; \
+			for (size_t i = 0; i < num_elements; i++) \
+				elements[i] = scalar op elements[i]; \
+			push(interp, right); \
+		} else { \
+			fail(interp, word ": expected a matrix operand; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right))); \
+		} \
+		DISPATCH(interp); \
+	}
+
+INPLACE_OP(p_add_inplace, "+!", +)
+INPLACE_OP(p_sub_inplace, "-!", -)
+INPLACE_OP(p_mul_inplace, "*!", *)
+INPLACE_OP(p_div_inplace, "/!", /)
+
 #define BINARY_FLOAT_OP(name, opname, op) \
 	void name(Interpreter *interp) { \
 		if (interp->dsp < 2) { \

@@ -22,6 +22,12 @@ primitives broadcast scalar↔matrix directly).
 - Polymorphic math (`+ - * / ^ abs sqrt sin … 1+ 1- sq`) dispatches on tag
   for float vs element-wise matrix; the `f`-prefixed forms (`f+ fsq f1+ …`)
   are monomorphic, depth-guarded, no tag check.
+- Matrix reductions (`sum`/`max`/`min`/`row-*`/`column-*`) are SIMD-vectorized:
+  the reduce kernels enable FP reassociation via `float_control(precise, off)`,
+  so the 4-accumulator reduction compiles to lane-parallel partial sums.
+- In-place elementwise matrix arithmetic (`+! -! *! /!`) reuses the matrix
+  operand's buffer instead of allocating; the programmer asserts the operand is
+  a dead temporary.
 - Superinstructions in `src/c/superwords.c`, generated from four operator
   lists via X-macros:
   - two variables + float op (`vvf+ vvf- vvf* vvf/`),
@@ -35,7 +41,7 @@ primitives broadcast scalar↔matrix directly).
   the variable directly, eliminating the intermediate push and `(to-var)`.
 - Logical primitives `and`/`or`/`not`; in-place `flip` (prefix reverse).
 - `see-compiled` decompiles a word's body to show the fused form.
-- Tests: 90/90 passing.
+- Tests: 91/91 passing.
 
 ## synth.l4 — logicforth vs CPython 3.14
 
@@ -57,13 +63,17 @@ is the median of 3–5 runs. nbody uses array storage with `destruct-to` field
 access. leibniz has no pyperformance port; its Python figure is the reference
 `leibniz.py` from niklas-heer/speed-comparison run under python3.14.
 leibniz-matrix is logicforth's vectorized variant of the same computation
-(build the denominator sequence as a 1×N matrix, broadcast-divide, sum); it is
-compared against the same scalar Python reference at the same 1e9 size.
+(build the denominator sequence as a 1×N matrix, in-place broadcast-divide with
+`/!`, vectorized sum); it is compared against the same scalar Python reference
+at the same 1e9 size. It also beats R's vectorized `sum(4 / seq.int(...))`,
+which is the direct analogue — R 4.5.2 runs that in 1.58 s at 7.5 GB peak;
+leibniz-matrix matches the footprint (7.45 GB, one array via `/!`) and is ~2×
+faster, with identical exact IEEE division.
 
 | benchmark      | size            | logicforth | python 3.14 | py / lf |
 |:---------------|:----------------|-----------:|------------:|--------:|
 | leibniz        | 1e9 iterations  |   17.23 s  |   40.02 s   | 2.32×   |
-| leibniz-matrix | 1e9, vectorized |    2.06 s  |   40.02 s   | ~19×    |
+| leibniz-matrix | 1e9, vectorized |    0.77 s  |   40.02 s   | ~52×    |
 | nqueens        | N = 8           |   0.0331 s |   0.0423 s  | 1.28×   |
 | nbody          | 20_000 steps    |   0.0476 s |   0.0499 s  | 1.05×   |
 | fannkuch       | N = 9           |   0.2046 s |   0.1890 s  | 0.92×   |

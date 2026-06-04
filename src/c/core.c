@@ -2169,6 +2169,10 @@ int main(void) {
 	define_primitive(interp, "-", p_sub, 0);
 	define_primitive(interp, "*", p_mul, 0);
 	define_primitive(interp, "/", p_div, 0);
+	define_primitive(interp, "+!", p_add_inplace, 0);
+	define_primitive(interp, "-!", p_sub_inplace, 0);
+	define_primitive(interp, "*!", p_mul_inplace, 0);
+	define_primitive(interp, "/!", p_div_inplace, 0);
 	define_primitive(interp, "f+", p_add_f, 0);
 	define_primitive(interp, "f-", p_sub_f, 0);
 	define_primitive(interp, "f*", p_mul_f, 0);

@@ -31,6 +31,7 @@ nqueens_n=8
 fannkuch_n=9
 leibniz_rounds=1000000000
 leibniz_url="https://raw.githubusercontent.com/niklas-heer/speed-comparison/master/src/leibniz.py"
+leibniz_r_url="https://raw.githubusercontent.com/niklas-heer/speed-comparison/master/src/leibniz.r"
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/lfbench.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -152,6 +153,38 @@ PYEOF
 	leibniz_py_result=$(tail -1 "$times" | cut -f2)
 }
 
+# --- leibniz R reference (the vectorized one-liner leibniz-matrix mirrors) --
+# Optional: skipped cleanly when Rscript isn't installed.
+leibniz_r_elapsed=""
+leibniz_r_result=""
+leibniz_r_version=""
+run_leibniz_r() {
+	command -v Rscript >/dev/null 2>&1 || { log "  Rscript not found; skipping R leibniz"; return 1; }
+	local ref="$work/leibniz_ref.r" i
+	log "fetching upstream leibniz.r reference..."
+	if ! curl -fsSL "$leibniz_r_url" -o "$ref"; then
+		log "  WARNING: could not fetch leibniz.r reference; skipping R leibniz"
+		return 1
+	fi
+	echo "$leibniz_rounds" > "$work/rounds.txt"
+	leibniz_r_version=$(Rscript --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+	# the reference prints only the result; time it externally, capture both
+	local times="$work/leibniz_r_times"
+	: > "$times"
+	for i in $(seq 1 "$reps_py"); do
+		log "  leibniz(R): run $i/$reps_py"
+		"$python" - "Rscript" "$ref" "$work" >> "$times" <<'PYEOF'
+import sys, time, subprocess
+interp, ref, cwd = sys.argv[1], sys.argv[2], sys.argv[3]
+start = time.perf_counter()
+done = subprocess.run([interp, ref], cwd=cwd, capture_output=True, text=True)
+print(f"{time.perf_counter() - start:.6f}\t{done.stdout.strip()}")
+PYEOF
+	done
+	leibniz_r_elapsed=$(cut -f1 "$times" | median)
+	leibniz_r_result=$(tail -1 "$times" | cut -f2)
+}
+
 # ===========================================================================
 # Run everything
 # ===========================================================================
@@ -178,11 +211,13 @@ run_reps spectral_lf lf_spectral "$reps"
 run_reps spectral_py py_spectral "$reps_py"
 
 have_leibniz=0
+have_leibniz_r=0
 if [ "$skip_leibniz" != 1 ]; then
 	log "== leibniz + leibniz-matrix (slow) =="
 	run_reps leibniz_lf lf_leibniz "$reps"
 	run_reps leibniz_matrix_lf lf_leibniz_matrix "$reps"
 	if run_leibniz_py; then have_leibniz=1; fi
+	if run_leibniz_r; then have_leibniz_r=1; fi
 fi
 
 # ===========================================================================
@@ -247,6 +282,16 @@ row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
 row "fannkuch" "N = $fannkuch_n" fannkuch_lf "$(median_elapsed fannkuch_py)"
 row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed spectral_py)"
 emit ""
+
+# ---- R reference for the vectorized variant ----
+if [ "$skip_leibniz" != 1 ] && [ "$have_leibniz_r" = 1 ]; then
+	lf_matrix=$(median_elapsed leibniz_matrix_lf)
+	emit "**Vectorized reference (R).** logicforth's leibniz-matrix mirrors the R"
+	emit "one-liner \`sum(4 / seq.int(...))\`. R $leibniz_r_version runs it in"
+	emit "$(fmt_s "$leibniz_r_elapsed") (π = $leibniz_r_result); logicforth's leibniz-matrix is"
+	emit "$(ratio "$lf_matrix" "$leibniz_r_elapsed") that at $(fmt_s "$lf_matrix")."
+	emit ""
+fi
 
 # ---- verification ----
 emit "## Verification (results must match)"
