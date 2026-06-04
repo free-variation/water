@@ -395,6 +395,25 @@ void dosym(Interpreter *interp);
 void dovar(Interpreter *interp);
 void run_inner(Interpreter *interp);
 void execute_cfa(Interpreter *interp, int cfa);
+
+typedef struct {
+	int saved_ip;
+	int saved_running;
+	cell saved_slot_0, saved_slot_1, saved_slot_2;
+	int fast;
+} CallContext;
+
+void call_open(Interpreter *interp, int cfa, CallContext *ctx);
+void call_invoke(Interpreter *interp);
+void call_close(Interpreter *interp, CallContext *ctx);
+
+static inline void call_step(Interpreter *interp, CallContext *ctx, int cfa) {
+	if (ctx->fast)
+		call_invoke(interp);
+	else
+		execute_cfa(interp, cfa);
+}
+
 int alloc_name(Interpreter *interp, const char *name);
 int intern_symbol(Interpreter *interp, const char *name);
 void dict_ensure(Interpreter *interp, int extra);

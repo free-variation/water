@@ -10,10 +10,12 @@ void p_map(Interpreter *interp) {
 	memset(result->items, 0, sizeof(Val) * (size_t)MAX(source->len, 1));
 	gc_root_push(interp, make_array(result_handle));
 
+	CallContext ctx;
+	call_open(interp, xt, &ctx);
 	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		int dsp_before = interp->dsp;
 		push(interp, source->items[i]);
-		execute_cfa(interp, xt);
+		call_step(interp, &ctx, xt);
 		if (interp->error_flag) break;
 		if (interp->dsp != dsp_before + 1) {
 			fail(interp, "map: quotation must leave exactly one value per element, but changed the stack by %d", interp->dsp - dsp_before);
@@ -21,6 +23,7 @@ void p_map(Interpreter *interp) {
 		}
 		result->items[i] = pop(interp);
 	}
+	call_close(interp, &ctx);
 
 	gc_root_pop(interp);
 
@@ -64,13 +67,15 @@ void p_mapn(Interpreter *interp) {
 
 	gc_root_push(interp, make_array(result_handle));
 
+	CallContext ctx;
+	call_open(interp, xt, &ctx);
 	for (int row = 0; row < row_count && !interp->error_flag; row++) {
 		int dsp_before = interp->dsp;
 		for (int source_index = 0; source_index < arity; source_index++) {
 			Object *source = interp->objects[VAL_DATA(interp->data_stack[first_source + source_index])];
 			push(interp, source->items[row]);
 		}
-		execute_cfa(interp, xt);
+		call_step(interp, &ctx, xt);
 		if (interp->error_flag) break;
 		if (interp->dsp != dsp_before + 1) {
 			fail(interp, "mapn: quotation must leave exactly one value per row, but changed the stack by %d", interp->dsp - dsp_before);
@@ -78,6 +83,7 @@ void p_mapn(Interpreter *interp) {
 		}
 		result->items[row] = pop(interp);
 	}
+	call_close(interp, &ctx);
 
 	gc_root_pop(interp);
 
@@ -97,10 +103,12 @@ void p_filter(Interpreter *interp) {
 
 	int *keep = malloc((size_t)MAX(source->len, 1) * sizeof(int));
 	int n_kept = 0;
+	CallContext ctx;
+	call_open(interp, xt, &ctx);
 	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		int dsp_before = interp->dsp;
 		push(interp, source->items[i]);
-		execute_cfa(interp, xt);
+		call_step(interp, &ctx, xt);
 		if (interp->error_flag) break;
 		if (interp->dsp != dsp_before + 1) {
 			fail(interp, "filter: predicate must leave exactly one value per element, but changed the stack by %d", interp->dsp - dsp_before);
@@ -109,6 +117,7 @@ void p_filter(Interpreter *interp) {
 		keep[i] = truthy(pop(interp));
 		n_kept += keep[i];
 	}
+	call_close(interp, &ctx);
 
 	if (interp->error_flag) {
 		free(keep);
@@ -141,15 +150,19 @@ void p_reduce(Interpreter *interp) {
 	Object *source = interp->objects[VAL_DATA(source_val)];
 
 	Val result_val = init_val;
-	for (int i = 0; i < source->len; i++) {
+	CallContext ctx;
+	call_open(interp, combiner, &ctx);
+	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		push(interp, result_val);
 		push(interp, source->items[i]);
 
-		execute_cfa(interp, combiner);
+		call_step(interp, &ctx, combiner);
+		if (interp->error_flag) break;
 
 		result_val = pop(interp);
-		if (interp->error_flag) return;
 	}
+	call_close(interp, &ctx);
+	if (interp->error_flag) return;
 
 	pop(interp);
 	push(interp, result_val);
@@ -165,9 +178,19 @@ void p_reduce(Interpreter *interp) {
 			fail(interp, word_name ": count must be non-negative; got %d", n); \
 			return; \
 		} \
-		for (int i = 0; i < n && !interp->error_flag; i++) { \
-			per_iter; \
-			execute_cfa(interp, xt); \
+		CallContext ctx; \
+		call_open(interp, xt, &ctx); \
+		if (ctx.fast) { \
+			for (int i = 0; i < n && !interp->error_flag; i++) { \
+				per_iter; \
+				call_invoke(interp); \
+			} \
+			call_close(interp, &ctx); \
+		} else { \
+			for (int i = 0; i < n && !interp->error_flag; i++) { \
+				per_iter; \
+				execute_cfa(interp, xt); \
+			} \
 		} \
 		DISPATCH(interp); \
 	}

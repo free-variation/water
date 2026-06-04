@@ -609,6 +609,49 @@ void execute_cfa(Interpreter *interp, int cfa) {
 	interp->vocab->dict[TRAMPOLINE_SLOT + 2] = saved_slot_2;
 }
 
+void call_open(Interpreter *interp, int cfa, CallContext *ctx) {
+	cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
+
+	if (handler == dovar || handler == dosym) {
+		ctx->fast = 0;
+		return;
+	}
+
+	ctx->fast = 1;
+	ctx->saved_ip = interp->ip;
+	ctx->saved_running = interp->running;
+	ctx->saved_slot_0 = interp->vocab->dict[TRAMPOLINE_SLOT];
+	ctx->saved_slot_1 = interp->vocab->dict[TRAMPOLINE_SLOT + 1];
+	ctx->saved_slot_2 = interp->vocab->dict[TRAMPOLINE_SLOT + 2];
+
+	cell stop_handler = interp->vocab->dict[interp->vocab->stop_cfa];
+	if (handler == docol) {
+		interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)docol;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+	} else {
+		interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)handler;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 1] = stop_handler;
+		interp->vocab->dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+	}
+}
+
+void call_invoke(Interpreter *interp) {
+	interp->ip = TRAMPOLINE_SLOT;
+	interp->running = 1;
+	run_inner(interp);
+}
+
+void call_close(Interpreter *interp, CallContext *ctx) {
+	if (!ctx->fast)
+		return;
+	interp->running = ctx->saved_running;
+	interp->ip = ctx->saved_ip;
+	interp->vocab->dict[TRAMPOLINE_SLOT] = ctx->saved_slot_0;
+	interp->vocab->dict[TRAMPOLINE_SLOT + 1] = ctx->saved_slot_1;
+	interp->vocab->dict[TRAMPOLINE_SLOT + 2] = ctx->saved_slot_2;
+}
+
 
 int alloc_name(Interpreter *interp, const char *name) {
 	int length = (int)strlen(name) + 1;
