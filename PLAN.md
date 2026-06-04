@@ -651,6 +651,81 @@ lines of C; `serve`, the router, and the response builders ~60 lines of
 
 ---
 
+## Subprocesses and pipes
+
+Spawn an external program and talk to it over pipes — the basis for doing
+filesystem, network, and system work by driving standard binaries (`cat`,
+`tee`, `ls`, `curl`, …) instead of growing a native primitive for each. Zero
+dependency: `fork` / `execvp` / `pipe` / `waitpid` from libc. Pipes are raw byte
+streams, so this is binary-safe (logicforth strings are length-counted byte
+buffers, not NUL-terminated).
+
+A process is launched from an argv array — no shell, so no quoting or injection
+surface:
+
+```forth
+[ "cat" "/etc/hosts" ] spawn   ( -- proc )
+```
+
+`spawn` returns a frame `{ :pid :in :out :err }`: `:pid` the child's process id,
+`:in` a writable fd for its stdin, `:out` / `:err` readable fds for its stdout
+and stderr. File descriptors carry a `T_FD` tag (shared with the HTTP-server
+work).
+
+**Words:**
+
+- `argv spawn ( argv -- proc )` — fork/exec, return the process frame.
+- `string fd write ( -- )` — write the string's bytes to a child's `:in`.
+- `fd read-line ( -- string )` — one line from `:out`/`:err`; empty at EOF.
+- `fd read-all ( -- string )` — everything until EOF.
+- `fd close ( -- )` — close an fd; closing `:in` sends the child EOF.
+- `pid wait ( -- status )` — block until the child exits, return its status.
+- `pid stop ( -- status )` — signal the child, then reap it; for aborting a
+  process that won't finish on its own.
+
+The normal lifecycle is spawn → `write` input → `close` `:in` → `read-all` →
+`wait`. Use `wait`, not `stop`, after draining output: EOF on stdout doesn't
+mean the child is finished (e.g. `cat > file` produces no stdout but is still
+writing to disk, and killing it there truncates the file), and `wait` returns
+the program's real exit code where a signal kill would not.
+
+**Built on top, in `lib.l4`:** `read-file` (`cat`), `write-file` (`tee`),
+`llm-call` (`curl`), and so on — the C surface stays small and the conveniences
+are Forth definitions over it.
+
+**Out of scope:**
+
+- **Shell interpretation.** argv only; no `/bin/sh -c`, so no `|`, glob, or
+  redirect inside a command string.
+- **Multi-stage pipelines** in the primitive. Wiring one child's `:out` into
+  another's `:in` is a later concern (and buffers through logicforth); the
+  driving cases are single binaries.
+- **Concurrent bidirectional streaming.** Interleaving `write` and `read` on a
+  live child can deadlock when a pipe's fixed buffer fills; the supported
+  pattern is write-then-drain. Full duplex would need `select`/threads. (A
+  child that block-buffers stdout when it's a pipe rather than a tty will also
+  stall a line-by-line loop — the `stdbuf` gotcha.)
+- Windows. POSIX only.
+
+**Cost:** ~150 lines of C (spawn, the fd read/write/close words, wait/stop)
+plus the `T_FD` tag; the file/LLM convenience words are `lib.l4`.
+
+---
+
+## JSON ↔ frame
+
+Two words, with JSON carried as a string: `json>frame ( string -- value )`
+parses, `frame>json ( value -- string )` serializes. JSON objects map to frames
+(symbol keys), arrays to arrays, strings to strings, numbers to floats,
+`true`/`false` to the boolean floats, `null` to a sentinel. Needed to consume
+HTTP/LLM API responses (`curl` output) and build request bodies.
+
+The mapping isn't quite 1:1 — object keys are strings in JSON but symbols in a
+frame (intern on parse), and `null` needs a representation (`T_NONE` or a
+reserved symbol). Settle those at implementation time.
+
+---
+
 ## Foreign function interface
 
 Once in, user code can load any `.so` / `.dylib` on the system, look
