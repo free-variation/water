@@ -75,19 +75,35 @@ Medians of three runs.
 |   6   |   110 ms   |  465 ms  | 4.23×   |
 | total |   563 ms   | 1937 ms  | 3.44×   |
 
-## Standalone benchmarks — logicforth
+## Standalone benchmarks — logicforth vs CPython 3.14.5
 
-Single run each. `nbody` and `spectral-norm` read an `ITERATIONS`
-variable, supplied here by prepending a definition.
+Ports of the pyperformance benchmarks, run at matched problem sizes
+against `bench/pyperf_*.py`, verified to produce identical results
+(e.g. nbody final energy −0.169089 on both). logicforth is the median
+of repeated runs; Python is a single run (a few seconds or more each).
+`nbody` uses `bench/nbody-destruct-to.l4` (array storage with
+`destruct-to` field access, the fastest of the nbody variants); it and
+`spectral-norm` read an `ITERATIONS` variable supplied by prepending a
+definition. leibniz has no pyperformance port; its Python figure is the
+reference loop from the benchmark's own header comment.
 
-| benchmark              | iterations | hot-loop style                  | elapsed   |
-|:-----------------------|-----------:|:--------------------------------|----------:|
-| leibniz                | 1e9 `i-times` | pure tight combinator loop   | 38.97 s   |
-| spectral-norm          | 50         | `each` / `times` + float work   |  2.92 s   |
-| nbody                  | 20_000     | `i-times` + frame updates       | 0.114 s   |
-| nbody-array            | 20_000     | `each` / `i-times` + arrays     | 0.110 s   |
-| nqueens                | built-in   | mostly `begin/until`            | 0.041 s   |
-| fannkuch               | built-in   | mostly `begin/until`            | 0.246 s   |
+| benchmark      | size           | logicforth | python 3.14 | py / lf |
+|:---------------|:---------------|-----------:|------------:|--------:|
+| leibniz        | 1e9 iterations |   38.97 s  |    80.24 s  | 2.06×   |
+| nqueens        | N = 8          |   0.042 s  |    0.041 s  | 0.97×   |
+| nbody          | 20_000 steps   |   0.071 s  |    0.048 s  | 0.68×   |
+| fannkuch       | N = 9          |   0.254 s  |    0.187 s  | 0.74×   |
+| spectral-norm  | N = 130, 50×   |   3.01 s   |    2.57 s   | 0.85×   |
+
+The synth comparison (3.44× overall) does not carry over to these
+algorithmic ports. synth is built from logicforth's fast paths — tight
+`times` counters and `map`/`reduce` over flat arrays — where the
+interpreter is strongest. The pyperformance ports stress n-body force
+calculation (`nbody`), array permutation and reversal (`fannkuch`), and
+nested float reductions (`spectral-norm`); on those CPython 3.14's
+optimized bytecode interpreter is faster than logicforth, by 1.2-1.5×.
+logicforth wins only `leibniz` (a tight scalar-float loop, ~2×) and
+ties `nqueens`.
 
 ## Effect of the combinator fast-call
 
@@ -117,12 +133,20 @@ make clean && make && make test
 ./logicforth < bench/synth.l4 | grep -E "^phase"
 python3.14 bench/synth.py | grep -E "^phase"
 
-# standalone (ITERATIONS-driven ones need a prepended definition):
+# standalone logicforth (ITERATIONS-driven ones need a prepended definition):
 ./logicforth < bench/leibniz.l4 | grep -i elapsed
-{ echo "variable ITERATIONS 20000 to ITERATIONS"; cat bench/nbody.l4; } \
+{ echo "variable ITERATIONS 20000 to ITERATIONS"; cat bench/nbody-destruct-to.l4; } \
   | ./logicforth | grep -i elapsed
 { echo "variable ITERATIONS 50 to ITERATIONS"; cat bench/spectral-norm.l4; } \
   | ./logicforth | grep -i elapsed
+./logicforth < bench/nqueens.l4 | grep -i elapsed
+./logicforth < bench/fannkuch.l4 | grep -i elapsed
+
+# standalone CPython 3.14, matched sizes:
+python3.14 bench/pyperf_nbody.py 20000
+python3.14 bench/pyperf_nqueens.py 8
+python3.14 bench/pyperf_fannkuch.py 9
+python3.14 bench/pyperf_spectral_norm.py 50
 ```
 
 Run each 3-5× and take medians for the sub-second figures. Checksums

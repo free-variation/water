@@ -1,8 +1,8 @@
-\ N-body simulation — port of the pyperformance nbody benchmark
-\ (originally from the Computer Language Benchmarks Game).
-\
-\ Simulates Sun + Jupiter + Saturn + Uranus + Neptune under gravitational
-\ attraction. Each body is a frame { :x :y :z :vx :vy :vz :mass }.
+\ N-body simulation — array storage + destruct-to for field access.
+\ Bodies live as 7-element arrays in BODIES (the natural pyperformance shape).
+\ At the top of pair-force, destruct-to loads each body's contents into the
+\ same 7 global variables. Subsequent uses are direct variable reads.
+\ Target arrays are pre-built so the symbol-to-XT resolution happens once.
 
 variable PI
 3.14159265358979323846 to PI
@@ -13,14 +13,11 @@ PI PI * 4 * to SOLAR_MASS
 variable DAYS_PER_YEAR
 365.24 to DAYS_PER_YEAR
 
-: make-body ( x y z vx vy vz mass -- frame )
-  | x y z vx vy vz mass |
-  to mass  to vz  to vy  to vx  to z  to y  to x
-  { } :x x !  :y y !  :z z !
-      :vx vx !  :vy vy !  :vz vz !
-      :mass mass ! ;
+\ Body layout: 0=x 1=y 2=z 3=vx 4=vy 5=vz 6=mass
+: make-body ( x y z vx vy vz mass -- arr )  7 array ;
 
 variable BODIES
+variable B0  variable B1  variable B2  variable B3  variable B4
 
 : init-bodies
   0 0 0  0 0 0  SOLAR_MASS  make-body
@@ -56,33 +53,57 @@ variable BODIES
   -9.51592254519715870e-05 DAYS_PER_YEAR *
    5.15138902046611451e-05 SOLAR_MASS *
    make-body
-  5 array to BODIES ;
+  5 array to BODIES
+  BODIES 0 @i to B0
+  BODIES 1 @i to B1
+  BODIES 2 @i to B2
+  BODIES 3 @i to B3
+  BODIES 4 @i to B4 ;
+
+\ Pre-declare the per-pair globals so the colon definitions below can
+\ reference them at compile time. destruct-to will still find and use them
+\ (and cache the symbol→XT mapping in the target arrays on first call).
+variable x1  variable y1  variable z1
+variable vx1 variable vy1 variable vz1  variable m1
+variable x2  variable y2  variable z2
+variable vx2 variable vy2 variable vz2  variable m2
+variable dx  variable dy  variable dz
+variable d2  variable mag
+
+\ Target arrays for the two body slots in pair-force.
+\ On first destruct-to call these get mutated from symbols to XTs.
+variable b1-targets
+variable b2-targets
+
+: init-targets
+  [ :x1 :y1 :z1 :vx1 :vy1 :vz1 :m1 ] to b1-targets
+  [ :x2 :y2 :z2 :vx2 :vy2 :vz2 :m2 ] to b2-targets ;
 
 : offset-momentum
   | px py pz sun |
   0 to px  0 to py  0 to pz
   BODIES 0 @i to sun
   [: |> i |
-     BODIES i @i :vx @  BODIES i @i :mass @ *  px + to px
-     BODIES i @i :vy @  BODIES i @i :mass @ *  py + to py
-     BODIES i @i :vz @  BODIES i @i :mass @ *  pz + to pz
+     BODIES i @i 3 @i  BODIES i @i 6 @i *  px + to px
+     BODIES i @i 4 @i  BODIES i @i 6 @i *  py + to py
+     BODIES i @i 5 @i  BODIES i @i 6 @i *  pz + to pz
   :] 5 i-times
-  sun :vx  px negate SOLAR_MASS /  ! drop
-  sun :vy  py negate SOLAR_MASS /  ! drop
-  sun :vz  pz negate SOLAR_MASS /  ! drop ;
+  sun 3  px negate SOLAR_MASS /  !i drop
+  sun 4  py negate SOLAR_MASS /  !i drop
+  sun 5  pz negate SOLAR_MASS /  !i drop ;
 
 : kinetic ( b -- ke )
   |> b |
-  b :vx @ sq  b :vy @ sq +  b :vz @ sq +
-  b :mass @ *  0.5 * ;
+  b 3 @i sq  b 4 @i sq +  b 5 @i sq +
+  b 6 @i *  0.5 * ;
 
 : pair-potential ( b1 b2 -- pe )
   |> b1 b2 |
-  b1 :x @ b2 :x @ - sq
-  b1 :y @ b2 :y @ - sq +
-  b1 :z @ b2 :z @ - sq +
+  b1 0 @i b2 0 @i - sq
+  b1 1 @i b2 1 @i - sq +
+  b1 2 @i b2 2 @i - sq +
   sqrt
-  b1 :mass @ b2 :mass @ *  swap /  negate ;
+  b1 6 @i b2 6 @i *  swap /  negate ;
 
 : energy ( -- e )
   | e |
@@ -97,44 +118,54 @@ variable BODIES
   :] 5 i-times
   e ;
 
+\ pair-force: load both bodies into globals via destruct-to,
+\ compute, write velocities back to source arrays.
 : pair-force ( b1 b2 dt -- )
-  | >b1 >b2 >dt  dx dy dz d2 mag m1 m2 |
-  b1 :x @ b2 :x @ - to dx
-  b1 :y @ b2 :y @ - to dy
-  b1 :z @ b2 :z @ - to dz
-  dx sq  dy sq +  dz sq +  to d2
-  dt d2 d2 sqrt * / to mag
-  b1 :mass @ to m1
-  b2 :mass @ to m2
-  b1 :vx  b1 :vx @  dx m2 * mag * -  ! drop
-  b1 :vy  b1 :vy @  dy m2 * mag * -  ! drop
-  b1 :vz  b1 :vz @  dz m2 * mag * -  ! drop
-  b2 :vx  b2 :vx @  dx m1 * mag * +  ! drop
-  b2 :vy  b2 :vy @  dy m1 * mag * +  ! drop
-  b2 :vz  b2 :vz @  dz m1 * mag * +  ! drop ;
+  |> b1 b2 dt |
+  b1 b1-targets destruct-to
+  b2 b2-targets destruct-to
+  x1 x2 -f to dx
+  y1 y2 -f to dy
+  z1 z2 -f to dz
+  dx sq  dy sq +f  dz sq +f  to d2
+  dt d2 d2 sqrt *f /f to mag
+  dx m2 *f mag vx1 f*- to vx1
+  dy m2 *f mag vy1 f*- to vy1
+  dz m2 *f mag vz1 f*- to vz1
+  dx m1 *f mag vx2 f*+ to vx2
+  dy m1 *f mag vy2 f*+ to vy2
+  dz m1 *f mag vz2 f*+ to vz2
+  vx1 vy1 vz1 b1 3 3 to-slice drop
+  vx2 vy2 vz2 b2 3 3 to-slice drop ;
 
 : integrate-pos ( b dt -- )
   |> b dt |
-  b :x  b :x @  dt b :vx @ * +  ! drop
-  b :y  b :y @  dt b :vy @ * +  ! drop
-  b :z  b :z @  dt b :vz @ * +  ! drop ;
+  b 0  b 0 @i  dt b 3 @i * +  !i drop
+  b 1  b 1 @i  dt b 4 @i * +  !i drop
+  b 2  b 2 @i  dt b 5 @i * +  !i drop ;
 
 : advance ( dt -- )
   |> dt |
-  [: |> i |
-     [: |> j |
-        i j lt if
-          BODIES i @i  BODIES j @i  dt  pair-force
-        then :]
-     5 i-times
-  :] 5 i-times
-  [: |> i |
-     BODIES i @i dt integrate-pos
-  :] 5 i-times ;
+  B0 B1 dt pair-force
+  B0 B2 dt pair-force
+  B0 B3 dt pair-force
+  B0 B4 dt pair-force
+  B1 B2 dt pair-force
+  B1 B3 dt pair-force
+  B1 B4 dt pair-force
+  B2 B3 dt pair-force
+  B2 B4 dt pair-force
+  B3 B4 dt pair-force
+  B0 dt integrate-pos
+  B1 dt integrate-pos
+  B2 dt integrate-pos
+  B3 dt integrate-pos
+  B4 dt integrate-pos ;
 
 : nbody-run ( steps -- )
   | n t0 | to n
   init-bodies
+  init-targets
   offset-momentum
   "initial energy: " . energy . cr
   now to t0
