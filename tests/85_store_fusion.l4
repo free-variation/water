@@ -1,0 +1,28 @@
+\ Store fusion: <superword> to <var> folds into one op that writes the
+\ variable directly (verified via see-compiled separately; here we check
+\ the results are correct).
+
+variable A  10.0 to A
+variable B  3.0 to B
+variable C
+
+\ two-var binary -> vvf*!
+: s1 A B f- to C ;   s1 C . cr      \ 7
+: s2 A B f* to C ;   s2 C . cr      \ 30
+: s3 A B f+ to C ;   s3 C . cr      \ 13
+: s4 A B f/ to C ;   s4 C . cr      \ 3.33333
+
+\ stack value + one var -> vf*!
+: s5 100.0 A f- to C ;   s5 C . cr  \ 100 - 10 = 90
+
+\ unary function -> vfn!
+: s6 A sq to C ;       s6 C . cr    \ 100
+: s7 A negate to C ;   s7 C . cr    \ -10
+
+\ fused multiply -> vvf*-! / vvf*+!  (f*- is c - a*b, f*+ is a*b + c)
+: s8 5.0 A B f*- to C ;   s8 C . cr  \ 3 - 5*10 = -47
+: s9 5.0 A B f*+ to C ;   s9 C . cr  \ 5*10 + 3 = 53
+
+\ store target same as a source (the nbody writeback pattern): C = A * C
+2.0 to C
+: s10 A C f* to C ;   s10 C . cr     \ 10 * 2 = 20 (reads old C before writing)

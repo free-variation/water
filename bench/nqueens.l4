@@ -17,23 +17,33 @@ variable BOARD
   BOARD b  rot         !i drop ;
 inline
 
-: valid?
-  | n |
+: valid? ( -- flag )
+  | n i j ok |
   QUEENS to n
-  < [: |> i | BOARD i @i i + :] n i-times > size n =
-  < [: |> i | BOARD i @i i - :] n i-times > size n =
-  * ;
+  -1 to ok
+  0 to i
+  begin
+    i f1+ to j
+    begin
+      BOARD i @i  BOARD j @i  -  abs   j i -  =  not   ok and to ok
+      j f1+ to j
+      j n =  ok not  or
+    until
+    i f1+ to i
+    i n 1 - =  ok not  or
+  until
+  ok ;
 
 : permute
   | >start n i |
   QUEENS to n
   start n 1 - = if
-    valid? if  SOLUTIONS 1+ to SOLUTIONS  then
+    valid? if  SOLUTIONS f1+ to SOLUTIONS  then
   else
     start to i
     begin
       start i bswap
-      start 1+ permute
+      start f1+ permute
       start i bswap
       ++ i
       i n =

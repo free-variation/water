@@ -1,0 +1,28 @@
+\ Logical ops on truthiness. True is -1, false is 0.
+\ Any non-zero float (and any non-empty object) is truthy.
+
+\ and
+1 1 and . cr        \ -1
+1 0 and . cr        \ 0
+0 1 and . cr        \ 0
+0 0 and . cr        \ 0
+
+\ or
+1 1 or . cr         \ -1
+1 0 or . cr         \ -1
+0 1 or . cr         \ -1
+0 0 or . cr         \ 0
+
+\ not
+0 not . cr          \ -1
+1 not . cr          \ 0
+5 not . cr          \ 0
+-3 not . cr         \ 0
+
+\ truthiness of non-1 values
+42 7 and . cr       \ -1  (both non-zero)
+0 0= . cr           \ -1  (0= agrees with not on 0)
+
+\ composition
+1 0 or  0 not  and . cr     \ (1 or 0) and (not 0) = -1 and -1 = -1
+1 1 and not . cr            \ not (1 and 1) = 0

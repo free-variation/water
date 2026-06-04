@@ -1,0 +1,23 @@
+0 ok
+0 ok
+0 ok
+3 2 
+0 ok
+2 1 
+0 ok
+-2 -1 
+0 ok
+5 0 
+0 ok
+2 1.5 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+2 
+0 ok
+0 ok
+0 ok
+0|error %: division by zero
+0|error %: expected two floats; got a string and a float

@@ -1,20 +1,6 @@
 #include "logicforth.h"
 #include <unistd.h>
 
-void gc_root_push(Interpreter *interp, Val value) {
-	if (interp->n_gc_roots >= MAX_GC_ROOTS) {
-		fail(interp, "gc roots exhausted");
-		return;
-	}
-	interp->gc_roots[interp->n_gc_roots++] = value;
-}
-
-void gc_root_pop(Interpreter *interp) {
-	if (interp->n_gc_roots > 0) {
-		interp->n_gc_roots--;
-	}
-}
-
 int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_objects < MAX_OBJECTS) {
 		return interp->n_objects++;
@@ -1024,10 +1010,12 @@ static int comment_starts_here(Interpreter *interp) {
 }
 
 static void compile_or_push(Interpreter *interp, Val value) {
-	if (interp->compiling) 
+	if (interp->compiling)
 		emit_val_literal(interp, value);
-	else 
+	else
 		push(interp, value);
+	interp->fuse_prev_var = 0;
+	interp->fuse_prev2_var = 0;
 }
 
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out) {
@@ -1079,6 +1067,8 @@ void run_outer(Interpreter *interp) {
 				int r = interpolate(interp, handle);
 				push(interp, make_string(r));
 			}
+			interp->fuse_prev_var = 0;
+			interp->fuse_prev2_var = 0;
 			continue;
 		}
 		if (ch == '(' && comment_starts_here(interp)) {
@@ -1107,6 +1097,8 @@ void run_outer(Interpreter *interp) {
 					emit(interp, (cell)local_depth);
 					emit(interp, (cell)local_slot_idx);
 				}
+				interp->fuse_prev_var = 0;
+				interp->fuse_prev2_var = 0;
 				continue;
 			}
 		}
@@ -1114,12 +1106,27 @@ void run_outer(Interpreter *interp) {
 		int cf = find(interp, tok);
 		if (cf) {
 			if (interp->compiling && !WORD_IS_IMMEDIATE(interp->vocab, cf)) {
-				if (WORD_IS_INLINE(interp->vocab, cf)) 
+				if (superword_try_fuse(interp, cf)) {
+					continue;
+				}
+				if (WORD_IS_INLINE(interp->vocab, cf)) {
 					inline_word_body(interp, cf);
-				else
+					interp->fuse_prev_var = 0;
+					interp->fuse_prev2_var = 0;
+				} else if ((cfa_handler)interp->vocab->dict[cf] == dovar) {
 					emit_call(interp, (cell)cf);
-			} else 
+					interp->fuse_prev2_var = interp->fuse_prev_var;
+					interp->fuse_prev_var = cf;
+				} else {
+					emit_call(interp, (cell)cf);
+					interp->fuse_prev_var = 0;
+					interp->fuse_prev2_var = 0;
+				}
+			} else {
 				execute_cfa(interp, cf);
+				interp->fuse_prev_var = 0;
+				interp->fuse_prev2_var = 0;
+			}
 			continue;
 		}
 
@@ -1405,6 +1412,10 @@ void p_copy(Interpreter *interp) {
 static int op_cell_count(Vocabulary *vocab, cell *dict, int cursor) {
 	cell handler = dict[cursor];
 
+	int superword_cells = superword_cell_count(handler);
+	if (superword_cells)
+		return superword_cells;
+
 	if (handler == vocab->dict[vocab->enter_locals_mixed_cfa])
 		return 3 + (int)dict[cursor + 2];
 
@@ -1548,21 +1559,99 @@ void gc(Interpreter *interp) {
 			continue;
 
 		if (obj) {
-			switch (obj->kind) {
-				case OBJECT_STRING: free(obj->bytes); break;
-				case OBJECT_SET:
-				case OBJECT_ARRAY: free(obj->items); break;
-				case OBJECT_FRAME: free(obj->frame.keys); free(obj->frame.values); break;
-				case OBJECT_MATRIX: free(obj->matrix.elements); break;
-				case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
-			}
-			free(obj);
+			free_one_object(obj);
 			interp->objects[handle] = NULL;
 		}
 		interp->free_slots[interp->n_free_slots++] = handle;
 	}
 }
 
+static const char *handler_word_name(Interpreter *interp, cell handler) {
+	for (int cfa = interp->vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
+		if (interp->vocab->dict[cfa] == handler)
+			return &interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)];
+	}
+	return NULL;
+}
+
+static const char *var_name_from_slot(Interpreter *interp, cell slot) {
+	int var_cfa = (int)slot - 1;
+	if (var_cfa > 0 && (cfa_handler)interp->vocab->dict[var_cfa] == dovar)
+		return &interp->vocab->name_pool[WORD_NAME(interp->vocab, var_cfa)];
+	return NULL;
+}
+
+static void see_compiled_body(Interpreter *interp, int body_start, int body_end) {
+	Vocabulary *vocab = interp->vocab;
+	int cursor = body_start;
+
+	while (cursor < body_end) {
+		cell handler = vocab->dict[cursor];
+		cfa_handler handler_fn = (cfa_handler)handler;
+		int cell_count = op_cell_count(vocab, vocab->dict, cursor);
+
+		printf(" %d: ", cursor - body_start);
+
+		if (handler_fn == docol || handler_fn == dovar) {
+			int target = (int)vocab->dict[cursor + 1];
+			printf("%s\n", &vocab->name_pool[WORD_NAME(vocab, target)]);
+			cursor += 2;
+			continue;
+		}
+		if (handler_fn == dosym) {
+			printf(":%s\n", &vocab->symbol_pool[vocab->dict[cursor + 1]]);
+			cursor += 2;
+			continue;
+		}
+
+		if (superword_cell_count(handler)) {
+			const char *name = handler_word_name(interp, handler);
+			printf("%s", name);
+			for (int operand_index = 1; operand_index < cell_count; operand_index++) {
+				const char *operand_var = var_name_from_slot(interp, vocab->dict[cursor + operand_index]);
+				printf(" %s", operand_var);
+			}
+		} else if (handler == vocab->dict[vocab->literal_cfa]) {
+			Val value;
+			value.bits = (uint64_t)vocab->dict[cursor + 1];
+			fputs("(lit) ", stdout);
+			print_val_compact(interp, value);
+		} else {
+			const char *name = handler_word_name(interp, handler);
+			printf("%s", name);
+			for (int operand_index = 1; operand_index < cell_count; operand_index++)
+				printf(" %lld", (long long)vocab->dict[cursor + operand_index]);
+		}
+
+		putchar('\n');
+		cursor += cell_count;
+	}
+}
+
+void p_see_compiled(Interpreter *interp) {
+	POP_XT(target_cfa, "see-compiled");
+	Vocabulary *vocab = interp->vocab;
+	const char *name = &vocab->name_pool[WORD_NAME(vocab, target_cfa)];
+
+	if ((cfa_handler)vocab->dict[target_cfa] != docol) {
+		printf("%s: not a colon definition\n", name);
+		DISPATCH(interp);
+	}
+
+	int body_start = target_cfa + 1;
+	int body_end = vocab->here;
+	for (int cfa = vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(vocab, cfa)) {
+		if (cfa > target_cfa && cfa - 4 < body_end)
+			body_end = cfa - 4;
+	}
+
+	printf(": %s   \\ %d cells\n", name, body_end - body_start);
+	see_compiled_body(interp, body_start, body_end);
+	fputs(";\n", stdout);
+	fflush(stdout);
+
+	DISPATCH(interp);
+}
 void p_save(Interpreter *interp) {
 	POP_STRING(filename_obj, "save");
 	gc_root_push(interp, filename_obj_val);
@@ -1611,9 +1700,7 @@ void p_save(Interpreter *interp) {
 #define IMAGE_VERSION ((uint32_t)2)
 
 #define HANDLER_DOCOL 1
-
 #define HANDLER_DOVAR 2
-
 #define HANDLER_DOSYM 3
 
 void w_u8 (FILE *f, uint8_t v) { fwrite(&v, 1, 1, f); }
@@ -2082,18 +2169,38 @@ int main(void) {
 	define_primitive(interp, "-", p_sub, 0);
 	define_primitive(interp, "*", p_mul, 0);
 	define_primitive(interp, "/", p_div, 0);
-	define_primitive(interp, "+f", p_add_f, 0);
-	define_primitive(interp, "-f", p_sub_f, 0);
-	define_primitive(interp, "*f", p_mul_f, 0);
-	define_primitive(interp, "/f", p_div_f, 0);
-	define_primitive(interp, "f*+", p_fmul_add, 0);
-	define_primitive(interp, "f*-", p_fmul_sub, 0);
+	define_primitive(interp, "f+", p_add_f, 0);
+	define_primitive(interp, "f-", p_sub_f, 0);
+	define_primitive(interp, "f*", p_mul_f, 0);
+	define_primitive(interp, "f/", p_div_f, 0);
+	define_primitive(interp, "f^", p_fpow, 0);
+	define_primitive(interp, "fmod", p_fmodop, 0);
+	define_primitive(interp, "fabs", p_fabs, 0);
+	define_primitive(interp, "fsqrt", p_fsqrt, 0);
+	define_primitive(interp, "fexp", p_fexp, 0);
+	define_primitive(interp, "flog", p_flog, 0);
+	define_primitive(interp, "fln", p_fln, 0);
+	define_primitive(interp, "fsin", p_fsin, 0);
+	define_primitive(interp, "fcos", p_fcos, 0);
+	define_primitive(interp, "ftan", p_ftan, 0);
+	define_primitive(interp, "ftanh", p_ftanh, 0);
+	define_primitive(interp, "fasin", p_fasin, 0);
+	define_primitive(interp, "facos", p_facos, 0);
+	define_primitive(interp, "fatan", p_fatan, 0);
+	define_primitive(interp, "fround", p_fround, 0);
+	define_primitive(interp, "fround-up", p_fround_up, 0);
+	define_primitive(interp, "fround-down", p_fround_down, 0);
+	define_primitive(interp, "ftruncate", p_ftruncate, 0);
+	define_primitive(interp, "fnegate", p_fnegate, 0);
+	define_primitive(interp, "f1+", p_inc, 0);
+	define_primitive(interp, "f1-", p_dec, 0);
+	define_primitive(interp, "fsq", p_sq, 0);
 	define_primitive(interp, "negate", p_neg, 0);
-	interp->vocab->inc_cfa = define_primitive(interp, "1+", p_inc, 0);
-	interp->vocab->dec_cfa = define_primitive(interp, "1-", p_dec, 0);
+	interp->vocab->inc_cfa = define_primitive(interp, "1+", p_inc_poly, 0);
+	interp->vocab->dec_cfa = define_primitive(interp, "1-", p_dec_poly, 0);
 	define_primitive(interp, "++", p_increment, 1);
 	define_primitive(interp, "--", p_decrement, 1);
-	define_primitive(interp, "sq", p_sq, 0);
+	define_primitive(interp, "sq", p_sq_poly, 0);
 	define_primitive(interp, "dup", p_dup, 0);
 	define_primitive(interp, "drop", p_drop, 0);
 	define_primitive(interp, "swap", p_swap, 0);
@@ -2105,6 +2212,9 @@ int main(void) {
 	define_primitive(interp, "lt", p_lt, 0);
 	define_primitive(interp, "gt", p_gt, 0);
 	define_primitive(interp, "0=", p_zeq, 0);
+	define_primitive(interp, "and", p_and, 0);
+	define_primitive(interp, "or", p_or, 0);
+	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
 	define_primitive(interp, "cr", p_cr, 0);
@@ -2153,6 +2263,7 @@ int main(void) {
 	define_primitive(interp, "frame", p_frame, 0);
 	define_primitive(interp, "take", p_take, 0);
 	define_primitive(interp, "reverse", p_reverse, 0);
+	define_primitive(interp, "flip", p_flip, 0);
 	define_primitive(interp, "concat", p_concat, 0);
 	define_primitive(interp, "destruct", p_destruct, 0);
 	define_primitive(interp, "destruct-to", p_destruct_to, 0);
@@ -2175,6 +2286,7 @@ int main(void) {
 
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
+	define_primitive(interp, "see-compiled", p_see_compiled, 0);
 
 	interp->vocab->exit_cfa = define_primitive(interp, "exit", p_exit, 0);
 	interp->vocab->literal_cfa = define_primitive(interp, "(lit)", p_literal, 4);
@@ -2194,6 +2306,8 @@ int main(void) {
 	interp->vocab->local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 4);
 	interp->vocab->local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 4);
 	interp->vocab->local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 4);
+
+	define_superwords(interp);
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);
@@ -2247,10 +2361,20 @@ int main(void) {
 	define_primitive(interp, "sqrt", p_sqrt, 0);
 	define_primitive(interp, "exp", p_exp, 0);
 	define_primitive(interp, "log", p_log, 0);
+	define_primitive(interp, "ln", p_ln, 0);
+	define_primitive(interp, "^", p_power, 0);
+	define_primitive(interp, "%", p_divmod, 0);
 	define_primitive(interp, "sin", p_sin, 0);
 	define_primitive(interp, "cos", p_cos, 0);
 	define_primitive(interp, "tan", p_tan, 0);
 	define_primitive(interp, "tanh", p_tanh, 0);
+	define_primitive(interp, "asin", p_asin, 0);
+	define_primitive(interp, "acos", p_acos, 0);
+	define_primitive(interp, "atan", p_atan, 0);
+	define_primitive(interp, "round", p_round, 0);
+	define_primitive(interp, "round-up", p_round_up, 0);
+	define_primitive(interp, "round-down", p_round_down, 0);
+	define_primitive(interp, "truncate", p_truncate, 0);
 
 	define_primitive(interp, "now", p_now, 0);
 

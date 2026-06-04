@@ -1,0 +1,16 @@
+\ % is Forth /mod: ( a b -- rem quot ), quotient on top.
+\ Printing with `. .` shows quotient first (top of stack), then remainder.
+
+17 5 % . . cr        \ 3 2     (quot 3, rem 2)
+7 3 % . . cr         \ 2 1
+-7 3 % . . cr        \ -2 -1   (remainder takes the sign of the dividend)
+10 2 % . . cr        \ 5 0
+5.5 2 % . . cr       \ 2 1.5
+
+\ remainder alone (mod) via drop; quotient alone via swap drop
+7 3 % drop . cr      \ 1   (the remainder)
+7 3 % swap drop . cr \ 2   (the quotient)
+
+\ failures
+5 0 %
+"x" 2 %

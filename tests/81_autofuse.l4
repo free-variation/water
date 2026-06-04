@@ -1,0 +1,40 @@
+\ Auto-fusion: idiomatic float ops over variables are fused to superwords
+\ at compile time. Results must equal the unfused forms, and fusion inside
+\ control flow must preserve branch offsets.
+
+variable A  3.0 to A
+variable B  4.0 to B
+
+\ two variables + binop -> vvf
+: t1 A B f- ;   t1 . cr          \ -1
+: t2 A B f* ;   t2 . cr          \ 12
+
+\ stack value + one variable -> vf
+: t3 10.0 A f- ;   t3 . cr       \ 7
+: t4 10.0 A f/ ;   t4 . cr       \ 3.33333
+
+\ unary function of one variable -> vfn
+: t5 A sq ;     t5 . cr          \ 9
+: t6 B sqrt ;   t6 . cr          \ 2
+
+\ stack value + two variables, fused multiply -> vvf*- / vvf*+
+\ f*- is ( a b c -- c - a*b ),  f*+ is ( a b c -- a*b + c )
+: t7 5.0 A B f*- ;   t7 . cr     \ 4 - 5*3 = -11
+: t8 5.0 A B f*+ ;   t8 . cr     \ 5*3 + 4 = 19
+
+\ fusion inside both arms of if/else
+: branchy 0 gt if A B f* else A B f+ then ;
+1 branchy . cr                   \ 12
+0 branchy . cr                   \ 7
+
+\ fusion inside a begin/until loop body
+variable ACC
+variable I
+: loopy
+  0.0 to ACC  0.0 to I
+  begin  A B f* ACC f+ to ACC  I 1+ to I  I 3.0 = until
+  ACC ;
+loopy . cr                       \ 36
+
+\ a non-fusing case for contrast: locals, not variables
+: withlocal | x y | A to x  B to y  x y f- ;   withlocal . cr   \ -1

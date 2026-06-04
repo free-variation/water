@@ -5,16 +5,16 @@
 5 negate .
 
 \ float-specialized arithmetic — same results as generic
-2 3 +f .
-10 4 -f .
-6 7 *f .
-20 5 /f .
+2 3 f+ .
+10 4 f- .
+6 7 f* .
+20 5 f/ .
 
-\ +f only consumes top two (verifies in-place behaviour)
-99 2 3 +f . .
+\ f+ only consumes top two (verifies in-place behaviour)
+99 2 3 f+ . .
 
-\ /f rejects division by zero
-1 0 /f
+\ f/ rejects division by zero
+1 0 f/
 
 \ fused multiply-add: ( a b c -- a*b+c )
 2 3 4 f*+ .

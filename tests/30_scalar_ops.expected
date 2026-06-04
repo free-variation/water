@@ -1,3 +1,4 @@
+0 ok
 <matrix 2x2>
          11         12
          13         14
@@ -19,4 +20,13 @@
 0 ok
 <matrix 1x3>
           0          0          0
+0 ok
+0 ok
+<matrix 2x2>
+         11         12
+         13         14
+0 ok
+<matrix 2x2>
+         90         80
+         70         60
 0 ok

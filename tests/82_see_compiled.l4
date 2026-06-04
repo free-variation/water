@@ -1,0 +1,20 @@
+\ see-compiled shows the compiled body, with fused superwords and their
+\ variable operands resolved by name.
+
+variable A  3.0 to A
+variable B  4.0 to B
+
+\ two-var, unary-fn, and two-var-mul fusions
+: fused  A B f-  A fsq  A B f* ;
+' fused see-compiled
+
+\ a literal, a stack+var fusion, and a unary function
+: mixed  5.0 A f-  B sqrt ;
+' mixed see-compiled
+
+\ a call to another colon word shows that word's name
+: calls  A fsq  fused ;
+' calls see-compiled
+
+\ see-compiled on a non-colon word reports it
+' A see-compiled
