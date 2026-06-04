@@ -1,0 +1,32 @@
+\ Monomorphic float-only ops (f-prefixed): no tag check, depth-guarded.
+\ The polymorphic versions (abs, sqrt, +, ^, ...) are tested elsewhere; these
+\ are the fast unsafe counterparts and must match on float inputs.
+
+\ unary functions
+-3.0 fabs . cr        \ 3
+9.0 fsqrt . cr        \ 3
+0.0 fexp . cr         \ 1
+1.0 fln . cr          \ 0
+1000.0 flog . cr      \ 3
+0.0 fsin . cr         \ 0
+0.0 fcos . cr         \ 1
+1.0 fatan . cr        \ 0.785398
+2.7 fround . cr       \ 3
+2.1 fround-up . cr    \ 3
+2.9 fround-down . cr  \ 2
+-2.9 ftruncate . cr   \ -2
+5.0 fnegate . cr      \ -5
+5.0 f1+ . cr          \ 6
+5.0 f1- . cr          \ 4
+5.0 fsq . cr          \ 25
+
+\ binary
+2.0 10.0 f^ . cr      \ 1024
+-7.0 3.0 fmod . cr    \ -1
+2.0 3.0 f+ . cr       \ 5
+10.0 4.0 f- . cr      \ 6
+3.0 4.0 f* . cr       \ 12
+12.0 4.0 f/ . cr      \ 3
+
+\ depth guard (empty stack)
+fsqrt

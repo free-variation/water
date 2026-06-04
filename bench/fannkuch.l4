@@ -20,15 +20,14 @@ variable MAX_FLIPS
   0 n array-of to PERM
   [: |> k | PERM k k !i drop :] n i-times
   0 n array-of to COUNT
-  [: |> k | COUNT k  k 1+  !i drop :] n i-times ;
+  [: |> k | COUNT k  k f1+  !i drop :] n i-times ;
 
 : copy-perm1
   PERM 0 PERM1 0 1 N slice! drop ;
 inline
 
 : flip-perm ( k -- )
-  >r
-  PERM 0 PERM r@ -1 r> 1+ slice! drop ;
+  PERM swap flip ;
 inline
 
 : count-flips ( -- flips )
@@ -72,7 +71,7 @@ inline
     \ Reset COUNT[r-1..0]
     begin
       r 1 = if -1 else
-        COUNT r 1 -  r  !i drop
+        COUNT r f1-  r  !i drop
         -- r
         0
       then
@@ -80,8 +79,8 @@ inline
 
     \ Skip equivalent perms
     PERM1 0 @i 0 = 0 =
-    PERM1 n 1 - @i n 1 - = 0 =
-    * if
+    PERM1 n f1- @i n f1- = 0 =
+    f* if
       copy-perm1
       count-flips update-max
     then
@@ -94,7 +93,7 @@ inline
         -1
       else
         r rotate-perm1
-        COUNT r  COUNT r @i 1 -  !i drop
+        COUNT r  COUNT r @i f1-  !i drop
         COUNT r @i 0 gt if
           -1
         else

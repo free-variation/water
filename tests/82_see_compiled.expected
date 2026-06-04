@@ -1,0 +1,38 @@
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+: fused   \ 9 cells
+ 0: (vvf-) A B
+ 3: (vfsq) A
+ 5: (vvf*) A B
+ 8: exit
+;
+0 ok
+0 ok
+0 ok
+0 ok
+: mixed   \ 7 cells
+ 0: (lit) 5
+ 2: (vf-) A
+ 4: (vfsqrt) B
+ 6: exit
+;
+0 ok
+0 ok
+0 ok
+0 ok
+: calls   \ 5 cells
+ 0: (vfsq) A
+ 2: fused
+ 4: exit
+;
+0 ok
+0 ok
+0 ok
+A: not a colon definition
+0 ok

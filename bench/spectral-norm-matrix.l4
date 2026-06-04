@@ -12,7 +12,7 @@ variable zero_col
 
 : eval_A ( i j -- A_ij )
   |> i j |
-  i j +  dup 1+ *  2 /  i +  1 +  1.0 swap / ;
+  i j +  dup f1+ *  2 /  i +  1 +  1.0 swap / ;
 
 : build-A
   | flat |

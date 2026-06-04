@@ -21,7 +21,7 @@ variable CYCLES
   * ;
 
 : check-perm
-  valid? if SOLUTIONS 1+ to SOLUTIONS then ;
+  valid? if SOLUTIONS f1+ to SOLUTIONS then ;
 
 : rotate-left ( i -- )
   | >i n tmp j |
@@ -32,7 +32,7 @@ variable CYCLES
     BOARD i @i to tmp
     i to j
     begin
-      BOARD j  BOARD j 1+ @i  !i drop
+      BOARD j  BOARD j f1+ @i  !i drop
       ++ j
       j n 1 - =
     until

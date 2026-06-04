@@ -41,6 +41,18 @@
 <matrix 1x2>
           0          0
 0 ok
+<matrix 2x2>
+          2          3
+          4          5
+0 ok
+<matrix 2x2>
+          0          1
+          2          3
+0 ok
+<matrix 2x2>
+          1          4
+          9         16
+0 ok
 0 ok
 0 ok
 -1 0 ok

@@ -14,7 +14,7 @@
 5 99 0 ok
 0 ok
 0 ok
-0|error /f: division by zero
+0|error f/: division by zero
 0 ok
 0 ok
 10 0 ok

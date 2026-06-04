@@ -15,8 +15,8 @@ transpose, DGEMM in all four transpose variants, indexing (`@i`, `@j`,
 `mean`, `row-means`, `column-means`, plus the `max`/`min` /
 `row-maxes` / `column-maxes` / `row-mins` / `column-mins` set), and
 the polymorphic element-wise math primitives (`abs`, `sqrt`, `exp`,
-`log`, `sin`, `cos`, `tan`, `tanh`, `negate`) that dispatch on both
-floats and matrices. `val_cmp` orders matrices by shape then contents,
+`log`, `sin`, `cos`, `tan`, `tanh`, `negate`, `1+`, `1-`, `sq`) that
+dispatch on both floats and matrices. `val_cmp` orders matrices by shape then contents,
 so they work as set members. What remains is the "beyond core" list.
 
 ### argmax / argmin
@@ -66,8 +66,8 @@ handling at the boundary.
 This section captures a deliberately large body of future work — tensors
 as the generalization of `T_MATRIX`, and the deep-neural-network use
 case that surface drives. **None of this is near-term.** It lands after
-the interpreter-performance items, the language-feature items above, and
-probably after the logic layer. The intent here is to record the design
+the language-feature items above, and probably after the logic layer.
+The intent here is to record the design
 decisions already taken (so future work doesn't relitigate them) and to
 size the scope (so it doesn't sneak up unannounced). Implementation
 specifics are for whoever picks this up.
@@ -533,6 +533,124 @@ leaks until process exit. Acceptable.
 
 ---
 
+## HTTP server
+
+A `serve` word that stands up an HTTP/1.1 API server from a route table,
+calling a user handler per matched route. Zero-dependency: the server is the
+BSD socket accept loop from libc (`socket` / `bind` / `listen` / `accept` /
+`recv` / `send` / `close`), and request parsing uses **picohttpparser** — one
+public-domain `.c`/`.h`, vendored like the SQLite amalgamation. No third-party
+HTTP library: an embedded server framework would bring its own event loop and
+threading model that fight logicforth's.
+
+**Surface:**
+
+```forth
+[ :GET "/health" [: drop "ok" text :]
+  :GET "/users/:id" [: :params :id @ lookup-user json :]
+  :POST "/users" [: :body @ create-user json :] ]
+8080 serve
+```
+
+The route table is an array of `[ method-symbol path-string handler-xt ]`
+triples, scanned in order; a trailing `:default` entry handles no-match
+(otherwise a built-in 404). Path segments written `:name` are captured into the
+request's `:params`.
+
+**Request** — the handler receives a frame:
+
+```
+{ :method :path :query :headers :params :body }
+```
+
+**Response** — the handler returns a frame:
+
+```
+{ :status :headers :body }
+```
+
+with `lib.l4` builders for the common cases — `text` (200 text/plain), `json`
+(200 application/json), `ok`, `not-found`, `status` — so a handler body stays
+one line.
+
+**C primitives:**
+
+- `port listen-on ( -- listen-fd )` — socket, `SO_REUSEADDR`, bind, listen.
+- `listen-fd accept ( -- conn-fd )` — block for the next connection.
+- `conn-fd recv-request ( -- request )` — recv, parse the request line and
+  headers with picohttpparser, read the `Content-Length` body, build the
+  request frame.
+- `conn-fd response send-response ( -- )` — serialize the response frame to
+  HTTP/1.1 bytes and send.
+- `fd fd-close ( -- )` — close a socket.
+
+A file descriptor is a dedicated `T_FD` tag, so type errors stay specific and
+`print_val` can render it. `serve` itself is a `lib.l4` word over these
+primitives: `listen-on`, then a loop of `accept` → handle → close.
+
+**Concurrency — fork-per-connection.** Each accepted connection is handled in a
+`fork()`ed child that owns a copy-on-write image of the interpreter, services
+the one request, and exits. No shared mutable state, no locks, and a crashing
+handler takes down only its own child. Per-request allocation never accumulates
+— the process dies after the response. This fits the SQLite-with-WAL story
+directly: each child opens or inherits its own connection and the WAL
+coordinates writers across processes.
+
+Two refinements layer onto the same `serve`:
+
+- **Prefork.** Spawn N children that all `accept` on the same listening socket;
+  the kernel load-balances among them, removing the per-request `fork()` cost.
+  The worker count is a `serve` parameter.
+- **Worker pool (multi-core).** Once OS-thread actors exist (see the OS-thread
+  parallelism section), the accept loop hands each connection's fd to a worker
+  thread through a mailbox, sharing one process across cores. The socket /
+  parse / router / handler core is unchanged; only the dispatch strategy swaps.
+
+**Running from the REPL.** The accept loop's `accept()` is a blocking syscall,
+and so is the REPL's own stdin read, so a server started inline would freeze the
+REPL inside the kernel. Two ways keep the prompt interactive:
+
+- **Background process.** `serve` `fork()`s the server and returns immediately;
+  the REPL parent keeps going while the child runs its own blocking accept loop
+  (forking again per connection). Zero extra machinery. The trade is that the
+  server runs a snapshot of fork-time definitions — redefining a route at the
+  REPL does not reach the running server.
+- **Co-scheduled green task.** Run the accept loop as a green task in the REPL
+  process. This requires the listening socket *and* stdin to be non-blocking and
+  a `select`/`kqueue`/`epoll` readiness wait covering both, so the scheduler
+  resumes the accept task only when a connection is pending and the REPL only
+  when stdin is ready. This is the event-loop build noted under the worker-pool
+  scale-up; in exchange, handlers can be redefined live and share in-process
+  state with the REPL.
+
+**Out of scope:**
+
+- **TLS.** Terminate at a reverse proxy (nginx, Caddy). In-process TLS would
+  pull in OpenSSL — a large dependency against the zero-dep ethos.
+- **Keep-alive.** The first cut closes the connection after each response
+  (`Connection: close`), which fork-per-connection makes natural. Persistent
+  connections are a later refinement.
+- **Wildcard / regex routes.** `:name` captures cover the common case; richer
+  patterns wait on the POSIX-regex string work.
+- **HTTP/2, chunked transfer, websockets.** HTTP/1.1 with `Content-Length`
+  bodies only.
+
+**Open questions:**
+
+- Request size cap and the behavior on overflow (413 vs. connection drop), and
+  a sane default ceiling.
+- Whether `recv-request` returns a structured error for a malformed request or
+  a sentinel the loop turns into a 400.
+- Header representation when a header repeats (array of values vs. last-wins).
+- Whether routing lives in C (for large tables) or stays a `lib.l4` scan
+  (simpler; fine for modest route counts).
+
+**Cost:** sockets + picohttpparser wrapper + request/response framing ~150
+lines of C; `serve`, the router, and the response builders ~60 lines of
+`lib.l4`. picohttpparser vendored as-is.
+
+---
+
 ## Foreign function interface
 
 Once in, user code can load any `.so` / `.dylib` on the system, look
@@ -867,14 +985,10 @@ allocates and fills a result array must do it in C, the way `map` /
 `mapn` / `filter` already do. Words that return a scalar, an element,
 or a boolean have no such constraint and belong in `lib.l4`.
 
-`map`, `mapn`, `filter`, `take`, `reverse`, `concat`, and `reduce` are
-in C. `skip` (rename of the planned "drop", since `drop` is taken by the
-stack primitive) and `last` are in `lib.l4` atop `take` + `reverse`.
-
-**C primitives (build a result array):**
-
-- **`range`** — `n range` → `[ 0 1 … n-1 ]`; two-arg `start end range`
-  → `[ start … end-1 ]`. Builds an n-element array → C.
+`map`, `mapn`, `filter`, `take`, `reverse`, `concat`, `reduce`, and
+`range` are in C. `skip` (rename of the planned "drop", since `drop` is
+taken by the stack primitive) and `last` are in `lib.l4` atop `take` +
+`reverse`.
 
 **lib.l4 definitions (return a scalar/element, or compose C builders):**
 
@@ -905,7 +1019,6 @@ stack primitive) and `last` are in `lib.l4` atop `take` + `reverse`.
 
 **Cost:**
 
-- C: `range` → ~25 lines.
 - `lib.l4`: `find`, `any?`, `all?`, `flat-map`, `sort-by` → ~50 lines.
 - `group-by` and `partition` wait on dicts.
 

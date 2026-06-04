@@ -1,0 +1,27 @@
+0 ok
+0 ok
+0 ok
+0 0 ok
+1.5708 0 ok
+-1.5708 0 ok
+0 ok
+0 ok
+0 0 ok
+1.5708 0 ok
+3.14159 0 ok
+0 ok
+0 ok
+0 0 ok
+0.785398 0 ok
+-0.785398 0 ok
+0 ok
+0 ok
+1 0 ok
+0 ok
+0 ok
+<matrix 1x2>
+          0     0.7854
+0 ok
+0 ok
+0 ok
+0|error asin: expected a float or a matrix; got a string

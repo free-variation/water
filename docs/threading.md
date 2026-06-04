@@ -27,11 +27,10 @@ the starting model and direct threading (DTC) as the redesign. Both
 have been built — DTC is the current dispatch model. Part 16 then
 describes the *tail-call dispatch* layer that sits on top of DTC and
 is also currently in place: each handler ends by `musttail`-jumping
-to the next, rather than returning to a central loop. Part 17 covers
-the combinator fast-call, a further dispatch optimization layered on
-top. Parts 18-19 summarize the combined state.
+to the next, rather than returning to a central loop. Parts 17-18
+summarize the combined state.
 
-If you only want the current state, jump to Parts 16-19. Parts 1-15
+If you only want the current state, jump to Parts 16-18. Parts 1-15
 remain the long-form teaching narrative.
 
 ---
@@ -1226,11 +1225,9 @@ Total dispatch reads: **7 reads** (one per dispatch cell, no double-read).
 
 ITC: 14 reads. DTC: 7 reads. Each read is a load from cache (L1 in the
 hot loop, since dict is contiguous). At ~1 ns per L1 load, that's ~7 ns
-saved per body — and `caller` runs once per call. If `caller` is in a
-loop running 10M times, the saving is ~70 ms per benchmark run.
-
-This is what the 10-15% projection comes from. The savings are
-asymptotic in proportion to dispatch-bound time.
+saved per body, and `caller` runs once per call — so the saving scales
+with how often dispatch-bound code runs, proportional to how much of the
+runtime is dispatch versus handler-body compute.
 
 ---
 
@@ -1462,49 +1459,27 @@ files in the new binary, then `save-image` again).
 
 ---
 
-## Part 15: Expected performance impact
+## Part 15: Performance impact
 
-Rough projections by phase of `bench/synth.l4`. Per-phase numbers are
-informed by where each phase spends its time — phases dominated by
-tight inner loops of cheap virtual ops see the biggest gain; phases
-that spend most of their time inside a single coarse C kernel (such as
-DGEMM in phase 3) see essentially none.
+Direct threading removes one dependent memory load per dispatch: ITC
+reads the cfa and then the handler through it, while DTC reads the
+handler directly. The saving helps in proportion to how dispatch-bound
+the code is. A tight inner loop of cheap virtual ops — locals,
+arithmetic, comparison, branch — gains the most. Code that spends most
+of its time inside a single coarse C kernel gains essentially nothing:
+a DGEMM call runs the dispatch loop once for the entire matmul, so the
+per-dispatch saving is irrelevant.
 
-- **Phase 1** (hand-rolled `begin/until` loop): currently 47 ms. Tight
-  inner loop of cheap primitives (locals, arithmetic, comparison,
-  branch). Removing one memory load per dispatch should produce a
-  10-15% wall-time improvement, so 40-42 ms.
-- **Phase 5** (`map` + `reduce` over a range): currently 21 ms; expect
-  ~18 ms. Same dispatch-bound profile.
-- **Phase 2** (`range → map → filter → reduce`): currently 17 ms;
-  expect ~15 ms. Similar.
-- **Phase 4** (frame build + walk): currently 6 ms; expect ~5 ms.
-  Smaller win because frame ops do more compute per dispatch.
-- **Phase 6** (deep nested frames): currently 9 ms; expect ~8 ms.
-- **Phase 3** (DGEMM): currently 0.12 ms. **Unaffected** — DGEMM is a
-  single C-kernel call; the dispatch loop runs once for the entire
-  matmul.
+Two secondary effects compound the direct saving:
 
-Total benchmark time: from ~99 ms to ~87 ms, roughly 12% off. The
-gain concentrates in phases that spend most of their time dispatching
-virtual ops; phases dominated by handler-body compute see less.
-
-There's a secondary benefit not captured in the read-count analysis:
-branch prediction. The indirect call in the dispatch loop has a single
-call site that varies in target. Modern CPUs (M1/M2 ARM64, recent x86)
-predict indirect branches well by recording the most-recent target at
-each call site. With one fewer dependent load before the call (DTC vs
-ITC), the call target becomes available sooner, the predictor has less
-to guess about, and prediction accuracy improves.
-
-The third benefit is cache pressure. One less L1 read per dispatch
-means slightly fewer L1 evictions of the body-cell array. For
-benchmark-scale code that fits in L1 entirely, this doesn't matter; for
-larger programs it can.
-
-The projection numbers above are conservative — they assume only the
-read-count saving. Real measurements may come in a few percent better
-if branch prediction and cache effects compound.
+- **Branch prediction.** The dispatch loop's indirect call has a single
+  call site that varies in target; modern CPUs predict it by recording
+  the most-recent target there. With one fewer dependent load before the
+  call, the target resolves sooner and the predictor has less to guess
+  about.
+- **Cache pressure.** One less L1 read per dispatch means slightly fewer
+  evictions of the body-cell array — negligible for code that fits in L1
+  entirely, but it can matter for larger programs.
 
 ---
 
@@ -1631,162 +1606,7 @@ preserved, perf benefit captured.
 
 ---
 
-## Part 17: Combinator fast-call — amortizing the trampoline
-
-`execute_cfa` (Part 8) is the bridge from C code into a compiled word: it
-saves the interpreter state, writes the trampoline, runs `run_inner`, and
-restores everything afterward. That setup-and-restore is constant overhead
-per call — fine when C invokes a word once, but the higher-order words call
-the *same* execution token once per element:
-
-```c
-for (int i = 0; i < source->len; i++) {
-    push(interp, source->items[i]);
-    execute_cfa(interp, xt);          /* same xt every iteration */
-    result->items[i] = pop(interp);
-}
-```
-
-Each `execute_cfa` here repeats work that does not change between
-iterations: it saves `ip` and `running`, saves the trampoline cells, writes
-the trampoline for `xt`, and on return writes all of that back. For a loop
-body of two or three real operations, this bookkeeping can dominate the
-actual work.
-
-### Splitting the call into open / invoke / close
-
-The fix separates the part of `execute_cfa` that depends only on `xt` (do it
-once) from the part that must run on every invocation (keep it in the loop).
-The body splits into three:
-
-```c
-void call_open(Interpreter *interp, int cfa, CallContext *ctx) {
-    cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
-
-    if (handler == dovar || handler == dosym) {
-        ctx->fast = 0;
-        return;
-    }
-
-    ctx->fast = 1;
-    ctx->saved_ip = interp->ip;
-    ctx->saved_running = interp->running;
-    ctx->saved_slot_0 = interp->vocab->dict[TRAMPOLINE_SLOT];
-    ctx->saved_slot_1 = interp->vocab->dict[TRAMPOLINE_SLOT + 1];
-    ctx->saved_slot_2 = interp->vocab->dict[TRAMPOLINE_SLOT + 2];
-
-    cell stop_handler = interp->vocab->dict[interp->vocab->stop_cfa];
-    if (handler == docol) {
-        interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)docol;
-        interp->vocab->dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;
-        interp->vocab->dict[TRAMPOLINE_SLOT + 2] = stop_handler;
-    } else {
-        interp->vocab->dict[TRAMPOLINE_SLOT] = (cell)handler;
-        interp->vocab->dict[TRAMPOLINE_SLOT + 1] = stop_handler;
-        interp->vocab->dict[TRAMPOLINE_SLOT + 2] = stop_handler;
-    }
-}
-
-void call_invoke(Interpreter *interp) {
-    interp->ip = TRAMPOLINE_SLOT;
-    interp->running = 1;
-    run_inner(interp);
-}
-
-void call_close(Interpreter *interp, CallContext *ctx) {
-    if (!ctx->fast)
-        return;
-    interp->running = ctx->saved_running;
-    interp->ip = ctx->saved_ip;
-    interp->vocab->dict[TRAMPOLINE_SLOT] = ctx->saved_slot_0;
-    interp->vocab->dict[TRAMPOLINE_SLOT + 1] = ctx->saved_slot_1;
-    interp->vocab->dict[TRAMPOLINE_SLOT + 2] = ctx->saved_slot_2;
-}
-```
-
-`call_open` saves the interpreter state and writes the trampoline for `xt`
-exactly as `execute_cfa` would — once. `call_invoke` is then the entire
-per-iteration cost: point `ip` at the trampoline, set `running`, run the
-inner loop. `call_close` restores the saved state — once.
-
-A combinator rewrites its loop as open-before, invoke-inside, close-after:
-
-```c
-CallContext ctx;
-call_open(interp, xt, &ctx);
-for (int i = 0; i < source->len && !interp->error_flag; i++) {
-    push(interp, source->items[i]);
-    call_invoke(interp);
-    result->items[i] = pop(interp);
-}
-call_close(interp, &ctx);
-```
-
-### Why the hoist is safe
-
-The trampoline cells hold the same values on every iteration, because they
-are a function of `xt` alone and `xt` is fixed for the life of the loop. So
-writing them once is equivalent to rewriting them each time.
-
-Each invocation is self-balancing. For a docol-handled `xt`, `docol` pushes
-the return address (the trampoline's `(stop)` cell) and `exit` pops it; the
-return stack ends each iteration exactly where it started. `call_invoke`
-resets `ip` and `running` to their entry values before every `run_inner`,
-so a clean invocation leaves nothing for the next one to trip over.
-
-Nested combinators compose. If the loop body itself calls a combinator —
-`map` over a quotation that calls `reduce` — the inner call saves and
-restores the trampoline cells around its own use, so the outer loop's
-trampoline is intact when control returns.
-
-`call_close` runs unconditionally after the loop, including the error-exit
-path, so the trampoline cells and `ip`/`running` are always restored even
-when a body faults mid-iteration.
-
-### The dovar/dosym fallback
-
-`execute_cfa` handles variable and symbol words without the trampoline at
-all — it pushes their value directly and returns. Those handlers never drive
-`run_inner`, so there is nothing to hoist. `call_open` detects them, sets
-`ctx.fast = 0`, and the combinator falls back to per-iteration
-`execute_cfa`. A small helper keeps the loop body uniform:
-
-```c
-static inline void call_step(Interpreter *interp, CallContext *ctx, int cfa) {
-    if (ctx->fast)
-        call_invoke(interp);
-    else
-        execute_cfa(interp, cfa);
-}
-```
-
-`ctx->fast` is loop-invariant, so the branch predicts perfectly and the fast
-path stays a single `call_invoke`.
-
-### What uses it, and what it buys
-
-The loop combinators route through this path: `map`, `mapn`, `filter`,
-`reduce`, `times`, and `i-times`. Single-shot callers that invoke a word
-once (`update-at`, `execute`) keep calling `execute_cfa` directly — there is
-no loop to amortize, so the split would only add a save/restore.
-
-The win tracks how much the trampoline overhead matters relative to the loop
-body. A tight loop with a trivial body is almost all dispatch, so it gains
-the most; a loop that does substantial work per iteration sees the
-trampoline as a small fraction and barely moves. On the synth benchmark the
-dispatch-bound phases (a `times` counting loop, a `map`+`reduce` pipeline)
-drop 15-20%; a billion-iteration `i-times` Leibniz loop drops ~9%; numeric
-kernels that update a frame or array per element move only a few percent;
-loops written with `begin`/`until` are unaffected, because they branch
-directly and never enter `execute_cfa`.
-
-`call_open`, `call_invoke`, `call_close`, and `call_step` live in
-`src/c/core.c` and `src/c/logicforth.h`; the combinator loops are in
-`src/c/functional.c`.
-
----
-
-## Part 18: The big picture
+## Part 17: The big picture
 
 In slogan form:
 
@@ -1861,7 +1681,7 @@ Tail-call dispatch on top added:
 
 ---
 
-## Part 19: Where to look in the source
+## Part 18: Where to look in the source
 
 DTC + tail-call dispatch (current state):
 
@@ -1882,10 +1702,10 @@ DTC + tail-call dispatch (current state):
   C, including primitives, because the handler's `DISPATCH` needs a
   valid next-op cell to terminate the chain.
 - **`call_open` / `call_invoke` / `call_close` / `call_step`** in
-  `src/c/core.c` and `src/c/logicforth.h` — the combinator fast-call
-  (Part 17). Splits `execute_cfa` so a loop sets up the trampoline once
-  and only pays `run_inner` per iteration. Used by the loop combinators
-  in `src/c/functional.c`.
+  `src/c/core.c` and `src/c/logicforth.h` — the combinator fast-call.
+  Splits `execute_cfa` so a loop sets up the trampoline once and only
+  pays `run_inner` per iteration. Used by the loop combinators in
+  `src/c/functional.c`.
 - **`define_primitive`** in `src/c/core.c` — the simplest defining word.
   Takes a flag bitmask (immediate, inline, internal).
 - **`run_outer`** in `src/c/core.c` — the parser/compiler. The

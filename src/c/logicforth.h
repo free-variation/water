@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.1.0"
+#define VERSION "0.2.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,6 +95,14 @@ static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_in
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
 
+static inline Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
+
+static inline int truthy(Val value) {
+	if (VAL_TAG(value) == T_FLOAT)
+		return VAL_NUMBER(value) != 0.0;
+	return VAL_DATA(value) != 0;
+}
+
 typedef enum {
 	OBJECT_STRING = 0,
 	OBJECT_SET,
@@ -174,6 +182,7 @@ typedef struct Interpreter {
 	char input_buffer[INPUT_BUFFER_SIZE];
 	int input_buffer_len, input_buffer_pos, need_more;
 	int compiling_src_start;
+	int fuse_prev_var, fuse_prev2_var;
 
 	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
 	int local_names_pool_here;
@@ -231,6 +240,11 @@ void p_row_mins(Interpreter *interp);
 void p_column_sums(Interpreter *interp);
 void p_column_maxes(Interpreter *interp);
 void p_column_mins(Interpreter *interp);
+
+void define_superwords(Interpreter *interp);
+int superword_cell_count(cell handler);
+int superword_try_fuse(Interpreter *interp, int op_cfa);
+int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
 
 static inline void push(Interpreter *interp, Val value) {
 	if (interp->dsp < DATA_STACK_DEPTH) {
@@ -365,8 +379,19 @@ static inline Val rpop(Interpreter *interp) {
 
 /* ---- internal cross-file prototypes ---- */
 int create_variable(Interpreter *interp, const char *name);
-void gc_root_push(Interpreter *interp, Val value);
-void gc_root_pop(Interpreter *interp);
+static inline void gc_root_push(Interpreter *interp, Val value) {
+	if (interp->n_gc_roots >= MAX_GC_ROOTS) {
+		fail(interp, "gc roots exhausted");
+		return;
+	}
+	interp->gc_roots[interp->n_gc_roots++] = value;
+}
+
+static inline void gc_root_pop(Interpreter *interp) {
+	if (interp->n_gc_roots > 0) {
+		interp->n_gc_roots--;
+	}
+}
 int object_alloc_slot(Interpreter *interp);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
 int object_new_set(Interpreter *interp);
@@ -458,18 +483,17 @@ void p_add_f(Interpreter *interp);
 void p_sub_f(Interpreter *interp);
 void p_mul_f(Interpreter *interp);
 void p_div_f(Interpreter *interp);
-void p_fmul_add(Interpreter *interp);
-void p_fmul_sub(Interpreter *interp);
 void p_neg(Interpreter *interp);
 void p_inc(Interpreter *interp);
 void p_dec(Interpreter *interp);
 void p_sq(Interpreter *interp);
-Val make_bool(int is_true);
-int truthy(Val value);
 void p_eq(Interpreter *interp);
 void p_lt(Interpreter *interp);
 void p_gt(Interpreter *interp);
 void p_zeq(Interpreter *interp);
+void p_and(Interpreter *interp);
+void p_or(Interpreter *interp);
+void p_not(Interpreter *interp);
 void p_dup(Interpreter *interp);
 void p_drop(Interpreter *interp);
 void p_swap(Interpreter *interp);
@@ -610,6 +634,7 @@ void p_dim(Interpreter *interp);
 void p_array_of(Interpreter *interp);
 void p_take(Interpreter *interp);
 void p_reverse(Interpreter *interp);
+void p_flip(Interpreter *interp);
 void p_concat(Interpreter *interp);
 void p_destruct(Interpreter *interp);
 void p_destruct_to(Interpreter *interp);
@@ -621,14 +646,48 @@ int frame_delete(Object *frame, cell key);
 void p_to_frame(Interpreter *interp);
 void p_transpose(Interpreter *interp);
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name);
+void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name);
 void p_abs(Interpreter *interp);
 void p_sqrt(Interpreter *interp);
 void p_exp(Interpreter *interp);
 void p_log(Interpreter *interp);
+void p_ln(Interpreter *interp);
+void p_power(Interpreter *interp);
+void p_divmod(Interpreter *interp);
+
+void p_fabs(Interpreter *interp);
+void p_fsqrt(Interpreter *interp);
+void p_fexp(Interpreter *interp);
+void p_flog(Interpreter *interp);
+void p_fln(Interpreter *interp);
+void p_fsin(Interpreter *interp);
+void p_fcos(Interpreter *interp);
+void p_ftan(Interpreter *interp);
+void p_ftanh(Interpreter *interp);
+void p_fasin(Interpreter *interp);
+void p_facos(Interpreter *interp);
+void p_fatan(Interpreter *interp);
+void p_fround(Interpreter *interp);
+void p_ftruncate(Interpreter *interp);
+void p_fnegate(Interpreter *interp);
+void p_fround_up(Interpreter *interp);
+void p_fround_down(Interpreter *interp);
+void p_fpow(Interpreter *interp);
+void p_fmodop(Interpreter *interp);
 void p_sin(Interpreter *interp);
 void p_cos(Interpreter *interp);
 void p_tan(Interpreter *interp);
 void p_tanh(Interpreter *interp);
+void p_asin(Interpreter *interp);
+void p_acos(Interpreter *interp);
+void p_atan(Interpreter *interp);
+void p_round(Interpreter *interp);
+void p_truncate(Interpreter *interp);
+void p_round_up(Interpreter *interp);
+void p_round_down(Interpreter *interp);
+void p_inc_poly(Interpreter *interp);
+void p_dec_poly(Interpreter *interp);
+void p_sq_poly(Interpreter *interp);
 void p_now(Interpreter *interp);
 Interpreter *interp_new(void);
 

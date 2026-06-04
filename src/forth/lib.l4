@@ -1,11 +1,23 @@
-( -- pi )
-: pi 3.141592653589793 ;
+variable pi
+3.141592653589793 to pi
 
 ( a b -- a b a b )
 : 2dup over over ;
+inline
 
 ( a b -- b )
 : nip swap drop ;
+inline
+
+\ arithmetic words
+
+( a b -- remainder )  \ = % drop ; sign follows the dividend
+: mod % drop ;
+inline
+
+( a b -- quotient )  \ integer quotient toward zero ( = % swap drop )
+: quotient % swap drop ;
+inline
 
 \ array words
 
@@ -28,17 +40,6 @@
 
 \ matrix words
 
-\ broadcast a scalar to the dimension of the preceding matrix
-( m scalar -- m broadcast-scalar )
-: scalar-op
-	over dim * array-of
-	over dim matrix ;
-
-: scalar+ scalar-op + ;
-: scalar- scalar-op - ;
-: scalar* scalar-op * ;
-: scalar/ scalar-op / ;
-
 ( s -- sxs-identity-matrix )
 : identity-matrix 1 swap diagonal-matrix ;
 
@@ -52,8 +53,8 @@
 : mean dup num-elements swap sum swap / ;
 
 ( m -- row-means )  \ each row's sum divided by the number of columns
-: row-means dup dim swap drop swap row-sums swap scalar/ ;
+: row-means dup dim swap drop swap row-sums swap / ;
 
 ( m -- column-means )  \ each column's sum divided by the number of rows
-: column-means dup dim drop swap column-sums swap scalar/ ;
+: column-means dup dim drop swap column-sums swap / ;
  

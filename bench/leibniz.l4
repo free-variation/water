@@ -25,11 +25,13 @@ variable T0
   1.0 to PI
   1.0 to X
   now to T0
-  [: |> idx |
+  [: ( idx -- )
      X negate to X
-     X  idx 2.0 3.0 f*+  /f  PI +f  to PI
-  :] ROUNDS 1+ i-times
-  PI 4.0 *f to PI
+     2.0 3.0 f*+        \ idx*2 + 3 = divisor
+     X swap f/          \ X / divisor
+     PI f+ to PI
+  :] ROUNDS f1+ i-times
+  PI 4.0 f* to PI
   now T0 - "elapsed: {0}s" . cr
   PI "pi: {0}" . cr ;
 

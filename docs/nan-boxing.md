@@ -34,7 +34,7 @@ With 8-byte alignment for the 64-bit data field, that struct comes out to 16 byt
 
 The data stack is an array of Vals. Each push or pop moves 16 bytes. Each function that takes or returns a Val passes 16 bytes. Each `Val[]` slot — in the data stack, the return stack, frames, array storage — costs 16 bytes.
 
-That's the layout logicforth ran with until recently. NaN-boxing is what shrank it to 8.
+NaN-boxing shrinks that 16-byte struct to 8 — a single machine word.
 
 ---
 
@@ -198,15 +198,13 @@ This is the one place where NaN-boxing requires care that a 16-byte struct didn'
 
 ---
 
-## Part 7: What changed elsewhere when Val shrank
+## Part 7: How Val is used elsewhere
 
-The Val type change is local to `logicforth.h`, but the surrounding code had to adapt in a few places.
+The single-word Val shapes the surrounding code in a few places.
 
-**Direct field access disappeared.** Before NaN-boxing, code routinely wrote `v.tag = T_FLOAT; v.data = some_handle;` to assemble a Val piecewise. With the union representation, `v.tag` doesn't exist — there's no separate tag field to write. Every "assemble a Val by setting tag and data" site became a call to `make_tagged` or one of its wrappers. About a dozen sites in `core.c` and `words.c` needed this fix.
+**Vals are built, not assembled.** There is no `v.tag` field to write — with the union representation, a Val is opaque bits. Every site that builds a Val calls `make_tagged` or one of its wrappers (`make_float`, `make_array`, …); a Val is never set field-by-field.
 
-**Variable storage compacted.** A variable in logicforth's dictionary used to occupy three cells: the `dovar` handler at cfa+0, the tag at cfa+1, the data at cfa+2. Reading the value meant assembling a Val from the tag+data pair. After NaN-boxing, the Val fits in one cell, so a variable is now two cells: handler at cfa+0, `Val.bits` at cfa+1. Reading is one dict access instead of two. Writing similarly stores the Val's bits in one cell.
-
-Six sites had to change consistently:
+**Variable storage.** A variable in the dictionary occupies two cells: the `dovar` handler at cfa+0 and `Val.bits` at cfa+1. Reading a variable's value is a single dict access; writing stores the Val's bits in one cell. The two-cell layout is handled in:
 
 - `create_variable` (allocates the cells)
 - `push_variable` (reads a variable's value)
@@ -215,26 +213,17 @@ Six sites had to change consistently:
 - `p_to`'s interpret-mode branch (REPL `to var`)
 - `mark_body`'s `dovar` arm (GC walks variable cells)
 
-**Stack arrays halved in size.** The data stack, return stack, side stack, and frame value arrays are all `Val[]`. With Val at 8 bytes instead of 16, those arrays use half the memory. The 256-entry data stack went from 4 KB to 2 KB — comfortably in L1 cache, with room to spare for other hot data.
+**Stack arrays.** The data stack, return stack, side stack, and frame value arrays are all `Val[]`, so at 8 bytes per Val the 256-entry data stack is 2 KB — comfortably in L1 cache.
 
-**Function calling convention improved.** A 16-byte `Val` passed by value occupies two registers on x86-64; an 8-byte Val passes in one. Functions returning Val (notably `pop`, `make_*`, and the few helpers in `logicforth.h`) get tighter code. The effect on per-op cost is small but real on benchmarks where the same Val passes through several helpers.
+**Function calling convention.** An 8-byte Val passes by value in a single register; functions taking or returning Val (notably `pop`, the `make_*` helpers) get tighter code than a 16-byte struct that occupies two registers. The effect on per-op cost is small but real where the same Val passes through several helpers.
 
 ---
 
-## Part 8: What it bought, measured
+## Part 8: Where it helps
 
-Across the four pyperformance-port benchmarks:
+The gain isn't uniform. Code where the data stack is the hot data structure — fannkuch and nqueens both shuffle Vals through the stack heavily — wins the most from halving stack bandwidth. Code structured to keep working data in global variables rather than on the stack (n-body's style) benefits less from the stack savings, though the two-cell variable layout from Part 7 helps it a little.
 
-| benchmark | before NaN-boxing | after | delta |
-|---|---:|---:|---:|
-| nbody | 0.180 s | 0.180 s | none |
-| fannkuch | 0.260 s | 0.240 s | ~8% |
-| nqueens | 0.044 s | 0.041 s | ~7% |
-| spectral-norm | 0.181 s | 0.179 s | noise |
-
-The gain isn't uniform. Benchmarks where the data stack is the hot data structure (fannkuch, nqueens — both shuffle Vals through the stack heavily) see real wins. nbody is structured to keep working data in global variables rather than on the stack, so the stack bandwidth savings don't help it as much — though the variable-cell compaction described in Part 7 did move nbody's number slightly.
-
-The other "win" is qualitative: with 8-byte Vals, function signatures involving Vals become cheaper, and the compiler keeps more Vals in registers across operations. Hard to quantify without instrumentation, but visible in the assembly output for hot primitives.
+The other gain is qualitative: with 8-byte Vals, function signatures involving Vals are cheaper and the compiler keeps more Vals in registers across operations. Hard to quantify without instrumentation, but visible in the assembly for hot primitives.
 
 ---
 
@@ -242,11 +231,9 @@ The other "win" is qualitative: with 8-byte Vals, function signatures involving 
 
 The cost has two pieces.
 
-**Tag inspection is now a few cycles instead of one memory access.** Code paths like generic `+` that check `VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT` now do mask-and-compare on the bits, not a direct field read. On modern CPUs this is essentially free — the bits are already in a register, the compare is one cycle, the branch is well-predicted. But the source-level reading is more complex, and the macro has to compute a conditional rather than just project a field.
+**Tag inspection is a mask-and-compare, not a field read.** Code paths like generic `+` that check `VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT` mask-and-compare on the bits rather than projecting a field. On modern CPUs this is essentially free — the bits are already in a register, the compare is one cycle, the branch well-predicted — but the source-level reading is more complex, and the macro computes a conditional rather than just reading a field.
 
-**The corner around float NaN is sharper.** With 16-byte Val, a float-NaN payload was just `0x7FF8...` stored in `data`, with tag explicitly `T_FLOAT` — no ambiguity. With NaN-boxing, the runtime infers float vs. boxed from the bit pattern alone. The canonicalization in `make_float` papers over the most common collisions, but a hostile program that constructs specific NaN bit patterns could still confuse the runtime. logicforth doesn't expose a primitive that lets users do this directly, so the current scheme is sound in practice.
-
-The implementation cost itself was a few hours of mechanical work: change the Val type, update the four macros, replace the direct-field-assignment sites with `make_tagged` calls, fix the variable storage layout. The change touched many sites but each one was small and the test suite caught the regressions immediately.
+**The corner around float NaN is sharp.** The runtime infers float vs. boxed from the bit pattern alone. The canonicalization in `make_float` papers over the most common collisions, but a hostile program that constructs specific NaN bit patterns could still confuse the runtime. logicforth doesn't expose a primitive that lets users do this directly, so the scheme is sound in practice.
 
 ---
 

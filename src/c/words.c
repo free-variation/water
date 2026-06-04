@@ -18,8 +18,6 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 	return result_handle;
 }
 
-/* Scalar broadcast: scalar OP each-element-of-matrix. Reads `left` (scalar)
- * and `right` (matrix) from the enclosing handler scope. */
 #define BROADCAST_SCALAR_OP_MATRIX(op) \
 	do { \
 		double scalar = VAL_NUMBER(left); \
@@ -35,8 +33,6 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 		push(interp, make_matrix(target_handle)); \
 	} while (0)
 
-/* Scalar broadcast: each-element-of-matrix OP scalar. Reads `left` (matrix)
- * and `right` (scalar) from the enclosing handler scope. */
 #define BROADCAST_MATRIX_OP_SCALAR(op) \
 	do { \
 		double scalar = VAL_NUMBER(right); \
@@ -170,7 +166,7 @@ void p_div(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-#define BINARY_FLOAT_PRIMITIVE(name, opname, op) \
+#define BINARY_FLOAT_OP(name, opname, op) \
 	void name(Interpreter *interp) { \
 		if (interp->dsp < 2) { \
 			fail(interp, "%s: data stack underflow", opname); \
@@ -183,49 +179,19 @@ void p_div(Interpreter *interp) {
 		DISPATCH(interp); \
 	}
 
-BINARY_FLOAT_PRIMITIVE(p_add_f, "+f", +)
-BINARY_FLOAT_PRIMITIVE(p_sub_f, "-f", -)
-BINARY_FLOAT_PRIMITIVE(p_mul_f, "*f", *)
-
-void p_fmul_add(Interpreter *interp) {
-	if (interp->dsp < 3) {
-		fail(interp, "f*+: data stack underflow");
-		return;
-	}
-	Val *a = &interp->data_stack[interp->dsp - 3];
-	Val *b = &interp->data_stack[interp->dsp - 2];
-	Val *c = &interp->data_stack[interp->dsp - 1];
-	a->number = a->number * b->number + c->number;
-	interp->dsp -= 2;
-
-
-	DISPATCH(interp);
-}
-
-void p_fmul_sub(Interpreter *interp) {
-	if (interp->dsp < 3) {
-		fail(interp, "f*-: data stack underflow");
-		return;
-	}
-	Val *a = &interp->data_stack[interp->dsp - 3];
-	Val *b = &interp->data_stack[interp->dsp - 2];
-	Val *c = &interp->data_stack[interp->dsp - 1];
-	a->number = c->number - a->number * b->number;
-	interp->dsp -= 2;
-
-
-	DISPATCH(interp);
-}
+BINARY_FLOAT_OP(p_add_f, "f+", +)
+BINARY_FLOAT_OP(p_sub_f, "f-", -)
+BINARY_FLOAT_OP(p_mul_f, "f*", *)
 
 void p_div_f(Interpreter *interp) {
 	if (interp->dsp < 2) {
-		fail(interp, "/f: data stack underflow");
+		fail(interp, "f/: data stack underflow");
 		return;
 	}
 	Val *left = &interp->data_stack[interp->dsp - 2];
 	Val *right = &interp->data_stack[interp->dsp - 1];
 	if (right->number == 0.0) {
-		fail(interp, "/f: division by zero");
+		fail(interp, "f/: division by zero");
 		return;
 	}
 	left->number = left->number / right->number;
@@ -235,6 +201,9 @@ void p_div_f(Interpreter *interp) {
 }
 
 static double scalar_negate(double x) { return -x; }
+static double scalar_inc(double x) { return x + 1.0; }
+static double scalar_dec(double x) { return x - 1.0; }
+static double scalar_sq(double x) { return x * x; }
 
 void p_neg(Interpreter *interp) {
 	POP(operand);
@@ -243,15 +212,7 @@ void p_neg(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-Val make_bool(int is_true) {
-	return make_float(is_true ? -1.0 : 0.0); 
-}
-
-int truthy(Val value) {
-	return (VAL_TAG(value) == T_FLOAT) ? (VAL_NUMBER(value) != 0.0) : (VAL_DATA(value) != 0); 
-}
-
-#define COMPARISON_PRIMITIVE(name, op) \
+#define COMPARISON_OP(name, op) \
 	void name(Interpreter *interp) { \
 		POP(right); \
 		POP(left); \
@@ -262,11 +223,11 @@ int truthy(Val value) {
 		DISPATCH(interp); \
 	}
 
-COMPARISON_PRIMITIVE(p_eq, ==)
-COMPARISON_PRIMITIVE(p_lt, <)
-COMPARISON_PRIMITIVE(p_gt, >)
+COMPARISON_OP(p_eq, ==)
+COMPARISON_OP(p_lt, <)
+COMPARISON_OP(p_gt, >)
 
-#define UNARY_FLOAT_PRIMITIVE(name, opname, expr) \
+#define UNARY_FLOAT_OP(name, opname, expr) \
 	void name(Interpreter *interp) { \
 		if (interp->dsp < 1) { \
 			fail(interp, "%s: data stack underflow", opname); \
@@ -278,11 +239,30 @@ COMPARISON_PRIMITIVE(p_gt, >)
 		DISPATCH(interp); \
 	}
 
-UNARY_FLOAT_PRIMITIVE(p_inc, "1+", n + 1.0)
-UNARY_FLOAT_PRIMITIVE(p_dec, "1-", n - 1.0)
-UNARY_FLOAT_PRIMITIVE(p_sq,  "sq", n * n)
-
 void p_zeq(Interpreter *interp) {
+	POP(operand);
+	push(interp, make_bool(!truthy(operand)));
+
+	DISPATCH(interp);
+}
+
+void p_and(Interpreter *interp) {
+	POP(right);
+	POP(left);
+	push(interp, make_bool(truthy(left) && truthy(right)));
+
+	DISPATCH(interp);
+}
+
+void p_or(Interpreter *interp) {
+	POP(right);
+	POP(left);
+	push(interp, make_bool(truthy(left) || truthy(right)));
+
+	DISPATCH(interp);
+}
+
+void p_not(Interpreter *interp) {
 	POP(operand);
 	push(interp, make_bool(!truthy(operand)));
 
@@ -999,8 +979,10 @@ void p_to(Interpreter *interp) {
 	}
 
 	if (interp->compiling) {
-		emit_call(interp, interp->vocab->to_var_cfa);
-		emit(interp, (cell)target_cfa);
+		if (!superword_try_fuse_store(interp, target_cfa)) {
+			emit_call(interp, interp->vocab->to_var_cfa);
+			emit(interp, (cell)target_cfa);
+		}
 	} else {
 		POP(value);
 		interp->vocab->dict[target_cfa + 1] = (cell)value.bits;
@@ -1269,58 +1251,162 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 	}
 }
 
-void p_abs(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, fabs, "abs");
+#define UNARY_MATH_OP_NAMED(cname, func, word) \
+	void p_##cname(Interpreter *interp) { \
+		POP(operand); \
+		unary_op(interp, operand, func, word); \
+		DISPATCH(interp); \
+	}
+#define UNARY_MATH_OP(name, func) UNARY_MATH_OP_NAMED(name, func, #name)
+
+UNARY_MATH_OP(abs, fabs)
+UNARY_MATH_OP(sqrt, sqrt)
+UNARY_MATH_OP(exp, exp)
+UNARY_MATH_OP(log, log10)
+UNARY_MATH_OP(ln, log)
+UNARY_MATH_OP(sin, sin)
+UNARY_MATH_OP(cos, cos)
+UNARY_MATH_OP(tan, tan)
+UNARY_MATH_OP(tanh, tanh)
+UNARY_MATH_OP(asin, asin)
+UNARY_MATH_OP(acos, acos)
+UNARY_MATH_OP(atan, atan)
+UNARY_MATH_OP(round, round)
+UNARY_MATH_OP(truncate, trunc)
+UNARY_MATH_OP_NAMED(round_up, ceil, "round-up")
+UNARY_MATH_OP_NAMED(round_down, floor, "round-down")
+UNARY_MATH_OP_NAMED(inc_poly, scalar_inc, "1+")
+UNARY_MATH_OP_NAMED(dec_poly, scalar_dec, "1-")
+UNARY_MATH_OP_NAMED(sq_poly, scalar_sq, "sq")
+
+void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name) {
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		push(interp, make_float(function(VAL_NUMBER(left), VAL_NUMBER(right))));
+		return;
+	}
+
+	if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
+		Object *a = interp->objects[VAL_DATA(left)];
+		Object *b = interp->objects[VAL_DATA(right)];
+		if (a->matrix.rows != b->matrix.rows || a->matrix.columns != b->matrix.columns) {
+			fail(interp, "%s: matrix shapes differ (%dx%d vs %dx%d)", name,
+			     a->matrix.rows, a->matrix.columns, b->matrix.rows, b->matrix.columns);
+			return;
+		}
+		int target_handle = object_new_matrix(interp, a->matrix.rows, a->matrix.columns);
+		if (interp->error_flag) return;
+		Object *target = interp->objects[target_handle];
+		int num_elements = a->matrix.rows * a->matrix.columns;
+		for (int i = 0; i < num_elements; i++)
+			target->matrix.elements[i] = function(a->matrix.elements[i], b->matrix.elements[i]);
+		push(interp, make_matrix(target_handle));
+		return;
+	}
+
+	if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT) {
+		double scalar = VAL_NUMBER(right);
+		Object *source = interp->objects[VAL_DATA(left)];
+		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
+		if (interp->error_flag) return;
+		Object *target = interp->objects[target_handle];
+		int num_elements = source->matrix.rows * source->matrix.columns;
+		for (int i = 0; i < num_elements; i++)
+			target->matrix.elements[i] = function(source->matrix.elements[i], scalar);
+		push(interp, make_matrix(target_handle));
+		return;
+	}
+
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX) {
+		double scalar = VAL_NUMBER(left);
+		Object *source = interp->objects[VAL_DATA(right)];
+		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
+		if (interp->error_flag) return;
+		Object *target = interp->objects[target_handle];
+		int num_elements = source->matrix.rows * source->matrix.columns;
+		for (int i = 0; i < num_elements; i++)
+			target->matrix.elements[i] = function(scalar, source->matrix.elements[i]);
+		push(interp, make_matrix(target_handle));
+		return;
+	}
+
+	fail(interp, "%s: expected floats or matrices; got %s and %s", name,
+	     tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+}
+
+void p_power(Interpreter *interp) {
+	POP(right);
+	POP(left);
+	binary_op(interp, left, right, pow, "^");
 
 	DISPATCH(interp);
 }
 
-void p_sqrt(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, sqrt, "sqrt");
+void p_divmod(Interpreter *interp) {
+	POP(right);
+	POP(left);
+	if (VAL_TAG(left) != T_FLOAT || VAL_TAG(right) != T_FLOAT) {
+		fail(interp, "%%: expected two floats; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+		return;
+	}
+
+	double dividend = VAL_NUMBER(left);
+	double divisor = VAL_NUMBER(right);
+	if (divisor == 0.0) {
+		fail(interp, "%%: division by zero");
+		return;
+	}
+
+	double quotient = trunc(dividend / divisor);
+	double remainder = dividend - quotient * divisor;
+	push(interp, make_float(remainder));
+	push(interp, make_float(quotient));
 
 	DISPATCH(interp);
 }
 
-void p_exp(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, exp, "exp");
+UNARY_FLOAT_OP(p_fabs, "fabs", fabs(n))
+UNARY_FLOAT_OP(p_fsqrt, "fsqrt", sqrt(n))
+UNARY_FLOAT_OP(p_fexp, "fexp", exp(n))
+UNARY_FLOAT_OP(p_flog, "flog", log10(n))
+UNARY_FLOAT_OP(p_fln, "fln", log(n))
+UNARY_FLOAT_OP(p_fsin, "fsin", sin(n))
+UNARY_FLOAT_OP(p_fcos, "fcos", cos(n))
+UNARY_FLOAT_OP(p_ftan, "ftan", tan(n))
+UNARY_FLOAT_OP(p_ftanh, "ftanh", tanh(n))
+UNARY_FLOAT_OP(p_fasin, "fasin", asin(n))
+UNARY_FLOAT_OP(p_facos, "facos", acos(n))
+UNARY_FLOAT_OP(p_fatan, "fatan", atan(n))
+UNARY_FLOAT_OP(p_fround, "fround", round(n))
+UNARY_FLOAT_OP(p_ftruncate, "ftruncate", trunc(n))
+UNARY_FLOAT_OP(p_fnegate, "fnegate", -n)
+UNARY_FLOAT_OP(p_fround_up, "fround-up", ceil(n))
+UNARY_FLOAT_OP(p_fround_down, "fround-down", floor(n))
+UNARY_FLOAT_OP(p_inc, "f1+", n + 1.0)
+UNARY_FLOAT_OP(p_dec, "f1-", n - 1.0)
+UNARY_FLOAT_OP(p_sq, "fsq", n * n)
+
+void p_fpow(Interpreter *interp) {
+	if (interp->dsp < 2) {
+		fail(interp, "f^: data stack underflow");
+		return;
+	}
+	Val *left = &interp->data_stack[interp->dsp - 2];
+	Val *right = &interp->data_stack[interp->dsp - 1];
+	left->number = pow(left->number, right->number);
+	interp->dsp--;
 
 	DISPATCH(interp);
 }
 
-void p_log(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, log, "log");
-
-	DISPATCH(interp);
-}
-
-void p_sin(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, sin, "sin");
-
-	DISPATCH(interp);
-}
-
-void p_cos(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, cos, "cos");
-
-	DISPATCH(interp);
-}
-
-void p_tan(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, tan, "tan");
-
-	DISPATCH(interp);
-}
-
-void p_tanh(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, tanh, "tanh");
+void p_fmodop(Interpreter *interp) {
+	if (interp->dsp < 2) {
+		fail(interp, "fmod: data stack underflow");
+		return;
+	}
+	Val *left = &interp->data_stack[interp->dsp - 2];
+	Val *right = &interp->data_stack[interp->dsp - 1];
+	left->number = fmod(left->number, right->number);
+	interp->dsp--;
 
 	DISPATCH(interp);
 }

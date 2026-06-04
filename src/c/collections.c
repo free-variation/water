@@ -282,6 +282,33 @@ void p_reverse(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_flip(Interpreter *interp) {
+	POP_INT(last_index, "flip", "index");
+	POP(target_val);
+	if (VAL_TAG(target_val) != T_ARRAY) {
+		fail(interp, "flip: expected an array; got %s", tag_name(VAL_TAG(target_val)));
+		return;
+	}
+
+	Object *target = interp->objects[VAL_DATA(target_val)];
+	if (last_index < 0 || last_index >= target->len) {
+		fail(interp, "flip: index %d out of bounds for length %d", last_index, target->len);
+		return;
+	}
+
+	int low = 0;
+	int high = last_index;
+	while (low < high) {
+		Val saved = target->items[low];
+		target->items[low] = target->items[high];
+		target->items[high] = saved;
+		low++;
+		high--;
+	}
+
+	DISPATCH(interp);
+}
+
 void p_concat(Interpreter *interp) {
 	int i;
 
