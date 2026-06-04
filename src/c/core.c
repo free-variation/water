@@ -210,6 +210,8 @@ void print_double(double number) {
 
 #define PRINT_LAST 3
 
+#define MAX_NESTING_DEPTH 100
+
 int print_truncate = 1;
 
 static int stdout_is_tty(void) {
@@ -328,16 +330,24 @@ void print_val(Interpreter *interp, Val value) {
 		case T_STRING: fputs(interp->objects[VAL_DATA(value)]->bytes, stdout); break;
 		case T_SET:
 					   print_depth_enter();
-					   fputs("< ", stdout);
-					   print_items(interp, interp->objects[VAL_DATA(value)]);
-					   putchar('>');
+					   if (print_depth > MAX_NESTING_DEPTH) {
+						   fputs("<...>", stdout);
+					   } else {
+						   fputs("< ", stdout);
+						   print_items(interp, interp->objects[VAL_DATA(value)]);
+						   putchar('>');
+					   }
 					   print_depth_leave();
 					   break;
 		case T_ARRAY:
 					   print_depth_enter();
-					   fputs("[ ", stdout);
-					   print_items(interp, interp->objects[VAL_DATA(value)]);
-					   putchar(']');
+					   if (print_depth > MAX_NESTING_DEPTH) {
+						   fputs("[...]", stdout);
+					   } else {
+						   fputs("[ ", stdout);
+						   print_items(interp, interp->objects[VAL_DATA(value)]);
+						   putchar(']');
+					   }
 					   print_depth_leave();
 					   break;
 		case T_XT: printf("<xt %lld>", (long long)VAL_DATA(value)); break;
@@ -354,13 +364,17 @@ void print_val(Interpreter *interp, Val value) {
 		case T_FRAME: {
 						  Object *frame = interp->objects[VAL_DATA(value)];
 						  print_depth_enter();
-						  fputs("{ ", stdout);
-						  for (int i = 0; i < frame->len; i++) {
-							  printf(":%s ", &interp->vocab->symbol_pool[frame->frame.keys[i]]);
-							  print_val(interp, frame->frame.values[i]);
-							  putchar(' ');
+						  if (print_depth > MAX_NESTING_DEPTH) {
+							  fputs("{...}", stdout);
+						  } else {
+							  fputs("{ ", stdout);
+							  for (int i = 0; i < frame->len; i++) {
+								  printf(":%s ", &interp->vocab->symbol_pool[frame->frame.keys[i]]);
+								  print_val(interp, frame->frame.values[i]);
+								  putchar(' ');
+							  }
+							  putchar('}');
 						  }
-						  putchar('}');
 						  print_depth_leave();
 						  break;
 					  }
@@ -444,6 +458,10 @@ void print_val_compact(Interpreter *interp, Val value) {
 }
 
 void print_frame_pretty(Interpreter *interp, Object *frame, int indent) {
+	if (indent > 2 * MAX_NESTING_DEPTH) {
+		fputs("{...}", stdout);
+		return;
+	}
 	fputs("{\n", stdout);
 	for (int i = 0; i < frame->len; i++) {
 		for (int s = 0; s < indent + 2; s++)
@@ -1240,8 +1258,13 @@ void mark_value(Interpreter *interp, Val value) {
 	}
 }
 
-void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
+static void copy_value_inner(Interpreter *interp, Val source_val, Val *copy_val, int depth) {
 	int i, copy_handle;
+
+	if (depth > MAX_NESTING_DEPTH) {
+		fail(interp, "copy: structure too deeply nested (cycle?)");
+		return;
+	}
 
 	switch(VAL_TAG(source_val)) {
 		case T_STRING: {
@@ -1282,7 +1305,7 @@ void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 						copy->len = source->len;
 						*copy_val = (VAL_TAG(source_val) == T_ARRAY) ? make_array(copy_handle) : make_set(copy_handle);
 						for (i = 0; i < source->len; i++)
-							copy_value(interp, source->items[i], &copy->items[i]);
+							copy_value_inner(interp, source->items[i], &copy->items[i], depth + 1);
 						return;
 					}
 
@@ -1306,13 +1329,17 @@ void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
 						  copy->len = source->len;
 						  *copy_val = make_frame(copy_handle);
 						  for (i = 0; i < source->len; i++)
-							  copy_value(interp, source->frame.values[i], &copy->frame.values[i]);
+							  copy_value_inner(interp, source->frame.values[i], &copy->frame.values[i], depth + 1);
 						  return;
 					  }
 		default:
 					  *copy_val = source_val;
 					  return;
 	}
+}
+
+void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
+	copy_value_inner(interp, source_val, copy_val, 0);
 }
 
 void p_copy(Interpreter *interp) {

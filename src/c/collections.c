@@ -113,7 +113,6 @@ void p_frameclose(Interpreter *interp) {
 	if (count % 2 != 0) {
 		fail(interp, "} : frame needs key/value pairs");
 		return;
-	DISPATCH(interp);
 	}
 
 	NEW_FRAME(frame_handle, frame);
@@ -127,6 +126,8 @@ void p_frameclose(Interpreter *interp) {
 
 	interp->dsp = mark_index - 1;
 	push(interp, make_frame(frame_handle));
+
+	DISPATCH(interp);
 }
 
 void p_array_open(Interpreter *interp) {
