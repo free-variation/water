@@ -1,0 +1,30 @@
+\ Leibniz pi — fully vectorized port using matrix ops.
+\ Mirrors the R one-liner:
+\   pi <- sum(4 / seq.int(-2*rounds+1+(rounds%%2)*2, 2*rounds, by = 4))
+\
+\ Assumes ROUNDS is even (true for the benchmark's 1e9). For odd
+\ ROUNDS the start would be -2*ROUNDS+3 instead of -2*ROUNDS+1.
+\
+\ Memory: a 1xN matrix of doubles (8 GB at N=1e9), plus the matrix-of-4s
+\ that scalar-op builds (8 GB), plus the division result (8 GB) =
+\ ~24 GB peak. The denominator and matrix-of-4s become unreachable
+\ after the division, but lforth's GC is manual; call `gc` to reclaim
+\ between phases if needed.
+
+variable ROUNDS
+1000000000 to ROUNDS
+
+variable T0
+
+: leibniz-matrix
+  now to T0
+  ROUNDS -2.0 *f 1.0 +f       \ start = -2*ROUNDS + 1
+  ROUNDS 2.0 *f                \ end   = 2*ROUNDS
+  4.0 matrix1d-range             \ build denominator sequence
+  4.0 swap /                   \ scalar / matrix (broadcast via p_div)
+  sum                          \ accumulate
+  now T0 - "elapsed: {0}s" . cr
+  "pi: {0}" . cr ;
+
+leibniz-matrix
+bye

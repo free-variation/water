@@ -210,7 +210,6 @@ typedef void (*cfa_handler)(Interpreter *interp);
 } while (0)
 
 typedef double (*scalar_operator)(double, double);
-typedef double (*reducer)(double accumulator, double element);
 
 #define WORD_LINK(v, cfa) ((v)->dict[(cfa) - 4])
 #define WORD_FLAGS(v, cfa) ((v)->dict[(cfa) - 3])
@@ -218,6 +217,7 @@ typedef double (*reducer)(double accumulator, double element);
 #define WORD_SOURCE(v, cfa) ((v)->dict[(cfa) - 1])
 #define WORD_IS_IMMEDIATE(v, cfa) (WORD_FLAGS(v, cfa) & 1)
 #define WORD_IS_INLINE(v, cfa) (WORD_FLAGS(v, cfa) & 2)
+#define WORD_IS_INTERNAL(v, cfa) (WORD_FLAGS(v, cfa) & 4)
 
 extern int print_truncate;
 void fail(Interpreter *interp, const char *fmt, ...);
@@ -398,8 +398,8 @@ void execute_cfa(Interpreter *interp, int cfa);
 int alloc_name(Interpreter *interp, const char *name);
 int intern_symbol(Interpreter *interp, const char *name);
 void dict_ensure(Interpreter *interp, int extra);
-int create_header(Interpreter *interp, const char *name, int immediate);
-int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int immediate);
+int create_header(Interpreter *interp, const char *name, int flags);
+int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int flags);
 void emit(Interpreter *interp, cell value);
 void emit_call(Interpreter *interp, int target_cfa);
 void emit_val_literal(Interpreter *interp, Val value);
@@ -427,11 +427,10 @@ void p_inline(Interpreter *interp);
 void inline_word_body(Interpreter *interp, int target_cfa);
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
-double scalar_add(double a, double b);
-double scalar_subtract(double a, double b);
-double scalar_multiply(double a, double b);
-double scalar_divide(double a, double b);
-int matrix_scalar_op(Interpreter *interp, Val left_val, Val right_val, scalar_operator op);
+int matrix_add(Interpreter *interp, Val left_val, Val right_val);
+int matrix_sub(Interpreter *interp, Val left_val, Val right_val);
+int matrix_mul(Interpreter *interp, Val left_val, Val right_val);
+int matrix_div(Interpreter *interp, Val left_val, Val right_val);
 void p_add(Interpreter *interp);
 void p_sub(Interpreter *interp);
 void p_mul(Interpreter *interp);
@@ -504,12 +503,15 @@ void p_dgemm_nn(Interpreter *interp);
 void p_dgemm_tn(Interpreter *interp);
 void p_dgemm_nt(Interpreter *interp);
 void p_dgemm_tt(Interpreter *interp);
-double reduce_add(double accumulator, double element);
-double reduce_max(double accumulator, double element);
-double reduce_min(double accumulator, double element);
-double matrix_reduce_overall(Object *source, reducer fn, double identity);
-int matrix_reduce_rows(Interpreter *interp, Object *source, reducer fn, double identity);
-int matrix_reduce_columns(Interpreter *interp, Object *source, reducer fn, double identity);
+double matrix_sum_overall(Object *source);
+double matrix_max_overall(Object *source);
+double matrix_min_overall(Object *source);
+int matrix_sum_rows(Interpreter *interp, Object *source);
+int matrix_max_rows(Interpreter *interp, Object *source);
+int matrix_min_rows(Interpreter *interp, Object *source);
+int matrix_sum_columns(Interpreter *interp, Object *source);
+int matrix_max_columns(Interpreter *interp, Object *source);
+int matrix_min_columns(Interpreter *interp, Object *source);
 void p_set(Interpreter *interp);
 void p_union(Interpreter *interp);
 void p_intersect(Interpreter *interp);
@@ -583,6 +585,7 @@ void p_0_matrix(Interpreter *interp);
 void p_diagonal_matrix(Interpreter *interp);
 void p_diagonal(Interpreter *interp);
 void p_reshape(Interpreter *interp);
+void p_matrix_range(Interpreter *interp);
 void p_matrix(Interpreter *interp);
 void p_dim(Interpreter *interp);
 void p_array_of(Interpreter *interp);

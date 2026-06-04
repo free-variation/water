@@ -1,36 +1,31 @@
 #include "logicforth.h"
 
-double scalar_add(double a, double b) { return a + b; }
-
-double scalar_subtract(double a, double b) { return a - b; }
-
-double scalar_multiply(double a, double b) { return a * b; }
-
-double scalar_divide(double a, double b) { return a / b; }
-
-int matrix_scalar_op(Interpreter *interp, Val left_val, Val right_val, scalar_operator op) {
-	Object *left = interp->objects[VAL_DATA(left_val)];
-	Object *right = interp->objects[VAL_DATA(right_val)];
-
-	if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) {
-		fail(interp, "element-wise op: matrix shapes differ (%dx%d vs %dx%d)",
-				left->matrix.rows, left->matrix.columns,
-				right->matrix.rows, right->matrix.columns);
-		return -1;
+#define MATRIX_ELEMENTWISE_OP(name, opname, op) \
+	int name(Interpreter *interp, Val left_val, Val right_val) { \
+		Object *left = interp->objects[VAL_DATA(left_val)]; \
+		Object *right = interp->objects[VAL_DATA(right_val)]; \
+		if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) { \
+			fail(interp, opname ": matrix shapes differ (%dx%d vs %dx%d)", \
+					left->matrix.rows, left->matrix.columns, \
+					right->matrix.rows, right->matrix.columns); \
+			return -1; \
+		} \
+		int target_handle = object_new_matrix(interp, left->matrix.rows, left->matrix.columns); \
+		if (interp->error_flag) return -1; \
+		Object *target = interp->objects[target_handle]; \
+		size_t n = (size_t)left->matrix.rows * (size_t)left->matrix.columns; \
+		const double * restrict l = left->matrix.elements; \
+		const double * restrict r = right->matrix.elements; \
+		double * restrict t = target->matrix.elements; \
+		for (size_t i = 0; i < n; i++) \
+			t[i] = l[i] op r[i]; \
+		return target_handle; \
 	}
 
-	int rows = left->matrix.rows;
-	int columns = right->matrix.columns;
-	int target_handle = object_new_matrix(interp, rows, columns);
-	if (interp->error_flag) return -1;
-
-	Object *target = interp->objects[target_handle];
-	for (int i = 0; i < rows * columns; i++) {
-		target->matrix.elements[i] = op(left->matrix.elements[i], right->matrix.elements[i]);
-	}
-
-	return target_handle;
-}
+MATRIX_ELEMENTWISE_OP(matrix_add, "+", +)
+MATRIX_ELEMENTWISE_OP(matrix_sub, "-", -)
+MATRIX_ELEMENTWISE_OP(matrix_mul, "*", *)
+MATRIX_ELEMENTWISE_OP(matrix_div, "/", /)
 
 void p_at_i(Interpreter *interp) {
 	POP_INT(index, "@i", "index");
@@ -245,47 +240,80 @@ void p_dgemm_tt(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-double reduce_add(double accumulator, double element) { return accumulator + element; }
+/* Combine operators for the inlined reductions. MAX and MIN are in
+ * logicforth.h; only ADD needs definition here. */
+#define ADD(a, b) ((a) + (b))
 
-double reduce_max(double accumulator, double element) { return accumulator > element ? accumulator : element; }
-
-double reduce_min(double accumulator, double element) { return accumulator < element ? accumulator : element; }
-
-double matrix_reduce_overall(Object *source, reducer fn, double identity) {
-	int num_elements = source->matrix.rows * source->matrix.columns;
-	double accumulator = identity;
-	for (int i = 0; i < num_elements; i++)
-		accumulator = fn(accumulator, source->matrix.elements[i]);
-	return accumulator;
-}
-
-int matrix_reduce_rows(Interpreter *interp, Object *source, reducer fn, double identity) {
-	int rows = source->matrix.rows;
-	int cols = source->matrix.columns;
-	int target_handle = object_new_matrix(interp, rows, 1);
-	if (interp->error_flag) return -1;
-	Object *target = interp->objects[target_handle];
-	for (int i = 0; i < rows; i++) {
-		double accumulator = identity;
-		for (int j = 0; j < cols; j++)
-			accumulator = fn(accumulator, MAT(source, i, j));
-		MAT(target, i, 0) = accumulator;
+/* Overall reduction: four-way accumulator unroll so float-sum (non-associative)
+ * can still vectorize. Associative ops (max, min) also tolerate the
+ * unrolling. */
+#define MATRIX_REDUCE_OVERALL_FN(name, init_value, combine) \
+	double name(Object *source) { \
+		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
+		const double * restrict elements = source->matrix.elements; \
+		double accumulator_0 = init_value; \
+		double accumulator_1 = init_value; \
+		double accumulator_2 = init_value; \
+		double accumulator_3 = init_value; \
+		size_t i = 0; \
+		for (; i + 3 < num_elements; i += 4) { \
+			accumulator_0 = combine(accumulator_0, elements[i]); \
+			accumulator_1 = combine(accumulator_1, elements[i + 1]); \
+			accumulator_2 = combine(accumulator_2, elements[i + 2]); \
+			accumulator_3 = combine(accumulator_3, elements[i + 3]); \
+		} \
+		double accumulator = combine(combine(accumulator_0, accumulator_1), \
+		                             combine(accumulator_2, accumulator_3)); \
+		for (; i < num_elements; i++) \
+			accumulator = combine(accumulator, elements[i]); \
+		return accumulator; \
 	}
-	return target_handle;
-}
 
-int matrix_reduce_columns(Interpreter *interp, Object *source, reducer fn, double identity) {
-	int rows = source->matrix.rows;
-	int cols = source->matrix.columns;
-	int target_handle = object_new_matrix(interp, 1, cols);
-	if (interp->error_flag) return -1;
-	Object *target = interp->objects[target_handle];
-	for (int j = 0; j < cols; j++) MAT(target, 0, j) = identity;
-	for (int i = 0; i < rows; i++)
-		for (int j = 0; j < cols; j++)
-			MAT(target, 0, j) = fn(MAT(target, 0, j), MAT(source, i, j));
-	return target_handle;
-}
+#define MATRIX_REDUCE_ROWS_FN(name, init_value, combine) \
+	int name(Interpreter *interp, Object *source) { \
+		int rows = source->matrix.rows; \
+		int cols = source->matrix.columns; \
+		int target_handle = object_new_matrix(interp, rows, 1); \
+		if (interp->error_flag) return -1; \
+		Object *target = interp->objects[target_handle]; \
+		for (int i = 0; i < rows; i++) { \
+			const double * restrict row = &MAT(source, i, 0); \
+			double accumulator = init_value; \
+			for (int j = 0; j < cols; j++) \
+				accumulator = combine(accumulator, row[j]); \
+			MAT(target, i, 0) = accumulator; \
+		} \
+		return target_handle; \
+	}
+
+#define MATRIX_REDUCE_COLUMNS_FN(name, init_value, combine) \
+	int name(Interpreter *interp, Object *source) { \
+		int rows = source->matrix.rows; \
+		int cols = source->matrix.columns; \
+		int target_handle = object_new_matrix(interp, 1, cols); \
+		if (interp->error_flag) return -1; \
+		Object *target = interp->objects[target_handle]; \
+		double * restrict target_elements = target->matrix.elements; \
+		for (int j = 0; j < cols; j++) target_elements[j] = init_value; \
+		for (int i = 0; i < rows; i++) { \
+			const double * restrict row = &MAT(source, i, 0); \
+			for (int j = 0; j < cols; j++) \
+				target_elements[j] = combine(target_elements[j], row[j]); \
+		} \
+		return target_handle; \
+	}
+
+MATRIX_REDUCE_OVERALL_FN(matrix_sum_overall, 0.0, ADD)
+MATRIX_REDUCE_OVERALL_FN(matrix_max_overall, -INFINITY, MAX)
+MATRIX_REDUCE_OVERALL_FN(matrix_min_overall, INFINITY, MIN)
+
+MATRIX_REDUCE_ROWS_FN(matrix_sum_rows, 0.0, ADD)
+MATRIX_REDUCE_ROWS_FN(matrix_max_rows, -INFINITY, MAX)
+MATRIX_REDUCE_ROWS_FN(matrix_min_rows, INFINITY, MIN)
+
+MATRIX_REDUCE_COLUMNS_FN(matrix_sum_columns, 0.0, ADD)
+MATRIX_REDUCE_COLUMNS_FN(matrix_max_columns, -INFINITY, MAX)
+MATRIX_REDUCE_COLUMNS_FN(matrix_min_columns, INFINITY, MIN)
 
 int create_matrix(Interpreter *interp) {
 	Val right = pop(interp);
@@ -472,32 +500,56 @@ void p_transpose(Interpreter *interp) {
 }
 
 
-#define REDUCE_OVERALL(primitive_name, word_name, fn, identity) \
+#define REDUCE_OVERALL_HANDLER(primitive_name, word_name, reduce_fn) \
 	void primitive_name(Interpreter *interp) { \
 		POP_MATRIX(source, word_name); \
-		push(interp, make_float(matrix_reduce_overall(source, fn, identity))); \
+		push(interp, make_float(reduce_fn(source))); \
 	}
 
-#define REDUCE_ROWS(primitive_name, word_name, fn, identity) \
+#define REDUCE_AXIS_HANDLER(primitive_name, word_name, reduce_fn) \
 	void primitive_name(Interpreter *interp) { \
 		POP_MATRIX(source, word_name); \
-		int target_handle = matrix_reduce_rows(interp, source, fn, identity); \
+		int target_handle = reduce_fn(interp, source); \
 		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \
 	}
 
-#define REDUCE_COLUMNS(primitive_name, word_name, fn, identity) \
-	void primitive_name(Interpreter *interp) { \
-		POP_MATRIX(source, word_name); \
-		int target_handle = matrix_reduce_columns(interp, source, fn, identity); \
-		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \
+REDUCE_OVERALL_HANDLER(p_sum, "sum", matrix_sum_overall)
+REDUCE_OVERALL_HANDLER(p_max, "max", matrix_max_overall)
+REDUCE_OVERALL_HANDLER(p_min, "min", matrix_min_overall)
+REDUCE_AXIS_HANDLER(p_row_sums, "row-sums", matrix_sum_rows)
+REDUCE_AXIS_HANDLER(p_row_maxes, "row-maxes", matrix_max_rows)
+REDUCE_AXIS_HANDLER(p_row_mins, "row-mins", matrix_min_rows)
+REDUCE_AXIS_HANDLER(p_column_sums, "column-sums", matrix_sum_columns)
+REDUCE_AXIS_HANDLER(p_column_maxes, "column-maxes", matrix_max_columns)
+REDUCE_AXIS_HANDLER(p_column_mins, "column-mins", matrix_min_columns)
+
+void p_matrix_range(Interpreter *interp) {
+	POP(step_val);
+	POP(end_val);
+	POP(start_val);
+
+	double start = VAL_NUMBER(start_val);
+	double end = VAL_NUMBER(end_val);
+	double step = VAL_NUMBER(step_val);
+
+	if (step == 0.0) {
+		fail(interp, "matrix1d-range: step cannot be zero");
+		return;
 	}
 
-REDUCE_OVERALL(p_sum, "sum", reduce_add, 0.0)
-REDUCE_OVERALL(p_max, "max", reduce_max, -INFINITY)
-REDUCE_OVERALL(p_min, "min", reduce_min, INFINITY)
-REDUCE_ROWS(p_row_sums, "row-sums", reduce_add, 0.0)
-REDUCE_ROWS(p_row_maxes, "row-maxes", reduce_max, -INFINITY)
-REDUCE_ROWS(p_row_mins, "row-mins", reduce_min, INFINITY)
-REDUCE_COLUMNS(p_column_sums, "column-sums", reduce_add, 0.0)
-REDUCE_COLUMNS(p_column_maxes, "column-maxes", reduce_max, -INFINITY)
-REDUCE_COLUMNS(p_column_mins, "column-mins", reduce_min, INFINITY)
+	if ((step > 0.0 && end < start) || (step < 0.0 && end > start)) {
+		fail(interp, "matrix1d-range: step sign does not match start/end direction");
+		return;
+	}
+
+	int n_steps = (int)((end - start) / step) + 1;
+	NEW_MATRIX(handle, matrix, 1, n_steps);
+	double *elements = matrix->matrix.elements;
+	
+	for (int i = 0; i < n_steps; i++)
+		elements[i] = start + i * step;
+
+	push(interp, make_matrix(handle));
+
+	DISPATCH(interp);
+}

@@ -39,7 +39,7 @@
 0 ok
 0 ok
 0 ok
-0|error - : expected two floats, two sets, or two matrices; got a float and a string
+0|error - : expected two floats, two sets, two matrices, or scalar/matrix; got a float and a string
 0|error reverse: expected array or set; got a string
 0|error take: expected a float length; got a string
 0|error reverse: expected array or set; got a string

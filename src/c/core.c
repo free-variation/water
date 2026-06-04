@@ -636,13 +636,13 @@ void dict_ensure(Interpreter *interp, int extra) {
 	v->dict_cap = newcap;
 }
 
-int create_header(Interpreter *interp, const char *name, int immediate) {
+int create_header(Interpreter *interp, const char *name, int flags) {
 	dict_ensure(interp, 4);
 
 	int previous_latest = interp->vocab->latest_cfa;
 	int name_offset = alloc_name(interp, name);
 	interp->vocab->dict[interp->vocab->here++] = previous_latest;
-	interp->vocab->dict[interp->vocab->here++] = immediate ? 1 : 0;
+	interp->vocab->dict[interp->vocab->here++] = flags;
 	interp->vocab->dict[interp->vocab->here++] = name_offset;
 	interp->vocab->dict[interp->vocab->here++] = 0;
 
@@ -650,8 +650,8 @@ int create_header(Interpreter *interp, const char *name, int immediate) {
 	return interp->vocab->latest_cfa;
 }
 
-int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int immediate) {
-	int cfa = create_header(interp, name, immediate);
+int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int flags) {
+	int cfa = create_header(interp, name, flags);
 	emit(interp, (cell)handler);
 	return cfa;
 }
@@ -672,8 +672,7 @@ void emit_call(Interpreter *interp, int target_cfa) {
 
 void emit_val_literal(Interpreter *interp, Val value) {
 	emit_call(interp, interp->vocab->literal_cfa);
-	emit(interp, (cell)VAL_TAG(value));
-	emit(interp, VAL_DATA(value));
+	emit(interp, (cell)value.bits);
 }
 
 void fail(Interpreter *interp, const char *fmt, ...) {
@@ -722,9 +721,9 @@ void p_stop(Interpreter *interp) {
 }
 
 void p_literal(Interpreter *interp) {
-	Tag tag = (Tag)interp->vocab->dict[interp->ip++];
-	int64_t data = interp->vocab->dict[interp->ip++];
-	push(interp, make_tagged(tag, data));
+	Val value;
+	value.bits = (uint64_t)interp->vocab->dict[interp->ip++];
+	push(interp, value);
 
 	DISPATCH(interp);
 }
@@ -1339,10 +1338,12 @@ static int op_cell_count(Vocabulary *vocab, cell *dict, int cursor) {
 	if (handler == vocab->dict[vocab->enter_locals_mixed_cfa])
 		return 3 + (int)dict[cursor + 2];
 
-	if (handler == vocab->dict[vocab->literal_cfa]
-	    || handler == vocab->dict[vocab->local_fetch_cfa]
+	if (handler == vocab->dict[vocab->local_fetch_cfa]
 	    || handler == vocab->dict[vocab->local_store_cfa])
 		return 3;
+
+	if (handler == vocab->dict[vocab->literal_cfa])
+		return 2;
 
 	if (handler == vocab->dict[vocab->dostr_cfa]
 	    || handler == vocab->dict[vocab->branch_cfa]
@@ -1411,8 +1412,8 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 		int n = op_cell_count(vocab, vocab->dict, cursor);
 
 		if (handler == literal_ptr) {
-			Val value = make_tagged((Tag)vocab->dict[cursor + 1],
-			                        vocab->dict[cursor + 2]);
+			Val value;
+			value.bits = (uint64_t)vocab->dict[cursor + 1];
 			mark_value(interp, value);
 		} else if (handler == dostr_ptr) {
 			Val value = make_string((int)vocab->dict[cursor + 1]);
@@ -1537,7 +1538,7 @@ void p_save(Interpreter *interp) {
 }
 
 #define IMAGE_MAGIC "LF4I"
-#define IMAGE_VERSION ((uint32_t)1)
+#define IMAGE_VERSION ((uint32_t)2)
 
 #define HANDLER_DOCOL 1
 
@@ -2106,23 +2107,23 @@ int main(void) {
 	define_primitive(interp, "see", p_see, 0);
 
 	interp->vocab->exit_cfa = define_primitive(interp, "exit", p_exit, 0);
-	interp->vocab->literal_cfa = define_primitive(interp, "(lit)", p_literal, 0);
-	interp->vocab->branch_cfa = define_primitive(interp, "(branch)", p_branch, 0);
-	interp->vocab->zbranch_cfa = define_primitive(interp, "(0branch)", p_0branch, 0);
-	interp->vocab->qzbranch_cfa = define_primitive(interp, "(?0branch)", p_qzbranch, 0);
-	interp->vocab->dostr_cfa = define_primitive(interp, "(dostr)", p_dostr, 0);
-	interp->vocab->stop_cfa = define_primitive(interp, "(stop)", p_stop, 0);
-	interp->vocab->to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 0);
-	interp->vocab->enter_locals_cfa = define_primitive(interp, "(enter-locals)", p_enter_locals, 0);
-	interp->vocab->enter_locals_to_cfa = define_primitive(interp, "(enter-locals-to)", p_enter_locals_to, 0);
-	interp->vocab->enter_locals_mixed_cfa = define_primitive(interp, "(enter-locals-mixed)", p_enter_locals_mixed, 0);
-	interp->vocab->leave_locals_cfa = define_primitive(interp, "(leave-locals)", p_leave_locals, 0);
-	interp->vocab->local_fetch_cfa = define_primitive(interp, "(local@)", p_local_fetch, 0);
-	interp->vocab->local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 0);
-	interp->vocab->local_fetch_0depth_cfa = define_primitive(interp, "(local@0)", p_local_fetch_0depth, 0);
-	interp->vocab->local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 0);
-	interp->vocab->local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 0);
-	interp->vocab->local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 0);
+	interp->vocab->literal_cfa = define_primitive(interp, "(lit)", p_literal, 4);
+	interp->vocab->branch_cfa = define_primitive(interp, "(branch)", p_branch, 4);
+	interp->vocab->zbranch_cfa = define_primitive(interp, "(0branch)", p_0branch, 4);
+	interp->vocab->qzbranch_cfa = define_primitive(interp, "(?0branch)", p_qzbranch, 4);
+	interp->vocab->dostr_cfa = define_primitive(interp, "(dostr)", p_dostr, 4);
+	interp->vocab->stop_cfa = define_primitive(interp, "(stop)", p_stop, 4);
+	interp->vocab->to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 4);
+	interp->vocab->enter_locals_cfa = define_primitive(interp, "(enter-locals)", p_enter_locals, 4);
+	interp->vocab->enter_locals_to_cfa = define_primitive(interp, "(enter-locals-to)", p_enter_locals_to, 4);
+	interp->vocab->enter_locals_mixed_cfa = define_primitive(interp, "(enter-locals-mixed)", p_enter_locals_mixed, 4);
+	interp->vocab->leave_locals_cfa = define_primitive(interp, "(leave-locals)", p_leave_locals, 4);
+	interp->vocab->local_fetch_cfa = define_primitive(interp, "(local@)", p_local_fetch, 4);
+	interp->vocab->local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 4);
+	interp->vocab->local_fetch_0depth_cfa = define_primitive(interp, "(local@0)", p_local_fetch_0depth, 4);
+	interp->vocab->local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 4);
+	interp->vocab->local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 4);
+	interp->vocab->local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 4);
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);
@@ -2156,6 +2157,7 @@ int main(void) {
 	define_primitive(interp, "@i,j", p_at_ij, 0);
 	define_primitive(interp, "diagonal", p_diagonal, 0);
 	define_primitive(interp, "reshape", p_reshape, 0);
+	define_primitive(interp, "matrix1d-range", p_matrix_range, 0);
 	define_primitive(interp, "sum", p_sum, 0);
 	define_primitive(interp, "row-sums", p_row_sums, 0);
 	define_primitive(interp, "column-sums", p_column_sums, 0);

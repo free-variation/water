@@ -18,6 +18,40 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 	return result_handle;
 }
 
+/* Scalar broadcast: scalar OP each-element-of-matrix. Reads `left` (scalar)
+ * and `right` (matrix) from the enclosing handler scope. */
+#define BROADCAST_SCALAR_OP_MATRIX(op) \
+	do { \
+		double scalar = VAL_NUMBER(left); \
+		Object *matrix_source = interp->objects[VAL_DATA(right)]; \
+		int target_handle = object_new_matrix(interp, matrix_source->matrix.rows, matrix_source->matrix.columns); \
+		if (interp->error_flag) return; \
+		Object *target = interp->objects[target_handle]; \
+		size_t num_elements = (size_t)matrix_source->matrix.rows * (size_t)matrix_source->matrix.columns; \
+		const double * restrict source_elements = matrix_source->matrix.elements; \
+		double * restrict target_elements = target->matrix.elements; \
+		for (size_t i = 0; i < num_elements; i++) \
+			target_elements[i] = scalar op source_elements[i]; \
+		push(interp, make_matrix(target_handle)); \
+	} while (0)
+
+/* Scalar broadcast: each-element-of-matrix OP scalar. Reads `left` (matrix)
+ * and `right` (scalar) from the enclosing handler scope. */
+#define BROADCAST_MATRIX_OP_SCALAR(op) \
+	do { \
+		double scalar = VAL_NUMBER(right); \
+		Object *matrix_source = interp->objects[VAL_DATA(left)]; \
+		int target_handle = object_new_matrix(interp, matrix_source->matrix.rows, matrix_source->matrix.columns); \
+		if (interp->error_flag) return; \
+		Object *target = interp->objects[target_handle]; \
+		size_t num_elements = (size_t)matrix_source->matrix.rows * (size_t)matrix_source->matrix.columns; \
+		const double * restrict source_elements = matrix_source->matrix.elements; \
+		double * restrict target_elements = target->matrix.elements; \
+		for (size_t i = 0; i < num_elements; i++) \
+			target_elements[i] = source_elements[i] op scalar; \
+		push(interp, make_matrix(target_handle)); \
+	} while (0)
+
 void p_add(Interpreter *interp) {
 	POP(right);
 	POP(left);
@@ -29,18 +63,22 @@ void p_add(Interpreter *interp) {
 	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
 		push(interp, make_set(set_union(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
-		int target_handle = matrix_scalar_op(interp, left, right, scalar_add);
+		int target_handle = matrix_add(interp, left, right);
 		if (target_handle < 0)
 			return;
 		push(interp, make_matrix(target_handle));
 	}
+	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
+		BROADCAST_SCALAR_OP_MATRIX(+);
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
+		BROADCAST_MATRIX_OP_SCALAR(+);
 	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY) {
 		push(interp, left);
 		push(interp, right);
 		execute_cfa(interp, find(interp, "concat"));
 	}
 	else
-		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, or two arrays; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
 	DISPATCH(interp);
 }
@@ -54,13 +92,17 @@ void p_sub(Interpreter *interp) {
 	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
 		push(interp, make_set(set_difference(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
-		int target_handle = matrix_scalar_op(interp, left, right, scalar_subtract);
+		int target_handle = matrix_sub(interp, left, right);
 		if (target_handle < 0)
 			return;
 		push(interp, make_matrix(target_handle));
 	}
+	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
+		BROADCAST_SCALAR_OP_MATRIX(-);
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
+		BROADCAST_MATRIX_OP_SCALAR(-);
 	else
-		fail(interp, "- : expected two floats, two sets, or two matrices; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+		fail(interp, "- : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
 	DISPATCH(interp);
 }
@@ -74,13 +116,17 @@ void p_mul(Interpreter *interp) {
 	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
 		push(interp, make_set(set_intersect(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
-		int target_handle = matrix_scalar_op(interp, left, right, scalar_multiply);
+		int target_handle = matrix_mul(interp, left, right);
 		if (target_handle < 0)
 			return;
 		push(interp, make_matrix(target_handle));
 	}
+	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
+		BROADCAST_SCALAR_OP_MATRIX(*);
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
+		BROADCAST_MATRIX_OP_SCALAR(*);
 	else
-		fail(interp, "* : expected two floats, two sets, or two matrices; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+		fail(interp, "* : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
 	DISPATCH(interp);
 }
@@ -104,14 +150,22 @@ void p_div(Interpreter *interp) {
 				return;
 			}
 		}
-		int target_handle = matrix_scalar_op(interp, left, right, scalar_divide);
+		int target_handle = matrix_div(interp, left, right);
 		if (target_handle < 0)
 			return;
 		push(interp, make_matrix(target_handle));
 	}
+	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
+		BROADCAST_SCALAR_OP_MATRIX(/);
+	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT) {
+		if (VAL_NUMBER(right) == 0.0) {
+			fail(interp, "/ : division by zero");
+			return;
+		}
+		BROADCAST_MATRIX_OP_SCALAR(/);
+	}
 	else
-		fail(interp, "/ : expected two floats or two matrices; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
-
+		fail(interp, "/ : expected two floats, two matrices, or scalar/matrix; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
 	DISPATCH(interp);
 }
@@ -212,15 +266,15 @@ COMPARISON_PRIMITIVE(p_eq, ==)
 COMPARISON_PRIMITIVE(p_lt, <)
 COMPARISON_PRIMITIVE(p_gt, >)
 
-#define UNARY_FLOAT_PRIMITIVE(name, word_name, expr) \
+#define UNARY_FLOAT_PRIMITIVE(name, opname, expr) \
 	void name(Interpreter *interp) { \
-		POP(operand); \
-		if (VAL_TAG(operand) != T_FLOAT) { \
-			fail(interp, word_name ": expected a float; got %s", tag_name(VAL_TAG(operand))); \
+		if (interp->dsp < 1) { \
+			fail(interp, "%s: data stack underflow", opname); \
 			return; \
 		} \
-		double n = VAL_NUMBER(operand); \
-		push(interp, make_float(expr)); \
+		Val *top = &interp->data_stack[interp->dsp - 1]; \
+		double n = top->number; \
+		top->number = (expr); \
 		DISPATCH(interp); \
 	}
 
@@ -424,8 +478,6 @@ void p_side_depth(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-
-
 void p_execute(Interpreter *interp) {
 	POP_XT(value, "execute");
 	execute_cfa(interp, value);
@@ -541,6 +593,8 @@ void p_resume(Interpreter *interp) {
 void p_words(Interpreter *interp) {
 	int cnt = 0;
 	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
+		if (WORD_IS_INTERNAL(interp->vocab, cf))
+			continue;
 		fputs(&interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)], stdout);
 		putchar(' ');
 		if (++cnt % 8 == 0)

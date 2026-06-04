@@ -1,0 +1,37 @@
+\ Leibniz pi — port of https://github.com/niklas-heer/speed-comparison
+\ The benchmark computes pi via the Leibniz series:
+\   pi = 4 * (1 - 1/3 + 1/5 - 1/7 + 1/9 - ...)
+\
+\ The reference Python:
+\   x = 1.0
+\   pi = 1.0
+\   for i in range(2, rounds + 3):
+\       x = -x
+\       pi += x / (2 * i - 1)
+\   pi *= 4.0
+\
+\ Loop index i ranges 2..rounds+2, so rounds+1 iterations. In lforth
+\ we use i-times with idx 0..rounds, and the divisor is 2*idx + 3
+\ (= 2*(idx+2) - 1). The compound op f*+ collapses the multiply-add.
+
+variable ROUNDS
+1000000000 to ROUNDS
+
+variable PI
+variable X
+variable T0
+
+: leibniz
+  1.0 to PI
+  1.0 to X
+  now to T0
+  [: |> idx |
+     X negate to X
+     X  idx 2.0 3.0 f*+  /f  PI +f  to PI
+  :] ROUNDS 1+ i-times
+  PI 4.0 *f to PI
+  now T0 - "elapsed: {0}s" . cr
+  PI "pi: {0}" . cr ;
+
+leibniz
+bye

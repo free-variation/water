@@ -22,6 +22,17 @@ the two organizations are mechanically small but conceptually shift how
 every compiled word body is encoded, so a careful walk through the model
 is worth the time.
 
+**Reading note.** Parts 1-15 work through indirect threading (ITC) as
+the starting model and direct threading (DTC) as the redesign. Both
+have been built — DTC is the current dispatch model. Part 16 then
+describes the *tail-call dispatch* layer that sits on top of DTC and
+is also currently in place: each handler ends by `musttail`-jumping
+to the next, rather than returning to a central loop. Parts 17-18
+summarize the combined state.
+
+If you only want the current state, jump to Parts 16-18. Parts 1-15
+remain the long-form teaching narrative.
+
 ---
 
 ## Part 1: The inner loop
@@ -1496,51 +1507,126 @@ if branch prediction and cache effects compound.
 
 ---
 
-## Part 16: What comes after — computed-goto threading
+## Part 16: Tail-call dispatch — the layer on top of DTC
 
-DTC is the first step. The natural next step is *computed-goto threading*
-(also called *token threading* in some literature) — a technique where
-the inner loop is replaced by inline `goto` statements at the end of
-every primitive's body, dispatching directly to the next handler
-without returning to a central loop.
+DTC reduced per-op dispatch to one read. The next architectural layer —
+the one currently in place — addresses *where control flows between
+ops*, not how the next handler is identified.
 
-In C with GCC/Clang's labels-as-values extension:
+In the DTC-only model, every handler runs, returns to `run_inner`, and
+`run_inner` loops to dispatch the next op. The return-then-dispatch
+pattern has two costs:
+
+1. **Function call overhead per op**: prologue, epilogue, return.
+2. **One central indirect call site**: the branch predictor sees a
+   single "jump to some handler" instruction with ~70 possible targets;
+   prediction accuracy across the whole program suffers.
+
+The fix is *tail-call dispatch*: each handler ends by tail-calling the
+next handler directly, skipping the return-to-loop step. The chain of
+handlers runs as one continuous flow with no central trampoline.
+
+### The DISPATCH macro
+
+Every handler now ends with:
 
 ```c
-void *table[] = { &&l_dup, &&l_mul, &&l_add, &&l_exit, ... };
+DISPATCH(interp);
+```
 
+which expands to:
+
+```c
+do {
+    if ((interp)->unwinding || (interp)->error_flag)
+        return;
+    __attribute__((musttail))
+    return ((cfa_handler)(interp)->vocab->dict[(interp)->ip++])(interp);
+} while (0)
+```
+
+The `__attribute__((musttail))` on the `return` statement (clang 13+,
+gcc 13+) forces the compiler to emit a JMP instruction rather than a
+CALL+RET. The next handler replaces the current stack frame. The
+dispatch chain runs at constant stack depth no matter how many ops
+execute.
+
+The unwinding/error_flag check at the top is what makes the chain
+break cleanly when something fails — `fail()` sets `error_flag`,
+`shift-with` sets `unwinding`, and the next `DISPATCH` notices and
+returns instead of chaining. Control returns to `run_inner`, which
+sees the flag and unwinds.
+
+### Why this gives a real speedup
+
+Two effects:
+
+1. **Per-op branch prediction**: each `DISPATCH` site is a distinct
+   indirect-jump instruction at a distinct PC. The CPU's indirect-branch
+   predictor builds a per-site profile, so the jump out of `p_local@0`
+   has its own predicted target (whatever typically follows local fetch
+   in compiled code), separate from the jump out of `+f`. Prediction
+   accuracy goes from ~50% (single central site, 70 targets) to >90%
+   (per-site, ~2-3 targets each).
+
+2. **No prologue/epilogue between ops**: with `musttail`, the chain is
+   a sequence of unconditional JMPs through handler bodies. No
+   register save/restore between ops. Hot variables like `dsp` and
+   `ip` can stay in registers across handlers as long as the calling
+   convention allows.
+
+### What it costs
+
+- **clang 13+ / gcc 13+ required** for `musttail`. Older compilers
+  refuse to compile.
+- **The unwinding/error_flag check is a small per-op tax**. About 2-3
+  cycles. Could be removed by routing all failure paths through
+  explicit returns at the point of failure (every handler that calls
+  `fail()` would also need a `return`), but the cost is in the noise
+  on modern CPUs (predicted-not-taken branch is essentially free).
+- **`execute_cfa` needs the trampoline mechanism even for non-docol
+  handlers**, because a handler called from C can't tail-call into
+  garbage — it needs `dict[ip]` to point at a `(stop)` cell so the
+  chain terminates cleanly. The trampoline at `TRAMPOLINE_SLOT` is set
+  up before every `execute_cfa` invocation, even for primitive calls.
+
+### Measured impact
+
+On `nbody-destruct-to.l4`: ~10% reduction in wall time. The benefit is
+biggest on dispatch-bound code (many short handlers in sequence) and
+smaller on code dominated by per-op body work.
+
+### The alternative: computed-goto threading
+
+The other way to get the same per-op branch-prediction benefit is
+*computed-goto threading*. Each handler ends with an inline
+`goto *dict[ip++]` rather than a return-to-loop or a tail-call. In C
+with GCC/Clang's labels-as-values extension:
+
+```c
 l_dup:    /* p_dup body */
           goto *(void**)dict[ip++];
 
 l_mul:    /* p_mul body */
           goto *(void**)dict[ip++];
-
-/* etc */
 ```
 
-Each handler dispatches to the next one inline. The branch predictor
-can now see the *specific transition* (dup → mul, mul → add, etc.) at
-each dispatch site, not just "an indirect jump." Hot transitions get
-predicted; cold ones don't. CPython adopted this in 3.11 and reported
-15-20% speedup.
+Same per-handler-site indirect-jump prediction benefit. CPython 3.11
+used this and reported 15-20% speedup.
 
-The catch: each handler can no longer be a separate C function. They
-all have to live as labels inside one giant function — typically the
-inner interpreter loop itself. logicforth's primitives are currently
-spread across `core.c`, `words.c`, `collections.c`, `matrix.c`,
-`functional.c` as separate `void p_X(...)` functions. Adopting
-computed-goto means consolidating them into one big switch-with-labels.
+The catch: each handler has to live as a label inside one giant
+function rather than a separate `void p_X(...)`. logicforth's ~70
+primitives are spread across `core.c`, `words.c`, `collections.c`,
+`matrix.c`, `functional.c`. Computed-goto would force consolidation
+into one giant switch-with-labels, which loses the per-handler debug
+granularity, complicates the inliner, and forces the compiler to
+register-allocate across the whole function.
 
-That's a bigger refactor than DTC. DTC keeps the existing function
-structure intact. Computed-goto would require rewriting the dispatch
-loop and inlining (or `goto`-ing into) every handler.
-
-DTC is a prerequisite for computed-goto: you need body cells to hold
-direct dispatch targets, not indices that require a second read before
-the goto. DTC lays the foundation; computed-goto exploits it.
-
-We don't have to do computed-goto. DTC alone provides a solid
-incremental win. Computed-goto is in the deferred-work pile.
+Tail-call dispatch was chosen instead because it gives most of the
+same prediction benefit (each handler still ends with its own indirect
+jump, just expressed as `musttail return f(x)` instead of `goto *p`)
+while keeping each handler as its own C function. Modular structure
+preserved, perf benefit captured.
 
 ---
 
@@ -1548,18 +1634,28 @@ incremental win. Computed-goto is in the deferred-work pile.
 
 In slogan form:
 
-> **ITC: body cells are indices. Dispatch is two reads.**
-> **DTC: body cells are pointers. Dispatch is one read.**
+> **ITC: body cells are indices. Dispatch is two reads + a function call.**
+> **DTC: body cells are pointers. Dispatch is one read + a function call.**
+> **DTC + tail-call: body cells are pointers. Dispatch is one read + a tail-jump.**
 
-The change replaces one level of indirection (CFA-index → handler) with
-a direct pointer in the compiled body. The cost is image-format
-complexity (pointers aren't portable; we now translate them on
-save/load) and a slightly larger compiled body (colon-def, variable, and
-symbol references take two cells instead of one).
+Two changes, layered:
 
-The benefit is wall-time speedup on dispatch-bound workloads (~10-15%
-per the projection) and the architectural foundation for the next-tier
-dispatch optimization (computed-goto threading).
+1. **DTC** replaced one level of indirection (CFA-index → handler) with
+   a direct pointer in the compiled body. The cost is image-format
+   complexity (pointers aren't portable; we translate them on
+   save/load) and a slightly larger compiled body (colon-def, variable,
+   and symbol references take two cells instead of one).
+
+2. **Tail-call dispatch** replaced the return-to-central-loop pattern
+   with a `musttail` jump from each handler to the next. Each handler
+   stays a separate C function, but control flows between handlers as
+   unconditional jumps rather than call/return pairs. Per-handler-site
+   indirect-jump prediction replaces the single-central-site prediction
+   that hampered the old loop.
+
+The combined benefit is ~10-15% on dispatch-bound workloads. Most of
+the win comes from tail-call dispatch (per-op branch prediction); DTC's
+"one fewer read" contribution alone is smaller.
 
 The details that make it work:
 
@@ -1582,61 +1678,76 @@ The details that make it work:
 
 - A version bump on the image file format.
 
-Total size of the change: a few hundred lines across the dispatch path,
-the compiler, the GC body walker, and the image format. The conceptual
-shift is "every body cell that today is an index becomes the value it
-indexed." With that in place, computed-goto becomes addressable as
-the next dispatch-level optimization.
+Total size of the DTC change: a few hundred lines across the dispatch
+path, the compiler, the GC body walker, and the image format. The
+conceptual shift is "every body cell that today is an index becomes
+the value it indexed."
+
+Tail-call dispatch on top added:
+
+- A `DISPATCH(interp)` macro in `logicforth.h` doing the
+  unwinding/error-flag check plus a `musttail` jump to the next
+  handler.
+
+- `DISPATCH` appended to every non-halting handler (about 140 of them).
+  Halting handlers — `p_bye`, `p_stop`, error-returning paths — just
+  `return` instead of dispatching.
+
+- Handler signature simplified from `void p_X(Interpreter *, cell *)` to
+  `void p_X(Interpreter *)`. The cfa pointer was unused in nearly every
+  handler; the three that needed operand-cell access (`docol`, `dovar`,
+  `dosym`) read the operand from `interp->ip` directly.
+
+- `run_inner`'s loop kept around as the entry point and the cleanup
+  point when the chain breaks (error, halt, unwind). The hot path
+  doesn't iterate the loop — the tail-call chain runs until something
+  returns.
 
 ---
 
 ## Part 18: Where to look in the source
 
-Indirect-threaded (current):
+DTC + tail-call dispatch (current state):
 
-- **`run_inner`** in `src/c/core.c` — the dispatch loop. The two-read
-  pattern is `cfa_index = dict[ip++]; handler = dict[cfa_index];`.
-- **`docol` / `dovar` / `dosym`** in `src/c/core.c` — the non-primitive
-  handlers. Each reads its data via the `cfa *` argument.
-- **`execute_cfa`** in `src/c/core.c` — the C-side entry point. The
-  docol case uses the `TRAMPOLINE_SLOT` / `DICT_RESERVED` mechanism.
+- **`run_inner`** in `src/c/core.c` — the dispatch loop. Reads
+  `handler = dict[ip++]` once, then calls the handler. The chain takes
+  over from there via tail calls; control only returns to this loop
+  when a handler breaks out (error, halt, unwind).
+- **`DISPATCH(interp)`** macro in `src/c/logicforth.h` — the tail-call
+  dispatcher. Every non-halting handler ends with this. Expands to an
+  unwinding/error-flag check followed by a `musttail` jump to the next
+  handler.
+- **`docol` / `dovar` / `dosym`** in `src/c/core.c` — read their target
+  cfa from `dict[interp->ip++]`, advance, then do their work, then
+  `DISPATCH`.
+- **`execute_cfa`** in `src/c/core.c` — the C-side entry point. Sets
+  up the `TRAMPOLINE_SLOT` (handler + optional operand + `(stop)` cell)
+  and calls `run_inner` once. Required for *any* handler invoked from
+  C, including primitives, because the handler's `DISPATCH` needs a
+  valid next-op cell to terminate the chain.
 - **`define_primitive`** in `src/c/core.c` — the simplest defining word.
-  Shows that CFA cells already hold handler pointers directly; the
-  indirection is only in body cells of *other* words.
-- **`run_outer`** in `src/c/core.c` — the parser/compiler. The line
-  `emit(interp, (cell)cf);` in the "known word during compilation" branch
-  is the source of every ITC dispatch cell in every body.
+  Takes a flag bitmask (immediate, inline, internal).
+- **`run_outer`** in `src/c/core.c` — the parser/compiler. The
+  `emit_call(interp, cf)` in the compile branch is where every body
+  cell gets its dispatch target.
+- **`emit_call`** in `src/c/core.c` — emits one cell for primitives,
+  two cells for handlers that thread their target's identity through
+  (`docol`, `dovar`, `dosym`).
 - **`emit_val_literal`** and `p_literal` in `src/c/core.c` — the
   prototype for "primitive with inline operands." Operand reading via
   `dict[ip++]` in the handler is the pattern other operand-bearing ops
   (branches, locals, `dostr`, `to-var`) all follow.
-- **`mark_body`** in `src/c/core.c` — the dictionary walker. The per-op
-  branches encode the same body-layout knowledge that DTC needs in
-  `emit_call` and the image format.
-- **`p_save_image` / `p_load_image`** in `src/c/core.c` — the current
-  image format. The `HANDLER_DOCOL` / `HANDLER_DOVAR` / `HANDLER_DOSYM`
-  enum is the tiny prototype that DTC's full handler-id table generalizes.
-
-Direct-threaded (planned):
-
-- `PLAN.md`, section "Interpreter performance — next up," has the
-  short-form spec. This document is the long-form one.
-- The change shows up in: `run_inner`, `docol`, `dovar`, `dosym`,
-  `execute_cfa`, `mark_body`, `p_save_image`, `p_load_image`, and a new
-  `emit_call` helper. The compile-time call site in `run_outer` (and
-  `p_tick`) switches from `emit(...)` to `emit_call(...)`.
-- The `Vocabulary` struct's `literal_cfa` / `dostr_cfa` / `branch_cfa` /
-  etc. fields can either be kept (as cached handler-pointer values) or
-  removed (replaced by direct references to the handler functions). Each
-  approach is a style choice; either works.
+- **`mark_body`** in `src/c/core.c` — the dictionary walker for GC.
+  Per-op branches keyed on handler-pointer comparisons.
+- **`p_save_image` / `p_load_image`** in `src/c/core.c` — the image
+  format. Handler pointers are translated through a stable
+  handler-id table (`HANDLER_DOCOL` / `HANDLER_DOVAR` / `HANDLER_DOSYM`
+  for the non-primitive cases).
 
 For broader context:
 
-- **`docs/gc.md`** — the GC primer. The `mark_body` walker that DTC
-  also needs to update is documented there with the per-op branches
-  that inform the DTC body-layout table.
+- **`docs/gc.md`** — the GC primer. The `mark_body` walker is documented
+  there.
 - **`docs/continuations.md`** — the continuation primer. The dispatch
   loop's relationship to `run_inner`, `execute_cfa`, and the trampoline
-  is covered there in the context of continuation capture; DTC's
-  modifications preserve the same overall structure, just with one
-  fewer read per dispatched op.
+  is covered there in the context of continuation capture.
