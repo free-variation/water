@@ -724,6 +724,46 @@ The mapping isn't quite 1:1 — object keys are strings in JSON but symbols in a
 frame (intern on parse), and `null` needs a representation (`T_NONE` or a
 reserved symbol). Settle those at implementation time.
 
+**Decision: hand-roll, no vendored library.** The JSON grammar is small enough
+(RFC 8259 fits on a page) that a one-pass recursive-descent parser building Vals
+directly is ~200-400 lines of C with no dependency. That keeps the type mapping
+above (numbers → `T_FLOAT`, objects → frames, `null` → sentinel) under our exact
+control, which a generic library's tree would obscure. `frame>json` is a
+`print_val`-style recursive walk. A tokenizer like jsmn was considered and
+rejected: it only handles the structural scan (brace matching, string
+boundaries) — the bug-prone parts (string unescaping incl. `\uXXXX` surrogate
+pairs, number conversion, type discrimination, strict rejection) stay ours
+either way, and its zero-allocation advantage evaporates when we materialize the
+whole document into frames.
+
+---
+
+## YAML ↔ frame
+
+Same surface as JSON: `yaml>frame ( string -- value )` parses,
+`frame>yaml ( value -- string )` serializes, over the same value mapping
+(mappings → frames, sequences → arrays, scalars → floats/strings/booleans,
+`null` → sentinel).
+
+**Decision: vendor libyaml, static-linked.** Unlike JSON, the YAML spec is too
+large to hand-roll responsibly (anchors, aliases, tags, flow vs block styles,
+multi-document streams, implicit type coercion). libyaml is the canonical pure-C
+implementation, zero external dependencies of its own, so its `src/*.c` vendor
+into the binary and static-link like the SQLite amalgamation (multiple files,
+not one unit, but no system dependency). It's an event/SAX parser with no data
+tree, so we write the event-stream → `T_FRAME` glue ourselves — which is the
+logicforth-specific work regardless. Alternatives weighed and rejected:
+libfyaml (more complete YAML 1.2 but heavier), rapidyaml/ryml (fastest and
+single-file-amalgamatable, but C++ — drags a C++ TU and runtime into the build),
+and subset hand-rolls (small but silently reject anchors/tags/flow — the
+"looks like the format but isn't" CSV trap the TSV section warns against).
+
+Open questions at implementation time: scalar type inference (when is `1.5` a
+float vs the string `"1.5"` — YAML's implicit typing rules); how anchors/aliases
+resolve into frames (share vs deep-copy); multi-document streams (first doc only
+vs array of docs); and `frame>yaml` style choices (block vs flow, when to quote
+scalars).
+
 ---
 
 ## Foreign function interface
