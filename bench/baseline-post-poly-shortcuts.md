@@ -82,13 +82,17 @@ faster, with identical exact IEEE division.
 | nbody          | 20_000 steps    |   0.0476 s |   0.0499 s  | 1.05×   |
 | fannkuch       | N = 9           |   0.1845 s |   0.1890 s  | 1.02×   |
 | spectral-norm  | N = 130, 50×    |   2.36 s   |   2.566 s   | 1.09×   |
+| scimark-lu     | N = 100, 100×   |    2.08 s  |    5.67 s   | 2.73×   |
 
-logicforth now leads every standalone benchmark. The last two crossed this
-session: fannkuch once its pre-test loops moved to `begin … while … repeat`
+logicforth leads every standalone benchmark. fannkuch and spectral-norm crossed
+this session: fannkuch once its pre-test loops moved to `begin … while … repeat`
 (dropping the sentinel-flag idiom), and spectral-norm once `eval_A` — its
-~17M-call hot spot — was marked `inline`. Local-accumulate fusion then folded
-spectral-norm's `acc f+ to acc` inner reduction into a single op, taking it from
-~1.03× to ~1.09×.
+~17M-call hot spot — was marked `inline`, then local-accumulate fusion folded its
+`acc f+ to acc` reduction into a single op (~1.03× → ~1.09×). scimark-lu is a
+direct translation of pyperformance's dense LU kernel (Gaussian elimination with
+partial pivoting, array-of-rows, scalar inner loops); both sides factor the
+identical RNG-filled matrix to the same checksum, and logicforth's faster per-op
+dispatch carries it to ~2.7× with no matrix machinery involved.
 
 ## Reproduce
 
@@ -108,11 +112,14 @@ python3.14 bench/synth.py | grep -E "^phase"
   | ./logicforth | grep -i elapsed
 { echo "variable ITERATIONS 50 to ITERATIONS"; cat bench/spectral-norm.l4; } \
   | ./logicforth | grep -i elapsed
+{ echo "variable ITERATIONS 100 to ITERATIONS"; cat bench/scimark-lu.l4; } \
+  | ./logicforth | grep -i elapsed
 
 python3.14 bench/pyperf_nbody.py 20000
 python3.14 bench/pyperf_nqueens.py 8
 python3.14 bench/pyperf_fannkuch.py 9
 python3.14 bench/pyperf_spectral_norm.py 50
+python3.14 bench/pyperf_scimark_lu.py 100
 
 # leibniz Python reference (reads rounds.txt in the cwd):
 curl -fsSL https://raw.githubusercontent.com/niklas-heer/speed-comparison/master/src/leibniz.py -o leibniz_ref.py

@@ -1,0 +1,85 @@
+\ scimark LU factorization (dense, partial pivoting), N=100 — direct port of
+\ pyperformance bm_scimark's LU kernel. A is an array of row-arrays (so the
+\ pivot row-swap is an O(1) reference swap, as in the reference's ArrayList).
+\ Each cycle copies the pristine matrix into lu and factors it in place, exactly
+\ like bench_LU. Cycle count comes from ITERATIONS.
+\
+\ The input is filled from scimark's Random(7) LCG; its initialized 17-element
+\ state for seed 7 is hardcoded here (so the matrix matches the reference and
+\ the factorization checksum is verifiable: 633.719856 at N=100).
+
+variable RM  variable RI  variable RJ
+variable M1   2147483647.0 to M1
+variable DM1  4.656612875245797e-10 to DM1
+
+: rng-init
+  [ 253932.0 731212090.0 468995992.0 1775900326.0 1784309764.0 636090706.0
+    606937648.0 841957950.0 1453856540.0 1744446058.0 305151944.0 1494977238.0
+    896709940.0 1989340290.0 810774624.0 217839726.0 200215116.0 ] to RM
+  4 to RI  16 to RJ ;
+
+: rng-next ( -- d )
+  | k |
+  RM RI @i  RM RJ @i  f-  to k
+  k 0 lt if  k M1 f+ to k  then
+  RM RJ k !i drop
+  RI 0 = if 16 to RI else RI f1- to RI then
+  RJ 0 = if 16 to RJ else RJ f1- to RJ then
+  DM1 k f* ;
+
+: build-empty ( n -- A )
+  | n A | to n  0 n array-of to A
+  [: |> i | A i  0 n array-of  !i drop :] n i-times  A ;
+
+: build-filled ( n -- A )
+  | n A | to n  n build-empty to A
+  [: |> i | [: |> jj | A i @i jj rng-next !i drop :] n i-times :] n i-times  A ;
+
+: copy-into ( src dst n -- )
+  | src dst n | to n to dst to src
+  [: |> i | [: |> jj | dst i @i  jj  src i @i jj @i  !i drop :] n i-times :] n i-times ;
+
+: lu-factor ( A n -- )
+  | A n j jp t i recp ii jj aiij aj aii rowj |
+  to n  to A  0 to j
+  begin j n lt while
+    j to jp
+    A j @i j @i fabs to t
+    j 1+ to i
+    begin i n lt while
+      A i @i j @i fabs  dup t gt if i to jp to t else drop then  i 1+ to i
+    repeat
+    j jp = 0 = if
+      A j @i to rowj  A j  A jp @i  !i drop  A jp  rowj  !i drop
+    then
+    1.0 A j @i j @i f/ to recp
+    j 1+ to i
+    begin i n lt while
+      A i @i  j  A i @i j @i recp f*  !i drop  i 1+ to i
+    repeat
+    j 1+ to ii
+    begin ii n lt while
+      A ii @i j @i to aiij  A ii @i to aii  A j @i to aj
+      j 1+ to jj
+      begin jj n lt while
+        aii jj  aii jj @i aiij aj jj @i f* f-  !i drop  jj 1+ to jj
+      repeat
+      ii 1+ to ii
+    repeat
+    j 1+ to j
+  repeat ;
+
+: checksum ( A n -- s )
+  | A n s | to n to A  0 to s
+  [: |> i | [: |> jj | A i @i jj @i s f+ to s :] n i-times :] n i-times  s ;
+
+: lu-bench ( n cycles -- )
+  | n cycles A lu t0 | to cycles to n
+  rng-init  n build-filled to A  n build-empty to lu
+  now to t0
+  [: A lu n copy-into  lu n lu-factor :] cycles times
+  "elapsed: " . now t0 - . "s" . cr
+  lu n checksum "checksum: {0}" . cr ;
+
+100 ITERATIONS lu-bench
+bye

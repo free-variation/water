@@ -27,6 +27,7 @@ skip_leibniz=${SKIP_LEIBNIZ:-0}
 
 nbody_steps=20000
 spectral_loops=50
+scimark_lu_cycles=100
 nqueens_n=8
 fannkuch_n=9
 leibniz_rounds=1000000000
@@ -87,6 +88,7 @@ lf_nqueens()  { "$bin" < "$here/nqueens.l4"; }
 lf_fannkuch() { "$bin" < "$here/fannkuch.l4"; }
 lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/nbody.l4"; } | "$bin"; }
 lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/spectral-norm.l4"; } | "$bin"; }
+lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/scimark-lu.l4"; } | "$bin"; }
 
 # --- python command wrappers -----------------------------------------------
 py_synth()    { "$python" "$here/synth.py"; }
@@ -94,6 +96,7 @@ py_nqueens()  { "$python" "$here/pyperf_nqueens.py" "$nqueens_n"; }
 py_fannkuch() { "$python" "$here/pyperf_fannkuch.py" "$fannkuch_n"; }
 py_nbody()    { "$python" "$here/pyperf_nbody.py" "$nbody_steps"; }
 py_spectral() { "$python" "$here/pyperf_spectral_norm.py" "$spectral_loops"; }
+py_scimark_lu() { "$python" "$here/pyperf_scimark_lu.py" "$scimark_lu_cycles"; }
 
 # Run a wrapper N times, append each run's stdout (with a separator) to a log.
 run_reps() {
@@ -210,6 +213,10 @@ log "== spectral-norm =="
 run_reps spectral_lf lf_spectral "$reps"
 run_reps spectral_py py_spectral "$reps_py"
 
+log "== scimark-lu =="
+run_reps scimark_lu_lf lf_scimark_lu "$reps"
+run_reps scimark_lu_py py_scimark_lu "$reps_py"
+
 have_leibniz=0
 have_leibniz_r=0
 if [ "$skip_leibniz" != 1 ]; then
@@ -281,6 +288,7 @@ row "nqueens" "N = $nqueens_n" nqueens_lf "$(median_elapsed nqueens_py)"
 row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
 row "fannkuch" "N = $fannkuch_n" fannkuch_lf "$(median_elapsed fannkuch_py)"
 row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed spectral_py)"
+row "scimark-lu" "N=100, ${scimark_lu_cycles}×" scimark_lu_lf "$(median_elapsed scimark_lu_py)"
 emit ""
 
 # ---- R reference for the vectorized variant ----
@@ -302,6 +310,7 @@ emit "| nqueens | $(result_line nqueens_lf 'solutions') | $(result_line nqueens_
 emit "| nbody | $(result_line nbody_lf 'final energy') | $(result_line nbody_py 'final energy') |"
 emit "| fannkuch | $(result_line fannkuch_lf 'max flips') | $(result_line fannkuch_py 'max flips') |"
 emit "| spectral-norm | $(result_line spectral_lf 'estimate') | $(result_line spectral_py 'estimate') |"
+emit "| scimark-lu | $(result_line scimark_lu_lf 'checksum') | $(result_line scimark_lu_py 'checksum') |"
 if [ "$have_leibniz" = 1 ]; then
 	emit "| leibniz | $(result_line leibniz_lf 'pi:') | pi = $leibniz_py_result |"
 	emit "| leibniz-matrix | $(result_line leibniz_matrix_lf 'pi:') | pi = $leibniz_py_result |"
