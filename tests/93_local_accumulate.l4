@@ -1,0 +1,24 @@
+\ Local-accumulate fusion: `<value> acc <fop> to acc` folds into one op that
+\ reads-modifies-writes the local accumulator (acc = value <op> acc). Covers
+\ depth-0 locals and depth-1 (an enclosing scope's local used inside a
+\ quotation), for f+ f- f* f/. Values must match the unfused sequence.
+
+\ depth 0
+: a0 | s | 0 to s 1 s f+ to s 2 s f+ to s 3 s f+ to s s ;
+a0 . cr                       \ 0->1->3->6
+
+: m0 | s | 1 to s 2 s f* to s 3 s f* to s 4 s f* to s s ;
+m0 . cr                       \ 1->2->6->24
+
+: s0 | s | 2 to s 5 s f- to s 10 s f- to s s ;
+s0 . cr                       \ value - acc: 2->3->7
+
+: d0 | s | 2 to s 12 s f/ to s 18 s f/ to s s ;
+d0 . cr                       \ value / acc: 2->6->3
+
+\ depth 1 (accumulator from the enclosing scope, used inside the quotation)
+: q1 | s | 0 to s [: |> i | i s f+ to s :] 5 i-times s ;
+q1 . cr                       \ sum 0..4 = 10
+
+: q2 | p | 1 to p [: |> i | i 1+ p f* to p :] 4 i-times p ;
+q2 . cr                       \ 1*2*3*4 = 24
