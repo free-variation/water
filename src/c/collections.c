@@ -282,22 +282,24 @@ void p_reverse(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_flip(Interpreter *interp) {
-	POP_INT(last_index, "flip", "index");
-	POP(target_val);
-	if (VAL_TAG(target_val) != T_ARRAY) {
-		fail(interp, "flip: expected an array; got %s", tag_name(VAL_TAG(target_val)));
-		return;
-	}
-
+void p_reverse_slice(Interpreter *interp) {
+	POP_INT(n, "reverse-slice!", "count");
+	POP_INT(offset, "reverse-slice!", "offset");
+	PEEK_TYPE_AT(target_val, 0, "reverse-slice!", T_ARRAY);
 	Object *target = interp->objects[VAL_DATA(target_val)];
-	if (last_index < 0 || last_index >= target->len) {
-		fail(interp, "flip: index %d out of bounds for length %d", last_index, target->len);
+
+	if (n < 0) {
+		fail(interp, "reverse-slice!: count must be non-negative; got %d", n);
+		return;
+	}
+	if (offset < 0 || offset + n > target->len) {
+		fail(interp, "reverse-slice!: slice [%d, %d) out of bounds for length %d",
+		     offset, offset + n, target->len);
 		return;
 	}
 
-	int low = 0;
-	int high = last_index;
+	int low = offset;
+	int high = offset + n - 1;
 	while (low < high) {
 		Val saved = target->items[low];
 		target->items[low] = target->items[high];
@@ -791,22 +793,22 @@ void p_slice_store(Interpreter *interp) {
 }
 
 void p_to_slice(Interpreter *interp) {
-	POP_INT(n, "to-slice", "count");
-	POP_INT(offset, "to-slice", "offset");
-	PEEK_TYPE_AT(target_val, 0, "to-slice", T_ARRAY);
+	POP_INT(n, "to-slice!", "count");
+	POP_INT(offset, "to-slice!", "offset");
+	PEEK_TYPE_AT(target_val, 0, "to-slice!", T_ARRAY);
 	Object *target = interp->objects[VAL_DATA(target_val)];
 
 	if (n < 0) {
-		fail(interp, "to-slice: count must be non-negative; got %d", n);
+		fail(interp, "to-slice!: count must be non-negative; got %d", n);
 		return;
 	}
 	if (offset < 0 || offset + n > target->len) {
-		fail(interp, "to-slice: slice [%d, %d) out of bounds for length %d",
+		fail(interp, "to-slice!: slice [%d, %d) out of bounds for length %d",
 		     offset, offset + n, target->len);
 		return;
 	}
 	if (interp->dsp < 1 + n) {
-		fail(interp, "to-slice: stack too shallow (need %d values plus target)", n);
+		fail(interp, "to-slice!: stack too shallow (need %d values plus target)", n);
 		return;
 	}
 	int start = interp->dsp - 1 - n;

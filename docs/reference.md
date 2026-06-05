@@ -265,13 +265,13 @@ Fixed length, 0-indexed, elements of any type.
 | `!i` | `( arr i val -- arr )` | Store val at index i in place; leaves arr on the stack | 4 | none | O(1) |
 | `take` | `( arr/set n -- arr )` | First n elements (clamped) | 2 + n | `1a(n)` | O(n) |
 | `reverse` | `( arr/set -- arr )` | Reversed copy | 1 + n | `1a(n)` | O(n) |
-| `flip` | `( arr i -- )` | Reverse arr[0..i] in place; pops both | 2 + i | none | O(i) |
+| `reverse-slice!` | `( arr offset n -- arr )` | Reverse the `n` elements at `offset` in place; leaves arr | 2 + n | none | O(n) |
 | `concat` | `( arr/set arr/set -- arr )` | Concatenated copy | 2 + m + n | `1a(m+n)` | O(m+n) |
 | `range` | `( from to -- arr )` | Inclusive integer range, step ±1 | 3 + n | `1a(n)` | O(n) |
 | `destruct` | `( arr/set/fr -- v… )` | Spread elements onto the stack; a frame spreads alternating sym/value | 1 + n | none | O(n) |
 | `destruct-to` | `( source targets -- )` | source and target arrays; assign each source element to the variable named by the corresponding target (symbol or xt), creating it if needed | 2 + n | may create variables | O(n) |
 | `slice!` | `( arr tstart src sstart sstep slen -- arr )` | Copy `slen` elements `src[sstart], src[sstart+sstep], …` into `arr[tstart…]` in place | 6 + slen | self-overlap may malloc slen | O(slen) |
-| `to-slice` | `( v₀ … vₙ₋₁ arr offset n -- arr )` | Store the n values just below `arr` into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
+| `to-slice!` | `( v₀ … vₙ₋₁ arr offset n -- arr )` | Store the n values just below `arr` into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
 | `last` | `( arr n -- arr )` | lib.l4: `swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
 | `skip` | `( arr n -- arr )` | lib.l4: `over size swap - swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
 
@@ -311,7 +311,7 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `matrix` | `( arr r c -- m )` or `( arr r -- m )` | Build from a float array; two-arg form takes r = rows and infers columns | 3 + r×c | `1m(r×c)` | O(r×c) |
 | `diagonal-matrix` | `( fill n -- m )` | n×n matrix with `fill` on the diagonal | 2 + n | `1m(n×n)` | O(n) |
 | `identity-matrix` | `( n -- m )` | lib.l4: `1 swap diagonal-matrix` | n | `1m(n×n)` | O(n) |
-| `matrix1d-range` | `( start end step -- m )` | 1×N row of evenly spaced values | 3 + N | `1m(1×N)` | O(N) |
+| `matrix-range` | `( start end step -- m )` | 1×N row of evenly spaced values | 3 + N | `1m(1×N)` | O(N) |
 
 ### Shape and indexing
 

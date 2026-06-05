@@ -20,7 +20,7 @@ keep
 0 ok
 0 ok
 0 ok
-0|error to-slice: slice [5, 8) out of bounds for length 3
-0|error to-slice: count must be non-negative; got -1
-0|error to-slice: expected an array; got a float
-0|error to-slice: stack too shallow (need 5 values plus target)
+0|error to-slice!: slice [5, 8) out of bounds for length 3
+0|error to-slice!: count must be non-negative; got -1
+0|error to-slice!: expected an array; got a float
+0|error to-slice!: stack too shallow (need 5 values plus target)

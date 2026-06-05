@@ -2343,12 +2343,12 @@ int main(void) {
 	define_primitive(interp, "frame", p_frame, 0);
 	define_primitive(interp, "take", p_take, 0);
 	define_primitive(interp, "reverse", p_reverse, 0);
-	define_primitive(interp, "flip", p_flip, 0);
+	define_primitive(interp, "reverse-slice!", p_reverse_slice, 0);
 	define_primitive(interp, "concat", p_concat, 0);
 	define_primitive(interp, "destruct", p_destruct, 0);
 	define_primitive(interp, "destruct-to", p_destruct_to, 0);
 	define_primitive(interp, "slice!", p_slice_store, 0);
-	define_primitive(interp, "to-slice", p_to_slice, 0);
+	define_primitive(interp, "to-slice!", p_to_slice, 0);
 	define_primitive(interp, "range", p_range, 0);
 	define_primitive(interp, "size", p_size, 0);
 	define_primitive(interp, "member?", p_member, 0);
@@ -2431,7 +2431,7 @@ int main(void) {
 	define_primitive(interp, "@i,j", p_at_ij, 0);
 	define_primitive(interp, "diagonal", p_diagonal, 0);
 	define_primitive(interp, "reshape", p_reshape, 0);
-	define_primitive(interp, "matrix1d-range", p_matrix_range, 0);
+	define_primitive(interp, "matrix-range", p_matrix_range, 0);
 	define_primitive(interp, "sum", p_sum, 0);
 	define_primitive(interp, "row-sums", p_row_sums, 0);
 	define_primitive(interp, "column-sums", p_column_sums, 0);

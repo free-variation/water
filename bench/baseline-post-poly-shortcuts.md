@@ -43,7 +43,7 @@ primitives broadcast scalar↔matrix directly).
   read-modify-write op on the local accumulator (both depth-0 and across a
   quotation), covering the reduction pattern in `reduce`-shaped loops.
 - `begin … while … repeat` test-at-top loop, alongside `begin … until`.
-- Logical primitives `and`/`or`/`not`; in-place `flip` (prefix reverse).
+- Logical primitives `and`/`or`/`not`; in-place `reverse-slice!` (subrange reverse).
 - `see-compiled` decompiles a word's body to show the fused form.
 - Tests: 93/93 passing.
 

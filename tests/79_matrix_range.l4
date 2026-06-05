@@ -1,22 +1,22 @@
-\ matrix1d-range: build a 1xN matrix from start/end/step.
+\ matrix-range: build a 1xN matrix from start/end/step.
 
 \ Basic ascending sequence
-1.0 5.0 1.0 matrix1d-range .
+1.0 5.0 1.0 matrix-range .
 
 \ Ascending with non-unit step
-0.0 10.0 2.5 matrix1d-range .
+0.0 10.0 2.5 matrix-range .
 
 \ Descending sequence
-10.0 0.0 -2.0 matrix1d-range .
+10.0 0.0 -2.0 matrix-range .
 
 \ Single-element matrix (start = end)
-3.0 3.0 1.0 matrix1d-range .
+3.0 3.0 1.0 matrix-range .
 
 \ End not on an exact step boundary — last element is < end
-0.0 10.0 3.0 matrix1d-range .
+0.0 10.0 3.0 matrix-range .
 
 \ Step zero rejected
-1.0 5.0 0.0 matrix1d-range
+1.0 5.0 0.0 matrix-range
 
 \ Step sign / direction mismatch rejected
-1.0 5.0 -1.0 matrix1d-range
+1.0 5.0 -1.0 matrix-range

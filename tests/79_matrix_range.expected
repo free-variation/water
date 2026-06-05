@@ -26,7 +26,7 @@
 0 ok
 0 ok
 0 ok
-0|error matrix1d-range: step cannot be zero
+0|error matrix-range: step cannot be zero
 0 ok
 0 ok
-0|error matrix1d-range: step sign does not match start/end direction
+0|error matrix-range: step sign does not match start/end direction

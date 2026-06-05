@@ -18,7 +18,7 @@ variable T0
   now to T0
   ROUNDS -2.0 f* 1.0 f+       \ start = -2*ROUNDS + 1
   ROUNDS 2.0 f*                \ end   = 2*ROUNDS
-  4.0 matrix1d-range             \ build denominator sequence
+  4.0 matrix-range             \ build denominator sequence
   4.0 swap /!                  \ scalar / matrix, in place (reuses the sequence)
   sum                          \ accumulate
   now T0 - "elapsed: {0}s" . cr

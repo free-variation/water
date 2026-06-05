@@ -7,17 +7,7 @@ git history is the place to look for what's been built.
 
 ## Matrix — remaining work
 
-The matrix type is functionally complete for value-semantic numeric
-work: construction, element-wise arithmetic, scalar broadcasting,
-transpose, DGEMM in all four transpose variants, indexing (`@i`, `@j`,
-`@i,j`), `reshape`, `flatten`, `diagonal-matrix` / `identity-matrix` /
-`diagonal`, the reduction family (`sum`, `row-sums`, `column-sums`,
-`mean`, `row-means`, `column-means`, plus the `max`/`min` /
-`row-maxes` / `column-maxes` / `row-mins` / `column-mins` set), and
-the polymorphic element-wise math primitives (`abs`, `sqrt`, `exp`,
-`log`, `sin`, `cos`, `tan`, `tanh`, `negate`, `1+`, `1-`, `sq`) that
-dispatch on both floats and matrices. `val_cmp` orders matrices by shape then contents,
-so they work as set members. What remains is the "beyond core" list.
+The matrix core is built. What remains is the "beyond core" list.
 
 ### argmax / argmin
 
@@ -68,29 +58,9 @@ zoo (split / substring / index-of / starts-with / ends-with / trim /
 lines / replace). The engine is POSIX ERE via `<regex.h>` — already
 in libc on every Unix, zero dependency, well-known syntax.
 
-**Why pattern-first instead of seven named primitives:**
-
-- One concept to learn, not seven.
-- Anything we didn't pre-anticipate (split on whitespace *or* comma,
-  match a number anywhere in a line) is expressible without adding a
-  new primitive.
-- Named primitives stay possible as library words in `lib.l4` for the
-  common cases.
-
-**Why POSIX ERE, not PCRE or Lua patterns:**
-
-- Zero dependency. `regcomp` / `regexec` / `regfree` / `regerror` are
-  in libc. No vendoring, no Makefile change, no library install.
-- Couple hundred bytes of binary growth from the linker, not megabytes.
-- Syntax users already know. `^`, `$`, `*`, `+`, `?`, `{n,m}`, `|`,
-  `()`, character classes, captures.
-- Covers every operation on the destructuring list.
-
-The features POSIX ERE lacks vs PCRE — shorthand classes (`\d`,
-`\w`), non-greedy quantifiers, lookahead/lookbehind, named captures
-— are convenience, not capability. If something later forces the
-upgrade, the user-facing API stays the same and only the engine
-swaps underneath.
+Named string operations (`split`, `trim`, `index-of`, …) stay available
+as `lib.l4` wrappers over the one primitive — see "Higher-level words"
+below.
 
 **API sketch:**
 
@@ -259,17 +229,7 @@ Features identified as load-bearing for a complete core language.
 Each kept short here; expand into its own section once we start
 implementing.
 
-### Dictionaries / hash maps — done, as frames
-
-Superseded by the **frame** type (`T_FRAME`): symbol-keyed nested maps with
-`{ :a 1 :b 2 }` literals, `@` / `!` / `has?` / `delete-at` / `update-at` /
-`keys` / `values`, `frame` / `>frame` builders, and `/a/b/c` path literals.
-Sorted parallel key/value arrays rather than a hash table — chosen for
-structural compare/unify (frames are the planned unification layer's compound
-term) and for small record-sized maps where a flat ordered scan beats hashing.
-Complete, including `merge`, deep `copy`, and image save/load.
-
-### Path keys in frame literals — planned
+### Path keys in frame literals
 
 Allow a path (`/a/b/c`) in key position when building a frame, as
 construction sugar for nested frames. `{ /addr/city C }` builds
@@ -356,9 +316,10 @@ set `error_flag` into the same `(exc 1)` result a `throw` produces.
 
 No file-handle type and no open / close / seek: files are whole values.
 The only fd-shaped things in the language are the pipe and socket fds from
-`spawn` / `serve` (`T_FD`); you never `open` a file. The cases whole-file
-reads don't fit — a file too large for memory, or line-by-line streaming —
-go through a pipe instead (`[ "cat" path ] spawn` then `read-line`), the
+`start-process` / `serve` (`T_FD`); you never `open` a file. The cases
+whole-file reads don't fit — a file too large for memory, or line-by-line
+streaming — go through a pipe instead (`[ "cat" path ] start-process` then
+`read-line`), the
 same streaming model subprocesses already use. ~15 lines of C each.
 
 ### Interpolation format specs
@@ -382,18 +343,6 @@ Read and write tab-separated-value files. Both numeric and non-numeric content.
 a starting point, not a default — the entire story. No CSV reader. No
 JSON. No Parquet, Arrow, HDF5, anything. If a user has data in another
 format, they convert it to TSV outside logicforth before loading.
-
-**Why:** Every other format adds disproportionate complexity for
-disproportionate benefit:
-
-- **CSV** looks similar but isn't — quoted fields, escaped quotes inside
-  quoted fields, locale-dependent decimal separators, BOM handling.
-  A spec-correct CSV parser is hundreds of lines of state machine.
-- **JSON** would need its own parser plus a mapping into logicforth's
-  tagged-value model (which is *almost* a JSON value but not quite,
-  since we have sets and symbols and execution tokens).
-- **Binary formats** would require schema definitions, endianness
-  handling, version negotiation.
 
 TSV is just "split on tab, split on newline." A reader fits in 40
 lines. A writer fits in 20. Whatever cleanup the data needs to fit
@@ -495,11 +444,9 @@ properly-quoted SQL literals would be a useful library word later.
 
 **Type representation:**
 
-New tag `T_DB` carrying the database handle. Could alternatively
-reuse `T_ADDR` or just a `T_FLOAT` index, but a dedicated tag keeps
-type errors specific ("`sql` requires a database, got a string") and
-lets `val_cmp` / `print_val` handle it without confusing it with
-dictionary addresses.
+New tag `T_DB` carrying the database handle — keeps type errors specific
+("`sql` requires a database, got a string") and lets `val_cmp` /
+`print_val` handle it.
 
 **Storage:**
 
@@ -643,7 +590,7 @@ lines of C; `serve`, the router, and the response builders ~60 lines of
 
 ## Subprocesses and pipes
 
-Spawn an external program and talk to it over pipes — the basis for doing
+Start an external program and talk to it over pipes — the basis for doing
 filesystem, network, and system work by driving standard binaries (`cat`,
 `tee`, `ls`, `curl`, …) instead of growing a native primitive for each. Zero
 dependency: `fork` / `execvp` / `pipe` / `waitpid` from libc. Pipes are raw byte
@@ -654,17 +601,17 @@ A process is launched from an argv array — no shell, so no quoting or injectio
 surface:
 
 ```forth
-[ "cat" "/etc/hosts" ] spawn   ( -- proc )
+[ "cat" "/etc/hosts" ] start-process   ( -- proc )
 ```
 
-`spawn` returns a frame `{ :pid :in :out :err }`: `:pid` the child's process id,
+`start-process` returns a frame `{ :pid :in :out :err }`: `:pid` the child's process id,
 `:in` a writable fd for its stdin, `:out` / `:err` readable fds for its stdout
 and stderr. File descriptors carry a `T_FD` tag (shared with the HTTP-server
 work).
 
 **Words:**
 
-- `argv spawn ( argv -- proc )` — fork/exec, return the process frame.
+- `argv start-process ( argv -- proc )` — fork/exec, return the process frame.
 - `string fd write ( -- )` — write the string's bytes to a child's `:in`.
 - `fd read-line ( -- string )` — one line from `:out`/`:err`; empty at EOF.
 - `fd read-all ( -- string )` — everything until EOF.
@@ -673,26 +620,28 @@ work).
 - `pid stop ( -- status )` — signal the child, then reap it; for aborting a
   process that won't finish on its own.
 
-**Concurrent outbound calls.** `spawn` is non-blocking — it forks and
-returns the process frame immediately; only `read-all` blocks. So
-fan-out is spawn-all-then-drain-all: `spawn` N children (they run
+**Concurrent outbound calls.** `start-process` is non-blocking — it forks
+and returns the process frame immediately; only `read-all` blocks. So
+fan-out is start-all-then-drain-all: `start-process` N children (they run
 concurrently as OS processes), then `read-all` each. Wall time is the
 slowest call, not the sum. This is how concurrent LLM calls are done — no
 green threads or non-blocking pipe I/O required (the deferred non-blocking
 work is only for reacting to whichever child finishes *first*, which
 fan-out-and-collect doesn't need). Cap concurrency to vendor rate limits
-with a `lib.l4` loop that spawns in batches of N; cap inbound concurrency
-with the HTTP server's prefork worker count.
+with a `lib.l4` loop that starts processes in batches of N; cap inbound
+concurrency with the HTTP server's prefork worker count.
 
-The normal lifecycle is spawn → `write` input → `close` `:in` → `read-all` →
+The normal lifecycle is start-process → `write` input → `close` `:in` → `read-all` →
 `wait`. Use `wait`, not `stop`, after draining output: EOF on stdout doesn't
 mean the child is finished (e.g. `cat > file` produces no stdout but is still
 writing to disk, and killing it there truncates the file), and `wait` returns
 the program's real exit code where a signal kill would not.
 
-**Built on top, in `lib.l4`:** `read-file` (`cat`), `write-file` (`tee`),
-`llm-call` (`curl`), and so on — the C surface stays small and the conveniences
-are Forth definitions over it.
+**Built on top, in `lib.l4`:** `llm-call` (`curl`), and so on — the C
+surface stays small and the conveniences are Forth definitions over it.
+(Plain file read/write is *not* here — `read-file` / `write-file` /
+`append-file` are native whole-file primitives, not `cat`/`tee` wrappers;
+see "File I/O".)
 
 **Out of scope:**
 
@@ -708,8 +657,8 @@ are Forth definitions over it.
   stall a line-by-line loop — the `stdbuf` gotcha.)
 - Windows. POSIX only.
 
-**Cost:** ~150 lines of C (spawn, the fd read/write/close words, wait/stop)
-plus the `T_FD` tag; the file/LLM convenience words are `lib.l4`.
+**Cost:** ~150 lines of C (start-process, the fd read/write/close words,
+wait/stop) plus the `T_FD` tag; the LLM convenience words are `lib.l4`.
 
 ---
 
@@ -730,12 +679,7 @@ reserved symbol). Settle those at implementation time.
 directly is ~200-400 lines of C with no dependency. That keeps the type mapping
 above (numbers → `T_FLOAT`, objects → frames, `null` → sentinel) under our exact
 control, which a generic library's tree would obscure. `frame>json` is a
-`print_val`-style recursive walk. A tokenizer like jsmn was considered and
-rejected: it only handles the structural scan (brace matching, string
-boundaries) — the bug-prone parts (string unescaping incl. `\uXXXX` surrogate
-pairs, number conversion, type discrimination, strict rejection) stay ours
-either way, and its zero-allocation advantage evaporates when we materialize the
-whole document into frames.
+`print_val`-style recursive walk.
 
 ---
 
@@ -753,11 +697,7 @@ implementation, zero external dependencies of its own, so its `src/*.c` vendor
 into the binary and static-link like the SQLite amalgamation (multiple files,
 not one unit, but no system dependency). It's an event/SAX parser with no data
 tree, so we write the event-stream → `T_FRAME` glue ourselves — which is the
-logicforth-specific work regardless. Alternatives weighed and rejected:
-libfyaml (more complete YAML 1.2 but heavier), rapidyaml/ryml (fastest and
-single-file-amalgamatable, but C++ — drags a C++ TU and runtime into the build),
-and subset hand-rolls (small but silently reject anchors/tags/flow — the
-"looks like the format but isn't" CSV trap the TSV section warns against).
+logicforth-specific work regardless.
 
 Open questions at implementation time: scalar type inference (when is `1.5` a
 float vs the string `"1.5"` — YAML's implicit typing rules); how anchors/aliases
@@ -805,16 +745,11 @@ state (logic-var bindings + a trail), and search is driven by
 continuations rather than by mapping goals over streams. The name
 "logicforth" finally earns its second half.
 
-This layer is built natively on logicforth's own substrate — the trail,
-delimited continuations, tagged values, and frames — not transpiled from
-an existing engine. A faithful Java microKanren (free-variation/archelogic
-`MicroKanren.java`) serves as the behavioral reference, but its
-implementation reimplements three things logicforth already provides:
-closures (goals as captured lambdas), a stream/answer model, and a
-copy-on-extend substitution. Porting it would drag those along; targeting
-the existing GC, continuations, and trail is less code. The reference is
-worth reading for the relations (`conso`, `appendo`, `membero`, `conde`)
-and the fact-database design, not for its control structure.
+Built on logicforth's own substrate — the trail, delimited continuations,
+tagged values, and frames. A Java microKanren (free-variation/archelogic
+`MicroKanren.java`) is a behavioral reference for the relations (`conso`,
+`appendo`, `membero`, `conde`) and the fact-database design; the control
+structure is logicforth's own.
 
 **New machinery in C:**
 
@@ -1125,13 +1060,9 @@ primitives. `arr [ H | T ] unify` binds `H` to the head and `T` to a fresh
 tail array; unifying a free variable with `[ H | T ]` where both are bound
 builds the array. One declarative mechanism, both directions.
 
-No `>head` / `head>` primitives. They were considered as an imperative
-fast path (a C `head>` being a single `memcpy`), but the niche doesn't
-hold up: the cons pattern already covers head/tail for the declarative and
-logic cases, and it allocates the same fresh tail array a `head>` would —
-so `head>`'s only saving was avoiding trail/logic-var overhead, not the
-dominant copy. For hot imperative iteration the right tool is the C-side
-`reduce` / `map` family, not per-step array splitting.
+There are no `>head` / `head>` primitives; the cons pattern is the only
+head/tail mechanism. For hot imperative iteration use the C-side `reduce` /
+`map` family rather than per-step array splitting.
 
 **Cost note that still applies.** Arrays are contiguous, not linked, so a
 recursive walk that splits a head off each step — whether via the cons
@@ -1147,8 +1078,7 @@ for anything large, iterate with `reduce` / `map`, which stays C-side.
 
 ## Functional primitives
 
-`map`, `mapn`, and `filter` are in (`src/c/functional.c`). Adding the
-rest of the standard higher-order toolkit.
+Adding the rest of the standard higher-order toolkit.
 
 **The dividing line is whether a word builds a new array.** Forth-side
 array construction has exactly one path: push the elements and gather
@@ -1160,11 +1090,6 @@ a word that produces an array of data-dependent length cannot be a
 allocates and fills a result array must do it in C, the way `map` /
 `mapn` / `filter` already do. Words that return a scalar, an element,
 or a boolean have no such constraint and belong in `lib.l4`.
-
-`map`, `mapn`, `filter`, `take`, `reverse`, `concat`, `reduce`, and
-`range` are in C. `skip` (rename of the planned "drop", since `drop` is
-taken by the stack primitive) and `last` are in `lib.l4` atop `take` +
-`reverse`.
 
 **lib.l4 definitions (return a scalar/element, or compose C builders):**
 

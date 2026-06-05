@@ -135,8 +135,8 @@ variable b2-targets
   dx m1 f* mag vx2 f*+ to vx2
   dy m1 f* mag vy2 f*+ to vy2
   dz m1 f* mag vz2 f*+ to vz2
-  vx1 vy1 vz1 b1 3 3 to-slice drop
-  vx2 vy2 vz2 b2 3 3 to-slice drop ;
+  vx1 vy1 vz1 b1 3 3 to-slice! drop
+  vx2 vy2 vz2 b2 3 3 to-slice! drop ;
 
 : integrate-pos ( b dt -- )
   |> b dt |

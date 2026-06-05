@@ -535,12 +535,12 @@ void p_matrix_range(Interpreter *interp) {
 	double step = VAL_NUMBER(step_val);
 
 	if (step == 0.0) {
-		fail(interp, "matrix1d-range: step cannot be zero");
+		fail(interp, "matrix-range: step cannot be zero");
 		return;
 	}
 
 	if ((step > 0.0 && end < start) || (step < 0.0 && end > start)) {
-		fail(interp, "matrix1d-range: step sign does not match start/end direction");
+		fail(interp, "matrix-range: step sign does not match start/end direction");
 		return;
 	}
 

@@ -1,0 +1,21 @@
+\ reverse-slice! ( arr offset n -- arr ) reverses the n elements starting at
+\ offset, in place, and leaves the array.
+
+variable A
+
+[ 1 2 3 4 5 ] to A   A 0 5 reverse-slice! drop   A . cr   \ [ 5 4 3 2 1 ]
+[ 1 2 3 4 5 ] to A   A 0 3 reverse-slice! drop   A . cr   \ [ 3 2 1 4 5 ]
+[ 1 2 3 4 5 ] to A   A 1 3 reverse-slice! drop   A . cr   \ [ 1 4 3 2 5 ]
+[ 1 2 3 4 5 ] to A   A 2 1 reverse-slice! drop   A . cr   \ single element, unchanged
+[ 1 2 3 4 5 ] to A   A 2 0 reverse-slice! drop   A . cr   \ empty slice, unchanged
+[ 9 ] to A   A 0 1 reverse-slice! drop   A . cr           \ [ 9 ]
+
+\ it leaves the array, so it chains
+[ 1 2 3 4 5 ] 0 5 reverse-slice! . cr                     \ [ 5 4 3 2 1 ]
+
+\ errors
+[ 1 2 3 ] 0 5 reverse-slice!     \ slice past the end
+[ 1 2 3 ] 2 2 reverse-slice!     \ offset + n past the end
+[ 1 2 3 ] -1 2 reverse-slice!    \ negative offset
+[ 1 2 3 ] 0 -1 reverse-slice!    \ negative count
+5 0 1 reverse-slice!             \ not an array

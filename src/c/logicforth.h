@@ -641,7 +641,7 @@ void p_dim(Interpreter *interp);
 void p_array_of(Interpreter *interp);
 void p_take(Interpreter *interp);
 void p_reverse(Interpreter *interp);
-void p_flip(Interpreter *interp);
+void p_reverse_slice(Interpreter *interp);
 void p_concat(Interpreter *interp);
 void p_destruct(Interpreter *interp);
 void p_destruct_to(Interpreter *interp);

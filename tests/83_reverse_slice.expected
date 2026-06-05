@@ -1,0 +1,28 @@
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+[ 5 4 3 2 1 ] 
+0 ok
+[ 3 2 1 4 5 ] 
+0 ok
+[ 1 4 3 2 5 ] 
+0 ok
+[ 1 2 3 4 5 ] 
+0 ok
+[ 1 2 3 4 5 ] 
+0 ok
+[ 9 ] 
+0 ok
+0 ok
+0 ok
+[ 5 4 3 2 1 ] 
+0 ok
+0 ok
+0 ok
+0|error reverse-slice!: slice [0, 5) out of bounds for length 3
+0|error reverse-slice!: slice [2, 4) out of bounds for length 3
+0|error reverse-slice!: slice [-1, 1) out of bounds for length 3
+0|error reverse-slice!: count must be non-negative; got -1
+0|error reverse-slice!: expected an array; got a float

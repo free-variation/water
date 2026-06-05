@@ -1,20 +1,20 @@
-\ to-slice ( v0 v1 ... vN-1 target offset N -- target )
+\ to-slice! ( v0 v1 ... vN-1 target offset N -- target )
 \ Writes N stack values into target[offset..offset+N-1] in source order.
 \ Top value (vN-1) goes to target[offset+N-1]. Leaves target on stack.
 
-99 88 77 [ 0 0 0 ] 0 3 to-slice . cr        \ [ 99 88 77 ]
-99 88 77 [ 0 0 0 0 0 ] 1 3 to-slice . cr    \ [ 0 99 88 77 0 ]
-1 2 3 4 5 [ 0 0 0 0 0 ] 0 5 to-slice . cr   \ [ 1 2 3 4 5 ]
+99 88 77 [ 0 0 0 ] 0 3 to-slice! . cr        \ [ 99 88 77 ]
+99 88 77 [ 0 0 0 0 0 ] 1 3 to-slice! . cr    \ [ 0 99 88 77 0 ]
+1 2 3 4 5 [ 0 0 0 0 0 ] 0 5 to-slice! . cr   \ [ 1 2 3 4 5 ]
 
 \ count=0 is a no-op
-"keep" [ 1 2 3 ] 1 0 to-slice . cr          \ [ 1 2 3 ]
+"keep" [ 1 2 3 ] 1 0 to-slice! . cr          \ [ 1 2 3 ]
 .s clear cr                                  \ [ keep ]
 
 \ Mixed value types
-"hi" :sym 42 [ 0 0 0 ] 0 3 to-slice . cr    \ [ hi :sym 42 ]
+"hi" :sym 42 [ 0 0 0 ] 0 3 to-slice! . cr    \ [ hi :sym 42 ]
 
 \ Errors
-[ 0 0 0 ] 5 3 to-slice
-[ 0 0 0 ] 0 -1 to-slice
-99 88 77 42 0 3 to-slice
-1 2 [ 0 0 0 0 0 ] 0 5 to-slice
+[ 0 0 0 ] 5 3 to-slice!
+[ 0 0 0 ] 0 -1 to-slice!
+99 88 77 42 0 3 to-slice!
+1 2 [ 0 0 0 0 0 ] 0 5 to-slice!

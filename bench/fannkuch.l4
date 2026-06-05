@@ -27,7 +27,7 @@ variable MAX_FLIPS
 inline
 
 : flip-perm ( k -- )
-  PERM swap flip ;
+  PERM 0 rot 1+ reverse-slice! drop ;
 inline
 
 : count-flips ( -- flips )
