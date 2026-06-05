@@ -7,8 +7,6 @@ git history is the place to look for what's been built.
 
 ## Matrix — remaining work
 
-The matrix core is built. What remains is the "beyond core" list.
-
 ### argmax / argmin
 
 Index of the maximum / minimum element (or an `(i, j)` pair). Deferred
@@ -224,10 +222,6 @@ this model is enough.
 ---
 
 ## Core language additions
-
-Features identified as load-bearing for a complete core language.
-Each kept short here; expand into its own section once we start
-implementing.
 
 ### Path keys in frame literals
 
@@ -683,30 +677,6 @@ control, which a generic library's tree would obscure. `frame>json` is a
 
 ---
 
-## YAML ↔ frame
-
-Same surface as JSON: `yaml>frame ( string -- value )` parses,
-`frame>yaml ( value -- string )` serializes, over the same value mapping
-(mappings → frames, sequences → arrays, scalars → floats/strings/booleans,
-`null` → sentinel).
-
-**Decision: vendor libyaml, static-linked.** Unlike JSON, the YAML spec is too
-large to hand-roll responsibly (anchors, aliases, tags, flow vs block styles,
-multi-document streams, implicit type coercion). libyaml is the canonical pure-C
-implementation, zero external dependencies of its own, so its `src/*.c` vendor
-into the binary and static-link like the SQLite amalgamation (multiple files,
-not one unit, but no system dependency). It's an event/SAX parser with no data
-tree, so we write the event-stream → `T_FRAME` glue ourselves — which is the
-logicforth-specific work regardless.
-
-Open questions at implementation time: scalar type inference (when is `1.5` a
-float vs the string `"1.5"` — YAML's implicit typing rules); how anchors/aliases
-resolve into frames (share vs deep-copy); multi-document streams (first doc only
-vs array of docs); and `frame>yaml` style choices (block vs flow, when to quote
-scalars).
-
----
-
 ## Foreign function interface
 
 Once in, user code can load any `.so` / `.dylib` on the system, look
@@ -1077,8 +1047,6 @@ for anything large, iterate with `reduce` / `map`, which stays C-side.
 ---
 
 ## Functional primitives
-
-Adding the rest of the standard higher-order toolkit.
 
 **The dividing line is whether a word builds a new array.** Forth-side
 array construction has exactly one path: push the elements and gather
