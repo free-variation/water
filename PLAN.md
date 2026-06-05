@@ -61,156 +61,6 @@ handling at the boundary.
 
 ---
 
-## Tensors and DNNs (long-horizon)
-
-This section captures a deliberately large body of future work — tensors
-as the generalization of `T_MATRIX`, and the deep-neural-network use
-case that surface drives. **None of this is near-term.** It lands after
-the language-feature items above, and probably after the logic layer.
-The intent here is to record the design
-decisions already taken (so future work doesn't relitigate them) and to
-size the scope (so it doesn't sneak up unannounced). Implementation
-specifics are for whoever picks this up.
-
-The decisions taken:
-
-- Tensors are **fully N-dimensional**, not just rank-3 or rank-4.
-- **One unified type `T_TENSOR`** replaces `T_MATRIX`. A matrix is a
-  rank-2 tensor. Single vocabulary; no conversion words.
-- The name stays **tensor**.
-- **Tensor-op primitives**, not layer primitives. Users compose layers
-  as colon defs over a small set of coarse-grained tensor operations.
-- **BLAS becomes the default backend** for tensor work (the optional
-  BLAS build above gets promoted to required-for-tensors).
-- **Convolution via im2col + GEMM**, reusing the BLAS-accelerated
-  matmul path.
-- **Training is in scope**, which means autograd.
-
-### Tensors
-
-The Object union arm replaces the current `(int rows, int columns,
-double *elements)` matrix struct with `(int rank, int *shape, double
-*elements)`. Row-major / C-order layout (numpy default). A rank-2
-tensor's flat-offset arithmetic reduces to today's `i·columns + j`, so
-every existing matrix kernel reads the same bytes the same way after
-the storage refactor; rank-2-specific kernels (DGEMM, identity,
-diagonal-matrix) keep their fast paths and error on other ranks.
-
-API surface to design:
-
-- Element-wise `+`/`-`/`*`/`/` and polymorphic unary math (`abs`,
-  `sqrt`, `exp`, `log`, `sin`, `cos`, `tanh`) extend to any rank with
-  matching shape.
-- **Broadcasting** for shape-mismatched element-wise ops: `(B, N)` plus
-  `(N)` produces `(B, N)`. numpy semantics.
-- **Axis reductions**: `sum-axis`, `mean-axis`, `max-axis`, `min-axis`.
-  Today's `row-sums` / `column-sums` become the rank-2 cases of
-  `sum-axis 1` / `sum-axis 0`.
-- **Shape ops**: `reshape`, `transpose` (reverses dim order at any
-  rank), `permute` (explicit axis permutation), `flatten`, `shape`,
-  `rank`, `numel`.
-- **Indexing**: `tensor i₀ … iₙ₋₁ @` for scalar access;
-  `tensor k i @-axis` for slice along axis k.
-- **Slicing**: ranges along each axis, returning fresh contiguous
-  tensors. Views with shared storage are a later optimization.
-
-Open questions to settle at implementation time: NCHW vs NHWC
-convention (matters for conv); how the `@i` / `@j` shortcuts coexist
-with the general `@-axis`; print format for rank ≥ 3 (suggested: shape
-header plus a few 2D slices).
-
-### BLAS as the default tensor backend
-
-The "Optional BLAS/LAPACK build" item above moves from optional to
-default-on for tensor-enabled builds. For DNN scale, BLAS isn't
-optional — pure-C DGEMM peaks around 5-10 GFLOPS on modern CPUs;
-vendor BLAS hits 50-500 GFLOPS via SIMD/AVX/NEON. That's the
-difference between useful and toy.
-
-The matrix-only zero-dep build remains as a smaller-footprint variant.
-Vendor selection (Apple Accelerate / OpenBLAS / MKL) and build wiring
-(Makefile target vs `#ifdef`) are open per the existing BLAS
-subsection — those questions carry over.
-
-### Convolution via im2col + GEMM
-
-Standard implementation. Unfold the input window into a matrix
-(im2col), GEMM it against the filter matrix, reshape the output back.
-Reuses the BLAS-accelerated matmul path; minimal new compute code on
-top.
-
-- **`im2col`** primitive — tensor → 2D matrix with each row a
-  filter-shaped window. ~80 lines of C.
-- **`col2im`** for the backward pass — the same transform inverted.
-- `conv2d`, `conv1d`, transposed convolutions, strided / dilated
-  variants compose from `im2col` + GEMM + `reshape` in user-level
-  colon defs. No per-variant C primitive needed.
-
-Open questions at implementation time: stride / dilation / padding
-parameter packaging (single packed Val vs multiple stack args);
-padding mode set (`valid` and `same` only, or also `reflect` /
-`replicate`); NCHW vs NHWC.
-
-### Autograd for training
-
-Training requires automatic differentiation. With no JIT and no AOT-to-C,
-the path is a runtime-recorded computation graph: each tensor op records
-itself onto a tape, the backward pass walks the tape in reverse and
-accumulates gradients into each leaf.
-
-This is the largest single piece of work in this section by line count,
-because it requires every tensor op to grow a backward implementation.
-
-Components:
-
-- A flag on `T_TENSOR` (or a parallel `T_GRAD_TENSOR` tag) marking
-  tensors that participate in the graph. Regular tensors flow through
-  unchanged.
-- A **tape** data structure recording each op's operands and the
-  derivative info needed for the backward pass.
-- A **`backward`** primitive that walks the tape from a scalar loss,
-  accumulating gradients into the leaves.
-- A **`requires-grad`** / **`no-grad`** context for opting tensors in
-  or out of graph participation.
-- Per-op **backward implementations** for every primitive that can
-  appear in a graph: matmul, conv (im2col + GEMM in both directions),
-  element-wise, axis reductions, activations, broadcasting. This is
-  the bulk of the code.
-
-Open questions: tape representation (linear array vs linked list);
-gradient accumulation strategy (one tensor per leaf vs sparse map);
-how `to`-mutation interacts with graph membership (probably:
-in-place store on a grad tensor severs the graph node); whether to
-support second-order gradients (probably not in the first cut).
-
-### Suggested build order
-
-When this work is eventually started, the rough dependency order:
-
-1. **Tensor storage refactor** (`T_MATRIX` → `T_TENSOR`, rank/shape
-   fields, existing matrix kernels still working).
-2. **Tensor-op primitives** (axis reductions, reshape, permute,
-   broadcast, indexing, slicing).
-3. **BLAS integration as the default**. Matmul lights up.
-4. **`im2col` / `col2im`**. Convolution composable.
-5. **Autograd**. Last, because it requires every prior op to have a
-   backward.
-
-Each step is a substantial body of work; together easily several
-thousand lines of C plus a much larger test corpus.
-
-### Out of scope
-
-- **GPU acceleration** (CUDA / Metal / OpenCL). CPU only.
-- **Quantization** (INT8 / FP16 / BF16). Could come later if useful;
-  not in the initial design.
-- **Distributed / multi-node training.** Single-process only.
-- **PyTorch / ONNX model loading.** Conversion outside logicforth.
-- **Kernel-level micro-tuning beyond BLAS.** Not writing a BLAS
-  competitor.
-
----
-
 ## String operations via POSIX regex
 
 A single pattern-matching primitive subsumes the usual string-handling
@@ -336,11 +186,14 @@ UTF-8 throughout, codepoint-indexed at the user level.
 - `setlocale(LC_CTYPE, "")` at startup, so POSIX regex picks up the
   process locale and interprets `.` / `[[:alpha:]]` / `[[:digit:]]`
   as codepoint-aware rather than byte-aware.
-- `length`, `substring`, `index-of`, regex match positions — all
-  expressed in *codepoints*, not bytes. A small UTF-8 codec (~50
-  lines: encode, decode, count, advance-by-n) sits underneath every
-  string operation. `regexec` returns byte offsets in `regmatch_t`;
-  we translate to codepoint offsets at the boundary.
+- `size` (on a string), `substring`, `index-of`, and regex match
+  positions — all expressed in *codepoints*, not bytes. There is no
+  separate `length` word: `size` is the single count primitive —
+  element count for arrays / sets / frames, codepoint count for
+  strings. A small UTF-8 codec (~50 lines: encode, decode, count,
+  advance-by-n) sits underneath every string operation. `regexec`
+  returns byte offsets in `regmatch_t`; we translate to codepoint
+  offsets at the boundary.
 - Strings are stored as UTF-8 bytes in `objects[]`. The length field
   stores byte count for storage purposes; codepoint count is
   recomputed on demand (cheap — a single linear scan per call, and
@@ -348,7 +201,7 @@ UTF-8 throughout, codepoint-indexed at the user level.
 - **ASCII fast path.** When a string's bytes are all < 0x80, codepoint
   offset equals byte offset, so the codepoint translation and rescan
   collapse to no-ops. Detect all-ASCII once (a cached per-string flag)
-  and skip the codec on `length`, `substring`, `index-of`, and the
+  and skip the codec on `size`, `substring`, `index-of`, and the
   `regmatch_t` offset translation. Most real input — English text,
   identifiers, CSV, DNA — is all-ASCII, so this keeps the common case
   at byte-oriented speed while the codepoint model stays correct for
@@ -359,7 +212,7 @@ UTF-8 throughout, codepoint-indexed at the user level.
 
 - All ASCII operations behave identically to a byte-oriented design.
 - Non-ASCII characters in patterns and inputs match correctly.
-- `length "café"` → 4 (codepoints), not 5 (bytes).
+- `size "café"` → 4 (codepoints), not 5 (bytes).
 - `substring` never splits a multi-byte sequence.
 
 **What's not covered, called out explicitly:**
@@ -369,7 +222,7 @@ UTF-8 throughout, codepoint-indexed at the user level.
   normalization can hit this; document it.
 - **Grapheme clusters.** `.` matches one codepoint, not one
   user-perceived character. Flag emoji, zalgo text, ZWJ sequences
-  all break the intuitive `length`.
+  all break the intuitive `size`.
 - **Unicode property classes** (`\p{Letter}` etc.). POSIX doesn't
   define them.
 - **Locale-aware case folding for non-ASCII.** `REG_ICASE` is
@@ -481,6 +334,44 @@ than `rand()`).
 and command-line argument handling lives at the shell-script wrapper
 layer, not in the core language.)
 
+### Error handling — `catch` intercepts `error_flag`
+
+Interpreter-level errors (the `error_flag` path: stack underflow, type
+mismatch, division by zero, bad pattern, out-of-bounds) must be catchable,
+not only user `throw`s. `catch` / `try-catch` intercept `error_flag`:
+after running the wrapped xt, if `error_flag` is set, `catch` clears it and
+returns the error (the `error_message` as a string) with the failure flag,
+exactly as if the primitive had `throw`n. This is what lets a long-running
+service recover from a faulty handler — catch the error, return a 500, keep
+serving — rather than aborting to the REPL. Uncaught errors still surface at
+the REPL as before. ~10 lines: a check in the `catch` path that converts a
+set `error_flag` into the same `(exc 1)` result a `throw` produces.
+
+### File I/O — whole-file, no handles
+
+- `read-file ( path -- string )` — read an entire file as one string
+  (byte-safe; errors if the file is missing).
+- `write-file ( string path -- )` — create or truncate, then write.
+- `append-file ( string path -- )` — open in append mode, write, close.
+
+No file-handle type and no open / close / seek: files are whole values.
+The only fd-shaped things in the language are the pipe and socket fds from
+`spawn` / `serve` (`T_FD`); you never `open` a file. The cases whole-file
+reads don't fit — a file too large for memory, or line-by-line streaming —
+go through a pipe instead (`[ "cat" path ] spawn` then `read-line`), the
+same streaming model subprocesses already use. ~15 lines of C each.
+
+### Interpolation format specs
+
+Extend the existing `"... {0} ..."` interpolation with optional format
+specifiers after a colon in the placeholder: `{0:.2f}` (fixed precision),
+`{0:8}` (field width / padding), `{0:x}` (hex), and so on — a small
+printf-style mini-language. Reuses the interpolation already in the
+interpreter; no new word. Covers report output, HTTP / JSON response
+formatting, and TSV cells. The bare `{0}` keeps today's default rendering
+(integer-valued floats as integers, else `%g`; strings and symbols as
+their text).
+
 ---
 
 ## TSV file I/O
@@ -543,6 +434,14 @@ source file, public-domain, zero external dependencies). Expose a
 small Forth-side API for opening databases, running queries, and
 materializing results either as nested arrays (heterogeneous types)
 or as matrices (when all columns are numeric).
+
+**Division of labor with the fact DB and frames** (they are not
+redundant): SQLite is the durable bulk store that survives restarts and
+coordinates across processes; the fact database (logic layer) is in-memory
+relations queried by deterministic logical lookup / unification — loaded
+from SQLite into a working set; frames are the in-flight object shape and
+the JSON wire mapping. Durable storage, logical retrieval, and object
+representation are three jobs, one tool each.
 
 **Why this:**
 
@@ -774,6 +673,17 @@ work).
 - `pid stop ( -- status )` — signal the child, then reap it; for aborting a
   process that won't finish on its own.
 
+**Concurrent outbound calls.** `spawn` is non-blocking — it forks and
+returns the process frame immediately; only `read-all` blocks. So
+fan-out is spawn-all-then-drain-all: `spawn` N children (they run
+concurrently as OS processes), then `read-all` each. Wall time is the
+slowest call, not the sum. This is how concurrent LLM calls are done — no
+green threads or non-blocking pipe I/O required (the deferred non-blocking
+work is only for reacting to whichever child finishes *first*, which
+fan-out-and-collect doesn't need). Cap concurrency to vendor rate limits
+with a `lib.l4` loop that spawns in batches of N; cap inbound concurrency
+with the HTTP server's prefork worker count.
+
 The normal lifecycle is spawn → `write` input → `close` `:in` → `read-all` →
 `wait`. Use `wait`, not `stop`, after draining output: EOF on stdout doesn't
 mean the child is finished (e.g. `cat > file` produces no stdout but is still
@@ -887,7 +797,7 @@ back into logicforth; whether to support struct-by-value arguments.
 
 ## Unification + nondeterminism (microKanren-flavored, on continuations)
 
-Once delimited continuations are in, a logic-programming layer becomes
+Now that delimited continuations are in, a logic-programming layer is
 tractable: logic variables, unification, `amb` / `fail` for choice and
 backtracking. The flavor is closer to Prolog than to the faithful
 microKanren stream-of-states model — the substitution is implicit
@@ -923,8 +833,14 @@ and the fact-database design, not for its control structure.
 - `unify ( a b -- bool )` — try to unify; returns truthy on success
   (with any new bindings trailed), falsy on failure. Atomic equality
   via existing `val_cmp`. Arrays unify structurally (same length, then
-  element-wise). Sets, matrices, xt's, continuations only unify by
-  identity.
+  element-wise) and also against a `[ H | T ]` cons pattern: an array of
+  length ≥ 1 unifies with H bound to the head and T to a fresh tail array
+  of the remaining elements. This works both directions — `arr [ H | T ]
+  unify` decomposes (binds H and T), and unifying a free variable with
+  `[ H | T ]` where H and T are bound constructs the array. This cons
+  pattern is the sole head/tail mechanism; there are no `>head` / `head>`
+  primitives (see "Array head/tail decomposition"). Sets, matrices, xt's,
+  continuations only unify by identity.
 - **Frames unify as open records**, and this is the logic-var
   destructuring mechanism for frames: a pattern frame constrains only
   the keys it names. `{ :name N :age A } { :name "Ann" :age 30 }
@@ -972,15 +888,17 @@ lvar  [: 1 over unify drop :]
 \ later, fail to get 2
 ```
 
-**Cost:** ~140 lines in C (logic var, trail, unify primitive) plus
-~30 lines of `lib.l4` for `amb` / `fail` / `once` / `fresh` / `run`.
-Assumes continuations are working.
+**Cost:** ~140 lines in C (logic var, trail, the `unify` primitive with
+the `[H|T]` cons pattern and open-record frames) plus ~30 lines of
+`lib.l4` for `amb` / `fail` / `once` / `fresh` / `run`. The fact database
+adds the `set-add!` primitive plus its `assert` / `retract` / `query`
+words on top. Assumes continuations are working (they are).
 
 **Subtleties:**
 
 - **Occur check skipped** — `X = [X]` makes a cyclic term and may
   loop on later use. Match Prolog's default; document the gotcha.
-- **Variable keys in hashmaps not allowed** — same restriction Prolog
+- **Variable keys in frames not allowed** — same restriction Prolog
   has for compound functors. Only values can be logic variables.
 - **Trail interaction with `forget`** — logic vars are objects and
   survive `forget` like any other heap value, but their names (kept
@@ -1002,10 +920,20 @@ sets rather than new C structures:
   values must be symbols (or interned with `string>symbol`). This matches
   the Datalog convention of relations over atoms; columns holding numbers
   or compound terms fall back to a scan.
-- **Query** — for each bound term, look up its column index frame to get a
-  row-id set, then intersect the sets (smallest first) using the existing
-  `intersection` primitive. Unbound terms (logic vars) are skipped during
-  indexing and unified against the surviving rows.
+- **Query** — `query` is a nondeterministic goal, not an eager fetch.
+  The indices first narrow the candidates: intersect the per-column
+  index sets for the bound terms (smallest first, via `intersection`).
+  The goal then unifies the pattern against each candidate row in turn,
+  succeeding once per match and backtracking to the next on `fail`, so it
+  composes with `amb` / `fail` like any other goal. Logic-var terms in the
+  pattern bind to the row's values on each success and unbind on backtrack.
+
+**Words:** `assert` adds a fact to a relation (appending the row and
+updating each column index); `retract` removes facts matching a pattern;
+`query` is the backtracking goal above — it succeeds once per matching
+row, binding the pattern's logic vars, and resumes the search on `fail`.
+Exact stack shapes (how a relation is named and its columns declared) are
+settled at implementation time.
 
 The one primitive this needs that doesn't exist yet is an in-place set
 insert (`set-add!`) for incremental `assert`, since today's set words all
@@ -1117,9 +1045,10 @@ thread runs its own owned interpreter, with no shared mutable state.
 Values that travel through mailboxes get deep-copied into the
 receiver's `objects[]`:
 
-- `T_FLOAT`, `T_SYM` (bytes; re-interned in receiver), `T_THREAD`:
-  bit-for-bit.
-- `T_STRING`, `T_ARRAY`, `T_SET`, `T_MATRIX`, `T_DICT`: deep copy.
+- `T_FLOAT`, `T_THREAD`: bit-for-bit.
+- `T_SYMBOL`: travels as its byte name and is re-interned in the
+  receiver's symbol pool (a pool offset is interpreter-specific).
+- `T_STRING`, `T_ARRAY`, `T_SET`, `T_FRAME`, `T_MATRIX`: deep copy.
 - `T_XT`, `T_ADDR`, `T_CONT`: *not transmissible* — they reference
   interpreter-specific dict positions / rstack contents. Sending one
   is a type error. Same restriction Erlang has on local PIDs and
@@ -1188,50 +1117,31 @@ Path A stands alone; Path B lights up parallelism.
 
 ---
 
-## Array head decomposition
+## Array head/tail decomposition — via the `[H|T]` cons pattern
 
-Two C primitives supporting Prolog-style `[H|T]` decomposition over arrays:
+Prolog-style head/tail decomposition is provided by the `[ H | T ]` cons
+pattern on `unify` (see "Unification + nondeterminism"), not by dedicated
+primitives. `arr [ H | T ] unify` binds `H` to the head and `T` to a fresh
+tail array; unifying a free variable with `[ H | T ]` where both are bound
+builds the array. One declarative mechanism, both directions.
 
-- **`>head`** ( elem arr -- arr' ) — prepend an element. Allocates a new
-  array of length len(arr)+1; copies arr after the new first slot.
-- **`head>`** ( arr -- first rest ) — split off the first element. Returns
-  the head Val and a new array of length len(arr)-1 starting at index 1.
-  Errors on empty array.
+No `>head` / `head>` primitives. They were considered as an imperative
+fast path (a C `head>` being a single `memcpy`), but the niche doesn't
+hold up: the cons pattern already covers head/tail for the declarative and
+logic cases, and it allocates the same fresh tail array a `head>` would —
+so `head>`'s only saving was avoiding trail/logic-var overhead, not the
+dominant copy. For hot imperative iteration the right tool is the C-side
+`reduce` / `map` family, not per-step array splitting.
 
-Names follow the existing direction convention (`>r` / `r>`, `>side` /
-`side>`, `>frame`, `string>symbol`): `>head` puts a head on, `head>` takes
-a head off.
+**Cost note that still applies.** Arrays are contiguous, not linked, so a
+recursive walk that splits a head off each step — whether via the cons
+pattern or otherwise — allocates tail arrays of sizes N-1, N-2, …, 1:
+O(N²) Val storage churned. Fine for shallow, clause-shaped decomposition;
+for anything large, iterate with `reduce` / `map`, which stays C-side.
 
-**Why C and not `lib.l4`.** Both could be defined over `@i` + `take` +
-`skip`, but `skip` is `reverse take reverse` — three traversals per call.
-A C `head>` is a single `memcpy`, materially faster for the recursive
-patterns this enables. ~15 lines each.
-
-**Use case.** Recursive walks shaped like Prolog clauses:
-
-```forth
-: sum-arr ( arr -- sum )
-  dup size 0 = if drop 0
-  else head> swap sum-arr + then ;
-```
-
-**Cost note worth documenting.** Arrays are contiguous, not linked. A
-recursive walk over N elements via `head>` allocates a sequence of arrays
-of sizes N-1, N-2, …, 1 — O(N²) Val storage churned. Fine for shallow
-decomposition; pathological for large arrays. The performant alternative
-for those cases is the existing `reduce` / `map` / `each` family, which
-keeps iteration C-side.
-
-**Back-end (snoc-style) deferred.** No equivalent for the tail end of an
-array — the `[H|T]` pattern doesn't need it, and `last` is already in
-`lib.l4` with a different shape (`arr n -- arr'`, last-N elements). If
-added later, name them by behavior, not by symmetry with the head pair.
-
-**Connection to the planned logic layer.** When unification lands,
-`[ H | T ]` becomes a literal pattern term that unifies with arrays of
-length ≥ 1 — `H` binds to head, `T` to a fresh tail array (or a logic
-variable thereof, depending on direction). The pattern syntax is the
-declarative form; `>head` / `head>` remain the imperative fast path.
+**Back-end (snoc-style) decomposition** is likewise not a primitive. The
+`[H|T]` pattern doesn't need it, and `last` already covers last-N in
+`lib.l4` (`arr n -- arr'`).
 
 ---
 
@@ -1268,11 +1178,15 @@ taken by the stack primitive) and `last` are in `lib.l4` atop `take` +
 - **`sort-by`** — `arr [: ( elt -- key ) :] sort-by` → sorted by
   extracted key. Atop `sort-with` (see the Sort section); sorting
   reorders in place rather than building, so it stays in `lib.l4`.
+- **`each`** — `arr [: ( elt -- ) :] each` → apply xt to each element
+  for its side effects, no result. `i-times` + `@i` underneath; this is
+  for-each.
 
-**Predicated on dicts being in:**
+**Build on frames (now available):**
 
-- **`group-by`** — `arr [: ( elt -- key ) :] group-by` → hashmap from
-  key to array of elements with that key.
+- **`group-by`** — `arr [: ( elt -- key ) :] group-by` → frame from
+  key to array of elements with that key. Keys must be symbols, per the
+  frame key rule.
 - **`partition`** — `arr [: pred :] partition` → two arrays, matches
   and non-matches.
 
@@ -1281,12 +1195,12 @@ taken by the stack primitive) and `last` are in `lib.l4` atop `take` +
 - `count` — `[: pred :] filter size`.
 - `min-by` / `max-by` — `reduce` with comparison.
 - `sum` / `product` — `0 [: + :] reduce` etc.
-- `for-each` — already covered by `each`.
 
 **Cost:**
 
-- `lib.l4`: `find`, `any?`, `all?`, `flat-map`, `sort-by` → ~50 lines.
-- `group-by` and `partition` wait on dicts.
+- `lib.l4`: `find`, `any?`, `all?`, `flat-map`, `sort-by`, `each` → ~60 lines.
+- `group-by` / `partition` build on frames (now available); `group-by`'s
+  result is a frame, so its keys must be symbols.
 
 ---
 
@@ -1304,8 +1218,10 @@ definition, variable, symbol, or primitive.
   defs' SRCIDX still points to body source; `help` extracts the
   first `( ... )` paren-comment as the doc.
 - **Entry — primitives**: extend `define_primitive` to take a doc
-  string parameter. All ~70 primitives get short stack-effect-style
-  docs at registration time (e.g. `( n -- n*n )  square the top`).
+  string parameter. The ~170 user-facing primitives get short
+  stack-effect-style docs at registration time (e.g. `( n -- n*n )
+  square the top`); internal words (parenthesized, flagged internal)
+  can pass an empty doc.
 - **Entry — colon defs**: convention is the first `( ... )` after
   the name, Forth-style: `: square ( n -- n*n ) dup * ;`. No new
   syntax. Words without a paren-comment have no help text.
@@ -1326,8 +1242,8 @@ definition, variable, symbol, or primitive.
 
 **Cost:**
 
-- One signature change to `define_primitive` (touches ~70 call sites
-  but mechanically — add a doc string each).
+- One signature change to `define_primitive` (touches every call site —
+  ~230 — but mechanically: add a doc string, empty for internal words).
 - Static doc strings: ~600–1000 bytes.
 - About a dozen lines for `p_help`.
 
