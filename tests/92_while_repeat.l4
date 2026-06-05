@@ -1,0 +1,18 @@
+\ begin <cond> while <body> repeat — test-at-top loop. The condition is tested
+\ each pass before the body; the body is skipped entirely if it's false at entry.
+
+\ count 0..4
+: count5 0 begin dup 5 lt while dup . 1+ repeat drop ;
+count5 cr
+
+\ sum 1..10 = 55
+: sum10 | i s | 0 to s 1 to i begin i 11 lt while i s + to s i 1+ to i repeat s ;
+sum10 . cr
+
+\ body skipped when the condition is false on entry
+: skip 0 begin dup 0 gt while drop 99 repeat ;
+skip . cr
+
+\ countdown 3 2 1
+: down 3 begin dup 0 gt while dup . 1- repeat drop ;
+down cr

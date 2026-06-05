@@ -929,6 +929,74 @@ void p_local_store_0depth(Interpreter *interp) {
 LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
 LOCAL_ARITH_0DEPTH(p_local_decr_0depth, "(local-!)", n - 1.0)
 
+#define LOCAL_ACC_OP(suffix, op) \
+	static int local_acc_##suffix##_0_cfa; \
+	static int local_acc_##suffix##_cfa; \
+	static void p_local_acc_##suffix##_0(Interpreter *interp) { \
+		int slot = (int)interp->vocab->dict[interp->ip++]; \
+		Val *p = &interp->return_stack[interp->local_base + slot]; \
+		double x = pop(interp).number; \
+		p->number = x op p->number; \
+		DISPATCH(interp); \
+	} \
+	static void p_local_acc_##suffix(Interpreter *interp) { \
+		int depth = (int)interp->vocab->dict[interp->ip++]; \
+		int slot = (int)interp->vocab->dict[interp->ip++]; \
+		int base = interp->local_base; \
+		for (int i = 0; i < depth; i++) \
+			base = (int)VAL_DATA(interp->return_stack[base - 1]); \
+		Val *p = &interp->return_stack[base + slot]; \
+		double x = pop(interp).number; \
+		p->number = x op p->number; \
+		DISPATCH(interp); \
+	}
+LOCAL_ACC_OP(add, +)
+LOCAL_ACC_OP(sub, -)
+LOCAL_ACC_OP(mul, *)
+LOCAL_ACC_OP(div, /)
+
+int try_fuse_local_acc(Interpreter *interp, int depth, int slot) {
+	cell *dict = interp->vocab->dict;
+	int here = interp->vocab->here;
+	if (here < 1)
+		return 0;
+
+	cfa_handler binop = (cfa_handler)dict[here - 1];
+	int cfa0, cfag;
+	if (binop == p_add_f) { cfa0 = local_acc_add_0_cfa; cfag = local_acc_add_cfa; }
+	else if (binop == p_sub_f) { cfa0 = local_acc_sub_0_cfa; cfag = local_acc_sub_cfa; }
+	else if (binop == p_mul_f) { cfa0 = local_acc_mul_0_cfa; cfag = local_acc_mul_cfa; }
+	else if (binop == p_div_f) { cfa0 = local_acc_div_0_cfa; cfag = local_acc_div_cfa; }
+	else return 0;
+
+	if (depth == 0) {
+		if (here < 3)
+			return 0;
+		if ((cfa_handler)dict[here - 3] != p_local_fetch_0depth)
+			return 0;
+		if ((int)dict[here - 2] != slot)
+			return 0;
+		interp->vocab->here -= 3;
+		emit_call(interp, cfa0);
+		emit(interp, (cell)slot);
+		return 1;
+	}
+
+	if (here < 4)
+		return 0;
+	if ((cfa_handler)dict[here - 4] != p_local_fetch)
+		return 0;
+	if ((int)dict[here - 3] != depth)
+		return 0;
+	if ((int)dict[here - 2] != slot)
+		return 0;
+	interp->vocab->here -= 4;
+	emit_call(interp, cfag);
+	emit(interp, (cell)depth);
+	emit(interp, (cell)slot);
+	return 1;
+}
+
 void p_set(Interpreter *interp) {
 	POP_INT(count, "set", "count");
 	if (count < 0 || count > interp->dsp) {
@@ -1420,10 +1488,18 @@ static int op_cell_count(Vocabulary *vocab, cell *dict, int cursor) {
 		return 3 + (int)dict[cursor + 2];
 
 	if (handler == vocab->dict[vocab->local_fetch_cfa]
-	    || handler == vocab->dict[vocab->local_store_cfa])
+	    || handler == vocab->dict[vocab->local_store_cfa]
+	    || handler == (cell)p_local_acc_add
+	    || handler == (cell)p_local_acc_sub
+	    || handler == (cell)p_local_acc_mul
+	    || handler == (cell)p_local_acc_div)
 		return 3;
 
-	if (handler == vocab->dict[vocab->literal_cfa])
+	if (handler == vocab->dict[vocab->literal_cfa]
+	    || handler == (cell)p_local_acc_add_0
+	    || handler == (cell)p_local_acc_sub_0
+	    || handler == (cell)p_local_acc_mul_0
+	    || handler == (cell)p_local_acc_div_0)
 		return 2;
 
 	if (handler == vocab->dict[vocab->dostr_cfa]
@@ -2310,6 +2386,14 @@ int main(void) {
 	interp->vocab->local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 4);
 	interp->vocab->local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 4);
 	interp->vocab->local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 4);
+	local_acc_add_0_cfa = define_primitive(interp, "(acc+0)", p_local_acc_add_0, 4);
+	local_acc_add_cfa   = define_primitive(interp, "(acc+)",  p_local_acc_add, 4);
+	local_acc_sub_0_cfa = define_primitive(interp, "(acc-0)", p_local_acc_sub_0, 4);
+	local_acc_sub_cfa   = define_primitive(interp, "(acc-)",  p_local_acc_sub, 4);
+	local_acc_mul_0_cfa = define_primitive(interp, "(acc*0)", p_local_acc_mul_0, 4);
+	local_acc_mul_cfa   = define_primitive(interp, "(acc*)",  p_local_acc_mul, 4);
+	local_acc_div_0_cfa = define_primitive(interp, "(acc/0)", p_local_acc_div_0, 4);
+	local_acc_div_cfa   = define_primitive(interp, "(acc/)",  p_local_acc_div, 4);
 
 	define_superwords(interp);
 
@@ -2329,6 +2413,8 @@ int main(void) {
 	define_primitive(interp, "begin", p_begin, 1);
 	define_primitive(interp, "until", p_until, 1);
 	define_primitive(interp, "again", p_again, 1);
+	define_primitive(interp, "while", p_while, 1);
+	define_primitive(interp, "repeat", p_repeat, 1);
 	define_primitive(interp, "[:", p_qcolon, 1);
 	define_primitive(interp, ":]", p_qsemi, 1);
 	define_primitive(interp, "|", p_bar, 1);

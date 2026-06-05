@@ -245,6 +245,7 @@ void define_superwords(Interpreter *interp);
 int superword_cell_count(cell handler);
 int superword_try_fuse(Interpreter *interp, int op_cfa);
 int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
+int try_fuse_local_acc(Interpreter *interp, int depth, int slot);
 
 static inline void push(Interpreter *interp, Val value) {
 	if (interp->dsp < DATA_STACK_DEPTH) {
@@ -585,6 +586,8 @@ void p_else(Interpreter *interp);
 void p_begin(Interpreter *interp);
 void p_until(Interpreter *interp);
 void p_again(Interpreter *interp);
+void p_while(Interpreter *interp);
+void p_repeat(Interpreter *interp);
 void p_qcolon(Interpreter *interp);
 void p_qsemi(Interpreter *interp);
 void p_tick(Interpreter *interp);

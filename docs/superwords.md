@@ -11,17 +11,20 @@ understand:
 - How the compiler fuses idiomatic source into superinstructions at compile
   time, with no new syntax for the programmer to learn
 - How a store (`<expr> to <var>`) fuses into the producing op as well
-- How every superinstruction is generated from three operator lists, so adding
+- How the read-modify-write of a local accumulator (`<value> acc <fop> to acc`)
+  fuses the same way, collapsing the per-element cost of every reduction
+- How every superinstruction is generated from a short operator list, so adding
   one is a single line that cannot fall out of sync
 - Why the fused cells need care to stay safe for the garbage collector's
   body-walk, and how `see-compiled` lets you see the fused form
 
-The implementation is in `src/c/superwords.c`, with two small hooks elsewhere:
-the auto-fusion lookback in `run_outer` and the store-fusion check in `p_to`
-(`src/c/core.c`, `src/c/words.c`), plus the operand-width entry in
-`op_cell_count`. The aim of this document is to make the fusion feel like an
-obvious bookkeeping trick rather than a special case — because that is all it
-is.
+The variable superinstructions live in `src/c/superwords.c`; the accumulator
+(local) fusion lives in `src/c/core.c`, since it reads and writes the locals
+frame rather than dictionary slots. Both plug into the same compile-time hooks:
+the emit-time lookback in `run_outer` and the store/accumulate checks in `p_to`,
+with operand-width entries in `op_cell_count`. The aim of this document is to
+make the fusion feel like an obvious bookkeeping trick rather than a special
+case — because that is all it is.
 
 ---
 
@@ -179,7 +182,78 @@ both read and written.
 
 ---
 
-## Part 6: One list, every touch-point
+## Part 6: Accumulator fusion
+
+A reduction folds a sequence into a single running value:
+
+```
+acc  ←  acc ⊕ xᵢ      for each element xᵢ
+```
+
+The running value lives in a local — the natural scope-bounded mutable cell —
+and the fold is written as an update inside a loop:
+
+```forth
+| acc |
+0 to acc
+[: |> i | i acc f+ to acc :] n i-times
+acc
+```
+
+Compiled literally, the update `i acc f+ to acc` is three dispatched ops: fetch
+the local `acc`, apply the operator, store the result back into `acc`. Two of
+the three only move the accumulator in and out of the stack; the arithmetic is
+the third. In the innermost loop of a reduction — a sum, a dot product, a mean,
+any fold — that fetch-and-store is paid on every element.
+
+Accumulator fusion collapses the read-modify-write of a local into a single op.
+At emit time the compiler recognizes the shape
+
+```
+[ fetch local L ]  [ float op ]  [ store local L ]      (same L)
+```
+
+and replaces it with one instruction that reads `L` in place, combines it with
+the value already on the stack, and writes the result back — no intermediate
+push, no separate fetch or store dispatch. It is the local analogue of store
+fusion (Part 5): store fusion folds a write into a *global* variable;
+accumulator fusion folds a read-modify-write of a *local*.
+
+```
+i acc f+ to acc      →      [ handler for (acc+) ] [ acc depth ] [ acc slot ]
+```
+
+The fused op computes `acc ← value ⊕ acc`, preserving operand order: the value
+on the stack is the left operand and the accumulator the right, exactly as the
+unfused `value acc op` sequence computed it. So the non-commutative operators
+stay correct — `f-` yields `value − acc`, `f/` yields `value ÷ acc`.
+
+**Only the monomorphic float operators fuse.** The fused op works on raw doubles
+in place. The polymorphic operators (`+`, `*`, …) dispatch on tag and may act on
+matrices or other types, so folding one into a float read-modify-write would be
+unsound. Fusion fires only for the `f`-prefixed forms (`f+ f- f* f/`), which are
+float-by-contract.
+
+**Depth.** A local is addressed by a (scope depth, slot) pair. The characteristic
+case is the one above: the accumulator is declared in an enclosing scope and
+updated inside a loop quotation, so it is reached at depth ≥ 1, and the fused op
+carries the depth alongside the slot. An accumulator updated in the same scope
+it was declared is the depth-0 variant of the same op.
+
+This is the interpreter form of a familiar compiler transform — turning
+`x = x ⊕ e` into a single read-modify-write of `x`'s storage rather than a load,
+a compute, and a store. In a dispatch-bound interpreter the gain is concrete and
+universal: two fewer dispatches per element in the hottest loop of every
+reduction.
+
+Like the other inline-operand superinstructions, the fused op carries its
+operands — the slot, and the depth for the nested form — in the instruction
+stream, so the structure-walk the garbage collector and the decompiler rely on
+must know its width (Part 8).
+
+---
+
+## Part 7: One list, every touch-point
 
 A superinstruction is not one piece of code; it is six. Each needs:
 
@@ -187,7 +261,7 @@ A superinstruction is not one piece of code; it is six. Each needs:
 2. a store-variant handler,
 3. a compile-time word (so it can be typed),
 4. registration in the dictionary,
-5. an entry in `op_cell_count` so the body-walk knows its width (Part 7),
+5. an entry in `op_cell_count` so the body-walk knows its width (Part 8),
 6. a line in the fuse logic mapping a base operator to the superinstruction.
 
 Maintaining six parallel lists by hand is how a subtle bug enters: forget the
@@ -216,7 +290,7 @@ fused multiplies).
 
 ---
 
-## Part 7: Keeping the body-walk correct
+## Part 8: Keeping the body-walk correct
 
 A compiled body is a flat array of cells, and nothing in a cell marks it as a
 handler versus an inline operand. Code that walks a body — the garbage
@@ -243,7 +317,7 @@ acts on. Superinstructions have no such ambiguity, so adding them to
 
 ---
 
-## Part 8: Seeing the fused form — `see-compiled`
+## Part 9: Seeing the fused form — `see-compiled`
 
 Because fusion happens silently, `see` does not reveal it: `see` reprints a
 word's stored source text, so it shows exactly what the programmer typed —
@@ -266,7 +340,7 @@ That is the tool for confirming a hot word fused the way you expected.
 
 ---
 
-## Part 9: Where fusion pays off
+## Part 10: Where fusion pays off
 
 Fusion removes dispatch, so the gain tracks how much of a loop is dispatch
 versus real work.
@@ -288,17 +362,23 @@ because there is less dispatch to remove.
 
 ---
 
-## Part 10: Where to look in the source
+## Part 11: Where to look in the source
 
-- **`src/c/superwords.c`** — everything: the three operator lists, the template
-  macros that generate the handlers / compile words / store variants,
-  `superword_cell_count`, `superword_try_fuse` (the auto-fusion logic), and
-  `superword_try_fuse_store` (the store-fusion logic).
+- **`src/c/superwords.c`** — the variable superinstructions: the three operator
+  lists, the template macros that generate the handlers / compile words / store
+  variants, `superword_cell_count`, `superword_try_fuse` (the auto-fusion logic),
+  and `superword_try_fuse_store` (the store-fusion logic).
+- **`src/c/core.c`** — the accumulator-fusion ops (a macro over the four float
+  operators generating the depth-0 and nested read-modify-write handlers) and
+  `try_fuse_local_acc`, the match-and-rewind for `<value> acc <fop> to acc`.
+  These live here, not in `superwords.c`, because they read and write the locals
+  frame rather than dictionary slots.
 - **`run_outer`** in `src/c/core.c` — the emit-time lookback that maintains the
   variable-push history and calls `superword_try_fuse` before emitting a plain
   operator.
-- **`p_to`** in `src/c/words.c` — calls `superword_try_fuse_store` before
-  emitting `(to-var)`.
+- **`p_to`** in `src/c/words.c` — calls `superword_try_fuse_store` (variable
+  stores) and `try_fuse_local_acc` (local accumulators) before emitting a plain
+  store.
 - **`op_cell_count`** in `src/c/core.c` — defers to `superword_cell_count` so
   the GC body-walk and the inliner step over superinstructions correctly.
 - **`p_see_compiled`** in `src/c/core.c` — the `see-compiled` decompiler.

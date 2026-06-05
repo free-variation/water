@@ -754,6 +754,26 @@ void p_again(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_while(Interpreter *interp) {
+	emit_call(interp, interp->vocab->zbranch_cfa);
+	push(interp, make_float((double)interp->vocab->here));
+	emit(interp, 0);
+
+	DISPATCH(interp);
+}
+
+void p_repeat(Interpreter *interp) {
+	POP(exit_slot_val);
+	POP(back_val);
+	int exit_slot = (int)VAL_NUMBER(exit_slot_val);
+	int back = (int)VAL_NUMBER(back_val);
+	emit_call(interp, interp->vocab->branch_cfa);
+	emit(interp, back - interp->vocab->here);
+	interp->vocab->dict[exit_slot] = (interp->vocab->here - exit_slot);
+
+	DISPATCH(interp);
+}
+
 void p_qcolon(Interpreter *interp) {
 	int branch_slot = -1;
 	if (interp->compiling) {
@@ -995,6 +1015,8 @@ void p_to(Interpreter *interp) {
 	if (interp->compiling) {
 		int local_depth, local_slot_idx;
 		if (find_local(interp, token, &local_depth, &local_slot_idx)) {
+			if (try_fuse_local_acc(interp, local_depth, local_slot_idx))
+				return;
 			if (local_depth == 0) {
 				emit_call(interp, interp->vocab->local_store_0depth_cfa);
 				emit(interp, (cell)local_slot_idx);

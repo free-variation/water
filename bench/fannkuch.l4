@@ -33,17 +33,11 @@ inline
 : count-flips ( -- flips )
   | flips |
   0 to flips
-  PERM 0 @i
-  begin
-    dup if
-      flip-perm
-      ++ flips
-      PERM 0 @i
-      0
-    else
-      drop -1
-    then
-  until
+  begin PERM 0 @i dup while
+    flip-perm
+    ++ flips
+  repeat
+  drop
   flips ;
 
 : rotate-perm1 ( r -- )
@@ -69,20 +63,17 @@ inline
 
   begin
     \ Reset COUNT[r-1..0]
-    begin
-      r 1 = if -1 else
-        COUNT r f1-  r  !i drop
-        -- r
-        0
-      then
-    until
+    begin r 1 gt while
+      COUNT r f1-  r  !i drop
+      -- r
+    repeat
 
     \ Skip equivalent perms
-    PERM1 0 @i 0 = 0 =
-    PERM1 n f1- @i n f1- = 0 =
-    f* if
-      copy-perm1
-      count-flips update-max
+    PERM1 0 @i 0 = 0 = if
+      PERM1 n f1- @i n f1- = 0 = if
+        copy-perm1
+        count-flips update-max
+      then
     then
 
     \ Advance permutation

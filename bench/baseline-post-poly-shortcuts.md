@@ -39,9 +39,13 @@ primitives broadcast scalar↔matrix directly).
   keys on the monomorphic handlers, so hot float code uses the `f`-prefixed ops.
 - Store fusion: `<superword> to <var>` folds into a store variant that writes
   the variable directly, eliminating the intermediate push and `(to-var)`.
+- Local-accumulate fusion: `<value> acc <fop> to acc` folds into one
+  read-modify-write op on the local accumulator (both depth-0 and across a
+  quotation), covering the reduction pattern in `reduce`-shaped loops.
+- `begin … while … repeat` test-at-top loop, alongside `begin … until`.
 - Logical primitives `and`/`or`/`not`; in-place `flip` (prefix reverse).
 - `see-compiled` decompiles a word's body to show the fused form.
-- Tests: 91/91 passing.
+- Tests: 93/93 passing.
 
 ## synth.l4 — logicforth vs CPython 3.14
 
@@ -76,14 +80,15 @@ faster, with identical exact IEEE division.
 | leibniz-matrix | 1e9, vectorized |    0.77 s  |   40.02 s   | ~52×    |
 | nqueens        | N = 8           |   0.0331 s |   0.0423 s  | 1.28×   |
 | nbody          | 20_000 steps    |   0.0476 s |   0.0499 s  | 1.05×   |
-| fannkuch       | N = 9           |   0.2046 s |   0.1890 s  | 0.92×   |
-| spectral-norm  | N = 130, 50×    |   2.645 s  |   2.566 s   | 0.97×   |
+| fannkuch       | N = 9           |   0.1845 s |   0.1890 s  | 1.02×   |
+| spectral-norm  | N = 130, 50×    |   2.36 s   |   2.566 s   | 1.09×   |
 
-logicforth wins leibniz, nqueens, and nbody; CPython 3.14 leads fannkuch and
-spectral-norm, both now within ~10% (spectral-norm closed from 0.87× to a
-near-tie). The remaining losses sit on flat profiles — array
-permutation/reversal (fannkuch) and nested float reductions (spectral-norm) —
-with no single dominant cost left to target.
+logicforth now leads every standalone benchmark. The last two crossed this
+session: fannkuch once its pre-test loops moved to `begin … while … repeat`
+(dropping the sentinel-flag idiom), and spectral-norm once `eval_A` — its
+~17M-call hot spot — was marked `inline`. Local-accumulate fusion then folded
+spectral-norm's `acc f+ to acc` inner reduction into a single op, taking it from
+~1.03× to ~1.09×.
 
 ## Reproduce
 
