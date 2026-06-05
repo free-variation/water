@@ -416,6 +416,25 @@ structural compare/unify (frames are the planned unification layer's compound
 term) and for small record-sized maps where a flat ordered scan beats hashing.
 Complete, including `merge`, deep `copy`, and image save/load.
 
+### Path keys in frame literals — planned
+
+Allow a path (`/a/b/c`) in key position when building a frame, as
+construction sugar for nested frames. `{ /addr/city C }` builds
+`{ :addr { :city C } }`; the stored frame still has only symbol keys and
+nested frames — the path never persists as a key. This reuses the
+auto-vivify walk `!` already performs (`frame_walk` in `WALK_VIVIFY`
+mode): the literal applies walk-and-set per pair instead of the
+symbol-keyed `frame_put`. Shared prefixes merge rather than clobber,
+because vivify reuses an existing intermediate frame: `{ /addr/city C
+/addr/zip Z }` builds `{ :addr { :city C :zip Z } }` from the two pairs
+left to right. Applies to `{ }` and `>frame` alike, not only to patterns.
+
+The payoff is path-based destructuring for free: because a path key
+expands to a nested pattern frame at construction time, the open-records
+`unify` (below) matches deep values with no path-specific machinery —
+`person { /addr/city C } unify` binds C to the deep value, and unify
+never sees a path, only the nested frame it expanded to.
+
 ### Time / dates
 
 Unix timestamps as `T_FLOAT` (seconds since epoch, fractional allowed).
@@ -876,6 +895,17 @@ state (logic-var bindings + a trail), and search is driven by
 continuations rather than by mapping goals over streams. The name
 "logicforth" finally earns its second half.
 
+This layer is built natively on logicforth's own substrate — the trail,
+delimited continuations, tagged values, and frames — not transpiled from
+an existing engine. A faithful Java microKanren (free-variation/archelogic
+`MicroKanren.java`) serves as the behavioral reference, but its
+implementation reimplements three things logicforth already provides:
+closures (goals as captured lambdas), a stream/answer model, and a
+copy-on-extend substitution. Porting it would drag those along; targeting
+the existing GC, continuations, and trail is less code. The reference is
+worth reading for the relations (`conso`, `appendo`, `membero`, `conde`)
+and the fact-database design, not for its control structure.
+
 **New machinery in C:**
 
 - `T_LOGIC_VAR` tag, `OBJECT_LOGIC_VAR` kind carrying a name (for
@@ -892,9 +922,24 @@ continuations rather than by mapping goals over streams. The name
   unbound, else the bound value (recursively dereffed).
 - `unify ( a b -- bool )` — try to unify; returns truthy on success
   (with any new bindings trailed), falsy on failure. Atomic equality
-  via existing `val_cmp`. Arrays and hashmaps unify structurally
-  (same length / same key set, then element-wise). Sets, matrices,
-  xt's, continuations only unify by identity.
+  via existing `val_cmp`. Arrays unify structurally (same length, then
+  element-wise). Sets, matrices, xt's, continuations only unify by
+  identity.
+- **Frames unify as open records**, and this is the logic-var
+  destructuring mechanism for frames: a pattern frame constrains only
+  the keys it names. `{ :name N :age A } { :name "Ann" :age 30 }
+  unify` binds N and A; extra keys on either side are permitted. Shared
+  keys' values must unify (recursively, so nested patterns reach deep
+  values). Path keys in the pattern literal (`{ /addr/city C }`, see
+  "Path keys in frame literals") expand to a nested pattern frame at
+  construction time, so deep destructuring needs no path-specific
+  machinery in `unify` — it only ever sees the nested frame. A key named
+  in one frame but absent in the other makes the unification **fail** — a
+  var only binds where its key exists. This
+  makes frame `unify` deliberately distinct from frame `=` (`val_cmp`),
+  which stays exact structural equality; matching is not equality.
+  `destruct` / `destruct-to` stay as the faster non-logic-var path for
+  pulling a frame or array apart without introducing logic variables.
 - `trail-mark ( -- m )` and `trail-undo ( m -- )` — for managing the
   trail across choice points. `fail` ultimately calls `trail-undo`.
 
@@ -944,6 +989,40 @@ Assumes continuations are working.
   `forget` runs.
 - **Image save/load** — logic-var objects serialize like any other;
   the trail is session state and doesn't need to persist.
+
+**Fact database:**
+
+A relational fact store is part of the logic layer, built on frames and
+sets rather than new C structures:
+
+- **Rows** — each fact is an array of values; a relation is an array of
+  those rows.
+- **Indices** — per indexed column, a frame mapping a column value to the
+  set of row ids holding it. Frame keys are symbols, so indexed column
+  values must be symbols (or interned with `string>symbol`). This matches
+  the Datalog convention of relations over atoms; columns holding numbers
+  or compound terms fall back to a scan.
+- **Query** — for each bound term, look up its column index frame to get a
+  row-id set, then intersect the sets (smallest first) using the existing
+  `intersection` primitive. Unbound terms (logic vars) are skipped during
+  indexing and unified against the surviving rows.
+
+The one primitive this needs that doesn't exist yet is an in-place set
+insert (`set-add!`) for incremental `assert`, since today's set words all
+allocate a new set. `set_add` already exists internally; exposing a
+mutating word is a small addition.
+
+**Parallelism is deferred, and the trail forces how:**
+
+A mutable trail cannot be shared across parallel search branches — two
+branches binding the same variable would race. So parallel logic search is
+not branch-level concurrency over one substitution; it is the isolated-
+interpreter + mailbox model (see "OS-thread parallelism" below), one trail
+per worker, subproblems farmed out and solutions returned by message.
+Continuations and the trail give backtracking *within* a single worker;
+threads give independent workers. The entire logic layer — unify, trail,
+`amb`/`fail`, the fact database — is built and validated single-threaded
+first; the worker/mailbox layer is added underneath later.
 
 **Out of scope for the first cut:**
 
