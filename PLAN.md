@@ -244,20 +244,83 @@ swaps underneath.
 
 **API sketch:**
 
-Core word:
+Pattern literal — `~...~`. Patterns are written as a tilde-delimited
+literal (`~>.*\n|\n~`, `~agggtaaa|tttaccct~`), echoing awk's `~` match
+operator. Closing tilde required, so a pattern may contain spaces, tabs,
+and newlines; a literal tilde inside a pattern escapes as `\~`. Unlike
+plain string literals (which copy bytes verbatim), the `~...~` reader
+applies regex escape conventions, so `\n` `\t` `\.` mean what the engine
+expects. The literal is lexical sugar: it produces an ordinary string,
+and `match` / `replace` compile-and-cache it by pattern string (bounded
+LRU `regex_t` cache). No dedicated regex tag — nothing for `print_val`,
+GC, or the image format to learn. `match` / `replace` also accept a plain
+string as the pattern, for computed/dynamic patterns.
+
+Core words — `match` and `match-all`. Both always search (find the
+pattern anywhere); anchoring is expressed in the pattern with `^` / `$`,
+never in a verb. The two differ only in cardinality — one match vs all —
+the way awk's `match()` differs from looping. There is no
+search/fullmatch-style split on anchoring.
+
+`match` ( string pattern -- `[ whole cap1 cap2 ... ]` | 0 ) returns the
+first match as a flat array: whole match in slot 0, capture groups
+(1-indexed from `()`) after it, all substrings. This is the everyday
+capture-extraction case — `~(\w+) (\w+)~ match` then `1 @i` / `2 @i`, or
+hand the array to `destruct` / `destruct-to` to drop the captures onto
+the stack or into locals. No match returns `0`.
+
+`match-all` ( string pattern -- `[ [whole caps...] ... ]` | 0 ) returns
+every non-overlapping match as an array of those flat per-match arrays:
 
 ```
-"hello world" "w[a-z]+" match
+"chr1chr2" ~(chr)([0-9])~ match-all
 ```
 
-→ either an array `[ start end capture1 capture2 ... ]` or a
-sentinel on no match. Captures are 1-indexed groups from `()`.
+→ `[ [ "chr1" "chr" "1" ] [ "chr2" "chr" "2" ] ]`. No match returns `0`.
+Counting is `match-all size` — no separate `findall`/`count` word.
+
+A capture group that did not participate (an alternation branch that
+didn't fire) holds `0` in its slot, distinct from a group that matched
+the empty string.
+
+Match enumeration (both words):
+
+- Non-overlapping, leftmost: after a match, scanning resumes at its end.
+  `"aaaa" ~aa~ match-all` → two matches, not three. Same counts as Python
+  `findall` / awk `gsub`.
+- A zero-width match (e.g. `a*` matching empty) advances one character
+  before scanning again, so iteration always terminates.
+
+Engine flags: `REG_EXTENDED | REG_NEWLINE`. `REG_NEWLINE` makes `.`
+exclude `\n` (so `>.*\n` strips one line) and makes `^` / `$` match at
+embedded newlines — the record-per-line behavior awk users expect.
+Matching is case-sensitive; case-insensitivity is expressed in the
+pattern (`[Aa]gggtaaa`), not via a flag.
+
+`bm_regex_dna`'s `len(re.findall(p, s))` becomes `s p match-all size`.
 
 Higher-level words built on top (in C or `lib.l4`):
 
+- `has?` ( string pattern -- bool ) — overload of the frame existence
+  test for strings: does the string contain a match anywhere. One
+  `regexec` call, allocates nothing — this is awk's `~`, the everyday
+  "does it match" predicate. Keeps `has?` as the language's general
+  containment test (frame has key, set has member via `member?`, string
+  has a match). It answers yes/no only; counting still goes through
+  `match-all size`.
 - `split` — `"a,b,c" "," split` → array of three strings.
-- `replace` — `"hello" "l" "L" replace` → `"heLLo"`. Replaces all
-  matches.
+- `replace` ( string pattern replacement -- string' ) — replaces every
+  non-overlapping match (awk `gsub`; there is no first-only variant),
+  reusing `match`'s enumeration semantics. `"hello" "l" "L" replace` →
+  `"heLLo"`. The replacement string is spliced with substitutions:
+  `&` or `\0` inserts the whole matched text, `\1`…`\9` insert capture
+  group N, `\&` is a literal ampersand, `\\` a literal backslash. A
+  backref to a group that didn't participate inserts the empty string;
+  a backref to a group number the pattern lacks is an error through
+  `error_flag` at compile time. The substitution phase can grow the
+  string substantially (`bm_regex_dna` expands ~100K → ~1M), so the
+  implementation builds into a single growing output buffer rather than
+  concatenating per match.
 - `index-of` — `"hello world" "world" index-of` → 6, or `-1` on miss.
 - `starts-with`, `ends-with` — anchored match returning a boolean float.
 - `trim` — wrapper around `^[[:space:]]+|[[:space:]]+$` replace.
@@ -282,6 +345,15 @@ UTF-8 throughout, codepoint-indexed at the user level.
   stores byte count for storage purposes; codepoint count is
   recomputed on demand (cheap — a single linear scan per call, and
   most strings are short).
+- **ASCII fast path.** When a string's bytes are all < 0x80, codepoint
+  offset equals byte offset, so the codepoint translation and rescan
+  collapse to no-ops. Detect all-ASCII once (a cached per-string flag)
+  and skip the codec on `length`, `substring`, `index-of`, and the
+  `regmatch_t` offset translation. Most real input — English text,
+  identifiers, CSV, DNA — is all-ASCII, so this keeps the common case
+  at byte-oriented speed while the codepoint model stays correct for
+  the rest. No user-visible byte type; the string API is codepoints
+  throughout.
 
 **What's covered:**
 
