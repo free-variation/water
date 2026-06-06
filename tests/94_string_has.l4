@@ -1,0 +1,10 @@
+\ has? on a string ( string pattern -- bool ): does the string contain a match anywhere.
+"hello world" "wor" has? . cr      \ -1
+"hello world" "xyz" has? . cr      \ 0
+"hello" "^h" has? . cr             \ -1  (anchored start)
+"hello" "^e" has? . cr             \ 0
+"chr12" "[0-9]+" has? . cr         \ -1  (char class)
+"abc"   "[0-9]+" has? . cr         \ 0
+{ :a 1 :b 2 } :a has? . cr         \ -1  (frame path still works)
+{ :a 1 } :z has? . cr              \ 0
+"x" "[" has? . cr                  \ bad pattern -> error

@@ -594,6 +594,16 @@ void p_frame(Interpreter *interp) {
 }
 
 void p_has(Interpreter *interp) {
+	PEEK_AT(value, 1, "has?");
+	if (VAL_TAG(value) == T_STRING) {
+		POP_STRING(pattern, "has?");
+		POP_STRING(subject, "has?");
+
+		push(interp, make_bool(string_matches(interp, subject, pattern)));
+
+		DISPATCH(interp);
+	}
+
 	PEEK_TYPE_AT(frame_val, 1, "has?", T_FRAME);
 	PEEK_AT(key_or_path, 0, "has?");
 	Object *frame = interp->objects[VAL_DATA(frame_val)];

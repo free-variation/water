@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.2.0"
+#define VERSION "0.3.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,6 +11,7 @@
 #include <stdarg.h>
 #include <math.h>
 #include <limits.h>
+#include <regex.h>
 
 typedef int64_t cell;
 
@@ -95,7 +96,7 @@ static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_in
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
 
-static inline Val make_bool(int is_true) { return make_float(is_true ? -1.0 : 0.0); }
+static inline Val make_bool(int is_true) { return make_float(is_true ? 1.0 : 0.0); }
 
 static inline int truthy(Val value) {
 	if (VAL_TAG(value) == T_FLOAT)
@@ -362,6 +363,10 @@ static inline Val rpop(Interpreter *interp) {
 		return; \
 	}
 
+#define PEEK_STRING_AT(name, depth, op) \
+	PEEK_TYPE_AT(name##_val, depth, op, T_STRING); \
+	Object *name = interp->objects[VAL_DATA(name##_val)]
+
 #define PEEK_SEQUENCE_AT(var, depth, op) \
 	PEEK_AT(var, depth, op); \
 	if (VAL_TAG(var) != T_ARRAY && VAL_TAG(var) != T_SET) { \
@@ -395,6 +400,7 @@ static inline void gc_root_pop(Interpreter *interp) {
 }
 int object_alloc_slot(Interpreter *interp);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
+int object_new_string_uninit(Interpreter *interp, int length);
 int object_new_set(Interpreter *interp);
 int object_new_array(Interpreter *interp, int num_elements);
 int object_new_frame(Interpreter *interp);
@@ -412,6 +418,7 @@ void print_corners(Object *matrix);
 void print_matrix_cell(double value);
 void print_matrix_grid(Object *m);
 void print_val(Interpreter *interp, Val value);
+void pretty_print_array(Interpreter *interp, Val value);
 void print_val_compact(Interpreter *interp, Val value);
 void print_frame_pretty(Interpreter *interp, Object *frame, int indent);
 void print_prompt_state(Interpreter *interp);
@@ -472,6 +479,12 @@ void p_inline(Interpreter *interp);
 void inline_word_body(Interpreter *interp, int target_cfa);
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
+int string_matches(Interpreter *interp, Object *subject, Object *pattern);
+void p_match(Interpreter *interp);
+void p_match_all(Interpreter *interp);
+void p_replace(Interpreter *interp);
+void p_substring(Interpreter *interp);
+void p_join(Interpreter *interp);
 int matrix_add(Interpreter *interp, Val left_val, Val right_val);
 int matrix_sub(Interpreter *interp, Val left_val, Val right_val);
 int matrix_mul(Interpreter *interp, Val left_val, Val right_val);

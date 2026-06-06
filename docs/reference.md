@@ -131,7 +131,7 @@ Tag-checked; safe. Float input → float; matrix input → new matrix, element-w
 
 ## Comparison and logic
 
-Result is `-1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural), with a float fast path.
+Result is `1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural), with a float fast path.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -233,6 +233,23 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 | `emit` | `( n -- )` | Print the character with codepoint n | 1 | none | O(1) |
 
 String literals `"…"` are **raw**: bytes between the quotes are copied verbatim, no escape processing; an embedded newline is kept. Interpolation `"… {0} …"` replaces `{n}` with the string form of the nth-from-top stack value and consumes the referenced values; it produces a new string.
+
+---
+
+## String operations
+
+Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is compiled once and cached (64-slot round-robin), so reusing a pattern costs only the match. Patterns are PCRE syntax in raw `"…"` literals — PCRE itself interprets `\n`, `\t`, `\d`, `\x22`, and the rest. Matching is multiline: `^` and `$` bind to line boundaries. Captures come back as strings; an optional group that didn't participate is `0.0`. Booleans are `1.0`/`0.0`. Indices are byte offsets (no UTF-8 codepoint model yet). In the cost columns `n` is the subject length.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `match` | `( s pat -- [ whole cap… ] \| 0 )` | First (leftmost) match as a flat array: whole match then each capture; no match returns `0` | n | `1a` + captures | O(n) |
+| `match-all` | `( s pat -- [ [whole cap…] … ] \| 0 )` | Every non-overlapping leftmost match, each a flat sub-array; a zero-width match advances one byte; no match returns `0` | n | `1a` per match + captures | O(n + m·g) |
+| `replace` | `( s pat rep -- s' )` | Replace **all** matches; in `rep`, `&` or `\0` is the whole match, `\1`–`\9` a capture, `\&` and `\\` literals | n | `1o` + buffer growth | O(n) |
+| `substring` | `( s start end -- sub )` | Half-open byte range `[start, end)`; bounds-checked | 2 + k | `1o` | O(k), k = end − start |
+| `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
+| `has?` | `( s pat -- bool )` | True if `pat` matches anywhere in `s` (string overload of frame `has?`) | n | none | O(n) |
+
+`first match` and `findall` are spelled `match` and `match-all`; there is no separate search/match/fullmatch split. Anchor with `^`/`$` (or `\A`/`\z`) when you need it.
 
 ---
 
@@ -442,7 +459,7 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 | `T_MARK` | ephemeral sentinel from `<`, `[`, `{`, `reset`; not user-visible |
 | `T_NONE` | uninitialized / sentinel |
 
-Boolean convention: `-1.0` true, `0.0` false.
+Boolean convention: `1.0` true, `0.0` false.
 
 ---
 

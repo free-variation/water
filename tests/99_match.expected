@@ -1,0 +1,48 @@
+0 ok
+0 ok
+0 ok
+[ chr1 chr 1 ] 
+0 ok
+0 ok
+0 ok
+[ x=1 x 1 ] 
+0 ok
+0 ok
+0 ok
+[ 1 ] 
+0 ok
+0 ok
+0 ok
+[ a a 0 ] 
+0 ok
+0 ok
+0 ok
+[ b  b ] 
+0 ok
+0 ok
+0 ok
+[ hello ] 
+0 ok
+0 ok
+0 ok
+[ a ] 
+0 ok
+0 ok
+0 ok
+[ agggtaaa ] 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+[  ] 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+0|error regex: missing closing parenthesis
+0|error match: expected a string; got a float
+0|error match: expected a string; got a float

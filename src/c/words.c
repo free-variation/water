@@ -385,6 +385,8 @@ void p_dot(Interpreter *interp) {
 	} else if (VAL_TAG(value) == T_FRAME) {
 		print_frame_pretty(interp, interp->objects[VAL_DATA(value)], 0);
 		putchar('\n');
+	} else if (VAL_TAG(value) == T_ARRAY) {
+		pretty_print_array(interp, value);
 	} else {
 		print_val(interp, value);
 		putchar(' ');

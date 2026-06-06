@@ -1,0 +1,14 @@
+0 ok
+a,b,c 
+0 ok
+abc 
+0 ok
+x 
+0 ok
+ 
+0 ok
+chr1 
+0 ok
+one - two 
+0 ok
+0|error join: element 1 is a float, expected a string

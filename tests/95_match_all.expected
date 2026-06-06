@@ -1,0 +1,60 @@
+0 ok
+0 ok
+0 ok
+[ [ chr1 chr 1 ]
+  [ chr2 chr 2 ] ] 
+0 ok
+0 ok
+0 ok
+[ [ x=1 x 1 ]
+  [ y=2 y 2 ]
+  [ z=3 z 3 ] ] 
+0 ok
+0 ok
+0 ok
+[ [ 1 ]
+  [ 2 ]
+  [ 3 ] ] 
+0 ok
+0 ok
+0 ok
+[ [ a a 0 ]
+  [ b 0 b ] ] 
+0 ok
+0 ok
+0 ok
+[ [ b  b ] ] 
+0 ok
+0 ok
+0 ok
+2 
+0 ok
+0 ok
+0 ok
+4 
+0 ok
+0 ok
+0 ok
+3 
+0 ok
+2 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+0|error regex: missing closing parenthesis
+0|error match-all: expected a string; got a float
+0|error match-all: expected a string; got a float

@@ -58,7 +58,7 @@
 0 ok
 0 ok
 0 ok
--1 0 ok
+1 0 ok
 0 ok
 0 ok
 0|error max: expected a matrix; got a string

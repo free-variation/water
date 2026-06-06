@@ -1,0 +1,49 @@
+\ replace ( string pattern replacement -- string' ) — replace-all (gsub). Deep test.
+
+\ --- replace-all, growing the string ---
+"hello" "l" "L" replace . cr                  \ heLLo
+"BBBB" "B" "(c|g|t)" replace . cr             \ (c|g|t)(c|g|t)(c|g|t)(c|g|t)
+
+\ --- no match -> unchanged ---
+"abc" "z" "Q" replace . cr                    \ abc
+
+\ --- whole match via & and \0 ---
+"axbxc" "x" "[&]" replace . cr                \ a[x]b[x]c
+"axb" "x" "<\0>" replace . cr                 \ a<x>b
+
+\ --- capture backrefs ---
+"chr1 chr2" "(chr)([0-9])" "\2:\1" replace . cr   \ 1:chr 2:chr
+"hello" "(l+)" "<\1>" replace . cr            \ he<ll>o
+
+\ --- escapes: \& literal ampersand, \\ literal backslash ---
+"x" "x" "\&\&" replace . cr                   \ &&
+"x" "x" "a\\b" replace . cr                   \ a\b
+
+\ --- non-participating group backref inserts nothing ---
+"ab" "(a)|(b)" "[\1\2]" replace . cr          \ [a][b]
+
+\ --- deletion (empty replacement) ---
+"a-b-c" "-" "" replace . cr                   \ abc
+
+\ --- zero-width matches ---
+"a" "b*" "X" replace . cr                     \ XaX
+"abc" "x*" "-" replace . cr                   \ -a-b-c-
+
+\ --- literal newline in the pattern (real newline; ~...~ not in yet): newlines -> spaces ---
+"a
+b
+c" "
+" " " replace . cr                            \ a b c
+
+\ --- chained substitutions (IUB style) ---
+"aBcD" "B" "(c|g|t)" replace "D" "(a|g|t)" replace . cr   \ a(c|g|t)c(a|g|t)
+
+\ --- empty subject ---
+"" "a" "X" replace . cr                       \ (empty)
+
+\ --- errors ---
+"x" "(" "y" replace                           \ bad pattern
+"x" "x" "\3" replace                          \ backref out of range
+5 "a" "b" replace                             \ non-string subject
+"x" 5 "b" replace                             \ non-string pattern
+"x" "a" 5 replace                             \ non-string replacement

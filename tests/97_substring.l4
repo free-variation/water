@@ -1,0 +1,12 @@
+\ substring ( string start end -- substring ) — half-open [start, end), byte-indexed.
+"hello" 1 4 substring . cr        \ ell
+"hello" 0 5 substring . cr        \ hello   (whole)
+"hello" 0 1 substring . cr        \ h       (prefix)
+"hello" 4 5 substring . cr        \ o       (last char)
+"hello" 2 2 substring . cr        \ (empty)
+"hello" 5 5 substring . cr        \ (empty at end)
+\ errors
+"hello" 0 6 substring             \ end past length
+"hello" -1 3 substring            \ negative start
+"hello" 3 1 substring             \ start > end
+5 0 1 substring                   \ not a string

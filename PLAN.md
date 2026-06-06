@@ -20,7 +20,7 @@ Deferred until there's a specific use case:
 - **Slicing** — submatrix by `(row-start, row-end, col-start, col-end)`.
 - **Concatenation** — `hstack` (side by side), `vstack` (stacked).
 - **Element-wise comparison** — `<` etc. returning a matrix of
-  `-1`/`0` booleans. Cleanest as polymorphic extension of the existing
+  `1`/`0` booleans. Cleanest as polymorphic extension of the existing
   comparison words.
 - **Norms** — `norm` (L2), `frobenius-norm`. Composable from existing
   reductions but common enough to deserve named words.
@@ -49,175 +49,67 @@ handling at the boundary.
 
 ---
 
-## String operations via POSIX regex
+## String operations
 
 A single pattern-matching primitive subsumes the usual string-handling
-zoo (split / substring / index-of / starts-with / ends-with / trim /
-lines / replace). The engine is POSIX ERE via `<regex.h>` — already
-in libc on every Unix, zero dependency, well-known syntax.
+zoo (split / index-of / starts-with / ends-with / trim / lines / replace),
+with named operations as `lib.l4` wrappers. The engine is **PCRE2**
+(Perl-compatible, JIT-compiled, statically linked).
 
-Named string operations (`split`, `trim`, `index-of`, …) stay available
-as `lib.l4` wrappers over the one primitive — see "Higher-level words"
-below.
+POSIX ERE was the original plan, but `bm_regex_dna` measurement settled it:
+PCRE2 + JIT runs that benchmark's match phase ~2.9× faster than CPython,
+where POSIX `regexec` was ~2× slower. PCRE2 is also a superset — `\d`, `\w`,
+`\n` / `\t` in patterns, lookaround, `\p{...}` — so plain `"..."` patterns
+express newlines directly and the harder regex benchmarks (v8 / effbot)
+become portable.
 
-**API sketch:**
+**Built** (specs in `docs/reference.md`): `match` (first match as a flat
+`[ whole cap1 … ]`, `0` on no match), `match-all`, `replace` (with the
+`&` / `\0` / `\1`–`\9` / `\&` / `\\` substitution forms), the `has?` string
+overload, `substring`, `join`; counting is `match-all size`. Matching is
+single-pass over the whole subject with a `startoffset`; `compiled_pattern`
+caches compiled-and-JITted patterns (64-entry round-robin); non-overlapping
+leftmost enumeration with the zero-width +1 advance, matching Python
+`findall` / awk `gsub` counts.
 
-Pattern literal — `~...~`. Patterns are written as a tilde-delimited
-literal (`~>.*\n|\n~`, `~agggtaaa|tttaccct~`), echoing awk's `~` match
-operator. Closing tilde required, so a pattern may contain spaces, tabs,
-and newlines; a literal tilde inside a pattern escapes as `\~`. Unlike
-plain string literals (which copy bytes verbatim), the `~...~` reader
-applies regex escape conventions, so `\n` `\t` `\.` mean what the engine
-expects. The literal is lexical sugar: it produces an ordinary string,
-and `match` / `replace` compile-and-cache it by pattern string (bounded
-LRU `regex_t` cache). No dedicated regex tag — nothing for `print_val`,
-GC, or the image format to learn. `match` / `replace` also accept a plain
-string as the pattern, for computed/dynamic patterns.
+### Still deferred
 
-Core words — `match` and `match-all`. Both always search (find the
-pattern anywhere); anchoring is expressed in the pattern with `^` / `$`,
-never in a verb. The two differ only in cardinality — one match vs all —
-the way awk's `match()` differs from looping. There is no
-search/fullmatch-style split on anchoring.
+- **Wrappers** over `match-all` / `replace`, in `lib.l4`: `split`,
+  `index-of`, `starts-with`, `ends-with`, `trim`, `lines`.
 
-`match` ( string pattern -- `[ whole cap1 cap2 ... ]` | 0 ) returns the
-first match as a flat array: whole match in slot 0, capture groups
-(1-indexed from `()`) after it, all substrings. This is the everyday
-capture-extraction case — `~(\w+) (\w+)~ match` then `1 @i` / `2 @i`, or
-hand the array to `destruct` / `destruct-to` to drop the captures onto
-the stack or into locals. No match returns `0`.
+### Unicode model — deferred
 
-`match-all` ( string pattern -- `[ [whole caps...] ... ]` | 0 ) returns
-every non-overlapping match as an array of those flat per-match arrays:
+UTF-8 throughout, codepoint-indexed at the user level — *future work*.
+Today every string operation is byte-indexed, which is exact for ASCII
+(the common case: English, identifiers, CSV, DNA) and what the built words
+do. When done:
 
-```
-"chr1chr2" ~(chr)([0-9])~ match-all
-```
+- `size` (on a string), `substring`, `index-of`, and match positions
+  expressed in *codepoints*, not bytes, via a small UTF-8 codec (encode /
+  decode / count / advance-by-n). `pcre2_match` returns byte offsets;
+  translate at the boundary. `size` stays the single count word — no
+  separate `length`.
+- **ASCII fast path**: when a string is all-ASCII (a cached per-string
+  flag), codepoint offset equals byte offset, so the codec collapses to
+  no-ops; the common case keeps byte-oriented speed.
+- `setlocale(LC_CTYPE, "")` plus PCRE2's UCP mode for codepoint-aware
+  classes.
 
-→ `[ [ "chr1" "chr" "1" ] [ "chr2" "chr" "2" ] ]`. No match returns `0`.
-Counting is `match-all size` — no separate `findall`/`count` word.
+Not covered, by design (document): normalization (NFC vs NFD stay
+distinct), grapheme clusters (`.` matches one codepoint, so flag emoji /
+ZWJ break the intuitive `size`), locale case-folding outside ASCII.
+Unicode property classes (`\p{Letter}`) *are* available — PCRE2 supports
+them under UCP. For full i18n use ICU; this model suffices for scientific
+/ scripting work.
 
-A capture group that did not participate (an alternation branch that
-didn't fire) holds `0` in its slot, distinct from a group that matched
-the empty string.
+### Vendor PCRE2 — TODO
 
-Match enumeration (both words):
-
-- Non-overlapping, leftmost: after a match, scanning resumes at its end.
-  `"aaaa" ~aa~ match-all` → two matches, not three. Same counts as Python
-  `findall` / awk `gsub`.
-- A zero-width match (e.g. `a*` matching empty) advances one character
-  before scanning again, so iteration always terminates.
-
-Engine flags: `REG_EXTENDED | REG_NEWLINE`. `REG_NEWLINE` makes `.`
-exclude `\n` (so `>.*\n` strips one line) and makes `^` / `$` match at
-embedded newlines — the record-per-line behavior awk users expect.
-Matching is case-sensitive; case-insensitivity is expressed in the
-pattern (`[Aa]gggtaaa`), not via a flag.
-
-`bm_regex_dna`'s `len(re.findall(p, s))` becomes `s p match-all size`.
-
-Higher-level words built on top (in C or `lib.l4`):
-
-- `has?` ( string pattern -- bool ) — overload of the frame existence
-  test for strings: does the string contain a match anywhere. One
-  `regexec` call, allocates nothing — this is awk's `~`, the everyday
-  "does it match" predicate. Keeps `has?` as the language's general
-  containment test (frame has key, set has member via `member?`, string
-  has a match). It answers yes/no only; counting still goes through
-  `match-all size`.
-- `split` — `"a,b,c" "," split` → array of three strings.
-- `replace` ( string pattern replacement -- string' ) — replaces every
-  non-overlapping match (awk `gsub`; there is no first-only variant),
-  reusing `match`'s enumeration semantics. `"hello" "l" "L" replace` →
-  `"heLLo"`. The replacement string is spliced with substitutions:
-  `&` or `\0` inserts the whole matched text, `\1`…`\9` insert capture
-  group N, `\&` is a literal ampersand, `\\` a literal backslash. A
-  backref to a group that didn't participate inserts the empty string;
-  a backref to a group number the pattern lacks is an error through
-  `error_flag` at compile time. The substitution phase can grow the
-  string substantially (`bm_regex_dna` expands ~100K → ~1M), so the
-  implementation builds into a single growing output buffer rather than
-  concatenating per match.
-- `index-of` — `"hello world" "world" index-of` → 6, or `-1` on miss.
-- `starts-with`, `ends-with` — anchored match returning a boolean float.
-- `trim` — wrapper around `^[[:space:]]+|[[:space:]]+$` replace.
-- `lines` — wrapper around `"\n" split`.
-- `substring` — positional, no regex. `"hello" 1 4 substring` →
-  `"ell"`, half-open `[start, end)`. Lives in the same area but
-  doesn't use the regex engine.
-
-**Unicode model:**
-
-UTF-8 throughout, codepoint-indexed at the user level.
-
-- `setlocale(LC_CTYPE, "")` at startup, so POSIX regex picks up the
-  process locale and interprets `.` / `[[:alpha:]]` / `[[:digit:]]`
-  as codepoint-aware rather than byte-aware.
-- `size` (on a string), `substring`, `index-of`, and regex match
-  positions — all expressed in *codepoints*, not bytes. There is no
-  separate `length` word: `size` is the single count primitive —
-  element count for arrays / sets / frames, codepoint count for
-  strings. A small UTF-8 codec (~50 lines: encode, decode, count,
-  advance-by-n) sits underneath every string operation. `regexec`
-  returns byte offsets in `regmatch_t`; we translate to codepoint
-  offsets at the boundary.
-- Strings are stored as UTF-8 bytes in `objects[]`. The length field
-  stores byte count for storage purposes; codepoint count is
-  recomputed on demand (cheap — a single linear scan per call, and
-  most strings are short).
-- **ASCII fast path.** When a string's bytes are all < 0x80, codepoint
-  offset equals byte offset, so the codepoint translation and rescan
-  collapse to no-ops. Detect all-ASCII once (a cached per-string flag)
-  and skip the codec on `size`, `substring`, `index-of`, and the
-  `regmatch_t` offset translation. Most real input — English text,
-  identifiers, CSV, DNA — is all-ASCII, so this keeps the common case
-  at byte-oriented speed while the codepoint model stays correct for
-  the rest. No user-visible byte type; the string API is codepoints
-  throughout.
-
-**What's covered:**
-
-- All ASCII operations behave identically to a byte-oriented design.
-- Non-ASCII characters in patterns and inputs match correctly.
-- `size "café"` → 4 (codepoints), not 5 (bytes).
-- `substring` never splits a multi-byte sequence.
-
-**What's not covered, called out explicitly:**
-
-- **Normalization.** `é` as U+00E9 vs `e` + U+0301 are distinct. We
-  don't normalize. A user pasting from sources that disagree on
-  normalization can hit this; document it.
-- **Grapheme clusters.** `.` matches one codepoint, not one
-  user-perceived character. Flag emoji, zalgo text, ZWJ sequences
-  all break the intuitive `size`.
-- **Unicode property classes** (`\p{Letter}` etc.). POSIX doesn't
-  define them.
-- **Locale-aware case folding for non-ASCII.** `REG_ICASE` is
-  implementation-dependent and weak outside ASCII.
-
-For real Unicode work that needs the above (i18n applications), the
-right tool is ICU. For matrix lab / scientific computing /
-general-purpose scripting with non-English labels and identifiers,
-this model is enough.
-
-**Implementation notes:**
-
-- Compile patterns lazily on first use; cache the compiled `regex_t`
-  keyed by the pattern string. Strings are immutable once interned,
-  so the cache key is stable. Bound the cache (LRU-ish) at e.g. 64
-  entries to avoid unbounded growth.
-- Pass `REG_EXTENDED` to `regcomp` to get ERE syntax (not the older
-  BRE).
-- Errors (bad pattern) surface through the existing `error_flag`
-  path, with `regerror` providing the diagnostic.
-
-**Out of scope:**
-
-- Non-greedy quantifiers (not in POSIX).
-- Lookahead / lookbehind (not in POSIX).
-- Streaming / incremental match against large inputs. Whole-string
-  matching only.
+The build currently links Homebrew's `libpcre2-8.a` through a hardcoded
+path, so it is no longer the zero-dependency `clang -O3` build it was.
+Restore self-containment by vendoring the PCRE2 sources (the
+SQLite-amalgamation approach, heavier: ~40 `.c` files plus a generated
+`config.h` / `pcre2.h` / `pcre2_chartables.c`, and sljit for the JIT).
+Until then, building requires PCRE2 installed.
 
 ---
 
@@ -562,7 +454,7 @@ REPL inside the kernel. Two ways keep the prompt interactive:
   (`Connection: close`), which fork-per-connection makes natural. Persistent
   connections are a later refinement.
 - **Wildcard / regex routes.** `:name` captures cover the common case; richer
-  patterns wait on the POSIX-regex string work.
+  patterns can use the regex string layer (`match`).
 - **HTTP/2, chunked transfer, websockets.** HTTP/1.1 with `Content-Length`
   bodies only.
 
@@ -1063,7 +955,7 @@ or a boolean have no such constraint and belong in `lib.l4`.
 
 - **`find`** — `arr [: pred :] find` → first matching element, or a
   sentinel (`T_NONE`). Short-circuits via `shift`.
-- **`any?`** — `arr [: pred :] any?` → boolean float (-1 / 0).
+- **`any?`** — `arr [: pred :] any?` → boolean float (1 / 0).
 - **`all?`** — `arr [: pred :] all?` → boolean float.
 - **`flat-map`** — `arr [: ( elt -- arr ) :] flat-map` → map then
   concatenate. `map` then a `concat` fold; both pieces are C, so the

@@ -1,0 +1,44 @@
+\ match-all ( string pattern -- [ [whole caps...] ... ] | 0 ) — deep test.
+
+\ --- structure: whole match plus capture groups, nested per match ---
+"chr1chr2" "(chr)([0-9])" match-all . cr        \ [ [ chr1 chr 1 ] [ chr2 chr 2 ] ]
+
+\ --- capture offsets stay correct across later matches (the +from shift) ---
+"x=1; y=2; z=3" "([a-z])=([0-9])" match-all . cr
+
+\ --- no capture groups: each match is a one-element array ---
+"a1b2c3" "[0-9]" match-all . cr                 \ [ [ 1 ] [ 2 ] [ 3 ] ]
+
+\ --- non-participating group (alternation branch that didn't fire) -> 0 ---
+"ab" "(a)|(b)" match-all . cr                   \ [ [ a a 0 ] [ b 0 b ] ]
+
+\ --- a group that MATCHED EMPTY ("") is distinct from non-participating (0) ---
+"b" "(a*)(b)" match-all . cr                    \ [ [ b "" b ] ]
+
+\ --- non-overlapping, leftmost ---
+"aaaa" "aa" match-all size . cr                 \ 2
+
+\ --- zero-width matches advance one char (Python findall parity) ---
+"baab" "a*" match-all size . cr                 \ 4
+
+\ --- anchors honor REG_NEWLINE across embedded newlines ---
+"a
+b
+c" "^[a-z]" match-all size . cr                 \ 3  (^ at each line start)
+"a
+b" "[a-z]$" match-all size . cr                 \ 2  ($ at each line end)
+
+\ --- whole-string single match ---
+"agggtaaa" "agggtaaa|tttaccct" match-all size . cr   \ 1
+
+\ --- boundaries: empty subject ---
+"" "a" match-all . cr                           \ 0
+"" "a*" match-all size . cr                     \ 1  (one empty match)
+
+\ --- no match anywhere ---
+"hello" "z" match-all . cr                      \ 0
+
+\ --- errors ---
+"x" "(" match-all                               \ bad pattern
+5 "a" match-all                                 \ non-string subject
+"x" 5 match-all                                 \ non-string pattern

@@ -41,6 +41,15 @@ int object_new_string(Interpreter *interp, const char *bytes, int length) {
 	return slot;
 }
 
+int object_new_string_uninit(Interpreter *interp, int length) {
+	NEW_OBJECT(obj, OBJECT_STRING);
+	obj->len = length;
+	obj->capacity = length;
+	obj->bytes = malloc((size_t)length + 1);
+	obj->bytes[length] = 0;
+	return slot;
+}
+
 #define SET_INITIAL_CAPACITY 4
 #define FRAME_INITIAL_CAPACITY 4
 
@@ -208,23 +217,9 @@ static int stdout_is_tty(void) {
 }
 
 static int print_depth = 0;
-static int suppress_depth_bg = 0;
 
-static void print_depth_bg(int depth) {
-	if (!stdout_is_tty() || suppress_depth_bg)
-		return;
-	if (depth <= 0) {
-		fputs("\033[49m", stdout);
-		return;
-	}
-	int idx = 238 + (depth - 1) * 3;
-	if (idx > 250)
-		idx = 250;
-	printf("\033[48;5;%dm", idx);
-}
-
-static void print_depth_enter(void) { print_depth_bg(++print_depth); }
-static void print_depth_leave(void) { print_depth_bg(--print_depth); }
+static void print_depth_enter(void) { print_depth++; }
+static void print_depth_leave(void) { print_depth--; }
 
 void print_items(Interpreter *interp, Object *collection) {
 	int length = collection->len;
@@ -368,6 +363,60 @@ void print_val(Interpreter *interp, Val value) {
 	}
 }
 
+static int array_has_nested(Object *arr) {
+	for (int i = 0; i < arr->len; i++)
+		if (VAL_TAG(arr->items[i]) == T_ARRAY)
+			return 1;
+	return 0;
+}
+
+static void pp_value(Interpreter *interp, Val value, int indent) {
+	if (VAL_TAG(value) != T_ARRAY) {
+		print_val(interp, value);
+		return;
+	}
+	Object *arr = interp->objects[VAL_DATA(value)];
+	if (!array_has_nested(arr)) {
+		print_val(interp, value);
+		return;
+	}
+
+	int n = arr->len;
+	int trunc = print_truncate && n > PRINT_FIRST + PRINT_LAST;
+	int child_indent = indent + 2;
+	fputs("[ ", stdout);
+	int first = 1;
+	for (int i = 0; i < n; i++) {
+		if (trunc && i == PRINT_FIRST) {
+			putchar('\n');
+			for (int s = 0; s < child_indent; s++)
+				putchar(' ');
+			fputs("...", stdout);
+		}
+		if (trunc && i >= PRINT_FIRST && i < n - PRINT_LAST)
+			continue;
+		if (!first) {
+			putchar('\n');
+			for (int s = 0; s < child_indent; s++)
+				putchar(' ');
+		}
+		first = 0;
+		pp_value(interp, arr->items[i], child_indent);
+	}
+	fputs(" ]", stdout);
+}
+
+void pretty_print_array(Interpreter *interp, Val value) {
+	Object *arr = interp->objects[VAL_DATA(value)];
+	if (!array_has_nested(arr)) {
+		print_val(interp, value);
+		putchar(' ');
+		return;
+	}
+	pp_value(interp, value, 0);
+	putchar(' ');
+}
+
 void print_val_compact(Interpreter *interp, Val value) {
 	switch (VAL_TAG(value)) {
 		case T_FLOAT: {
@@ -476,9 +525,7 @@ void print_prompt_state(Interpreter *interp) {
 		putchar('0');
 	} else {
 		printf("%d|", interp->dsp);
-		suppress_depth_bg = 1;
 		print_val_compact(interp, interp->data_stack[interp->dsp - 1]);
-		suppress_depth_bg = 0;
 	}
 
 	if (tty)
@@ -2321,6 +2368,11 @@ int main(void) {
 	define_primitive(interp, "values", p_frame_values, 0);
 	define_primitive(interp, "delete-at", p_frame_delete_at, 0);
 	define_primitive(interp, "has?", p_has, 0);
+	define_primitive(interp, "match", p_match, 0);
+	define_primitive(interp, "match-all", p_match_all, 0);
+	define_primitive(interp, "replace", p_replace, 0);
+	define_primitive(interp, "substring", p_substring, 0);
+	define_primitive(interp, "join", p_join, 0);
 	define_primitive(interp, "update-at", p_update_at, 0);
 	define_primitive(interp, "merge", p_merge, 0);
 	define_primitive(interp, "copy", p_copy, 0);

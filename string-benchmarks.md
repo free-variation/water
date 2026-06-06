@@ -54,12 +54,17 @@ two partially-portable regex benchmarks and `bm_base64` last.
 FASTA string: 100K characters by default, ~1M after the substitution
 expansion. Patterns are alternation + character classes only.
 
-Cleanest port target — every pattern is expressible in POSIX ERE, and it
-exercises `match`/`replace` at scale.
+Cleanest port target — alternation + character classes only, exercises
+`match`/`replace` at scale.
 
-- **Needs:** `match` (with all-matches iteration / a `findall`-style helper),
-  `replace` (replace-all), the lazy-compile pattern cache.
-- **Status:** not started.
+- **Needs:** `match-all` + `size` (the counts), `replace` (replace-all),
+  the compile cache. All built (`src/c/strings.c`).
+- **Status:** **done — beats CPython.** Ported in `bench/regex-dna.l4`
+  (in-language FASTA generator + the timed phase), output byte-identical
+  to CPython. Engine is PCRE2 + JIT; the match phase runs ~2.9× faster
+  than CPython (0.031 s vs 0.092 s, best of 10). Generator uses
+  `substring` / `join`. The win came from PCRE2+JIT plus single-pass
+  `match-all`; POSIX `regexec` alone was ~2× slower.
 
 ### bm_regex_v8
 

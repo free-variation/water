@@ -1,0 +1,8 @@
+\ join ( array separator -- string ) — concatenate elements, separator between them.
+[ "a" "b" "c" ] "," join . cr        \ a,b,c
+[ "a" "b" "c" ] "" join . cr         \ abc      (pure concatenation)
+[ "x" ] "," join . cr                \ x        (single element, no separator)
+[ ] "," join . cr                    \ (empty array -> empty string)
+[ "chr" "1" ] "" join . cr           \ chr1
+[ "one" "two" ] " - " join . cr      \ one - two
+[ "a" 5 "c" ] "," join               \ non-string element -> error

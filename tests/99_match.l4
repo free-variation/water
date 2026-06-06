@@ -1,0 +1,39 @@
+\ match ( string pattern -- [ whole caps... ] | 0 ) — first match only, flat.
+
+\ --- structure: whole match plus capture groups, flat (not nested) ---
+"chr1chr2" "(chr)([0-9])" match . cr            \ [ chr1 chr 1 ]
+
+\ --- first match only (match-all would find both) ---
+"x=1; y=2; z=3" "([a-z])=([0-9])" match . cr    \ [ x=1 x 1 ]
+
+\ --- no capture groups: a one-element array ---
+"a1b2c3" "[0-9]" match . cr                     \ [ 1 ]
+
+\ --- non-participating group (alternation branch that didn't fire) -> 0 ---
+"ab" "(a)|(b)" match . cr                        \ [ a a 0 ]
+
+\ --- a group that MATCHED EMPTY ("") is distinct from non-participating (0) ---
+"b" "(a*)(b)" match . cr                         \ [ b "" b ]
+
+\ --- leftmost match wins ---
+"xxhello" "hello" match . cr                     \ [ hello ]
+
+\ --- anchors honor multiline; first match is on the first line ---
+"a
+b
+c" "^[a-z]" match . cr                           \ [ a ]
+
+\ --- whole-string single match ---
+"agggtaaa" "agggtaaa|tttaccct" match . cr        \ [ agggtaaa ]
+
+\ --- boundaries: empty subject ---
+"" "a" match . cr                                \ 0
+"" "a*" match . cr                               \ [ "" ]  (one empty match)
+
+\ --- no match anywhere ---
+"hello" "z" match . cr                           \ 0
+
+\ --- errors ---
+"x" "(" match                                    \ bad pattern
+5 "a" match                                      \ non-string subject
+"x" 5 match                                      \ non-string pattern
