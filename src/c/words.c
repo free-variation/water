@@ -431,7 +431,7 @@ void p_emit_(Interpreter *interp) {
 
 void p_dots(Interpreter *interp) {
 	for (int i = 0; i < interp->dsp; i++) {
-		print_val(interp, interp->data_stack[i]);
+		print_val_inspect(interp, interp->data_stack[i]);
 		putchar(' ');
 	}
 	fflush(stdout);

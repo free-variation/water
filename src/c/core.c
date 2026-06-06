@@ -308,7 +308,14 @@ void print_val(Interpreter *interp, Val value) {
 	switch (VAL_TAG(value)) {
 		case T_FLOAT: print_double(VAL_NUMBER(value)); break;
 		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[VAL_DATA(value)]); break;
-		case T_STRING: fputs(interp->objects[VAL_DATA(value)]->bytes, stdout); break;
+		case T_STRING: {
+			Object *str = interp->objects[VAL_DATA(value)];
+			if (print_depth > 0)
+				printf("\"%s\"", str->bytes);
+			else
+				fputs(str->bytes, stdout);
+			break;
+		}
 		case T_SET:
 					   print_depth_enter();
 					   if (print_depth > MAX_NESTING_DEPTH) {
@@ -385,6 +392,7 @@ static void pp_value(Interpreter *interp, Val value, int indent) {
 	int trunc = print_truncate && n > PRINT_FIRST + PRINT_LAST;
 	int child_indent = indent + 2;
 	fputs("[ ", stdout);
+	print_depth_enter();
 	int first = 1;
 	for (int i = 0; i < n; i++) {
 		if (trunc && i == PRINT_FIRST) {
@@ -403,6 +411,7 @@ static void pp_value(Interpreter *interp, Val value, int indent) {
 		first = 0;
 		pp_value(interp, arr->items[i], child_indent);
 	}
+	print_depth_leave();
 	fputs(" ]", stdout);
 }
 
@@ -415,6 +424,12 @@ void pretty_print_array(Interpreter *interp, Val value) {
 	}
 	pp_value(interp, value, 0);
 	putchar(' ');
+}
+
+void print_val_inspect(Interpreter *interp, Val value) {
+	print_depth_enter();
+	print_val(interp, value);
+	print_depth_leave();
 }
 
 void print_val_compact(Interpreter *interp, Val value) {

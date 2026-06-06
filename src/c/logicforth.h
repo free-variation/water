@@ -418,6 +418,7 @@ void print_corners(Object *matrix);
 void print_matrix_cell(double value);
 void print_matrix_grid(Object *m);
 void print_val(Interpreter *interp, Val value);
+void print_val_inspect(Interpreter *interp, Val value);
 void pretty_print_array(Interpreter *interp, Val value);
 void print_val_compact(Interpreter *interp, Val value);
 void print_frame_pretty(Interpreter *interp, Object *frame, int indent);

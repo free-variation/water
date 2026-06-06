@@ -12,11 +12,11 @@
 0 ok
 [ 1 2 3 ] 
 1|"keep" ok
-keep 
+"keep" 
 0 ok
 0 ok
 0 ok
-[ hi :sym 42 ] 
+[ "hi" :sym 42 ] 
 0 ok
 0 ok
 0 ok
