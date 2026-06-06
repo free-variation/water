@@ -1,8 +1,8 @@
 # logicforth
 
-A Forth-flavored language for matrix work, set/array manipulation, and
-(eventually) logic programming. A dependency-free C interpreter built with
-`clang -O3`.
+A Forth-flavored language for matrix work, set/array manipulation,
+string/regex processing, and (eventually) logic programming. A compact C
+interpreter built with `clang -O3`.
 
 ## Building and running
 
@@ -12,7 +12,9 @@ make test      # runs the golden-output test suite
 ./logicforth   # REPL
 ```
 
-No external dependencies.
+Links PCRE2 (`libpcre2-8.a`, statically) for the regex engine — install it
+first (`brew install pcre2`). Vendoring PCRE2 to restore the self-contained,
+zero-dependency build is planned.
 
 ## A taste
 
@@ -31,6 +33,10 @@ No external dependencies.
 
 \ Higher-order operations
 [ 1 2 3 4 5 ] [: dup * :] map .         \ [ 1 4 9 16 25 ]
+
+\ Strings and regex (PCRE2)
+"x=42" "(\w+)=(\d+)" match .            \ [ "x=42" "x" "42" ]
+"hello world" "o" "0" replace .         \ hell0 w0rld
 
 \ Exceptions
 [: "missing" throw :]
@@ -86,15 +92,15 @@ Symbol-keyed nested maps — the associative type, and the compound term the pla
 - **Access** — `@` ( frame path -- value ) get, `!` ( frame path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, plus `keys` / `values` / `size`.
 - **Representation** — sorted parallel key/value arrays with binary-search lookup; mutable in place, reference semantics. Structurally comparable, so frames work as set members and round-trip through their `{ }` literal.
 
-### Strings
+### Strings and regex
 
-- **String literals** with newlines allowed inside.
-- **Interpolation** — `"hello {0}"` substitutes from the data stack.
-- **Polymorphic concatenation** via `+`.
+- **String literals** with newlines allowed inside; **interpolation** — `"hello {0}"` substitutes from the data stack; **polymorphic concatenation** via `+`.
+- **Regex** on PCRE2 (Perl-compatible, JIT-compiled): `match` (first match as a flat `[ whole cap… ]`), `match-all` (all matches, nested), `replace` (replace-all, with `&` / `\1`–`\9` backrefs), and the `has?` string overload (does the pattern match?). Patterns are plain `"..."` literals — PCRE2 reads `\d`, `\w`, `\n`, lookaround, `\p{...}`.
+- **Slicing / building** — `substring` (half-open byte range), `join` (concatenate an array of strings with a separator).
 
 ### I/O and persistence
 
-- **Stdin REPL** with rlwrap-friendly behavior and a `count|top` prompt showing stack depth and the top value — green on a terminal, red on error. Printed arrays, sets, frames, and matrices get a background shade that deepens with nesting depth; piped/redirected output stays plain.
+- **Stdin REPL**, rlwrap-friendly, with a `count|top` prompt showing stack depth and the top value — green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
 - **`load`** runs a source file as if typed.
 - **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
@@ -140,7 +146,9 @@ Tracked in `PLAN.md`, with design notes for each.
 
 ### Strings
 
-- **POSIX regex + UTF-8** — `match` as the primitive, with wrappers (`split`, `replace`, `index-of`, `starts-with`, `ends-with`, `trim`, `lines`, `substring`). Codepoint-indexed at the user level.
+- **`lib.l4` wrappers** over the regex layer — `split`, `index-of`, `starts-with`, `ends-with`, `trim`, `lines`.
+- **UTF-8 / codepoint indexing** — string ops are byte-indexed today; codepoint-indexed at the user level is planned.
+- **Vendor PCRE2** — bundle the PCRE2 sources to restore the self-contained build.
 
 ### External I/O
 
@@ -180,6 +188,8 @@ src/c/words.c          — arithmetic, stack, I/O, control flow, defining words,
 src/c/collections.c    — sets, arrays, and frames
 src/c/matrix.c         — matrix words and numeric kernels
 src/c/functional.c     — higher-order operations (map, mapn, …)
+src/c/superwords.c     — compile-time instruction fusion (superwords)
+src/c/strings.c        — string and PCRE2 regex operations
 src/forth/lib.l4       — standard library (auto-loaded at startup)
 tests/                 — golden-output test files
 docs/                  — design documents
