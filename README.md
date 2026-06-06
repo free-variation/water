@@ -22,11 +22,14 @@ zero-dependency build is planned.
 \ Arithmetic
 3 4 + .                                 \ 7
 
-\ Matrices and matrix algebra
-[ 1 2 3 4 ] 2 2 matrix dup transpose *  \ matrix multiplication
+\ Matrices: * is element-wise; matrix multiply is dgemm (αAB + βC)
+[ 1 2 3 4 ] 2 2 matrix dup transpose *  \ element-wise product of M and Mᵀ
 
 \ Sets and set algebra
 < 1 2 3 > < 2 3 4 > + .                 \ < 1 2 3 4 >  (union via polymorphic +)
+
+\ Set-builder { x² | x ∈ 1..10, even x } — literal + filter/map + destruct
+< 1 10 range [: 2 mod 0= :] filter [: fsq :] map destruct > .   \ < 4 16 36 64 100 >
 
 \ Frames — symbol-keyed nested maps
 { :a 1 :b { :c 2 } } /b/c @ .           \ 2
@@ -52,13 +55,14 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 ### Core language
 
-- **Tagged Vals** — floats, strings, symbols, sets, arrays, frames, matrices, execution tokens, dictionary addresses, continuations, internal marks. Single 16-byte representation; tag determines interpretation.
-- **Index-threaded inner interpreter** — dispatches one CFA per iteration, no separate bytecode.
+- **Tagged Vals** — floats, strings, symbols, sets, arrays, frames, matrices, execution tokens, dictionary addresses, continuations, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
+- **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code — no separate bytecode.
+- **Compile-time instruction fusion (superwords)** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), and `f*+` / `f*-` are fused multiply-add/subtract.
 - **Per-interpreter state** — all mutable state lives in an `Interpreter`, which owns its `Vocabulary` (a growable dictionary plus name/source/symbol pools). Multiple independent instances can coexist in one process; the engine is embeddable.
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
 - **Colon definitions** — `: name body ;`. The body is captured as source text for `see` and the text-form `save`.
 - **Anonymous quotations** — `[: ... :]` pushes a fresh xt. Works at top level and inside colon defs.
-- **Control flow** — `if`/`else`/`then`, `begin`/`until`/`again`, `>r`/`r>`/`r@` for return-stack access.
+- **Control flow** — `if`/`else`/`then`, the `begin`/`until`/`again` and `begin`/`while`/`repeat` loops, counted `times` / `i-times`, `exit`, and `>r`/`r>`/`r@` for return-stack access.
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
 - **Variables and symbols** — `variable foo` declares a global; read it by bare name, assign with `42 to foo` (`to` also auto-creates a global on first assignment at the REPL). `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
@@ -67,9 +71,10 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 ### Numeric / matrix
 
-- **Polymorphic arithmetic** — `+`/`-`/`*`/`/` dispatch on operand tags. Floats arithmetic, strings concatenate, sets union/difference/intersect, matrices element-wise.
-- **Matrix construction** — `2 3 0-matrix`, `[ ... ] R C matrix`, `N diagonal-matrix`, `N identity-matrix`.
-- **DGEMM** — `dgemm-nn`/`tn`/`nt`/`tt` for all four transpose variants; ikj-ordered fast path with restrict pointers (~5× over naive).
+- **Polymorphic arithmetic** — `+`/`-`/`*`/`/` dispatch on operand tags: floats compute, strings concatenate (`+`), sets union/difference/intersection, matrices element-wise, a scalar broadcasts over a matrix, and arrays concatenate (`+`).
+- **In-place matrix ops** — `+!`/`-!`/`*!`/`/!` mutate the left matrix in place (explicit; the programmer decides). Float-only fast paths (`f+`, `f-`, `f*`, `f/`, `f^`, …) skip the type dispatch when both operands are known floats.
+- **Matrix construction** — `R C 0-matrix` (zeros), `[ ... ] R C matrix`, `V N diagonal-matrix` (N×N with V on the diagonal), `N identity-matrix`.
+- **DGEMM** — `dgemm-nn`/`tn`/`nt`/`tt` (`αAB + βC`) for all four transpose variants. The non-transposed `nn` path is ikj-ordered with `restrict` pointers for cache-friendly access; the transposed variants use a straightforward triple loop.
 - **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells.
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
 - **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
@@ -89,7 +94,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the pla
 - **Literals** — `{ :a 1 :b 2 }`; values may be any Val, including nested frames, arrays, and sets.
 - **Builders** — `frame` ( keys values -- frame ) from two parallel collections, `>frame` ( kv-array -- frame ) from an alternating key/value array.
 - **Path literals** — `/a/b/c` is a symbol array `[ :a :b :c ]`, built once at compile time, used to address into the tree.
-- **Access** — `@` ( frame path -- value ) get, `!` ( frame path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, plus `keys` / `values` / `size`.
+- **Access** — `@` ( frame key/path -- value ) get, `!` ( frame key/path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, `merge` combine two frames (right wins), plus `keys` / `values` / `size`. Each accessor takes a single `:symbol` key or a `/a/b/c` path.
 - **Representation** — sorted parallel key/value arrays with binary-search lookup; mutable in place, reference semantics. Structurally comparable, so frames work as set members and round-trip through their `{ }` literal.
 
 ### Strings and regex
@@ -132,7 +137,9 @@ The `shift-with` handler can also resume the captured continuation, giving the C
 ### Other
 
 - **`depth`**, **`roll`** — stack-manipulation primitives.
-- **`see`** — prints a word's definition.
+- **`copy`** — deep copy of a value (strings, arrays, sets, frames, matrices).
+- **`now`** — current Unix time as a float (seconds since epoch).
+- **`see`** — prints a word's source definition; **`see-compiled`** disassembles its threaded body.
 - **`words`**, **`forget`**, **`bye`**, **`gc`**, **`clear`**, **`.s`**, **`.a`** — interpreter utilities.
 
 ## What's planned
@@ -141,7 +148,7 @@ Tracked in `PLAN.md`, with design notes for each.
 
 ### Data types
 
-- **Time / dates** — Unix timestamps as floats: `now`, `time-format`, `time-parse`.
+- **Time / dates** — strftime/strptime formatting and parsing (`time-format`, `time-parse`) over the `now` float timestamps that already exist.
 - **Random numbers** — xoshiro256++ PRNG: `random-float`, `random-int`, `seed!`, `shuffle`.
 
 ### Strings
