@@ -1,5 +1,4 @@
 #include "logicforth.h"
-#include <time.h>
 
 static void enter_compile_scope(Interpreter *interp);
 static void leave_compile_scope(Interpreter *interp);
@@ -1487,3 +1486,69 @@ void p_now(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_start_process(Interpreter *interp) {
+	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
+	Object *argv_array = interp->objects[VAL_DATA(argv_val)];
+	int argc = argv_array->len;
+	if (argc < 1) {
+		fail(interp, "start-process: argv needs at least the program name");
+		return;
+	}
+
+	char **argv = malloc(sizeof(char *) * (size_t)(argc + 1));
+	for (int i = 0; i < argc; i++) {
+		if (VAL_TAG(argv_array->items[i]) != T_STRING) {
+			free(argv);
+			fail(interp, "start-process: argv element %d is %s, expected a string",
+					i, tag_name(VAL_TAG(argv_array->items[i])));
+			return;
+		}
+		argv[i] = interp->objects[VAL_DATA(argv_array->items[i])]->bytes;
+	}
+	argv[argc] = NULL;
+
+	int in_pipe[2];
+	int out_pipe[2];
+	int err_pipe[2];
+	if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0 || pipe(err_pipe) < 0) {
+		free(argv);
+		fail(interp, "start-process: pipe failed");
+		return;
+	}
+
+	pid_t pid = fork();
+	if (pid < 0) {
+		free(argv);
+		fail(interp, "start-process: fork failed");
+		return;
+	}
+
+	if (pid == 0) {
+		dup2(in_pipe[0], 0);
+		dup2(out_pipe[1], 1);
+		dup2(err_pipe[1], 2);
+		close(in_pipe[0]);
+		close(in_pipe[1]);
+		close(out_pipe[0]);
+		close(out_pipe[1]);
+		close(err_pipe[0]);
+		close(err_pipe[1]);
+		execvp(argv[0], argv);
+		_exit(127);
+	}
+
+	close(in_pipe[0]);
+	close(out_pipe[1]);
+	close(err_pipe[1]);
+	free(argv);
+
+	NEW_FRAME(proc_handle, proc);
+	frame_put(proc, intern_symbol(interp, "pid"), make_float((double)pid));
+	frame_put(proc, intern_symbol(interp, "in"), make_stream(in_pipe[1]));
+	frame_put(proc, intern_symbol(interp, "out"), make_stream(out_pipe[0]));
+	frame_put(proc, intern_symbol(interp, "err"), make_stream(err_pipe[0]));
+
+	interp->data_stack[interp->dsp - 1] = make_frame(proc_handle);
+
+	DISPATCH(interp);
+}

@@ -1,5 +1,4 @@
 #include "logicforth.h"
-#include <unistd.h>
 
 int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_objects < MAX_OBJECTS) {
@@ -340,6 +339,7 @@ void print_val(Interpreter *interp, Val value) {
 					   break;
 		case T_XT: printf("<xt %lld>", (long long)VAL_DATA(value)); break;
 		case T_ADDR: printf("<addr %lld>", (long long)VAL_DATA(value)); break;
+		case T_STREAM: printf("<stream %lld>", (long long)VAL_DATA(value)); break;
 		case T_MATRIX: {
 						   Object *matrix = interp->objects[VAL_DATA(value)];
 						   print_depth_enter();
@@ -804,6 +804,7 @@ const char *tag_name(Tag t) {
 		case T_MATRIX: return "a matrix";
 		case T_XT:     return "an execution token";
 		case T_ADDR:   return "an address";
+		case T_STREAM: return "a stream";
 		case T_CONT:   return "a continuation";
 		case T_MARK:   return "a mark";
 		default:       return "an unknown value";
@@ -2534,6 +2535,7 @@ int main(void) {
 	define_primitive(interp, "truncate", p_truncate, 0);
 
 	define_primitive(interp, "now", p_now, 0);
+	define_primitive(interp, "start-process", p_start_process, 0);
 
 	interp->vocab->init_here = interp->vocab->here;
 	interp->vocab->init_latest_cfa = interp->vocab->latest_cfa;

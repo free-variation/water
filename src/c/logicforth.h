@@ -12,6 +12,8 @@
 #include <math.h>
 #include <limits.h>
 #include <regex.h>
+#include <time.h>
+#include <unistd.h>
 
 typedef int64_t cell;
 
@@ -45,7 +47,8 @@ typedef enum {
 	T_XT,
 	T_ADDR,
 	T_CONT,
-	T_MARK
+	T_MARK,
+	T_STREAM
 } Tag;
 
 typedef union {
@@ -93,9 +96,9 @@ static inline Val make_frame(int handle) { return make_tagged(T_FRAME, handle); 
 static inline Val make_matrix(int handle) { return make_tagged(T_MATRIX, handle); }
 static inline Val make_xt(int cfa) { return make_tagged(T_XT, cfa); }
 static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_index); }
+static inline Val make_stream(int file_descriptor) {return make_tagged(T_STREAM, file_descriptor); }
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
-
 static inline Val make_bool(int is_true) { return make_float(is_true ? 1.0 : 0.0); }
 
 static inline int truthy(Val value) {
@@ -710,6 +713,7 @@ void p_inc_poly(Interpreter *interp);
 void p_dec_poly(Interpreter *interp);
 void p_sq_poly(Interpreter *interp);
 void p_now(Interpreter *interp);
+void p_start_process(Interpreter *interp);
 Interpreter *interp_new(void);
 
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;

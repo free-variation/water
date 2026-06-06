@@ -355,6 +355,9 @@ with the HTTP-server work).
 - `stream read-all ( -- string )` — everything until EOF.
 - `stream close ( -- )` — close a stream; closing `:in` sends the child
   EOF.
+- `pid running? ( -- bool )` — non-blocking liveness check via
+  `waitpid` + `WNOHANG`; true while the child runs, false once it has
+  exited (reaping it in the process).
 - `pid wait ( -- status )` — block until the child exits, return its
   status.
 - `pid stop ( -- status )` — signal the child, then reap it.
