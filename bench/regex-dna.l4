@@ -178,4 +178,4 @@ variable rng-seed
 variable seq-data
 build-fasta to seq-data
 seq-data report
-seq-data timed "elapsed: {0} s" . cr
+seq-data timed "elapsed: {0} s" format . cr

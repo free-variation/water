@@ -1,4 +1,13 @@
-42 "value: {0}" .
-"foo" "name={0}" .
-1 2 3 "{0} {1} {2}" .
+\ format ( … template -- string ) — positional {n} fill from the stack.
+\ Plain string literals are raw; only format substitutes, and only {n}.
+
+42 "value: {0}" format .
+"foo" "name={0}" format .
+1 2 3 "{0} {1} {2}" format .
+
+\ non-numeric braces are left literal (no variable lookup)
+"keep {x} literal" format .
+
+\ a plain literal is raw — no substitution at all
+"raw {0}" .
 .s

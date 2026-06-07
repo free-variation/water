@@ -94,12 +94,17 @@ Partially portable — the backreference is not expressible in POSIX ERE.
 
 ### bm_regex_compile
 
-Repeatedly compiles the pattern set; measures compilation throughput,
-not matching. Directly relevant to PLAN.md's lazy-compile-and-cache
-`regex_t` design — a target for validating the pattern cache.
+Compiles the captured pattern set (from `bm_regex_v8` + `bm_regex_effbot`);
+measures compilation throughput, not matching.
 
-- **Needs:** the pattern cache (compile-on-first-use, bounded LRU).
-- **Status:** not started.
+- **Status:** **done — beats CPython ~6×.** 239 distinct patterns compiled
+  cold (0.0011 s vs CPython 0.0064 s). PCRE2 compiles and JIT-compiles in C,
+  where CPython's `sre_parse`/`sre_compile` run in Python — so we win even
+  with the JIT step. Ported in `bench/regex-compile.l4` (patterns in
+  `bench/regex_compile_patterns.json`); wired into `run-benchmarks.sh`. The
+  64-slot compiled-pattern cache can't hold 239, so one pass per process is
+  all cold misses — measured across fresh processes (the LF side triggers
+  each compile with `"" pat has?`, a negligible match on top of compile).
 
 ---
 

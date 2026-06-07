@@ -1,0 +1,13 @@
+\ atomic-clock.l4 — read the current UTC time from an atomic-clock-synced
+\ web server by shelling out to curl and parsing the HTTP Date header.
+\ exercises: subprocesses (run / start-process / read-out), regex match.
+
+\ Every response from Google's servers carries a Date header stamped from
+\ an atomic-synced clock; a HEAD request (curl -sI) is enough to read it.
+
+: server-date ( url -- date )
+  "curl -sI " swap +  run read-out
+  "[Dd]ate: ([^\r]*)" match
+  ?if 1 @i else drop "no Date header in response" then ;
+
+"https://www.google.com" server-date . cr

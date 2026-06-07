@@ -1,0 +1,57 @@
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+1 
+2|30 ok
+50 
+0 ok
+0 ok
+0 ok
+20 
+0 ok
+0 ok
+0 ok
+1 
+1|99 ok
+99 
+0 ok
+0 ok
+0 ok
+1 
+1|7 ok
+7 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+1 
+0 ok
+1 
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+0|error format: {0} needs 1 stack value(s) but only 0 present
+0|error format: {3} needs 4 stack value(s) but only 1 present
+0|error format: expected a template string; got a float

@@ -1,0 +1,32 @@
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+1|{4} ok
+1|{4} ok
+1 
+0 ok
+0 ok
+0 ok
+1|{4} ok
+1|{4} ok
+1|{4} ok
+1 
+0 ok
+0 ok
+0 ok
+1|{4} ok
+1|{4} ok
+1|{4} ok
+1 
+0 ok
+0 ok
+0 ok
+1|{4} ok
+1|{4} ok
+3 
+0 ok
+0 ok
+0 ok
+0|error write: expected a stream; got a float

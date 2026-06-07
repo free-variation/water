@@ -79,7 +79,7 @@ variable DM1  4.656612875245797e-10 to DM1
   now to t0
   [: A lu n copy-into  lu n lu-factor :] cycles times
   "elapsed: " . now t0 - . "s" . cr
-  lu n checksum "checksum: {0}" . cr ;
+  lu n checksum "checksum: {0}" format . cr ;
 
 100 ITERATIONS lu-bench
 bye

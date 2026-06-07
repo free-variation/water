@@ -14,23 +14,26 @@
 #include <regex.h>
 #include <time.h>
 #include <unistd.h>
+#include <errno.h>
+#include <signal.h>
+#include <sys/wait.h>
 
 typedef int64_t cell;
 
 #define VOCABULARY_INIT_SIZE    1048576
-#define NAME_POOL   			32768
-#define DATA_STACK_DEPTH		256
-#define RETURN_STACK_DEPTH  	256
-#define MAX_OBJECTS    			2097152
-#define INPUT_BUFFER_SIZE    			16384
-#define SOURCE_POOL 			1048576
-#define SYMBOL_POOL 			32768
-#define SIDESTACK_DEPTH 		256
+#define NAME_POOL   			262144
+#define DATA_STACK_DEPTH		65536
+#define RETURN_STACK_DEPTH  	65536
+#define MAX_OBJECTS    			4194304
+#define INPUT_BUFFER_SIZE    	1048576
+#define SOURCE_POOL 			4194304
+#define SYMBOL_POOL 			262144
+#define SIDESTACK_DEPTH 		1024
 #define MAX_LOADED_FILES 		64
-#define MAX_GC_ROOTS 			16
-#define LOCAL_NAMES_POOL_SIZE	2048
-#define MAX_LOCAL_NAMES			128
-#define MAX_LOCAL_SCOPES		16
+#define MAX_GC_ROOTS 			64
+#define LOCAL_NAMES_POOL_SIZE	8192
+#define MAX_LOCAL_NAMES			256
+#define MAX_LOCAL_SCOPES		64
 
 #define TRAMPOLINE_SLOT			0
 #define DICT_RESERVED			3
@@ -486,6 +489,7 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle);
 int string_matches(Interpreter *interp, Object *subject, Object *pattern);
 void p_match(Interpreter *interp);
 void p_match_all(Interpreter *interp);
+void p_split(Interpreter *interp);
 void p_replace(Interpreter *interp);
 void p_substring(Interpreter *interp);
 void p_join(Interpreter *interp);
@@ -713,7 +717,14 @@ void p_inc_poly(Interpreter *interp);
 void p_dec_poly(Interpreter *interp);
 void p_sq_poly(Interpreter *interp);
 void p_now(Interpreter *interp);
+void p_format(Interpreter *interp);
 void p_start_process(Interpreter *interp);
+void p_write(Interpreter *interp);
+void p_read(Interpreter *interp);
+void p_close(Interpreter *interp);
+void p_wait(Interpreter *interp);
+void p_stop_process(Interpreter *interp);
+void p_running(Interpreter *interp);
 Interpreter *interp_new(void);
 
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;

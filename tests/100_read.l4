@@ -1,0 +1,26 @@
+\ read ( stream -- string ) — deep test: read a child's :out to EOF.
+
+\ exact bytes, no trailing newline (printf)
+[ "printf" "abc" ] start-process :out @ read  "abc" =  . cr        \ 1
+
+\ echo appends a newline
+[ "echo" "hi" ] start-process :out @ read  "hi
+" =  . cr
+
+\ embedded newlines are preserved: printf "a\nb\nc" -> 5 bytes
+[ "printf" "a\nb\nc" ] start-process :out @ read size . cr         \ 5
+
+\ empty output -> ""
+[ "true" ] start-process :out @ read  "" =  . cr                   \ 1
+
+\ a second read on an exhausted stream yields ""
+[ "echo" "x" ] start-process :out @  dup read drop  read "" =  . cr   \ 1
+
+\ large output exercises the buffer growth (> 64 KiB)
+[ "seq" "1" "20000" ] start-process :out @ read size . cr
+
+\ the :err stream is readable too
+[ "sh" "-c" "printf oops >&2" ] start-process :err @ read  "oops" =  . cr  \ 1
+
+\ error: read on a non-stream
+5 read

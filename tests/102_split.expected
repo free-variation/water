@@ -1,0 +1,30 @@
+0 ok
+0 ok
+0 ok
+0 ok
+[ "a" "b" "c" ] 0 ok
+0 ok
+0 ok
+[ "a" "" "b" ] 0 ok
+0 ok
+0 ok
+[ "" "a" "" ] 0 ok
+0 ok
+0 ok
+[ "nodelim" ] 0 ok
+0 ok
+0 ok
+[ "" ] 0 ok
+0 ok
+0 ok
+[ "a" "b" "c" ] 0 ok
+0 ok
+0 ok
+[ "a" "b" "c" ] 0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+0|error split: expected a string; got a float

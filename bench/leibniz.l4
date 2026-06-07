@@ -32,8 +32,8 @@ variable T0
      PI f+ to PI
   :] ROUNDS f1+ i-times
   PI 4.0 f* to PI
-  now T0 - "elapsed: {0}s" . cr
-  PI "pi: {0}" . cr ;
+  now T0 - "elapsed: {0}s" format . cr
+  PI "pi: {0}" format . cr ;
 
 leibniz
 bye

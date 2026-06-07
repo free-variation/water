@@ -232,7 +232,7 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 | `cr` | `( -- )` | Print a newline | 1 | none | O(1) |
 | `emit` | `( n -- )` | Print the character with codepoint n | 1 | none | O(1) |
 
-String literals `"…"` are **raw**: bytes between the quotes are copied verbatim, no escape processing; an embedded newline is kept. Interpolation `"… {0} …"` replaces `{n}` with the string form of the nth-from-top stack value and consumes the referenced values; it produces a new string.
+String literals `"…"` are **raw**: bytes between the quotes are copied verbatim, no escape processing, no substitution; an embedded newline is kept. (So a regex `\d{3}` literal is safe — the braces are not touched.) Template-filling is the explicit word `format` (in String operations below).
 
 ---
 
@@ -245,9 +245,11 @@ Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is co
 | `match` | `( s pat -- [ whole cap… ] \| 0 )` | First (leftmost) match as a flat array: whole match then each capture; no match returns `0` | n | `1a` + captures | O(n) |
 | `match-all` | `( s pat -- [ [whole cap…] … ] \| 0 )` | Every non-overlapping leftmost match, each a flat sub-array; a zero-width match advances one byte; no match returns `0` | n | `1a` per match + captures | O(n + m·g) |
 | `replace` | `( s pat rep -- s' )` | Replace **all** matches; in `rep`, `&` or `\0` is the whole match, `\1`–`\9` a capture, `\&` and `\\` literals | n | `1o` + buffer growth | O(n) |
+| `split` | `( s pat -- [ piece… ] )` | Split `s` at each non-overlapping match of `pat`; the pieces are the gaps between matches, empty fields kept; no match → `[ s ]` | n | `1a` + pieces | O(n) |
 | `substring` | `( s start end -- sub )` | Half-open byte range `[start, end)`; bounds-checked | 2 + k | `1o` | O(k), k = end − start |
 | `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
 | `has?` | `( s pat -- bool )` | True if `pat` matches anywhere in `s` (string overload of frame `has?`) | n | none | O(n) |
+| `format` | `( … template -- s )` | Fill `template`'s `{n}` placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only `{digits}` substitute — other brace content is left literal | len + refs | `1o` | O(len) |
 
 `first match` and `findall` are spelled `match` and `match-all`; there is no separate search/match/fullmatch split. Anchor with `^`/`$` (or `\A`/`\z`) when you need it.
 
@@ -442,6 +444,24 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 
 ---
 
+## Subprocesses and streams
+
+A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process (later, a socket). `start-process` launches a program directly from an argv array (no shell, so no quoting or injection surface) and returns a frame `{ :pid :in :out :err }` whose `:in`/`:out`/`:err` are streams. The lifecycle is: `write` input → `close` `:in` (sends EOF) → `read` the output → `wait`. `SIGPIPE` is ignored process-wide, so a `write` to a child that has exited returns an error rather than killing the interpreter. Bytes are raw and length-counted, so streams are binary-safe.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `start-process` | `( argv -- proc )` | fork/exec `argv[0]` with `argv` as its arguments; return `{ :pid :in :out :err }` (the three streams are `T_STREAM`) | fork + 3 pipes | `1o` frame + 3 streams | O(argc) |
+| `write` | `( s stream -- )` | Write the string's bytes to the stream; loops over partial writes, retries `EINTR` | write syscalls | none | O(\|s\|) |
+| `read` | `( stream -- s )` | Read the stream to EOF into one string | read syscalls | `1o` + buffer growth | O(bytes) |
+| `close` | `( stream -- )` | Close the fd; closing a child's `:in` sends it EOF | 1 syscall | none | O(1) |
+| `wait` | `( pid -- status )` | Block until the child exits; return its exit code, or `128 + signo` if it was killed by a signal | blocks | none | O(1) |
+| `stop` | `( pid -- status )` | `SIGKILL` the child then reap it (137 = 128+9, or its code if it had already exited) | 2 syscalls | none | O(1) |
+| `running?` | `( pid -- bool )` | Non-blocking liveness via `waitpid`+`WNOHANG`; true while running, false once exited — reaping it as a side effect | 1 syscall | none | O(1) |
+
+`lib.l4` conveniences: `run` ( s -- proc ) splits a command string on spaces and `start-process`es it (`s " " split start-process`); `write-in` ( s proc -- ), `read-out` ( proc -- s ), `read-err` ( proc -- s ) write/read the child's `:in`/`:out`/`:err`. Line access is `read "\n" split`.
+
+---
+
 ## Type tags
 
 | Tag | Description |
@@ -455,6 +475,7 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 | `T_MATRIX` | heap object; r×c row-major `double[]` |
 | `T_XT` | execution token (dict index); first-class callable |
 | `T_ADDR` | dict index; used internally for return-stack frames |
+| `T_STREAM` | OS file descriptor (pipe or socket end); an inline `int`, like `T_ADDR` |
 | `T_CONT` | heap object; a captured return-stack slice plus a resume IP |
 | `T_MARK` | ephemeral sentinel from `<`, `[`, `{`, `reset`; not user-visible |
 | `T_NONE` | uninitialized / sentinel |

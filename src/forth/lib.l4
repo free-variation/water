@@ -57,4 +57,18 @@ inline
 
 ( m -- column-means )  \ each column's sum divided by the number of rows
 : column-means dup dim drop swap column-sums swap / ;
- 
+
+\ subprocess convenience
+
+( string proc -- )  \ write the string to the child's stdin
+: write-in :in @ write ;
+
+( proc -- string )  \ read all of the child's stdout
+: read-out :out @ read ;
+
+( proc -- string )  \ read all of the child's stderr
+: read-err :err @ read ;
+
+( string -- proc) \ start a process from an argv string
+: run " +" split start-process ;
+

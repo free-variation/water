@@ -21,8 +21,8 @@ variable T0
   4.0 matrix-range             \ build denominator sequence
   4.0 swap /!                  \ scalar / matrix, in place (reuses the sequence)
   sum                          \ accumulate
-  now T0 - "elapsed: {0}s" . cr
-  "pi: {0}" . cr ;
+  now T0 - "elapsed: {0}s" format . cr
+  "pi: {0}" format . cr ;
 
 leibniz-matrix
 bye

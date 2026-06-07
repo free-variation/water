@@ -1196,32 +1196,43 @@ static void interp_append(char **buffer, int *capacity, int *length, const char 
 	*length += n;
 }
 
+static void interp_render_val(Interpreter *interp, Val value, char **out_buffer, int *capacity, int *out_length) {
+	switch (VAL_TAG(value)) {
+		case T_FLOAT: {
+			char rendered[64];
+			double number = VAL_NUMBER(value);
+			int n;
+			if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
+				n = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
+			else
+				n = snprintf(rendered, sizeof(rendered), "%g", number);
+			interp_append(out_buffer, capacity, out_length, rendered, n);
+			break;
+		}
+		case T_SYMBOL: {
+			const char *name = &interp->vocab->symbol_pool[VAL_DATA(value)];
+			interp_append(out_buffer, capacity, out_length, name, (int)strlen(name));
+			break;
+		}
+		case T_STRING: {
+			Object *string_obj = interp->objects[VAL_DATA(value)];
+			interp_append(out_buffer, capacity, out_length, string_obj->bytes, string_obj->len);
+			break;
+		}
+		default:
+			interp_append(out_buffer, capacity, out_length, "<?>", 3);
+			break;
+	}
+}
+
 int interpolate(Interpreter *interp, int template_handle) {
 	Object *template = interp->objects[template_handle];
-
-	int max_ref = -1, any_placeholders = 0;
-	for (int cursor = 0; cursor < template->len; ) {
-		if (template->bytes[cursor] == '{') {
-			int scan = cursor + 1, digit_value = 0, saw_digit = 0;
-			while (scan < template->len && isdigit((unsigned char)template->bytes[scan])) {
-				digit_value = digit_value * 10 + (template->bytes[scan] - '0');
-				scan++;
-				saw_digit = 1;
-			}
-			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
-				if (digit_value > max_ref)
-					max_ref = digit_value;
-				any_placeholders = 1;
-				cursor = scan + 1;
-				continue;
-			}
-		}
-		cursor++;
-	}
-
 	int capacity = template->len + 64;
 	char *out_buffer = malloc((size_t)capacity);
 	int out_length = 0;
+	int refs[64];
+	int ref_count = 0;
+
 	for (int cursor = 0; cursor < template->len; ) {
 		if (template->bytes[cursor] == '{') {
 			int scan = cursor + 1, digit_value = 0, saw_digit = 0;
@@ -1233,39 +1244,20 @@ int interpolate(Interpreter *interp, int template_handle) {
 			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
 				int stack_index = interp->dsp - 1 - digit_value;
 				if (stack_index < 0) {
-					fail(interp, "string interpolation: {%d} needs %d stack value(s) but only %d present",
+					fail(interp, "format: {%d} needs %d stack value(s) but only %d present",
 							digit_value, digit_value + 1, interp->dsp);
 					free(out_buffer);
 					return object_new_string(interp, "", 0);
 				}
-				Val value = interp->data_stack[stack_index];
-				switch (VAL_TAG(value)) {
-					case T_FLOAT: {
-						char rendered[64];
-						double number = VAL_NUMBER(value);
-						int n;
-						if (number == (double)(int64_t)number && number > -1e15 && number < 1e15) {
-							n = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
-						} else {
-							n = snprintf(rendered, sizeof(rendered), "%g", number);
-						}
-						interp_append(&out_buffer, &capacity, &out_length, rendered, n);
+				int already = 0;
+				for (int i = 0; i < ref_count; i++)
+					if (refs[i] == digit_value) {
+						already = 1;
 						break;
 					}
-					case T_SYMBOL: {
-						const char *name = &interp->vocab->symbol_pool[VAL_DATA(value)];
-						interp_append(&out_buffer, &capacity, &out_length, name, (int)strlen(name));
-						break;
-					}
-					case T_STRING: {
-						Object *string_obj = interp->objects[VAL_DATA(value)];
-						interp_append(&out_buffer, &capacity, &out_length, string_obj->bytes, string_obj->len);
-						break;
-					}
-					default:
-						interp_append(&out_buffer, &capacity, &out_length, "<?>", 3);
-						break;
-				}
+				if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
+					refs[ref_count++] = digit_value;
+				interp_render_val(interp, interp->data_stack[stack_index], &out_buffer, &capacity, &out_length);
 				cursor = scan + 1;
 				continue;
 			}
@@ -1274,16 +1266,40 @@ int interpolate(Interpreter *interp, int template_handle) {
 		cursor++;
 	}
 
-	if (any_placeholders && max_ref >= 0) {
-		int items_to_drop = max_ref + 1;
-		if (items_to_drop > interp->dsp)
-			items_to_drop = interp->dsp;
-		interp->dsp -= items_to_drop;
+	if (ref_count > 0) {
+		int original_dsp = interp->dsp;
+		int write = 0;
+		for (int read = 0; read < original_dsp; read++) {
+			int depth = original_dsp - 1 - read;
+			int referenced = 0;
+			for (int i = 0; i < ref_count; i++)
+				if (refs[i] == depth) {
+					referenced = 1;
+					break;
+				}
+			if (!referenced)
+				interp->data_stack[write++] = interp->data_stack[read];
+		}
+		interp->dsp = write;
 	}
 
 	int result_handle = object_new_string(interp, out_buffer, out_length);
 	free(out_buffer);
 	return result_handle;
+}
+
+void p_format(Interpreter *interp) {
+	POP(template_val);
+	if (VAL_TAG(template_val) != T_STRING) {
+		fail(interp, "format: expected a template string; got %s", tag_name(VAL_TAG(template_val)));
+		return;
+	}
+	int result = interpolate(interp, (int)VAL_DATA(template_val));
+	if (interp->error_flag)
+		return;
+	push(interp, make_string(result));
+
+	DISPATCH(interp);
 }
 
 void p_gc(Interpreter *interp) {
@@ -1552,3 +1568,71 @@ void p_start_process(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
+void p_write(Interpreter *interp) {
+	PEEK_AT(stream_val, 0, "write");
+	if (VAL_TAG(stream_val) != T_STREAM) {
+		fail(interp, "write: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
+		return;
+	}
+	PEEK_TYPE_AT(string_val, 1, "write", T_STRING);
+	int file_descriptor = (int)VAL_DATA(stream_val);
+	Object *string = interp->objects[VAL_DATA(string_val)];
+
+	int total_written = 0;
+	while (total_written < string->len) {
+		ssize_t bytes_written = write(file_descriptor, string->bytes + total_written, (size_t)(string->len - total_written));
+		if (bytes_written < 0) {
+			if (errno == EINTR)
+				continue;
+			fail(interp, "write: %s", strerror(errno));
+			return;
+		}
+		total_written += (int)bytes_written;
+	}
+
+	interp->dsp -= 2;
+
+	DISPATCH(interp);
+}
+
+void p_read(Interpreter *interp) {
+	PEEK_AT(stream_val, 0, "read");
+	if (VAL_TAG(stream_val) != T_STREAM) {
+		fail(interp, "read: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
+		return;
+	}
+	int file_descriptor = (int)VAL_DATA(stream_val);
+
+	int length = 0;
+	int capacity = 1 << 16;
+	char *buffer = malloc((size_t)capacity);
+	while (1) {
+		if (length == capacity) {
+			capacity *= 2;
+			buffer = realloc(buffer, (size_t)capacity);
+		}
+
+		ssize_t bytes_read = read(file_descriptor, buffer + length, (size_t)(capacity - length));
+		if (bytes_read < 0) {
+			if (errno == EINTR)
+				continue;
+			free(buffer);
+			fail(interp, "read: %s", strerror(errno));
+			return;
+		}
+
+		if (bytes_read == 0)
+			break;
+		length += (int)bytes_read;
+	}
+
+	int handle = object_new_string(interp, buffer ? buffer : "", length);
+	free(buffer);
+	if (interp->error_flag) return;
+
+	interp->data_stack[interp->dsp - 1] = make_string(handle);
+
+	DISPATCH(interp);
+}
+

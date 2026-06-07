@@ -179,6 +179,51 @@ void p_match(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_split(Interpreter *interp) {
+	PEEK_STRING_AT(pattern, 0, "split");
+	PEEK_STRING_AT(subject, 1, "split");
+	COMPILE_PATTERN(compiled, num_groups, pattern);
+
+	regmatch_t match_offsets[num_groups];
+	pcre2_match_data *md = pcre2_match_data_create(num_groups, NULL);
+
+	int match_count = 0;
+	for (int from = 0; from <= subject->len; ) {
+		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, match_offsets, md);
+		if (resume_from < 0)
+			break;
+		match_count++;
+		from = resume_from;
+	}
+
+	NEW_ARRAY(result_handle, result, match_count + 1);
+	memset(result->items, 0, sizeof(Val) * (size_t)(match_count + 1));
+	gc_root_push(interp, make_array(result_handle));
+
+	int piece_index = 0;
+	int previous_end = 0;
+	for (int from = 0; from <= subject->len; ) {
+		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, match_offsets, md);
+		if (resume_from < 0)
+			break;
+		int piece_length = (int)match_offsets[0].rm_so - previous_end;
+		result->items[piece_index++] = make_string(object_new_string(interp, subject->bytes + previous_end, piece_length));
+		previous_end = (int)match_offsets[0].rm_eo;
+		from = resume_from;
+	}
+	result->items[piece_index] = make_string(object_new_string(interp, subject->bytes + previous_end, subject->len - previous_end));
+
+	gc_root_pop(interp);
+	pcre2_match_data_free(md);
+	if (interp->error_flag)
+		return;
+
+	interp->dsp -= 2;
+	push(interp, make_array(result_handle));
+
+	DISPATCH(interp);
+}
+
 static void append_bytes(char **buffer, int *length, int *capacity, const char *src, int n) {
 	if (*length + n > *capacity) {
 		while (*length + n > *capacity)

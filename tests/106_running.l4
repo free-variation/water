@@ -1,0 +1,20 @@
+\ running? ( pid -- bool ) — non-blocking liveness via waitpid(WNOHANG).
+\ true while the child runs; false once it has exited (reaping it).
+
+variable p
+
+\ a long sleeper is alive
+"sleep 60" run to p
+p :pid @ running? .  cr          \ 1
+
+\ ... and not alive once stopped (stop SIGKILLs and reaps it)
+p :pid @ stop drop
+p :pid @ running? .  cr          \ 0
+
+\ a process already reaped by wait is likewise not running
+[ "true" ] start-process to p
+p :pid @ wait drop
+p :pid @ running? .  cr          \ 0
+
+\ error: pid must be a number
+"x" running?

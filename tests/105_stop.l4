@@ -1,0 +1,11 @@
+\ stop ( pid -- status ) — SIGKILL the child and reap it. SIGKILL is
+\ signal 9, so a killed child reports 128 + 9 = 137.
+
+\ kill a long-running process
+"sleep 60" run :pid @ stop .  cr        \ 137
+
+\ a process blocked reading stdin (no input, never closed) is killed too
+"cat" run :pid @ stop .  cr             \ 137
+
+\ error: pid must be a number
+"x" stop

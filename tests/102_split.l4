@@ -1,0 +1,29 @@
+\ split ( string pattern -- [ piece … ] ) — deep test. Regex delimiter,
+\ empty fields kept; the pieces are the gaps between match-all's matches.
+
+\ basic comma split
+"a,b,c" "," split .                     \ [ "a" "b" "c" ]
+
+\ empty fields are kept
+"a,,b" "," split .                      \ [ "a" "" "b" ]
+
+\ leading and trailing empties
+",a," "," split .                       \ [ "" "a" "" ]
+
+\ no delimiter present -> the whole string as one piece
+"nodelim" "," split .                   \ [ "nodelim" ]
+
+\ empty subject -> one empty piece
+"" "," split .                          \ [ "" ]
+
+\ multi-character delimiter
+"a::b::c" "::" split .                  \ [ "a" "b" "c" ]
+
+\ regex delimiter: one or more spaces
+"a  b c" " +" split .                   \ [ "a" "b" "c" ]
+
+\ split then join on the same literal delimiter round-trips
+"x,y,z" "," split "," join  "x,y,z" =  . cr   \ 1
+
+\ error: pattern is not a string
+"x" 5 split

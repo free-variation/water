@@ -1192,11 +1192,9 @@ void run_outer(Interpreter *interp) {
 				return;
 			int handle = object_new_string(interp, interp->token_buffer, n);
 			if (interp->compiling) {
-				emit_call(interp, interp->vocab->dostr_cfa);
-				emit(interp, (cell)handle);
+				emit_val_literal(interp, make_string(handle));
 			} else {
-				int r = interpolate(interp, handle);
-				push(interp, make_string(r));
+				push(interp, make_string(handle));
 			}
 			interp->fuse_prev_var = 0;
 			interp->fuse_prev2_var = 0;
@@ -2303,6 +2301,7 @@ Interpreter *interp_new(void) {
 
 int main(void) {
 	Interpreter *interp = interp_new();
+	signal(SIGPIPE, SIG_IGN);
 
 	define_primitive(interp, "+", p_add, 0);
 	define_primitive(interp, "-", p_sub, 0);
@@ -2386,9 +2385,11 @@ int main(void) {
 	define_primitive(interp, "has?", p_has, 0);
 	define_primitive(interp, "match", p_match, 0);
 	define_primitive(interp, "match-all", p_match_all, 0);
+	define_primitive(interp, "split", p_split, 0);
 	define_primitive(interp, "replace", p_replace, 0);
 	define_primitive(interp, "substring", p_substring, 0);
 	define_primitive(interp, "join", p_join, 0);
+	define_primitive(interp, "format", p_format, 0);
 	define_primitive(interp, "update-at", p_update_at, 0);
 	define_primitive(interp, "merge", p_merge, 0);
 	define_primitive(interp, "copy", p_copy, 0);
@@ -2536,6 +2537,12 @@ int main(void) {
 
 	define_primitive(interp, "now", p_now, 0);
 	define_primitive(interp, "start-process", p_start_process, 0);
+	define_primitive(interp, "write", p_write, 0);
+	define_primitive(interp, "read", p_read, 0);
+	define_primitive(interp, "close", p_close, 0);
+	define_primitive(interp, "wait", p_wait, 0);
+	define_primitive(interp, "stop", p_stop_process, 0);
+	define_primitive(interp, "running?", p_running, 0);
 
 	interp->vocab->init_here = interp->vocab->here;
 	interp->vocab->init_latest_cfa = interp->vocab->latest_cfa;
@@ -2593,4 +2600,84 @@ int main(void) {
 		inbuf_reset(interp);
 	}
 	return 0;
+}
+
+void p_close(Interpreter *interp) {
+	PEEK_AT(stream_val, 0, "close");
+	if (VAL_TAG(stream_val) != T_STREAM) {
+		fail(interp, "close: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
+		return;
+	}
+	close((int)VAL_DATA(stream_val));
+	interp->dsp -= 1;
+
+	DISPATCH(interp);
+}
+
+void p_wait(Interpreter *interp) {
+	POP_INT(pid, "wait", "pid");
+
+	int status;
+	pid_t result;
+	do {
+		result = waitpid((pid_t)pid, &status, 0);
+	} while (result < 0 && errno == EINTR);
+
+	if (result < 0) {
+		fail(interp, "wait: %s", strerror(errno));
+		return;
+	}
+
+	int code;
+	 if (WIFEXITED(status))
+		 code = WEXITSTATUS(status);
+	 else if (WIFSIGNALED(status))
+		 code = 128 + WTERMSIG(status);
+	 else
+		 code = -1;
+	 push(interp, make_float((double)code));
+
+	 DISPATCH(interp);
+}
+		
+void p_stop_process(Interpreter *interp) {
+	POP_INT(pid, "stop", "pid");
+
+	kill((pid_t)pid, SIGKILL);
+	
+	int status;
+	pid_t result;
+	do {
+		result = waitpid((pid_t)pid, &status, 0);
+	} while (result < 0 && errno == EINTR);
+
+	if (result < 0) {
+		fail(interp, "stop: %s", strerror(errno));
+		return;
+	}
+
+	int code;
+	if (WIFEXITED(status))
+		code = WEXITSTATUS(status);
+	else if (WIFSIGNALED(status))
+		code = 128 + WTERMSIG(status);
+	else
+		code = -1;
+	push(interp, make_float((double)code));
+
+	DISPATCH(interp);
+}
+
+void p_running(Interpreter *interp) {
+	POP_INT(pid, "running?", "pid");
+
+	int status;
+	pid_t result;
+	do {
+		result = waitpid((pid_t)pid, &status, WNOHANG);
+	} while (result < 0 && errno == EINTR);
+
+	push(interp, make_bool(result == 0));
+
+	DISPATCH(interp);
 }

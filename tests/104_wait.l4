@@ -1,0 +1,19 @@
+\ wait ( pid -- status ) — block for the child, return its exit code,
+\ or 128 + signal number if it was killed by a signal.
+
+\ success and failure exit codes
+[ "true" ]  start-process :pid @ wait .  cr               \ 0
+[ "false" ] start-process :pid @ wait .  cr               \ 1
+
+\ an arbitrary exit code passes through
+[ "sh" "-c" "exit 42" ] start-process :pid @ wait .  cr   \ 42
+
+\ death by signal -> 128 + signo (SIGKILL = 9 -> 137)
+[ "sh" "-c" "kill -9 $$" ] start-process :pid @ wait .  cr   \ 137
+
+\ wait after draining a round-trip: the filter exits 0
+"head -c 3" run dup "hello" swap write-in  dup :in @ close
+  dup read-out drop  :pid @ wait .  cr                    \ 0
+
+\ error: pid must be a number
+"x" wait

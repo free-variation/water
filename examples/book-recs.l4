@@ -68,7 +68,7 @@ variable U   variable S   variable Vt
     Vt @ * ;
 
 : seen-books ( u -- idxs )
-    "SELECT book_id FROM ratings WHERE user_id = {0}" interp run
+    "SELECT book_id FROM ratings WHERE user_id = {0}" format run
     [: 0 at :] map ;
 
 : mask ( scores idxs -- scores )

@@ -90,9 +90,9 @@
   xt execute
   >side
   name now t0 -
-  "{1} elapsed={0}s" . cr
+  "{1} elapsed={0}s" format . cr
   name side>
-  "{1}   result={0}" . cr ;
+  "{1}   result={0}" format . cr ;
 
 : bench
   cr
@@ -115,7 +115,7 @@
 \ skipping path validation and frame_walk's outer loop.
 
 : build-keys ( n -- keys-array )
-  0 swap f1- range [: "k{0}" string>symbol :] map ;
+  0 swap f1- range [: "k{0}" format string>symbol :] map ;
 
 : build-vals ( n -- vals-array )
   0 swap f1- range ;
@@ -145,7 +145,7 @@
   size build-reps bench-build  build-reps  /  1e6 *
   size lookup-passes bench-lookup  lookup-passes  /  1e9 *
   size
-  "size={0}  build={2} us  lookup={1} ns/op" . cr ;
+  "size={0}  build={2} us  lookup={1} ns/op" format . cr ;
 
 : scale-frames
   gc

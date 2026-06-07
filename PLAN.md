@@ -50,8 +50,9 @@ of POSIX ERE — `\d`, `\w`, `\n` / `\t`, lookaround, `\p{...}` — so plain
 
 **Built** (specs in `docs/reference.md`): `match` (first match as a flat
 `[ whole cap1 … ]`, `0` on no match), `match-all`, `replace` (with the
-`&` / `\0` / `\1`–`\9` / `\&` / `\\` substitution forms), the `has?` string
-overload, `substring`, `join`; counting is `match-all size`. Matching is
+`&` / `\0` / `\1`–`\9` / `\&` / `\\` substitution forms), `split` (on a
+regex delimiter, empty fields kept), the `has?` string overload,
+`substring`, `join`; counting is `match-all size`. Matching is
 single-pass over the whole subject with a `startoffset`; `compiled_pattern`
 caches compiled-and-JITted patterns (64-entry round-robin); non-overlapping
 leftmost enumeration with the zero-width +1 advance, matching Python
@@ -59,8 +60,8 @@ leftmost enumeration with the zero-width +1 advance, matching Python
 
 ### Still deferred
 
-- **Wrappers** over `match-all` / `replace`, in `lib.l4`: `split`,
-  `index-of`, `starts-with`, `ends-with`, `trim`, `lines`.
+- **Wrappers** over the match/replace layer: `index-of`, `starts-with`,
+  `ends-with`, `trim`, `lines`.
 
 ### Unicode model
 
@@ -135,8 +136,10 @@ Small high-quality PRNG (xoshiro256++ or PCG, ~30 lines).
 
 ### stdin / env
 
-- `read-line` — one line from stdin as a string; empty string at EOF.
-- `read-all` — all of stdin as one string.
+- `stdin` / `stdout` / `stderr` — the three standard streams as `T_STREAM`
+  values (fds 0/1/2). Reading and writing reuse the subprocess stream
+  words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
+  lines, `s stdout write` emits.
 - `"VAR" env` — environment variable value as a string; empty if unset.
 
 `argv` is not included; invocation is `logicforth file.l4`, and argument
@@ -161,17 +164,18 @@ into the same `(exc 1)` result a `throw` produces.
 
 No file-handle type and no open / close / seek. The only fd-shaped things
 in the language are the pipe and socket streams from `start-process` /
-`serve` (`T_STREAM`). For files too large for memory or line-by-line
-streaming, use a pipe (`[ "cat" path ] start-process` then `read-line`).
-~15 lines of C each.
+`serve` (`T_STREAM`). For line-oriented access, pipe through a command:
+`[ "cat" path ] start-process read-out "\n" split`. ~15 lines of C each.
 
-### Interpolation format specs
+### Format specs
 
-Extend `"... {0} ..."` interpolation with optional format specifiers after
-a colon: `{0:.2f}` (precision), `{0:8}` (field width), `{0:x}` (hex) — a
-small printf-style mini-language, no new word. The bare `{0}` keeps today's
-rendering (integer-valued floats as integers, else `%g`; strings and
-symbols as their text).
+`format` ( … template -- string ) is built: `{n}` fills from the stack
+(positional only — locals and globals are pushed and referenced by
+position). Extend its placeholders with optional format specifiers after a
+colon: `{0:.2f}` (precision), `{0:8}` (field width), `{0:x}` (hex) — a
+small printf-style mini-language. The bare `{n}` keeps today's rendering
+(integer-valued floats as integers, else `%g`; strings and symbols as
+their text).
 
 ---
 
@@ -350,9 +354,8 @@ with the HTTP-server work).
   frame.
 - `string stream write ( -- )` — write the string's bytes to a child's
   `:in`.
-- `stream read-line ( -- string )` — one line from `:out`/`:err`; empty at
-  EOF.
-- `stream read-all ( -- string )` — everything until EOF.
+- `stream read ( -- string )` — everything until EOF (line access is
+  `read "\n" split`).
 - `stream close ( -- )` — close a stream; closing `:in` sends the child
   EOF.
 - `pid running? ( -- bool )` — non-blocking liveness check via
@@ -362,12 +365,12 @@ with the HTTP-server work).
   status.
 - `pid stop ( -- status )` — signal the child, then reap it.
 
-`start-process` is non-blocking; only `read-all` blocks. Fan out by
+`start-process` is non-blocking; only `read` blocks. Fan out by
 starting N children, then draining each — wall time is the slowest call,
 not the sum. Cap concurrency with a `lib.l4` loop that starts processes in
 batches of N.
 
-Lifecycle: `start-process` → `write` input → `close` `:in` → `read-all` →
+Lifecycle: `start-process` → `write` input → `close` `:in` → `read` →
 `wait`. Use `wait` (not `stop`) after draining: it returns the program's
 real exit code.
 

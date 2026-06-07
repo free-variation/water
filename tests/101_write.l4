@@ -1,0 +1,29 @@
+\ write ( string stream -- ) — deep test.
+\ head -c N self-terminates after N bytes, so written bytes round-trip
+\ through the pipe and back out without needing close.
+
+\ one write; the consumer echoes the first 5 bytes
+[ "head" "-c" "5" ] start-process
+  dup  "hello world" swap :in @  write
+  :out @ read  "hello" =  . cr        \ 1
+
+\ sequential writes arrive in order
+[ "head" "-c" "6" ] start-process
+  dup  "foo" swap :in @  write
+  dup  "bar" swap :in @  write
+  :out @ read  "foobar" =  . cr       \ 1
+
+\ an empty write is a no-op (the loop never runs), no error
+[ "head" "-c" "2" ] start-process
+  dup  "" swap :in @  write
+  dup  "hi" swap :in @  write
+  :out @ read  "hi" =  . cr           \ 1
+
+\ binary-safe: bytes with embedded newline pass through unchanged
+[ "head" "-c" "3" ] start-process
+  dup  "a
+b" swap :in @  write
+  :out @ read  size . cr              \ 3
+
+\ error: write target is not a stream
+"x" 5 write

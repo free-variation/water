@@ -1,4 +1,13 @@
+0 ok
+0 ok
+0 ok
 value: 42 0 ok
 name=foo 0 ok
 3 2 1 0 ok
+0 ok
+0 ok
+keep {x} literal 0 ok
+0 ok
+0 ok
+raw {0} 0 ok
 0 ok

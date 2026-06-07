@@ -1,0 +1,42 @@
+\ format ( … template -- s ) — careful test.
+\ {n} fills from the nth-from-top stack value; after the fill, exactly the
+\ referenced positions are dropped (unreferenced values stay). Plain string
+\ literals are raw; only {digits} substitute.
+
+\ --- basic positional fill; the referenced value is consumed ---
+42 "value: {0}" format  "value: 42" =  . cr                  \ 1
+
+\ --- several refs in stack order; all referenced positions dropped ---
+1 2 3 "{0} {1} {2}" format  "3 2 1" =  . cr                  \ 1
+
+\ --- a repeated ref drops its one position once ---
+5 "{0}+{0}" format  "5+5" =  . cr                            \ 1
+
+\ --- sparse: {2} references only depth 2 (=10); 20 and 30 stay ---
+10 20 30 "{2}" format  "10" =  . cr                          \ 1
++ . cr                                                       \ 50  (kept 20 30)
+
+\ --- sparse mixed: {0} {2} drop depths 0 and 2; depth 1 (=20) stays ---
+10 20 30 "{0} {2}" format drop  . cr                         \ 20
+
+\ --- no references: nothing dropped, the value is retained ---
+99 "plain" format  "plain" =  . cr                           \ 1
+. cr                                                         \ 99
+
+\ --- non-digit / empty braces are left literal; nothing dropped ---
+7 "keep {x} and {} here" format  "keep {x} and {} here" =  . cr   \ 1
+. cr                                                         \ 7
+
+\ --- rendering: float (non-int / int), string, symbol ---
+3.5  "{0}" format  "3.5" =  . cr                             \ 1
+100  "{0}" format  "100" =  . cr                             \ 1
+"hi" "<{0}>" format  "<hi>" =  . cr                          \ 1
+:sym "{0}" format  "sym" =  . cr                             \ 1
+
+\ --- a plain literal is raw: no substitution ---
+"raw {0} {1}"  "raw {0} {1}" =  . cr                         \ 1
+
+\ --- errors (each clears at the REPL, so they are independent) ---
+"{0}" format                                                 \ empty stack
+5 "{3}" format                                               \ needs 4, has 1
+5 format                                                     \ template not a string

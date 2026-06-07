@@ -1,0 +1,36 @@
+\ close ( stream -- ) — closing :in sends the child EOF, letting a filter
+\ (tr, cat, sort, …) finish and flush. Deep test of the round-trip
+\ write-in -> close :in -> read-out.
+
+\ feed input through a command and collect its stdout
+: filter ( input cmd -- output )
+  run swap over write-in  dup :in @ close  read-out ;
+
+\ upcase
+"hello world" "tr a-z A-Z" filter  "HELLO WORLD" =  . cr      \ 1
+
+\ identity (cat) preserves the bytes exactly
+"a,b,c" "cat" filter  "a,b,c" =  . cr                          \ 1
+
+\ multi-line input passes through
+"ab
+cd" "tr a-z A-Z" filter  "AB
+CD" =  . cr                                                     \ 1
+
+\ sort can only emit after it sees the full input + EOF
+"b
+a
+c
+" "sort" filter  "a
+b
+c
+" =  . cr                                                      \ 1
+
+\ empty input: close with nothing written -> empty output
+"" "cat" filter  "" =  . cr                                    \ 1
+
+\ byte count of the round-tripped output
+"12345" "cat" filter size .  cr                                \ 5
+
+\ error: close on a non-stream
+5 close

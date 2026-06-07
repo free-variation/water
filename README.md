@@ -99,7 +99,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the pla
 
 ### Strings and regex
 
-- **String literals** with newlines allowed inside; **interpolation** — `"hello {0}"` substitutes from the data stack; **polymorphic concatenation** via `+`.
+- **String literals** are raw (newlines allowed, no escapes/substitution); **`format`** fills `{n}` placeholders from the stack — `"got {0} of {1}" format`; **polymorphic concatenation** via `+`.
 - **Regex** on PCRE2 (Perl-compatible, JIT-compiled): `match` (first match as a flat `[ whole cap… ]`), `match-all` (all matches, nested), `replace` (replace-all, with `&` / `\1`–`\9` backrefs), and the `has?` string overload (does the pattern match?). Patterns are plain `"..."` literals — PCRE2 reads `\d`, `\w`, `\n`, lookaround, `\p{...}`.
 - **Slicing / building** — `substring` (half-open byte range), `join` (concatenate an array of strings with a separator).
 
@@ -165,7 +165,7 @@ Tracked in `PLAN.md`, with design notes for each.
 ### Language ergonomics
 
 - **Sort** — `sort`, `sort-with`, `sort-by`.
-- **stdin / env** — `read-line`, `read-all`, environment variable access.
+- **stdin / env** — `stdin`/`stdout`/`stderr` as streams (read/written with the subprocess `read`/`write`), environment variable access.
 - **Functional primitives** — `range` remains in C; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter`/`reduce`/`take`/`reverse`/`concat` done in C; `skip`/`last` in `lib.l4`.)
 - **Help system** — `help word` showing a one-line doc string.
 
