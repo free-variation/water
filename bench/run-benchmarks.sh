@@ -85,7 +85,6 @@ ratio() {
 }
 
 # --- logicforth command wrappers (each prints a full bench run) ------------
-lf_synth()    { "$bin" < "$here/synth.l4"; }
 lf_leibniz()  { "$bin" < "$here/leibniz.l4"; }
 lf_leibniz_matrix() { "$bin" < "$here/leibniz-matrix.l4"; }
 lf_nqueens()  { "$bin" < "$here/nqueens.l4"; }
@@ -99,7 +98,6 @@ lf_regex_effbot() { "$bin" < "$here/regex-effbot.l4"; }
 lf_regex_v8() { "$bin" < "$here/regex-v8.l4"; }
 
 # --- python command wrappers -----------------------------------------------
-py_synth()    { "$python" "$here/synth.py"; }
 py_nqueens()  { "$python" "$here/pyperf_nqueens.py" "$nqueens_n"; }
 py_fannkuch() { "$python" "$here/pyperf_fannkuch.py" "$fannkuch_n"; }
 py_nbody()    { "$python" "$here/pyperf_nbody.py" "$nbody_steps"; }
@@ -125,12 +123,6 @@ run_reps() {
 median_elapsed() {
 	local key=$1
 	grep -i elapsed "$work/$key.log" | grep -oE '[0-9]+\.[0-9]+' | median
-}
-
-# Median elapsed for a single synth phase across runs (e.g. phase 3).
-synth_phase_elapsed() {
-	local key=$1 phase=$2
-	grep "phase$phase elapsed=" "$work/$key.log" | grep -oE '[0-9]+\.[0-9]+' | median
 }
 
 # Last matching result line from a bench log (for the verification section).
@@ -205,10 +197,6 @@ PYEOF
 # ===========================================================================
 log "logicforth: $reps reps/bench   python: $reps_py reps/bench   ($python)"
 
-log "== synth =="
-run_reps synth_lf lf_synth "$reps"
-run_reps synth_py py_synth "$reps_py"
-
 log "== nqueens =="
 run_reps nqueens_lf lf_nqueens "$reps"
 run_reps nqueens_py py_nqueens "$reps_py"
@@ -274,23 +262,6 @@ emit "- **Host**: $uname_s"
 emit "- **Compiler**: \`clang -O3 -march=native -Wall -Wextra\`"
 emit "- **Python**: CPython $pyver (\`$python\`)"
 emit "- **Date**: $today"
-emit ""
-
-# ---- synth table ----
-emit "## synth.l4 — logicforth vs CPython $pyver"
-emit ""
-emit "| phase | logicforth | python | py / lf |"
-emit "|:-----:|-----------:|-------:|--------:|"
-synth_lf_total=0
-synth_py_total=0
-for phase in 1 2 3 4 5 6; do
-	lf=$(synth_phase_elapsed synth_lf "$phase")
-	py=$(synth_phase_elapsed synth_py "$phase")
-	synth_lf_total=$(awk -v a="$synth_lf_total" -v b="$lf" 'BEGIN{print a+b}')
-	synth_py_total=$(awk -v a="$synth_py_total" -v b="$py" 'BEGIN{print a+b}')
-	emit "| $phase | $(fmt_ms "$lf") | $(fmt_ms "$py") | $(ratio "$py" "$lf") |"
-done
-emit "| total | $(fmt_ms "$synth_lf_total") | $(fmt_ms "$synth_py_total") | $(ratio "$synth_py_total" "$synth_lf_total") |"
 emit ""
 
 # ---- standalone table ----

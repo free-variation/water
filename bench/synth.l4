@@ -1,7 +1,0 @@
-\ One-shot synthetic benchmark — see bench/synth-defs.l4 for the actual
-\ phase definitions, and bench/profile.l4 for the looped profiling driver.
-
-"bench/synth-defs.l4" load
-bench
-scale-frames
-bye
