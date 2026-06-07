@@ -1,7 +1,7 @@
 \ regex-compile — compile the pyperformance regex set (bm_regex_v8 +
-\ bm_regex_effbot, captured via bm_regex_compile). 239 distinct patterns;
-\ our compiled-pattern cache is 64 slots, so every pass is all misses —
-\ one pass per process measures cold compile + JIT.
+\ bm_regex_effbot, captured via bm_regex_compile). 239 distinct patterns,
+\ each first-seen in a single pass — one pass per fresh process measures
+\ cold compile + JIT with no cache reuse.
 
 variable PATTERNS
 [

@@ -1170,19 +1170,29 @@ void p_forget(Interpreter *interp) {
 }
 
 int read_string_literal(Interpreter *interp) {
-	int start = interp->input_buffer_pos + 1;
-	int cursor = start;
-	while (cursor < interp->input_buffer_len && interp->input_buffer[cursor] != '"')
+	int cursor = interp->input_buffer_pos + 1;
+	int length = 0;
+	while (cursor < interp->input_buffer_len) {
+		char c = interp->input_buffer[cursor];
+		if (c == '"') {
+			if (cursor + 1 >= interp->input_buffer_len) {
+				interp->need_more = 1;
+				return -1;
+			}
+			if (interp->input_buffer[cursor + 1] == '"') {
+				interp->token_buffer[length++] = '"';
+				cursor += 2;
+				continue;
+			}
+			interp->token_buffer[length] = 0;
+			interp->input_buffer_pos = cursor + 1;
+			return length;
+		}
+		interp->token_buffer[length++] = c;
 		cursor++;
-	if (cursor >= interp->input_buffer_len) {
-		interp->need_more = 1;
-		return -1;
 	}
-	int length = cursor - start;
-	memcpy(interp->token_buffer, interp->input_buffer + start, (size_t)length);
-	interp->token_buffer[length] = 0;
-	interp->input_buffer_pos = cursor + 1;
-	return length;
+	interp->need_more = 1;
+	return -1;
 }
 
 static void interp_append(char **buffer, int *capacity, int *length, const char *src, int n) {
