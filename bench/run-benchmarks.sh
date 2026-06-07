@@ -23,6 +23,10 @@ bin="$root/logicforth"
 python=${PYTHON:-python3.14}
 reps=${REPS:-5}
 reps_py=${REPS_PY:-3}
+# regex-compile is an inherently single-shot cold measure (~1 ms; the cache
+# warms after pass 1, so it can't be looped in-process). Sample it across many
+# fresh processes instead, for a tighter median.
+reps_compile=${REPS_COMPILE:-25}
 skip_leibniz=${SKIP_LEIBNIZ:-0}
 
 nbody_steps=20000
@@ -91,6 +95,8 @@ lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat 
 lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/scimark-lu.l4"; } | "$bin"; }
 lf_regex_dna() { "$bin" < "$here/regex-dna.l4"; }
 lf_regex_compile() { "$bin" < "$here/regex-compile.l4"; }
+lf_regex_effbot() { "$bin" < "$here/regex-effbot.l4"; }
+lf_regex_v8() { "$bin" < "$here/regex-v8.l4"; }
 
 # --- python command wrappers -----------------------------------------------
 py_synth()    { "$python" "$here/synth.py"; }
@@ -101,6 +107,8 @@ py_spectral() { "$python" "$here/pyperf_spectral_norm.py" "$spectral_loops"; }
 py_scimark_lu() { "$python" "$here/pyperf_scimark_lu.py" "$scimark_lu_cycles"; }
 py_regex_dna() { "$python" "$here/pyperf_regex_dna.py"; }
 py_regex_compile() { "$python" "$here/pyperf_regex_compile.py"; }
+py_regex_effbot() { "$python" "$here/pyperf_regex_effbot.py"; }
+py_regex_v8() { "$python" "$here/pyperf_regex_v8.py"; }
 
 # Run a wrapper N times, append each run's stdout (with a separator) to a log.
 run_reps() {
@@ -226,8 +234,16 @@ run_reps regex_dna_lf lf_regex_dna "$reps"
 run_reps regex_dna_py py_regex_dna "$reps_py"
 
 log "== regex-compile =="
-run_reps regex_compile_lf lf_regex_compile "$reps"
-run_reps regex_compile_py py_regex_compile "$reps_py"
+run_reps regex_compile_lf lf_regex_compile "$reps_compile"
+run_reps regex_compile_py py_regex_compile "$reps_compile"
+
+log "== regex-effbot =="
+run_reps regex_effbot_lf lf_regex_effbot "$reps"
+run_reps regex_effbot_py py_regex_effbot "$reps_py"
+
+log "== regex-v8 =="
+run_reps regex_v8_lf lf_regex_v8 "$reps"
+run_reps regex_v8_py py_regex_v8 "$reps_py"
 
 have_leibniz=0
 have_leibniz_r=0
@@ -303,6 +319,8 @@ row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed
 row "scimark-lu" "N=100, ${scimark_lu_cycles}×" scimark_lu_lf "$(median_elapsed scimark_lu_py)"
 row "regex-dna" "100K → 1M" regex_dna_lf "$(median_elapsed regex_dna_py)"
 row "regex-compile" "239 patterns, cold" regex_compile_lf "$(median_elapsed regex_compile_py)"
+row "regex-effbot" "21 pat × 0..10k" regex_effbot_lf "$(median_elapsed regex_effbot_py)"
+row "regex-v8" "12 blocks, browser trace" regex_v8_lf "$(median_elapsed regex_v8_py)"
 emit ""
 
 # ---- R reference for the vectorized variant ----
@@ -327,6 +345,8 @@ emit "| spectral-norm | $(result_line spectral_lf 'estimate') | $(result_line sp
 emit "| scimark-lu | $(result_line scimark_lu_lf 'checksum') | $(result_line scimark_lu_py 'checksum') |"
 emit "| regex-dna | $(result_line regex_dna_lf 'result:') | $(result_line regex_dna_py 'result:') |"
 emit "| regex-compile | $(result_line regex_compile_lf 'patterns:') | $(result_line regex_compile_py 'patterns:') |"
+emit "| regex-effbot | $(result_line regex_effbot_lf 'matches:') | $(result_line regex_effbot_py 'matches:') |"
+emit "| regex-v8 | $(result_line regex_v8_lf 'checksum:') | $(result_line regex_v8_py 'checksum:') |"
 if [ "$have_leibniz" = 1 ]; then
 	emit "| leibniz | $(result_line leibniz_lf 'pi:') | pi = $leibniz_py_result |"
 	emit "| leibniz-matrix | $(result_line leibniz_matrix_lf 'pi:') | pi = $leibniz_py_result |"

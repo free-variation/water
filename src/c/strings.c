@@ -5,7 +5,7 @@
 
 typedef pcre2_code *compiled_pattern_t;
 
-#define REGEX_CACHE_SIZE 64
+#define REGEX_CACHE_SIZE 512
 
 static struct {
 	char *pattern;

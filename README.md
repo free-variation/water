@@ -99,7 +99,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the pla
 
 ### Strings and regex
 
-- **String literals** are raw (newlines allowed, no escapes/substitution); **`format`** fills `{n}` placeholders from the stack — `"got {0} of {1}" format`; **polymorphic concatenation** via `+`.
+- **String literals** are raw (newlines allowed; `""` is the one escape → a literal `"`); **`format`** fills `{n}` placeholders from the stack — `"got {0} of {1}" format`; **polymorphic concatenation** via `+`.
 - **Regex** on PCRE2 (Perl-compatible, JIT-compiled): `match` (first match as a flat `[ whole cap… ]`), `match-all` (all matches, nested), `replace` (replace-all, with `&` / `\1`–`\9` backrefs), and the `has?` string overload (does the pattern match?). Patterns are plain `"..."` literals — PCRE2 reads `\d`, `\w`, `\n`, lookaround, `\p{...}`.
 - **Slicing / building** — `substring` (half-open byte range), `join` (concatenate an array of strings with a separator).
 

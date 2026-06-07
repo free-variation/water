@@ -10,4 +10,11 @@
 
 \ a plain literal is raw — no substitution at all
 "raw {0}" .
+
+\ "" escape: a doubled "" yields one "; a lone " closes the string
+"he said ""hi""" size .                 \ 12  (he said "hi")
+"""" size .                             \ 1   (a single quote char)
+"a""b" size .                           \ 3   (a"b)
+"" size .                               \ 0   (empty string stays empty)
+"a""b" 1 2 substring  """" =  .         \ 1   (the embedded byte is a quote)
 .s

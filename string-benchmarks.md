@@ -68,17 +68,20 @@ Cleanest port target — alternation + character classes only, exercises
 
 ### bm_regex_v8
 
-The V8 JavaScript regexp benchmark ported to Python: ~85 real-world
-patterns (URLs, cookies, user-agents, HTML, CSS selectors) over a
-ROT13-encoded corpus, mostly `search` with some `sub` and `split`. Most
-strings are under 1 KB; 11 blocks with decreasing iteration counts.
+The V8 JavaScript regexp benchmark ported to Python: real-world patterns
+(URLs, cookies, user-agents, HTML, CSS selectors) over a ROT13-encoded
+corpus, mostly `search` with some `sub` and `split`. Most strings are
+under 1 KB; 12 blocks with decreasing iteration counts.
 
-Partially portable. Some patterns use PCRE features POSIX ERE lacks
-(`\d`, `\w`, lookaround) and would need rewriting or dropping.
-
-- **Needs:** `match`, `replace`, `split`; plus a documented pattern-rewrite
-  pass for the non-ERE patterns.
-- **Status:** not started.
+- **Status:** **done — beats CPython ~2.9×.** 230 distinct patterns over
+  575 subjects, 100 passes per process (0.36 s vs CPython 1.06 s). Patterns
+  go to PCRE2 unchanged — the `\d`/`\w`/lookaround constructs CPython needs
+  work directly, and ignorecase patterns carry a `(?i)` prefix. Ported in
+  `bench/regex-v8.l4` (generated; `has?`/`replace`/`split`), wired into
+  `run-benchmarks.sh`. Verification matches CPython byte-for-byte via a
+  checksum (1401243: search hits + total replaced length). The CPython side
+  (`bench/pyperf_regex_v8.py`) copies the pyperformance source verbatim and
+  computes the same checksum in an untimed pass.
 
 ### bm_regex_effbot
 
@@ -87,10 +90,13 @@ wildcards, character classes, and a backreference `(Python)\1`. Strings
 are core tokens (Perl/Python/CSV-like) padded with 0–10,000 repeated
 prefix/suffix characters to vary length.
 
-Partially portable — the backreference is not expressible in POSIX ERE.
-
-- **Needs:** `match`; the backreference case dropped or rewritten.
-- **Status:** not started.
+- **Status:** **done — beats CPython ~3.6×.** 21 patterns × 7 lengths =
+  147 (pattern, string) pairs, each searched 10× (0.0039 s vs CPython
+  0.0139 s). The backreference `(Python)\1` works directly on PCRE2 — no
+  rewrite needed. Ported in `bench/regex-effbot.l4` (`has?` per pair),
+  wired into `run-benchmarks.sh`; verification matches CPython (147/147
+  pairs match). The CPython side (`bench/pyperf_regex_effbot.py`) copies
+  the pyperformance data-builders verbatim.
 
 ### bm_regex_compile
 
@@ -101,10 +107,11 @@ measures compilation throughput, not matching.
   cold (0.0011 s vs CPython 0.0064 s). PCRE2 compiles and JIT-compiles in C,
   where CPython's `sre_parse`/`sre_compile` run in Python — so we win even
   with the JIT step. Ported in `bench/regex-compile.l4` (patterns in
-  `bench/regex_compile_patterns.json`); wired into `run-benchmarks.sh`. The
-  64-slot compiled-pattern cache can't hold 239, so one pass per process is
-  all cold misses — measured across fresh processes (the LF side triggers
-  each compile with `"" pat has?`, a negligible match on top of compile).
+  `bench/regex_compile_patterns.json`); wired into `run-benchmarks.sh`. Each
+  of the 239 patterns is first-seen in a single pass, so one pass per fresh
+  process is all cold compiles with no cache reuse — measured across fresh
+  processes (the LF side triggers each compile with `"" pat has?`, a
+  negligible match on top of compile).
 
 ---
 

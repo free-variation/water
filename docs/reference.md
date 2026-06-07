@@ -232,7 +232,7 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 | `cr` | `( -- )` | Print a newline | 1 | none | O(1) |
 | `emit` | `( n -- )` | Print the character with codepoint n | 1 | none | O(1) |
 
-String literals `"…"` are **raw**: bytes between the quotes are copied verbatim, no escape processing, no substitution; an embedded newline is kept. (So a regex `\d{3}` literal is safe — the braces are not touched.) Template-filling is the explicit word `format` (in String operations below).
+String literals `"…"` are **raw**: bytes between the quotes are copied verbatim and an embedded newline is kept; the only escape is a doubled `""`, which yields one `"` (a lone `"` closes the string). There is no `{n}` substitution — a regex `\d{3}` literal is safe, and template-filling is the explicit word `format` (in String operations below).
 
 ---
 
