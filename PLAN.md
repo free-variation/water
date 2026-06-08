@@ -48,16 +48,6 @@ named operations as `lib.l4` wrappers. The engine is **PCRE2**
 of POSIX ERE — `\d`, `\w`, `\n` / `\t`, lookaround, `\p{...}` — so plain
 `"..."` patterns express newlines directly.
 
-**Built** (specs in `docs/reference.md`): `match` (first match as a flat
-`[ whole cap1 … ]`, `0` on no match), `match-all`, `replace` (with the
-`&` / `\0` / `\1`–`\9` / `\&` / `\\` substitution forms), `split` (on a
-regex delimiter, empty fields kept), the `has?` string overload,
-`substring`, `join`; counting is `match-all size`. Matching is
-single-pass over the whole subject with a `startoffset`; `compiled_pattern`
-caches compiled-and-JITted patterns (64-entry round-robin); non-overlapping
-leftmost enumeration with the zero-width +1 advance, matching Python
-`findall` / awk `gsub` counts.
-
 ### Still deferred
 
 - **Wrappers** over the match/replace layer: `index-of`, `starts-with`,
@@ -111,8 +101,8 @@ Unix timestamps as `T_FLOAT` (seconds since epoch, fractional allowed). No
 separate date type; durations are floats in seconds, arithmetic is `+` /
 `-`.
 
-- `now` — current time as float.
-- `"%Y-%m-%d %H:%M:%S" time-format` — strftime-style, UTC by default.
+- `"%Y-%m-%d %H:%M:%S" time-format` — strftime-style, UTC by default
+  (`now` for the current time as a float is already built).
 - `"2026-05-25" time-parse` — strptime-style parsing.
 - `"%Y-%m-%dT%H:%M:%SZ"` is the recommended ISO 8601 format string.
 
@@ -169,13 +159,10 @@ in the language are the pipe and socket streams from `start-process` /
 
 ### Format specs
 
-`format` ( … template -- string ) is built: `{n}` fills from the stack
-(positional only — locals and globals are pushed and referenced by
-position). Extend its placeholders with optional format specifiers after a
+Extend `format`'s placeholders with optional format specifiers after a
 colon: `{0:.2f}` (precision), `{0:8}` (field width), `{0:x}` (hex) — a
-small printf-style mini-language. The bare `{n}` keeps today's rendering
-(integer-valued floats as integers, else `%g`; strings and symbols as
-their text).
+small printf-style mini-language on top of the existing positional `{n}`
+fill, which keeps its current rendering.
 
 ---
 
@@ -326,77 +313,6 @@ at a reverse proxy. `:name` captures cover routing.
 
 **Cost:** sockets + picohttpparser wrapper + request/response framing ~150
 lines of C; `serve`, router, and response builders ~60 lines of `lib.l4`.
-
----
-
-## Subprocesses and pipes
-
-Start an external program and talk to it over pipes — the basis for
-filesystem, network, and system work by driving standard binaries (`cat`,
-`tee`, `ls`, `curl`, …). Zero dependency: `fork` / `execvp` / `pipe` /
-`waitpid`. Pipes are raw byte streams, so this is binary-safe.
-
-A process launches from an argv array — no shell, so no quoting or
-injection surface:
-
-```forth
-[ "cat" "/etc/hosts" ] start-process   ( -- proc )
-```
-
-`start-process` returns a frame `{ :pid :in :out :err }`: `:pid` the child's
-process id; `:in` a writable stream for its stdin, `:out` / `:err` readable
-streams for its stdout and stderr. Streams carry the `T_STREAM` tag (shared
-with the HTTP-server work).
-
-**Words:**
-
-- `argv start-process ( argv -- proc )` — fork/exec, return the process
-  frame.
-- `string stream write ( -- )` — write the string's bytes to a child's
-  `:in`.
-- `stream read ( -- string )` — everything until EOF (line access is
-  `read "\n" split`).
-- `stream close ( -- )` — close a stream; closing `:in` sends the child
-  EOF.
-- `pid running? ( -- bool )` — non-blocking liveness check via
-  `waitpid` + `WNOHANG`; true while the child runs, false once it has
-  exited (reaping it in the process).
-- `pid wait ( -- status )` — block until the child exits, return its
-  status.
-- `pid stop ( -- status )` — signal the child, then reap it.
-
-`start-process` is non-blocking; only `read` blocks. Fan out by
-starting N children, then draining each — wall time is the slowest call,
-not the sum. Cap concurrency with a `lib.l4` loop that starts processes in
-batches of N.
-
-Lifecycle: `start-process` → `write` input → `close` `:in` → `read` →
-`wait`. Use `wait` (not `stop`) after draining: it returns the program's
-real exit code.
-
-**Built on top, in `lib.l4`:** `llm-call` (`curl`), and so on.
-
-Not included: shell interpretation (argv only); multi-stage pipelines in
-the primitive; concurrent bidirectional streaming (write-then-drain only);
-Windows.
-
-**Cost:** ~150 lines of C (`start-process`, the stream read/write/close
-words, `wait`/`stop`) plus the `T_STREAM` tag; LLM convenience words are
-`lib.l4`.
-
----
-
-## JSON ↔ frame
-
-Two words, JSON carried as a string: `json>frame ( string -- value )`
-parses, `frame>json ( value -- string )` serializes. JSON objects map to
-frames (symbol keys, interned on parse), arrays to arrays, strings to
-strings, numbers to floats, `true`/`false` to the boolean floats, `null` to
-a sentinel (`T_NONE` or a reserved symbol). For consuming HTTP/LLM API
-responses and building request bodies.
-
-Hand-rolled one-pass recursive-descent parser building Vals directly,
-~200–400 lines of C; `frame>json` is a `print_val`-style recursive walk.
 
 ---
 

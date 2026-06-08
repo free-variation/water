@@ -34,6 +34,9 @@ zero-dependency build is planned.
 \ Frames — symbol-keyed nested maps
 { :a 1 :b { :c 2 } } /b/c @ .           \ 2
 
+\ JSON: parse to frames/arrays, serialize back
+"[1, 2, 3]" json>frame frame>json .     \ [1, 2, 3]
+
 \ Higher-order operations
 [ 1 2 3 4 5 ] [: dup * :] map .         \ [ 1 4 9 16 25 ]
 
@@ -66,7 +69,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
 - **Variables and symbols** — `variable foo` declares a global; read it by bare name, assign with `42 to foo` (`to` also auto-creates a global on first assignment at the REPL). `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
-- **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (initialized to `0.0`); read by bare name, assign with `to name`. Locals nest through quotations and survive continuation capture.
+- **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (initialized to `0.0`); read by bare name, assign with `to name`. `++ name` / `-- name` increment/decrement a local in place (`f++` / `f--` the unsafe float-only forms). Locals nest through quotations and survive continuation capture.
 - **Mark-and-sweep GC** — walks data/return/side stacks, dictionary, and a small `gc_roots` array for in-flight C-level temporaries.
 
 ### Numeric / matrix
@@ -103,6 +106,11 @@ Symbol-keyed nested maps — the associative type, and the compound term the pla
 - **Regex** on PCRE2 (Perl-compatible, JIT-compiled): `match` (first match as a flat `[ whole cap… ]`), `match-all` (all matches, nested), `replace` (replace-all, with `&` / `\1`–`\9` backrefs), and the `has?` string overload (does the pattern match?). Patterns are plain `"..."` literals — PCRE2 reads `\d`, `\w`, `\n`, lookaround, `\p{...}`.
 - **Slicing / building** — `substring` (half-open byte range), `join` (concatenate an array of strings with a separator).
 
+### JSON
+
+- **`json>frame`** — parse a JSON string into native values: objects → frames (keys interned as symbols), arrays → arrays, strings → strings (escapes and `\uXXXX` decoded to UTF-8), numbers → floats, `true`/`false` → the reserved `:1`/`:0` boolean symbols, `null` → `null` (the none value). Recursive-descent, GC-safe, rejects trailing garbage.
+- **`frame>json`** — serialize a value back to a JSON string: floats use a shortest round-trip representation, strings are escaped, `:1`/`:0` → `true`/`false`, none → `null`.
+
 ### I/O and persistence
 
 - **Stdin REPL**, rlwrap-friendly, with a `count|top` prompt showing stack depth and the top value — green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
@@ -110,6 +118,15 @@ Symbol-keyed nested maps — the associative type, and the compound term the pla
 - **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
 - **`reload`** truncates user state and re-runs every file `load`ed this session, in order.
+
+### Subprocesses and pipes
+
+Drive external programs over pipes (`fork`/`execvp`/`pipe`/`waitpid`; binary-safe, no shell):
+
+- **`argv start-process`** — launch from an argv array; returns a frame `{ :pid :in :out :err }` with the child's pid and its stdin/stdout/stderr as `T_STREAM` values.
+- **`write`** / **`read`** / **`close`** — write a string to a stream, read a stream to EOF, close one (closing `:in` sends EOF).
+- **`running?`** / **`wait`** / **`stop`** — non-blocking liveness check, block-until-exit, signal-and-reap.
+- `lib.l4` conveniences: **`run`** (split a command line and start it), **`read-out`** / **`read-err`** / **`write-in`**.
 
 ### Delimited continuations
 

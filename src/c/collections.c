@@ -959,7 +959,9 @@ static void json_parse_string(Interpreter *interp, JSONParser *parser, Val *dest
 	if (length < 0) return;
 	string->len = length;
 	string->bytes[length] = 0;
+	
 	*destination = make_string(handle);
+	
 	parser->cursor = closing + 1;
 }
 
@@ -988,8 +990,10 @@ static void json_parse_array(Interpreter *interp, JSONParser *parser, Val *desti
 			array->items = realloc(array->items, sizeof(Val) * (size_t)capacity);
 			array->capacity = capacity;
 		}
+
 		array->items[array->len] = make_tagged(T_NONE, 0);
 		array->len++;
+		
 		json_parse_value(interp, parser, &interp->objects[handle]->items[array->len - 1]);
 		if (interp->error_flag) return;
 
@@ -1044,6 +1048,7 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 			fail(interp, "json>frame: unterminated string");
 			return;
 		}
+
 		int key_span = (int)(key_closing - key_content);
 		if (key_span + 1 > parser->scratch_capacity) {
 			int capacity = parser->scratch_capacity < 64 ? 64 : parser->scratch_capacity;
@@ -1051,11 +1056,13 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 			parser->scratch = realloc(parser->scratch, (size_t)capacity);
 			parser->scratch_capacity = capacity;
 		}
+
 		int key_length = json_decode_string(interp, key_content, key_closing, parser->scratch);
 		if (key_length < 0) return;
 		parser->scratch[key_length] = 0;
 		cell key_symbol = intern_symbol(interp, parser->scratch);
 		if (interp->error_flag) return;
+		
 		parser->cursor = key_closing + 1;
 
 		json_skip_whitespace(parser);
@@ -1072,9 +1079,11 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 			frame->frame.values = realloc(frame->frame.values, sizeof(Val) * (size_t)capacity);
 			frame->capacity = capacity;
 		}
+
 		frame->frame.keys[frame->len] = key_symbol;
 		frame->frame.values[frame->len] = make_tagged(T_NONE, 0);
 		frame->len++;
+		
 		json_parse_value(interp, parser, &interp->objects[handle]->frame.values[frame->len - 1]);
 		if (interp->error_flag) return;
 
@@ -1098,18 +1107,22 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 	Object *frame = interp->objects[handle];
 	cell *keys = frame->frame.keys;
 	Val *values = frame->frame.values;
+	
 	for (int i = 1; i < frame->len; i++) {
 		cell key_symbol = keys[i];
 		Val value = values[i];
 		int j = i - 1;
+		
 		while (j >= 0 && keys[j] > key_symbol) {
 			keys[j + 1] = keys[j];
 			values[j + 1] = values[j];
 			j--;
 		}
+
 		keys[j + 1] = key_symbol;
 		values[j + 1] = value;
 	}
+
 	int unique = 0;
 	for (int i = 0; i < frame->len; i++) {
 		if (unique > 0 && keys[unique - 1] == keys[i]) {
@@ -1228,6 +1241,7 @@ static void json_write_bytes(JSONWriter *writer, const char *bytes, int n) {
 		writer->buffer = realloc(writer->buffer, (size_t)capacity);
 		writer->capacity = capacity;
 	}
+
 	memcpy(writer->buffer + writer->length, bytes, (size_t)n);
 	writer->length += n;
 }
@@ -1239,6 +1253,7 @@ static void json_write_byte(JSONWriter *writer, char byte) {
 static void json_write_number(JSONWriter *writer, double number) {
 	char text[32];
 	int n;
+	
 	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15) {
 		n = snprintf(text, sizeof text, "%lld", (long long)number);
 	} else {
@@ -1248,11 +1263,13 @@ static void json_write_number(JSONWriter *writer, double number) {
 				break;
 		}
 	}
+	
 	json_write_bytes(writer, text, n);
 }
 
 static void json_write_string(JSONWriter *writer, const char *bytes, int len) {
 	json_write_byte(writer, '"');
+	
 	for (int i = 0; i < len; i++) {
 		unsigned char byte = (unsigned char)bytes[i];
 		switch (byte) {
@@ -1273,6 +1290,7 @@ static void json_write_string(JSONWriter *writer, const char *bytes, int len) {
 				}
 		}
 	}
+	
 	json_write_byte(writer, '"');
 }
 
