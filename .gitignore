@@ -55,3 +55,6 @@ dkms.conf
 *.dwo
 logicforth
 .DS_Store
+
+# cached upstream leibniz.py benchmark reference (fetched on demand)
+bench/.leibniz_ref.py

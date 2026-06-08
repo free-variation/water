@@ -141,11 +141,16 @@ result_line() {
 leibniz_py_elapsed=""
 leibniz_py_result=""
 run_leibniz_py() {
-	local ref="$work/leibniz_ref.py" i
-	log "fetching upstream leibniz.py reference..."
-	if ! curl -fsSL "$leibniz_url" -o "$ref"; then
-		log "  WARNING: could not fetch leibniz reference; skipping python leibniz"
-		return 1
+	local ref="$here/.leibniz_ref.py" i
+	if [ ! -s "$ref" ]; then
+		log "fetching upstream leibniz.py reference (caching at $ref)..."
+		if ! curl -fsSL "$leibniz_url" -o "$ref"; then
+			log "  WARNING: could not fetch leibniz reference; skipping python leibniz"
+			rm -f "$ref"
+			return 1
+		fi
+	else
+		log "using cached leibniz.py reference"
 	fi
 	echo "$leibniz_rounds" > "$work/rounds.txt"
 	# the reference prints only the result, so time it externally and capture
