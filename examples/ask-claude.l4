@@ -1,0 +1,38 @@
+\ ask-claude.l4 — ask Claude a question via the Anthropic Messages API.
+\ exercises: env (read the API key from the environment), frame>json (build
+\ the JSON request body), subprocesses (curl via start-process / read-out),
+\ json>frame (parse the reply), frame + array access.
+\
+\ Needs ANTHROPIC_API_KEY in the environment and curl on the PATH.
+
+"claude-haiku-4-5-20251001" to MODEL
+
+\ Build the Messages-API request body from a question string.
+: request-body ( question -- json )
+  |> question |
+  { :model MODEL  :max_tokens 256
+    :messages [ { :role "user" :content question } ] }
+  frame>json ;
+
+\ POST the body to the API with curl, return the parsed response frame.
+\ start-process (not run) because the header and body args contain spaces.
+: call-api ( body -- response )
+  |> body |
+  [ "curl" "-s" "https://api.anthropic.com/v1/messages"
+    "-H" "x-api-key: " "ANTHROPIC_API_KEY" env +
+    "-H" "anthropic-version: 2023-06-01"
+    "-H" "content-type: application/json"
+    "-d" body ] start-process read-out
+  json>frame ;
+
+\ Ask Claude, returning its answer text (or the raw error JSON on failure).
+: ask ( question -- answer )
+  request-body call-api
+  dup :content has? if
+    :content @  0 @i  :text @
+  else
+    frame>json
+  then ;
+
+"In one sentence, what is a stack-based programming language?" ask . cr
+bye
