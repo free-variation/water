@@ -1,0 +1,32 @@
+\ env ( name -- value ): getenv; unset -> null, set -> string (possibly "").
+\ env! ( name value -- ): setenv, overwrite; process-wide.
+
+\ an unset variable reads as null
+"LF_UNSET_zzz9" env null = . cr        \ 1
+
+\ env! sets; env reads it back
+"LF_K" "hello" env!
+"LF_K" env . cr                        \ hello
+"LF_K" env "hello" = . cr              \ 1
+
+\ env! overwrites an existing var
+"LF_K" "world" env!
+"LF_K" env . cr                        \ world
+
+\ set-empty is "" (size 0) — distinct from unset (null)
+"LF_E" "" env!
+"LF_E" env size . cr                   \ 0
+"LF_E" env null = . cr                 \ 0
+
+\ a subprocess inherits a var set with env! (printenv appends a newline);
+\ a later env! overwrite is seen by the next child too
+"LF_CHILD" "passed_through" env!
+"printenv LF_CHILD" run read-out "passed_through
+" = . cr                               \ 1
+"LF_CHILD" "changed" env!
+"printenv LF_CHILD" run read-out "changed
+" = . cr                               \ 1
+
+\ errors: name / value must be strings
+42 env                                 \ env: expected a string
+"LF_K" 42 env!                         \ env!: expected a string
