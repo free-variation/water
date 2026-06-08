@@ -831,5 +831,387 @@ void p_to_slice(Interpreter *interp) {
 	DISPATCH(interp);
 }
 		
+typedef struct {
+	const char *cursor;
+	const char *end;
+	int depth;
+	char *scratch;
+	int scratch_capacity;
+} JSONParser;
 
+#define JSON_MAX_DEPTH 1024
 
+static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *destination);
+
+static void json_skip_whitespace(JSONParser *parser) {
+	while (parser->cursor < parser->end) {
+		char lookahead = *parser->cursor;
+		if (lookahead != ' ' && lookahead != '\t' && lookahead != '\n' && lookahead != '\r') 
+			break;
+		parser->cursor++;
+	}
+}
+
+static int json_hex4(const char *hex) {
+	int value = 0;
+	for (int i = 0; i < 4; i++) {
+		char digit = hex[i];
+		int nibble;
+		if (digit >= '0' && digit <= '9') nibble = digit - '0';
+		else if (digit >= 'a' && digit <= 'f') nibble = digit - 'a' + 10;
+		else if (digit >= 'A' && digit <= 'F') nibble = digit - 'A' + 10;
+		else return -1;
+		value = (value << 4) | nibble;
+	}
+	return value;
+}
+
+static const char *json_string_end(const char *content, const char *end) {
+	const char *closing = content;
+	while (closing < end && *closing != '"') {
+		if (*closing == '\\' && closing + 1 < end) closing++;
+		closing++;
+	}
+	return closing;
+}
+
+static int json_decode_string(Interpreter *interp, const char *content, const char *closing, char *out) {
+	int length = 0;
+	const char *raw = content;
+	while (raw < closing) {
+		if (*raw != '\\') {
+			out[length++] = *raw++;
+			continue;
+		}
+		raw++;
+		switch (*raw) {
+			case '"': out[length++] = '"'; raw++; break;
+			case '\\': out[length++] = '\\'; raw++; break;
+			case '/': out[length++] = '/'; raw++; break;
+			case 'b': out[length++] = '\b'; raw++; break;
+			case 'f': out[length++] = '\f'; raw++; break;
+			case 'n': out[length++] = '\n'; raw++; break;
+			case 'r': out[length++] = '\r'; raw++; break;
+			case 't': out[length++] = '\t'; raw++; break;
+			case 'u': {
+				raw++;
+				if (closing - raw < 4) {
+					fail(interp, "json>frame: truncated \\u escape");
+					return -1;
+				}
+				int codepoint = json_hex4(raw);
+				if (codepoint < 0) {
+					fail(interp, "json>frame: invalid \\u escape");
+					return -1;
+				}
+				raw += 4;
+				if (codepoint >= 0xD800 && codepoint <= 0xDBFF) {
+					if (closing - raw < 6 || raw[0] != '\\' || raw[1] != 'u') {
+						fail(interp, "json>frame: unpaired surrogate");
+						return -1;
+					}
+					int low = json_hex4(raw + 2);
+					if (low < 0xDC00 || low > 0xDFFF) {
+						fail(interp, "json>frame: invalid surrogate pair");
+						return -1;
+					}
+					codepoint = 0x10000 + ((codepoint - 0xD800) << 10) + (low - 0xDC00);
+					raw += 6;
+				}
+				if (codepoint <= 0x7F) {
+					out[length++] = (char)codepoint;
+				} else if (codepoint <= 0x7FF) {
+					out[length++] = (char)(0xC0 | (codepoint >> 6));
+					out[length++] = (char)(0x80 | (codepoint & 0x3F));
+				} else if (codepoint <= 0xFFFF) {
+					out[length++] = (char)(0xE0 | (codepoint >> 12));
+					out[length++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+					out[length++] = (char)(0x80 | (codepoint & 0x3F));
+				} else {
+					out[length++] = (char)(0xF0 | (codepoint >> 18));
+					out[length++] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+					out[length++] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+					out[length++] = (char)(0x80 | (codepoint & 0x3F));
+				}
+				break;
+			}
+			default:
+				fail(interp, "json>frame: unsupported string escape");
+				return -1;
+		}
+	}
+	return length;
+}
+
+static void json_parse_string(Interpreter *interp, JSONParser *parser, Val *destination) {
+	const char *content = parser->cursor + 1;
+	const char *closing = json_string_end(content, parser->end);
+	if (closing >= parser->end) {
+		fail(interp, "json>frame: unterminated string");
+		return;
+	}
+
+	int handle = object_new_string_uninit(interp, (int)(closing - content));
+	if (interp->error_flag) return;
+
+	Object *string = interp->objects[handle];
+	int length = json_decode_string(interp, content, closing, string->bytes);
+	if (length < 0) return;
+	string->len = length;
+	string->bytes[length] = 0;
+	*destination = make_string(handle);
+	parser->cursor = closing + 1;
+}
+
+static void json_parse_array(Interpreter *interp, JSONParser *parser, Val *destination) {
+	if (++parser->depth > JSON_MAX_DEPTH) {
+		fail(interp, "json>frame: nesting too deep");
+		return;
+	}
+
+	int handle = object_new_array(interp, 0);
+	if (interp->error_flag) return;
+	*destination = make_array(handle);
+	parser->cursor++;
+
+	json_skip_whitespace(parser);
+	if (parser->cursor < parser->end && *parser->cursor == ']') {
+		parser->cursor++;
+		parser->depth--;
+		return;
+	}
+
+	for (;;) {
+		Object *array = interp->objects[handle];
+		if (array->len == array->capacity) {
+			int capacity = array->capacity < 4 ? 4 : array->capacity * 2;
+			array->items = realloc(array->items, sizeof(Val) * (size_t)capacity);
+			array->capacity = capacity;
+		}
+		array->items[array->len] = make_tagged(T_NONE, 0);
+		array->len++;
+		json_parse_value(interp, parser, &interp->objects[handle]->items[array->len - 1]);
+		if (interp->error_flag) return;
+
+		json_skip_whitespace(parser);
+		if (parser->cursor >= parser->end) {
+			fail(interp, "json>frame: unterminated array");
+			return;
+		}
+		if (*parser->cursor == ',') {
+			parser->cursor++;
+			continue;
+		}
+		if (*parser->cursor == ']') {
+			parser->cursor++;
+			break;
+		}
+		fail(interp, "json>frame: expected ',' or ']' in array");
+		return;
+	}
+
+	parser->depth--;
+}
+
+static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *destination) {
+	if (++parser->depth > JSON_MAX_DEPTH) {
+		fail(interp, "json>frame: nesting too deep");
+		return;
+	}
+
+	int handle = object_new_frame(interp);
+	if (interp->error_flag) return;
+	*destination = make_frame(handle);
+	parser->cursor++;
+
+	json_skip_whitespace(parser);
+	if (parser->cursor < parser->end && *parser->cursor == '}') {
+		parser->cursor++;
+		parser->depth--;
+		return;
+	}
+
+	for (;;) {
+		json_skip_whitespace(parser);
+		if (parser->cursor >= parser->end || *parser->cursor != '"') {
+			fail(interp, "json>frame: expected string key in object");
+			return;
+		}
+
+		const char *key_content = parser->cursor + 1;
+		const char *key_closing = json_string_end(key_content, parser->end);
+		if (key_closing >= parser->end) {
+			fail(interp, "json>frame: unterminated string");
+			return;
+		}
+		int key_span = (int)(key_closing - key_content);
+		if (key_span + 1 > parser->scratch_capacity) {
+			int capacity = parser->scratch_capacity < 64 ? 64 : parser->scratch_capacity;
+			while (capacity < key_span + 1) capacity *= 2;
+			parser->scratch = realloc(parser->scratch, (size_t)capacity);
+			parser->scratch_capacity = capacity;
+		}
+		int key_length = json_decode_string(interp, key_content, key_closing, parser->scratch);
+		if (key_length < 0) return;
+		parser->scratch[key_length] = 0;
+		cell key_symbol = intern_symbol(interp, parser->scratch);
+		if (interp->error_flag) return;
+		parser->cursor = key_closing + 1;
+
+		json_skip_whitespace(parser);
+		if (parser->cursor >= parser->end || *parser->cursor != ':') {
+			fail(interp, "json>frame: expected ':' after key");
+			return;
+		}
+		parser->cursor++;
+
+		Object *frame = interp->objects[handle];
+		if (frame->len == frame->capacity) {
+			int capacity = frame->capacity * 2;
+			frame->frame.keys = realloc(frame->frame.keys, sizeof(cell) * (size_t)capacity);
+			frame->frame.values = realloc(frame->frame.values, sizeof(Val) * (size_t)capacity);
+			frame->capacity = capacity;
+		}
+		frame->frame.keys[frame->len] = key_symbol;
+		frame->frame.values[frame->len] = make_tagged(T_NONE, 0);
+		frame->len++;
+		json_parse_value(interp, parser, &interp->objects[handle]->frame.values[frame->len - 1]);
+		if (interp->error_flag) return;
+
+		json_skip_whitespace(parser);
+		if (parser->cursor >= parser->end) {
+			fail(interp, "json>frame: unterminated object");
+			return;
+		}
+		if (*parser->cursor == ',') {
+			parser->cursor++;
+			continue;
+		}
+		if (*parser->cursor == '}') {
+			parser->cursor++;
+			break;
+		}
+		fail(interp, "json>frame: expected ',' or '}' in object");
+		return;
+	}
+
+	Object *frame = interp->objects[handle];
+	cell *keys = frame->frame.keys;
+	Val *values = frame->frame.values;
+	for (int i = 1; i < frame->len; i++) {
+		cell key_symbol = keys[i];
+		Val value = values[i];
+		int j = i - 1;
+		while (j >= 0 && keys[j] > key_symbol) {
+			keys[j + 1] = keys[j];
+			values[j + 1] = values[j];
+			j--;
+		}
+		keys[j + 1] = key_symbol;
+		values[j + 1] = value;
+	}
+	int unique = 0;
+	for (int i = 0; i < frame->len; i++) {
+		if (unique > 0 && keys[unique - 1] == keys[i]) {
+			values[unique - 1] = values[i];
+		} else {
+			keys[unique] = keys[i];
+			values[unique] = values[i];
+			unique++;
+		}
+	}
+	frame->len = unique;
+
+	parser->depth--;
+}
+
+static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *destination) {
+	json_skip_whitespace(parser);
+	if (parser->cursor >= parser->end) {
+		fail(interp, "json>frame: unexpected end of input");
+		return;
+	}
+
+	switch (*parser->cursor) {
+		case 'n':
+			if (parser->end - parser->cursor >= 4 && memcmp(parser->cursor, "null", 4) == 0) {
+				parser->cursor += 4;
+				*destination = make_tagged(T_NONE, 0);
+				return;
+			}
+			fail(interp, "json>frame: invalid literal");
+			return;
+		case 't':
+			if (parser->end - parser->cursor >= 4 && memcmp(parser->cursor, "true", 4) == 0) {
+				parser->cursor += 4;
+				*destination = make_symbol(interp->vocab->true_symbol);
+				return;
+			}
+			fail(interp, "json>frame: invalid literal");
+			return;
+		case 'f':
+			if (parser->end - parser->cursor >= 5 && memcmp(parser->cursor, "false", 5) == 0) {
+				parser->cursor += 5;
+				*destination = make_symbol(interp->vocab->false_symbol);
+				return;
+			}
+			fail(interp, "json>frame: invalid literal");
+			return;
+		case '-':
+		case '0': case '1': case '2': case '3': case '4':
+		case '5': case '6': case '7': case '8': case '9': {
+			char *number_end;
+			double number = strtod(parser->cursor, &number_end);
+			if (number_end == parser->cursor) {
+				fail(interp, "json>frame: invalid number");
+				return;
+			}
+			parser->cursor = number_end;
+			*destination = make_float(number);
+			return;
+		}
+		case '"':
+			json_parse_string(interp, parser, destination);
+			return;
+		case '[':
+			json_parse_array(interp, parser, destination);
+			return;
+		case '{':
+			json_parse_object(interp, parser, destination);
+			return;
+		default:
+			fail(interp, "json>frame: unexpected character");
+			return;
+	}
+}
+
+void p_json_to_frame(Interpreter *interp) {
+	PEEK_STRING_AT(json, 0, "json>frame");
+
+	JSONParser parser;
+	parser.cursor = json->bytes;
+	parser.end = json->bytes + json->len;
+	parser.depth = 0;
+	parser.scratch = NULL;
+	parser.scratch_capacity = 0;
+
+	gc_root_push(interp, make_tagged(T_NONE, 0));
+	if (interp->error_flag) return;
+
+	json_parse_value(interp, &parser, &interp->gc_roots[interp->n_gc_roots - 1]);
+	Val parsed = interp->gc_roots[interp->n_gc_roots - 1];
+	gc_root_pop(interp);
+	free(parser.scratch);
+	if (interp->error_flag) return;
+
+	json_skip_whitespace(&parser);
+	if (parser.cursor != parser.end) {
+		fail(interp, "json>frame: trailing content after value");
+		return;
+	}
+
+	interp->data_stack[interp->dsp - 1] = parsed;
+
+	DISPATCH(interp);
+}
+			

@@ -1,0 +1,29 @@
+\ deepcopy — port of pyperformance bm_deepcopy (the `benchmark` case only; the
+\ reference's reduce/memo cases need custom classes and reference identity,
+\ which logicforth has no analog for). Runs on the current interpreter: the
+\ deep copy uses `copy` and verification uses deep `=`. Booleans are represented
+\ as 1.0/0.0 (the structures are never serialized, so the exact value only has
+\ to copy and compare). Mirrors benchmark(N) with N=20000; per N it does 30
+\ copies of `a` plus 3×5×2 = 30 copies of the mutated `dc` = 60 copies.
+
+variable A  variable DC  variable COLORS
+
+{ :list [ 1 2 3 43 ] :str "hello" :subdict { :a 1.0 } :t [ 1 2 3 ] } to A
+{ :string "hello" :lst [ 1 2 3 ] :boolean 1.0 } to DC
+[ "red" "blue" "green" ] to COLORS
+
+: run-deepcopy ( -- )
+  [: A copy drop :] 30 times
+  [: |> ci |
+     DC :string COLORS ci @i ! drop
+     [: |> kk |
+        DC :lst @ 0 kk !i drop
+        DC :boolean 1.0 ! drop  DC copy drop
+        DC :boolean 0.0 ! drop  DC copy drop
+     :] 5 i-times
+  :] 3 i-times ;
+
+\ verification: a deep copy equals its original, expect 1
+A copy A = "equal: {0}" format . cr
+
+now [: run-deepcopy :] 20000 times now swap - "elapsed: {0} s" format . cr

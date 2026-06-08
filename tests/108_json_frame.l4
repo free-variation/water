@@ -1,0 +1,68 @@
+\ json>frame: full coverage. JSON text is itself an l4 literal (" doubles).
+
+\ --- keyword literals ---
+"null" json>frame null = . cr
+"true" json>frame :1 = . cr
+"false" json>frame :0 = . cr
+
+\ --- whitespace: spaces, and a leading newline+tab, are skipped ---
+"   true   " json>frame :1 = . cr
+"
+	42" json>frame 42 = . cr
+
+\ --- numbers ---
+"42" json>frame 42 = . cr
+"-7" json>frame -7 = . cr
+"3.14" json>frame 3.14 = . cr
+"0" json>frame 0 = . cr
+"2e3" json>frame 2000 = . cr
+"-1.5e-3" json>frame -0.0015 = . cr
+"412317970704" json>frame 412317970704 = . cr
+
+\ --- strings: plain ---
+"""hello""" json>frame "hello" = . cr
+"""hello""" json>frame size . cr
+"""""" json>frame "" = . cr
+
+\ --- string escapes: decoded CONTENT (not just length) ---
+"""\n""" json>frame "
+" = . cr
+"""\t""" json>frame "	" = . cr
+"""\""""" json>frame """" = . cr
+"""\\""" json>frame "\" = . cr
+"""\/""" json>frame "/" = . cr
+
+\ --- string escapes \r \b \f collapse to one byte (size) ---
+"""\r""" json>frame size . cr
+"""\b""" json>frame size . cr
+"""\f""" json>frame size . cr
+
+\ --- \u escapes: ASCII, 2-byte UTF-8, surrogate pair ---
+"""\u0041""" json>frame "A" = . cr
+"""\u00e9""" json>frame size . cr
+"""\ud83d\ude00""" json>frame size . cr
+
+\ --- arrays ---
+"[1, 2, 3]" json>frame size . cr
+"[]" json>frame size . cr
+"[1, [2, 3], 4]" json>frame size . cr
+"[ [1,2], [3,4,5] ]" json>frame 1 @i size . cr
+"[true, null, 5]" json>frame . cr
+
+\ --- objects ---
+"{""a"": 1, ""b"": 2}" json>frame { :a 1 :b 2 } = . cr
+"{}" json>frame size . cr
+"{""x"": [1,2,3], ""y"": {""z"": true}}" json>frame :y @ :z @ :1 = . cr
+"{""k"": 1, ""k"": 2}" json>frame :k @ 2 = . cr
+
+\ --- errors ---
+"nope" json>frame
+"tru" json>frame
+"" json>frame
+"""abc" json>frame
+"-" json>frame
+"[1, 2" json>frame
+"{""a"": 1" json>frame
+"null junk" json>frame
+"""\uZZ""" json>frame
+"""\z""" json>frame
