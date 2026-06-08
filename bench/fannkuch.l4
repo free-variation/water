@@ -27,14 +27,14 @@ variable MAX_FLIPS
 inline
 
 : flip-perm ( k -- )
-  PERM 0 rot 1+ reverse-slice! drop ;
+  PERM 0 rot f1+ reverse-slice! drop ;
 inline
 
 : count-flips ( -- flips )
   0
   begin PERM 0 @i dup while
     flip-perm
-    1+
+    f1+
   repeat
   drop ;
 
@@ -63,7 +63,7 @@ inline
     \ Reset COUNT[r-1..0]
     begin r 1 gt while
       COUNT r f1-  r  !i drop
-      -- r
+      f-- r
     repeat
 
     \ Skip equivalent perms
@@ -86,7 +86,7 @@ inline
         COUNT r @i 0 gt if
           -1
         else
-          ++ r
+          f++ r
           0
         then
       then

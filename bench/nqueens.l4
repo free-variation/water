@@ -45,7 +45,7 @@ inline
       start i bswap
       start f1+ permute
       start i bswap
-      ++ i
+      f++ i
       i n =
     until
   then ;

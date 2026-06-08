@@ -1110,6 +1110,22 @@ void p_decrement(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_f_increment(Interpreter *interp) {
+	compile_local_unary(interp, "f++",
+	                    interp->vocab->local_finc_0depth_cfa,
+	                    interp->vocab->finc_cfa);
+
+	DISPATCH(interp);
+}
+
+void p_f_decrement(Interpreter *interp) {
+	compile_local_unary(interp, "f--",
+	                    interp->vocab->local_fdec_0depth_cfa,
+	                    interp->vocab->fdec_cfa);
+
+	DISPATCH(interp);
+}
+
 void p_inline(Interpreter *interp) {
 	int latest = interp->vocab->latest_cfa;
 	if (!latest) {
