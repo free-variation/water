@@ -31,14 +31,12 @@ inline
 inline
 
 : count-flips ( -- flips )
-  | flips |
-  0 to flips
+  0
   begin PERM 0 @i dup while
     flip-perm
-    ++ flips
+    1+
   repeat
-  drop
-  flips ;
+  drop ;
 
 : rotate-perm1 ( r -- )
   dup 0 = if

@@ -13,8 +13,7 @@ variable N
 130 to N
 
 : eval_A ( i j -- A_ij )
-  |> i j |
-  i j f+  dup f1+ f*  2 f/  i f+  1 f+  1.0 swap f/ ;
+  over f+  dup f1+ f*  2 f/  f+  1 f+  1.0 swap f/ ;
 inline
 
 : part_A_times_u ( i u -- partial_sum )
