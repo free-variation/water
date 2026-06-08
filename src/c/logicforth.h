@@ -165,6 +165,7 @@ typedef struct Vocabulary {
 	int enter_locals_cfa, enter_locals_to_cfa, enter_locals_mixed_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
 	int local_fetch_0depth_cfa, local_store_0depth_cfa;
 	int local_incr_0depth_cfa, local_decr_0depth_cfa, inc_cfa, dec_cfa;
+	int local_finc_0depth_cfa, local_fdec_0depth_cfa, finc_cfa, fdec_cfa;
 	int qzbranch_cfa;
 	int false_symbol, true_symbol;
 
@@ -483,8 +484,12 @@ void p_local_fetch_0depth(Interpreter *interp);
 void p_local_store_0depth(Interpreter *interp);
 void p_local_incr_0depth(Interpreter *interp);
 void p_local_decr_0depth(Interpreter *interp);
+void p_local_finc_0depth(Interpreter *interp);
+void p_local_fdec_0depth(Interpreter *interp);
 void p_increment(Interpreter *interp);
 void p_decrement(Interpreter *interp);
+void p_f_increment(Interpreter *interp);
+void p_f_decrement(Interpreter *interp);
 void p_inline(Interpreter *interp);
 void inline_word_body(Interpreter *interp, int target_cfa);
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);

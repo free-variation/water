@@ -1015,9 +1015,21 @@ void p_local_store_0depth(Interpreter *interp) {
 		} \
 		double n = VAL_NUMBER(*p); \
 		*p = make_float(expr); \
+		DISPATCH(interp); \
 	}
 LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
 LOCAL_ARITH_0DEPTH(p_local_decr_0depth, "(local-!)", n - 1.0)
+
+#define UNSAFE_LOCAL_ARITH_0DEPTH(name, expr) \
+	void name(Interpreter *interp) { \
+		int slot = (int)interp->vocab->dict[interp->ip++]; \
+		Val *p = &interp->return_stack[interp->local_base + slot]; \
+		double n = p->number; \
+		p->number = (expr); \
+		DISPATCH(interp); \
+	}
+UNSAFE_LOCAL_ARITH_0DEPTH(p_local_finc_0depth, n + 1.0)
+UNSAFE_LOCAL_ARITH_0DEPTH(p_local_fdec_0depth, n - 1.0)
 
 #define LOCAL_ACC_OP(suffix, op) \
 	static int local_acc_##suffix##_0_cfa; \
@@ -1601,7 +1613,9 @@ static int op_cell_count(Vocabulary *vocab, cell *dict, int cursor) {
 	    || handler == vocab->dict[vocab->local_fetch_0depth_cfa]
 	    || handler == vocab->dict[vocab->local_store_0depth_cfa]
 	    || handler == vocab->dict[vocab->local_incr_0depth_cfa]
-	    || handler == vocab->dict[vocab->local_decr_0depth_cfa])
+	    || handler == vocab->dict[vocab->local_decr_0depth_cfa]
+	    || handler == vocab->dict[vocab->local_finc_0depth_cfa]
+	    || handler == vocab->dict[vocab->local_fdec_0depth_cfa])
 		return 2;
 
 	return 1;
@@ -2366,14 +2380,16 @@ int main(void) {
 	define_primitive(interp, "fround-down", p_fround_down, 0);
 	define_primitive(interp, "ftruncate", p_ftruncate, 0);
 	define_primitive(interp, "fnegate", p_fnegate, 0);
-	define_primitive(interp, "f1+", p_inc, 0);
-	define_primitive(interp, "f1-", p_dec, 0);
+	interp->vocab->finc_cfa = define_primitive(interp, "f1+", p_inc, 0);
+	interp->vocab->fdec_cfa = define_primitive(interp, "f1-", p_dec, 0);
 	define_primitive(interp, "fsq", p_sq, 0);
 	define_primitive(interp, "negate", p_neg, 0);
 	interp->vocab->inc_cfa = define_primitive(interp, "1+", p_inc_poly, 0);
 	interp->vocab->dec_cfa = define_primitive(interp, "1-", p_dec_poly, 0);
 	define_primitive(interp, "++", p_increment, 1);
 	define_primitive(interp, "--", p_decrement, 1);
+	define_primitive(interp, "f++", p_f_increment, 1);
+	define_primitive(interp, "f--", p_f_decrement, 1);
 	define_primitive(interp, "sq", p_sq_poly, 0);
 	define_primitive(interp, "dup", p_dup, 0);
 	define_primitive(interp, "drop", p_drop, 0);
@@ -2490,6 +2506,8 @@ int main(void) {
 	interp->vocab->local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 4);
 	interp->vocab->local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 4);
 	interp->vocab->local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 4);
+	interp->vocab->local_finc_0depth_cfa  = define_primitive(interp, "(local f+!0)", p_local_finc_0depth, 4);
+	interp->vocab->local_fdec_0depth_cfa  = define_primitive(interp, "(local f-!0)", p_local_fdec_0depth, 4);
 	local_acc_add_0_cfa = define_primitive(interp, "(acc+0)", p_local_acc_add_0, 4);
 	local_acc_add_cfa   = define_primitive(interp, "(acc+)",  p_local_acc_add, 4);
 	local_acc_sub_0_cfa = define_primitive(interp, "(acc-0)", p_local_acc_sub_0, 4);

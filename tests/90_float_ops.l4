@@ -28,5 +28,15 @@
 3.0 4.0 f* . cr       \ 12
 12.0 4.0 f/ . cr      \ 3
 
+\ f++ / f-- : unsafe float local increment / decrement (immediate; named local)
+: finc | n |  0 to n  f++ n  f++ n  f++ n  n ;
+finc . cr             \ 3
+: fdec | n |  10 to n  f-- n  f-- n  n ;
+fdec . cr             \ 8
+: fmix |> x |  f++ x  f-- x  f-- x  x ;
+5 fmix . cr           \ 4
+: fnest | n |  0 to n  [: f++ n :] execute  n ;   \ outer local via depth-path fallback
+fnest . cr            \ 1
+
 \ depth guard (empty stack)
 fsqrt
