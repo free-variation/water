@@ -312,6 +312,12 @@ void p_not(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_null(Interpreter *interp) {
+	push(interp, make_tagged(T_NONE,0));
+	
+	DISPATCH(interp);
+}
+
 void p_dup(Interpreter *interp) {
 	POP(top);
 	push(interp, top);

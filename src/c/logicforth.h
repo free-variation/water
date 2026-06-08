@@ -28,6 +28,7 @@ typedef int64_t cell;
 #define INPUT_BUFFER_SIZE    	1048576
 #define SOURCE_POOL 			4194304
 #define SYMBOL_POOL 			262144
+#define SYMBOL_HASH_SIZE 		262144
 #define SIDESTACK_DEPTH 		1024
 #define MAX_LOADED_FILES 		64
 #define MAX_GC_ROOTS 			64
@@ -158,12 +159,14 @@ typedef struct Vocabulary {
 	int source_here;
 	char symbol_pool[SYMBOL_POOL];
 	int symbol_pool_here;
+	int symbol_hash[SYMBOL_HASH_SIZE];
 
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
 	int enter_locals_cfa, enter_locals_to_cfa, enter_locals_mixed_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
 	int local_fetch_0depth_cfa, local_store_0depth_cfa;
 	int local_incr_0depth_cfa, local_decr_0depth_cfa, inc_cfa, dec_cfa;
 	int qzbranch_cfa;
+	int false_symbol, true_symbol;
 
 	int init_here, init_latest_cfa, init_names_here;
 	int init_source_here, init_symbol_pool_here;
@@ -520,6 +523,7 @@ void p_zeq(Interpreter *interp);
 void p_and(Interpreter *interp);
 void p_or(Interpreter *interp);
 void p_not(Interpreter *interp);
+void p_null(Interpreter *interp);
 void p_dup(Interpreter *interp);
 void p_drop(Interpreter *interp);
 void p_swap(Interpreter *interp);
@@ -672,6 +676,7 @@ void p_range(Interpreter *interp);
 void frame_put(Object *frame, cell key, Val value);
 int frame_delete(Object *frame, cell key);
 void p_to_frame(Interpreter *interp);
+void p_json_to_frame(Interpreter *interp);
 void p_transpose(Interpreter *interp);
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name);
 void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name);

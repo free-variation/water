@@ -714,20 +714,47 @@ int alloc_name(Interpreter *interp, const char *name) {
 	return name_offset;
 }
 
-int intern_symbol(Interpreter *interp, const char *name) {
-	for (int i = 0; i < interp->vocab->symbol_pool_here; ) {
-		if (strcmp(&interp->vocab->symbol_pool[i], name) == 0)
-			return i;
-		i += (int)strlen(&interp->vocab->symbol_pool[i]) + 1;
+static unsigned int symbol_hash_index(const char *name) {
+	unsigned int hash = 2166136261u;
+	for (const unsigned char *byte = (const unsigned char *)name; *byte; byte++) {
+		hash ^= *byte;
+		hash *= 16777619u;
 	}
+	return hash & (SYMBOL_HASH_SIZE - 1);
+}
+
+void rebuild_symbol_hash(Interpreter *interp) {
+	Vocabulary *vocab = interp->vocab;
+	memset(vocab->symbol_hash, 0, sizeof(vocab->symbol_hash));
+	for (int offset = 0; offset < vocab->symbol_pool_here; ) {
+		const char *name = &vocab->symbol_pool[offset];
+		unsigned int index = symbol_hash_index(name);
+		while (vocab->symbol_hash[index] != 0)
+			index = (index + 1) & (SYMBOL_HASH_SIZE - 1);
+		vocab->symbol_hash[index] = offset + 1;
+		offset += (int)strlen(name) + 1;
+	}
+}
+
+int intern_symbol(Interpreter *interp, const char *name) {
+	Vocabulary *vocab = interp->vocab;
+	unsigned int index = symbol_hash_index(name);
+	while (vocab->symbol_hash[index] != 0) {
+		int offset = vocab->symbol_hash[index] - 1;
+		if (strcmp(&vocab->symbol_pool[offset], name) == 0)
+			return offset;
+		index = (index + 1) & (SYMBOL_HASH_SIZE - 1);
+	}
+
 	int length = (int)strlen(name) + 1;
-	if (interp->vocab->symbol_pool_here + length > SYMBOL_POOL) {
+	if (vocab->symbol_pool_here + length > SYMBOL_POOL) {
 		fail(interp, "symbol pool full");
 		return 0;
 	}
-	int offset = interp->vocab->symbol_pool_here;
-	memcpy(&interp->vocab->symbol_pool[interp->vocab->symbol_pool_here], name, (size_t)length);
-	interp->vocab->symbol_pool_here += length;
+	int offset = vocab->symbol_pool_here;
+	memcpy(&vocab->symbol_pool[offset], name, (size_t)length);
+	vocab->symbol_pool_here += length;
+	vocab->symbol_hash[index] = offset + 1;
 	return offset;
 }
 
@@ -2019,6 +2046,7 @@ void forget_user(Interpreter *interp) {
 	interp->vocab->names_here = interp->vocab->init_names_here;
 	interp->vocab->source_here = interp->vocab->init_source_here;
 	interp->vocab->symbol_pool_here = interp->vocab->init_symbol_pool_here;
+	rebuild_symbol_hash(interp);
 }
 
 void p_load_image(Interpreter *interp) {
@@ -2145,6 +2173,7 @@ void p_load_image(Interpreter *interp) {
 	interp->vocab->names_here = interp->vocab->init_names_here + user_namepool_bytes;
 	interp->vocab->source_here = interp->vocab->init_source_here + user_sourcepool_bytes;
 	interp->vocab->symbol_pool_here = interp->vocab->init_symbol_pool_here + user_symbolpool_bytes;
+	rebuild_symbol_hash(interp);
 
 	for (int slot = 0; slot < saved_n_objects; slot++) {
 		uint8_t presence;
@@ -2296,6 +2325,9 @@ Interpreter *interp_new(void) {
 	interp->vocab->here = DICT_RESERVED;
 	interp->vocab->source_here = 1;
 	interp->next_mark_id = 1;
+
+	interp->vocab->false_symbol = intern_symbol(interp, "0");
+	interp->vocab->true_symbol = intern_symbol(interp, "1");
 	return interp;
 }
 
@@ -2357,6 +2389,7 @@ int main(void) {
 	define_primitive(interp, "and", p_and, 0);
 	define_primitive(interp, "or", p_or, 0);
 	define_primitive(interp, "not", p_not, 0);
+	define_primitive(interp, "null", p_null, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
 	define_primitive(interp, "cr", p_cr, 0);
@@ -2410,6 +2443,7 @@ int main(void) {
 	define_primitive(interp, "array-of", p_array_of, 0);
 	define_primitive(interp, ">frame", p_to_frame, 0);
 	define_primitive(interp, "frame", p_frame, 0);
+	define_primitive(interp, "json>frame", p_json_to_frame, 0);
 	define_primitive(interp, "take", p_take, 0);
 	define_primitive(interp, "reverse", p_reverse, 0);
 	define_primitive(interp, "reverse-slice!", p_reverse_slice, 0);

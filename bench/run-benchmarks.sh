@@ -96,6 +96,7 @@ lf_regex_dna() { "$bin" < "$here/regex-dna.l4"; }
 lf_regex_compile() { "$bin" < "$here/regex-compile.l4"; }
 lf_regex_effbot() { "$bin" < "$here/regex-effbot.l4"; }
 lf_regex_v8() { "$bin" < "$here/regex-v8.l4"; }
+lf_deepcopy() { "$bin" < "$here/deepcopy.l4"; }
 
 # --- python command wrappers -----------------------------------------------
 py_nqueens()  { "$python" "$here/pyperf_nqueens.py" "$nqueens_n"; }
@@ -107,6 +108,7 @@ py_regex_dna() { "$python" "$here/pyperf_regex_dna.py"; }
 py_regex_compile() { "$python" "$here/pyperf_regex_compile.py"; }
 py_regex_effbot() { "$python" "$here/pyperf_regex_effbot.py"; }
 py_regex_v8() { "$python" "$here/pyperf_regex_v8.py"; }
+py_deepcopy() { "$python" "$here/pyperf_deepcopy.py"; }
 
 # Run a wrapper N times, append each run's stdout (with a separator) to a log.
 run_reps() {
@@ -233,6 +235,10 @@ log "== regex-v8 =="
 run_reps regex_v8_lf lf_regex_v8 "$reps"
 run_reps regex_v8_py py_regex_v8 "$reps_py"
 
+log "== deepcopy =="
+run_reps deepcopy_lf lf_deepcopy "$reps"
+run_reps deepcopy_py py_deepcopy "$reps_py"
+
 have_leibniz=0
 have_leibniz_r=0
 if [ "$skip_leibniz" != 1 ]; then
@@ -292,6 +298,7 @@ row "regex-dna" "100K → 1M" regex_dna_lf "$(median_elapsed regex_dna_py)"
 row "regex-compile" "239 patterns, cold" regex_compile_lf "$(median_elapsed regex_compile_py)"
 row "regex-effbot" "21 pat × 0..10k" regex_effbot_lf "$(median_elapsed regex_effbot_py)"
 row "regex-v8" "12 blocks, browser trace" regex_v8_lf "$(median_elapsed regex_v8_py)"
+row "deepcopy" "N=20000, 60 copies/N" deepcopy_lf "$(median_elapsed deepcopy_py)"
 emit ""
 
 # ---- R reference for the vectorized variant ----
@@ -318,6 +325,7 @@ emit "| regex-dna | $(result_line regex_dna_lf 'result:') | $(result_line regex_
 emit "| regex-compile | $(result_line regex_compile_lf 'patterns:') | $(result_line regex_compile_py 'patterns:') |"
 emit "| regex-effbot | $(result_line regex_effbot_lf 'matches:') | $(result_line regex_effbot_py 'matches:') |"
 emit "| regex-v8 | $(result_line regex_v8_lf 'checksum:') | $(result_line regex_v8_py 'checksum:') |"
+emit "| deepcopy | $(result_line deepcopy_lf 'equal:') | $(result_line deepcopy_py 'equal:') |"
 if [ "$have_leibniz" = 1 ]; then
 	emit "| leibniz | $(result_line leibniz_lf 'pi:') | pi = $leibniz_py_result |"
 	emit "| leibniz-matrix | $(result_line leibniz_matrix_lf 'pi:') | pi = $leibniz_py_result |"
