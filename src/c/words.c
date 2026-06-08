@@ -1534,6 +1534,26 @@ void p_now(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_env(Interpreter *interp) {
+	POP_STRING(name, "env");
+	const char *value = getenv(name->bytes);
+	if (value == NULL)
+		push(interp, make_tagged(T_NONE, 0));
+	else
+		push(interp, make_string(object_new_string(interp, value, (int)strlen(value))));
+
+	DISPATCH(interp);
+}
+
+void p_env_set(Interpreter *interp) {
+	POP_STRING(value, "env!");
+	POP_STRING(name, "env!");
+	if (setenv(name->bytes, value->bytes, 1) != 0)
+		fail(interp, "env!: could not set %s", name->bytes);
+
+	DISPATCH(interp);
+}
+
 void p_start_process(Interpreter *interp) {
 	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
 	Object *argv_array = interp->objects[VAL_DATA(argv_val)];

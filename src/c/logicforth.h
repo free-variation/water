@@ -728,6 +728,8 @@ void p_inc_poly(Interpreter *interp);
 void p_dec_poly(Interpreter *interp);
 void p_sq_poly(Interpreter *interp);
 void p_now(Interpreter *interp);
+void p_env(Interpreter *interp);
+void p_env_set(Interpreter *interp);
 void p_format(Interpreter *interp);
 void p_start_process(Interpreter *interp);
 void p_write(Interpreter *interp);
