@@ -58,3 +58,6 @@ logicforth
 
 # cached upstream leibniz.py benchmark reference (fetched on demand)
 bench/.leibniz_ref.py
+
+# huge generated json load-test fixture
+bench/big.json

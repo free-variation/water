@@ -1239,10 +1239,15 @@ static void json_write_byte(JSONWriter *writer, char byte) {
 static void json_write_number(JSONWriter *writer, double number) {
 	char text[32];
 	int n;
-	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
+	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15) {
 		n = snprintf(text, sizeof text, "%lld", (long long)number);
-	else
-		n = snprintf(text, sizeof text, "%g", number);
+	} else {
+		for (int precision = 1; precision <= 17; precision++) {
+			n = snprintf(text, sizeof text, "%.*g", precision, number);
+			if (strtod(text, NULL) == number)
+				break;
+		}
+	}
 	json_write_bytes(writer, text, n);
 }
 
