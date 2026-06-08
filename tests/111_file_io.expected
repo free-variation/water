@@ -1,0 +1,37 @@
+0 ok
+0 ok
+0 ok
+0 ok
+hello 
+0 ok
+1 
+0 ok
+5 
+0 ok
+0 ok
+0 ok
+0 ok
+2 
+0 ok
+0 ok
+0 ok
+0 ok
+hi there 
+0 ok
+8 
+0 ok
+0 ok
+0 ok
+0 ok
+3 
+0 ok
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+0|error read-file: cannot open /tmp/lf_no_such_dir_zzz/nope
+0|error write-file: expected a string; got a float
+0|error append-file: expected a string; got a float

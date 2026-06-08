@@ -2591,6 +2591,9 @@ int main(void) {
 	define_primitive(interp, "now", p_now, 0);
 	define_primitive(interp, "env", p_env, 0);
 	define_primitive(interp, "env!", p_env_set, 0);
+	define_primitive(interp, "read-file", p_read_file, 0);
+	define_primitive(interp, "write-file", p_write_file, 0);
+	define_primitive(interp, "append-file", p_append_file, 0);
 	define_primitive(interp, "start-process", p_start_process, 0);
 	define_primitive(interp, "write", p_write, 0);
 	define_primitive(interp, "read", p_read, 0);

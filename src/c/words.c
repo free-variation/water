@@ -1554,6 +1554,70 @@ void p_env_set(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_read_file(Interpreter *interp) {
+	POP_STRING(path, "read-file");
+
+	FILE *file = fopen(path->bytes, "rb");
+	if (file == NULL) {
+		fail(interp, "read-file: cannot open %s", path->bytes);
+		return;
+	}
+
+	fseek(file, 0, SEEK_END);
+	long size = ftell(file);
+	rewind(file);
+	if (size < 0 || size > INT_MAX) {
+		fclose(file);
+		fail(interp, "read-file: cannot size %s", path->bytes);
+		return;
+	}
+
+	int handle = object_new_string_uninit(interp, (int)size);
+	if (interp->error_flag) {
+		fclose(file);
+		return;
+	}
+
+	Object *string = interp->objects[handle];
+	size_t got = fread(string->bytes, 1, (size_t)size, file);
+	fclose(file);
+
+	string->len = (int)got;
+	string->bytes[got] = 0;
+	push(interp, make_string(handle));
+
+	DISPATCH(interp);
+}
+
+static void write_file(Interpreter *interp, const char *mode, const char *op) {
+	POP_STRING(path, op);
+	POP_STRING(content, op);
+
+	FILE *file = fopen(path->bytes, mode);
+	if (file == NULL) {
+		fail(interp, "%s: cannot open %s", op, path->bytes);
+		return;
+	}
+
+	size_t written = fwrite(content->bytes, 1, (size_t)content->len, file);
+	fclose(file);
+
+	if (written != (size_t)content->len)
+		fail(interp, "%s: short write to %s", op, path->bytes);
+}
+
+void p_write_file(Interpreter *interp) {
+	write_file(interp, "wb", "write-file");
+
+	DISPATCH(interp);
+}
+
+void p_append_file(Interpreter *interp) {
+	write_file(interp, "ab", "append-file");
+
+	DISPATCH(interp);
+}
+
 void p_start_process(Interpreter *interp) {
 	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
 	Object *argv_array = interp->objects[VAL_DATA(argv_val)];

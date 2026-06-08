@@ -1,0 +1,30 @@
+\ read-file / write-file / append-file — whole-file, no handles.
+
+\ write then read round-trips
+"hello" "/tmp/lf_fileio.txt" write-file
+"/tmp/lf_fileio.txt" read-file . cr            \ hello
+"/tmp/lf_fileio.txt" read-file "hello" = . cr  \ 1
+"/tmp/lf_fileio.txt" read-file size . cr       \ 5
+
+\ write-file truncates an existing file
+"hi" "/tmp/lf_fileio.txt" write-file
+"/tmp/lf_fileio.txt" read-file size . cr       \ 2
+
+\ append-file adds to the end
+" there" "/tmp/lf_fileio.txt" append-file
+"/tmp/lf_fileio.txt" read-file . cr            \ hi there
+"/tmp/lf_fileio.txt" read-file size . cr       \ 8
+
+\ binary-safe: an embedded newline round-trips
+"a
+b" "/tmp/lf_fileio.txt" write-file
+"/tmp/lf_fileio.txt" read-file size . cr       \ 3
+
+\ empty file
+"" "/tmp/lf_fileio.txt" write-file
+"/tmp/lf_fileio.txt" read-file size . cr       \ 0
+
+\ errors
+"/tmp/lf_no_such_dir_zzz/nope" read-file       \ cannot open
+42 "/tmp/lf_fileio.txt" write-file             \ content not a string
+"/tmp/lf_fileio.txt" 42 append-file            \ path not a string
