@@ -1,0 +1,47 @@
+\ frame>json: serialize every value kind. Output printed raw via . cr.
+
+\ --- scalars ---
+null frame>json . cr
+:1 frame>json . cr
+:0 frame>json . cr
+
+\ --- numbers: integral print without a decimal point ---
+0 frame>json . cr
+42 frame>json . cr
+-7 frame>json . cr
+3.5 frame>json . cr
+412317970704 frame>json . cr
+
+\ --- strings: plain, empty, and each escape ---
+"hi" frame>json . cr
+"" frame>json . cr
+"a""b" frame>json . cr
+"a\b" frame>json . cr
+"a
+b" frame>json . cr
+"a	b" frame>json . cr
+"ab" frame>json . cr
+"ab" frame>json . cr
+"ab" frame>json . cr
+"ab" frame>json . cr
+
+\ --- arrays ---
+[ ] frame>json . cr
+[ 1 2 3 ] frame>json . cr
+[ [ 1 ] [ 2 3 ] ] frame>json . cr
+[ :1 null "x" ] frame>json . cr
+
+\ --- objects (keys emitted as strings; order is symbol-id) ---
+{ } frame>json . cr
+{ :a 1 } frame>json . cr
+{ :a 1 :b 2 } frame>json . cr
+{ :x [ 1 2 ] :y { :z null } } frame>json . cr
+
+\ --- round-trip equality on canonical inputs ---
+"null" json>frame frame>json "null" = . cr
+"[1, 2, 3]" json>frame frame>json "[1, 2, 3]" = . cr
+"{""a"": 1}" json>frame frame>json "{""a"": 1}" = . cr
+
+\ --- errors ---
+< 1 2 3 > frame>json
+:foo frame>json

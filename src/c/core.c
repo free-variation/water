@@ -2444,6 +2444,7 @@ int main(void) {
 	define_primitive(interp, ">frame", p_to_frame, 0);
 	define_primitive(interp, "frame", p_frame, 0);
 	define_primitive(interp, "json>frame", p_json_to_frame, 0);
+	define_primitive(interp, "frame>json", p_frame_to_json, 0);
 	define_primitive(interp, "take", p_take, 0);
 	define_primitive(interp, "reverse", p_reverse, 0);
 	define_primitive(interp, "reverse-slice!", p_reverse_slice, 0);

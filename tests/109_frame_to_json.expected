@@ -1,0 +1,75 @@
+0 ok
+0 ok
+0 ok
+null 
+0 ok
+true 
+0 ok
+false 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+42 
+0 ok
+-7 
+0 ok
+3.5 
+0 ok
+412317970704 
+0 ok
+0 ok
+0 ok
+"hi" 
+0 ok
+"" 
+0 ok
+"a\"b" 
+0 ok
+"a\\b" 
+0 ok
+"a\nb" 
+0 ok
+"a\tb" 
+0 ok
+"a\rb" 
+0 ok
+"a\bb" 
+0 ok
+"a\fb" 
+0 ok
+"a\u0001b" 
+0 ok
+0 ok
+0 ok
+[] 
+0 ok
+[1, 2, 3] 
+0 ok
+[[1], [2, 3]] 
+0 ok
+[true, null, "x"] 
+0 ok
+0 ok
+0 ok
+{} 
+0 ok
+{"a": 1} 
+0 ok
+{"a": 1, "b": 2} 
+0 ok
+{"x": [1, 2], "y": {"z": null}} 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+1 
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+0|error frame>json: cannot serialize a set
+0|error frame>json: cannot serialize a non-boolean symbol

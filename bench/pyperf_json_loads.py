@@ -99,7 +99,7 @@ def bench_json_loads(objs):
 def total_bytes(objs):
     total = 0
     for obj in objs:
-        total += len(json.dumps(json.loads(obj), sort_keys=True))
+        total += len(json.dumps(json.loads(obj), sort_keys=True, ensure_ascii=False).encode())
     return total
 
 

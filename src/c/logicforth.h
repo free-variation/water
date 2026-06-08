@@ -677,6 +677,7 @@ void frame_put(Object *frame, cell key, Val value);
 int frame_delete(Object *frame, cell key);
 void p_to_frame(Interpreter *interp);
 void p_json_to_frame(Interpreter *interp);
+void p_frame_to_json(Interpreter *interp);
 void p_transpose(Interpreter *interp);
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name);
 void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name);

@@ -1214,4 +1214,139 @@ void p_json_to_frame(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
+typedef struct {
+	char *buffer;
+	int length;
+	int capacity;
+} JSONWriter;
+
+static void json_write_bytes(JSONWriter *writer, const char *bytes, int n) {
+	if (writer->length + n > writer->capacity) {
+		int capacity = writer->capacity < 64 ? 64 : writer->capacity;
+		while (capacity < writer->length + n) capacity *= 2;
+		writer->buffer = realloc(writer->buffer, (size_t)capacity);
+		writer->capacity = capacity;
+	}
+	memcpy(writer->buffer + writer->length, bytes, (size_t)n);
+	writer->length += n;
+}
+
+static void json_write_byte(JSONWriter *writer, char byte) {
+	json_write_bytes(writer, &byte, 1);
+}
+
+static void json_write_number(JSONWriter *writer, double number) {
+	char text[32];
+	int n;
+	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
+		n = snprintf(text, sizeof text, "%lld", (long long)number);
+	else
+		n = snprintf(text, sizeof text, "%g", number);
+	json_write_bytes(writer, text, n);
+}
+
+static void json_write_string(JSONWriter *writer, const char *bytes, int len) {
+	json_write_byte(writer, '"');
+	for (int i = 0; i < len; i++) {
+		unsigned char byte = (unsigned char)bytes[i];
+		switch (byte) {
+			case '"': json_write_bytes(writer, "\\\"", 2); break;
+			case '\\': json_write_bytes(writer, "\\\\", 2); break;
+			case '\b': json_write_bytes(writer, "\\b", 2); break;
+			case '\f': json_write_bytes(writer, "\\f", 2); break;
+			case '\n': json_write_bytes(writer, "\\n", 2); break;
+			case '\r': json_write_bytes(writer, "\\r", 2); break;
+			case '\t': json_write_bytes(writer, "\\t", 2); break;
+			default:
+				if (byte < 0x20) {
+					char escape[8];
+					int n = snprintf(escape, sizeof escape, "\\u%04x", byte);
+					json_write_bytes(writer, escape, n);
+				} else {
+					json_write_byte(writer, (char)byte);
+				}
+		}
+	}
+	json_write_byte(writer, '"');
+}
+
+static void json_write_value(Interpreter *interp, JSONWriter *writer, Val value, int depth) {
+	if (interp->error_flag) return;
+	if (depth > JSON_MAX_DEPTH) {
+		fail(interp, "frame>json: nesting too deep");
+		return;
+	}
+
+	switch (VAL_TAG(value)) {
+		case T_NONE:
+			json_write_bytes(writer, "null", 4);
+			return;
+		case T_FLOAT:
+			json_write_number(writer, VAL_NUMBER(value));
+			return;
+		case T_SYMBOL:
+			if ((int)VAL_DATA(value) == interp->vocab->true_symbol)
+				json_write_bytes(writer, "true", 4);
+			else if ((int)VAL_DATA(value) == interp->vocab->false_symbol)
+				json_write_bytes(writer, "false", 5);
+			else
+				fail(interp, "frame>json: cannot serialize a non-boolean symbol");
+			return;
+		case T_STRING: {
+			Object *string = interp->objects[VAL_DATA(value)];
+			json_write_string(writer, string->bytes, string->len);
+			return;
+		}
+		case T_ARRAY: {
+			Object *array = interp->objects[VAL_DATA(value)];
+			json_write_byte(writer, '[');
+			for (int i = 0; i < array->len; i++) {
+				if (i > 0) json_write_bytes(writer, ", ", 2);
+				json_write_value(interp, writer, array->items[i], depth + 1);
+			}
+			json_write_byte(writer, ']');
+			return;
+		}
+		case T_FRAME: {
+			Object *frame = interp->objects[VAL_DATA(value)];
+			json_write_byte(writer, '{');
+			for (int i = 0; i < frame->len; i++) {
+				if (i > 0) json_write_bytes(writer, ", ", 2);
+				const char *key = &interp->vocab->symbol_pool[frame->frame.keys[i]];
+				json_write_string(writer, key, (int)strlen(key));
+				json_write_bytes(writer, ": ", 2);
+				json_write_value(interp, writer, frame->frame.values[i], depth + 1);
+			}
+			json_write_byte(writer, '}');
+			return;
+		}
+		default:
+			fail(interp, "frame>json: cannot serialize %s", tag_name(VAL_TAG(value)));
+			return;
+	}
+}
+
+void p_frame_to_json(Interpreter *interp) {
+	PEEK_AT(value, 0, "frame>json");
+
+	JSONWriter writer;
+	writer.buffer = NULL;
+	writer.length = 0;
+	writer.capacity = 0;
+
+	json_write_value(interp, &writer, value, 0);
+	if (interp->error_flag) {
+		free(writer.buffer);
+		return;
+	}
+
+	int handle = object_new_string(interp, writer.buffer ? writer.buffer : "", writer.length);
+	free(writer.buffer);
+	if (interp->error_flag) return;
+
+	interp->data_stack[interp->dsp - 1] = make_string(handle);
+
+	DISPATCH(interp);
+}
 			
