@@ -18,6 +18,7 @@ import os
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REFERENCE = os.path.join(ROOT, "docs", "reference.md")
 OUTPUT = os.path.join(ROOT, "src", "c", "help_table.c")
+WORDLIST = os.path.join(ROOT, "forth-words.txt")
 
 # Split a table row on pipes that are not backslash-escaped.
 ROW_SPLIT = re.compile(r"(?<!\\)\|")
@@ -119,11 +120,18 @@ def emit(entries):
     return "\n".join(out)
 
 
+def emit_wordlist(entries):
+    # One word per line, for rlwrap -f completion.
+    return "".join(name + "\n" for name, *_ in entries)
+
+
 def main():
     entries = parse()
     with open(OUTPUT, "w", encoding="utf-8") as handle:
         handle.write(emit(entries))
-    sys.stderr.write("wrote %d entries to %s\n" % (len(entries), OUTPUT))
+    with open(WORDLIST, "w", encoding="utf-8") as handle:
+        handle.write(emit_wordlist(entries))
+    sys.stderr.write("wrote %d entries to %s and %s\n" % (len(entries), OUTPUT, WORDLIST))
 
 
 if __name__ == "__main__":

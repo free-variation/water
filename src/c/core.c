@@ -530,9 +530,8 @@ void print_frame_pretty(Interpreter *interp, Object *frame, int indent) {
 }
 
 void print_prompt_state(Interpreter *interp) {
-	int tty = stdout_is_tty();
-	if (tty)
-		fputs(interp->error_flag ? "\033[41m" : "\033[42m", stdout);
+	if (stdout_is_tty())
+		fputs("-> ", stdout);
 
 	if (interp->error_flag) {
 		printf("%d|error", interp->dsp);
@@ -543,8 +542,6 @@ void print_prompt_state(Interpreter *interp) {
 		print_val_compact(interp, interp->data_stack[interp->dsp - 1]);
 	}
 
-	if (tty)
-		fputs("\033[0m", stdout);
 	putchar(' ');
 }
 
