@@ -1,5 +1,5 @@
-\ running? ( pid -- bool ) — non-blocking liveness via waitpid(WNOHANG).
-\ true while the child runs; false once it has exited (reaping it).
+\ running? ( pid -- bool ) — non-blocking liveness via waitid(WNOHANG|WNOWAIT).
+\ true while the child runs; false once it has exited. Non-reaping.
 
 variable p
 

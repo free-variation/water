@@ -1,0 +1,32 @@
+\ parallel-run ( commands width -- results ): run argv arrays as subprocesses,
+\ at most width at once, collecting { :out :err :status } per command in order.
+
+\ results come back in input order regardless of completion order
+[ [ "printf" "alpha" ] [ "printf" "beta" ] [ "printf" "gamma" ] ] 2 parallel-run to r
+r size . cr                            \ 3
+r 0 @i :out @ "alpha" = . cr           \ 1
+r 1 @i :out @ "beta" = . cr            \ 1
+r 2 @i :out @ "gamma" = . cr           \ 1
+r 0 @i :status @ . cr                  \ 0
+
+\ width 1 is serial, still in order
+[ [ "printf" "x" ] [ "printf" "y" ] ] 1 parallel-run to r
+r 0 @i :out @ "x" = . cr               \ 1
+r 1 @i :out @ "y" = . cr               \ 1
+
+\ width larger than the job count is fine
+[ [ "printf" "one" ] ] 9 parallel-run to r
+r size . cr                            \ 1
+r 0 @i :out @ "one" = . cr             \ 1
+
+\ no commands yields no results
+[ ] 4 parallel-run size . cr           \ 0
+
+\ exit status is captured
+[ [ "false" ] ] 1 parallel-run 0 @i :status @ . cr             \ 1
+[ [ "sh" "-c" "exit 7" ] ] 1 parallel-run 0 @i :status @ . cr  \ 7
+
+\ stderr is captured separately
+[ [ "sh" "-c" "printf err 1>&2" ] ] 1 parallel-run 0 @i :err @ "err" = . cr   \ 1
+
+bye

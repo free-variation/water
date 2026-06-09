@@ -1,7 +1,7 @@
-\ ask-claude.l4 — ask Claude a question via the Anthropic Messages API.
-\ exercises: env (read the API key from the environment), frame>json (build
-\ the JSON request body), subprocesses (curl via start-process / read-out),
-\ json>frame (parse the reply), frame + array access.
+\ ask-claude.l4 — ask Claude twenty questions concurrently via the Anthropic
+\ Messages API, five requests in flight at a time.
+\ exercises: frame>json (request bodies), env (API key), parallel-run +
+\ subprocesses (concurrent curl), json>frame (replies), frame + array access.
 \
 \ Needs ANTHROPIC_API_KEY in the environment and curl on the PATH.
 
@@ -14,25 +14,59 @@
     :messages [ { :role "user" :content question } ] }
   frame>json ;
 
-\ POST the body to the API with curl, return the parsed response frame.
-\ start-process (not run) because the header and body args contain spaces.
-: call-api ( body -- response )
-  |> body |
+\ Build the curl argv array that POSTs one question to the API.
+: ->curl-argv ( question -- argv )
+  | body >question |
+  question request-body to body
   [ "curl" "-s" "https://api.anthropic.com/v1/messages"
     "-H" "x-api-key: " "ANTHROPIC_API_KEY" env +
     "-H" "anthropic-version: 2023-06-01"
     "-H" "content-type: application/json"
-    "-d" body ] start-process read-out
-  json>frame ;
+    "-d" body ] ;
 
-\ Ask Claude, returning its answer text (or the raw error JSON on failure).
-: ask ( question -- answer )
-  request-body call-api
-  dup :content has? if
-    :content @  0 @i  :text @
+\ Pull the answer text out of one { :out :err :status } result.
+: extract-answer ( result -- answer )
+  dup :status @ 0 = not if
+    :err @
   else
-    frame>json
+    :out @ json>frame
+    dup :content has? if
+      :content @ 0 @i :text @
+    else
+      frame>json
+    then
   then ;
 
-"In one sentence, what is a stack-based programming language?" ask . cr
+\ Twenty short questions.
+[ "In one sentence, what is a stack-based programming language?"
+  "In one sentence, what is tail-call optimization?"
+  "In one sentence, what is a continuation?"
+  "In one sentence, what is NaN-boxing?"
+  "In one sentence, what is a mark-sweep garbage collector?"
+  "In one sentence, what does the Forth word DOES> do?"
+  "In one sentence, what is a delimited continuation?"
+  "In one sentence, how does an interpreter differ from a compiler?"
+  "In one sentence, what is direct threading in an interpreter?"
+  "In one sentence, what is a coroutine?"
+  "In one sentence, what is referential transparency?"
+  "In one sentence, how does a hash table work?"
+  "In one sentence, what is the actor model of concurrency?"
+  "In one sentence, what is copy-on-write?"
+  "In one sentence, what is a regular expression?"
+  "In one sentence, how does a process differ from a thread?"
+  "In one sentence, what is a closure?"
+  "In one sentence, what is memoization?"
+  "In one sentence, what is a finite state machine?"
+  "In one sentence, what is Unicode normalization?" ] to QUESTIONS
+
+\ Build the curl commands and run them five at a time.
+QUESTIONS [: ->curl-argv :] map  5 parallel-run  to RESULTS
+
+\ Print each question with its answer.
+[: |> idx |
+  "Q: " . QUESTIONS idx @i . cr
+  "A: " . RESULTS idx @i extract-answer . cr
+  cr
+:] QUESTIONS size i-times
+
 bye

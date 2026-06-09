@@ -72,4 +72,45 @@ inline
 ( string -- proc) \ start a process from an argv string
 : run " +" split start-process ;
 
+( commands width -- results )  \ run each argv array in commands as a subprocess,
+\ at most width at a time; collect { :out :err :status } per command in input
+\ order, refilling a slot as soon as its child finishes (as-completed).
+: parallel-run
+  | n w results slotprocs slotidx next done >commands >width |
+  commands size to n
+  width 1 lt if 1 to width then
+  width n lt if width else n then to w
+  null n array-of to results
+  null w array-of to slotprocs
+  0 w array-of to slotidx
+  [: | proc >s |
+    commands s @i start-process to proc
+    slotprocs s proc !i drop
+    slotidx s s !i drop
+  :] w i-times
+  w to next
+  0 to done
+  begin done n lt while
+    [: | proc c >s |
+      slotprocs s @i to proc
+      proc null = not if
+        proc :pid @ running? not if
+          slotidx s @i to c
+          results c { :out proc read-out :err proc read-err :status proc :pid @ wait } !i drop
+          done 1 + to done
+          next n lt if
+            commands next @i start-process to proc
+            slotprocs s proc !i drop
+            slotidx s next !i drop
+            next 1 + to next
+          else
+            slotprocs s null !i drop
+          then
+        then
+      then
+    :] w i-times
+    0.005 sleep
+  repeat
+  results ;
+
 : help lookup man . ;

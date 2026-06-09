@@ -153,6 +153,7 @@ null
 num-elements
 or
 over
+parallel-run
 pi
 quotient
 r>
@@ -195,6 +196,7 @@ side>
 sin
 size
 skip
+sleep
 slice!
 split
 sq

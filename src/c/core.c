@@ -2598,6 +2598,7 @@ int main(void) {
 	define_primitive(interp, "truncate", p_truncate, 0);
 
 	define_primitive(interp, "now", p_now, 0);
+	define_primitive(interp, "sleep", p_sleep, 0);
 	define_primitive(interp, "env", p_env, 0);
 	define_primitive(interp, "env!", p_env_set, 0);
 	define_primitive(interp, "read-file", p_read_file, 0);
@@ -2738,13 +2739,14 @@ void p_stop_process(Interpreter *interp) {
 void p_running(Interpreter *interp) {
 	POP_INT(pid, "running?", "pid");
 
-	int status;
-	pid_t result;
+	siginfo_t info;
+	info.si_pid = 0;
+	int result;
 	do {
-		result = waitpid((pid_t)pid, &status, WNOHANG);
+		result = waitid(P_PID, (id_t)pid, &info, WEXITED | WNOHANG | WNOWAIT);
 	} while (result < 0 && errno == EINTR);
 
-	push(interp, make_bool(result == 0));
+	push(interp, make_bool(result == 0 && info.si_pid == 0));
 
 	DISPATCH(interp);
 }

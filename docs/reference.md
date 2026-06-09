@@ -473,6 +473,7 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |
 | `bye` | `( -- )` | `exit(0)` | — | — | — |
 | `now` | `( -- f )` | `CLOCK_MONOTONIC` seconds as a float | 1 | none | O(1) |
+| `sleep` | `( seconds -- )` | Block for the given float seconds (sub-second supported); `nanosleep` | blocks | none | O(1) |
 
 ---
 
@@ -512,11 +513,12 @@ A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process 
 | `close` | `( stream -- )` | Close the fd; closing a child's `:in` sends it EOF | 1 syscall | none | O(1) |
 | `wait` | `( pid -- status )` | Block until the child exits; return its exit code, or `128 + signo` if it was killed by a signal | blocks | none | O(1) |
 | `stop` | `( pid -- status )` | `SIGKILL` the child then reap it (137 = 128+9, or its code if it had already exited) | 2 syscalls | none | O(1) |
-| `running?` | `( pid -- bool )` | Non-blocking liveness via `waitpid`+`WNOHANG`; true while running, false once exited — reaping it as a side effect | 1 syscall | none | O(1) |
+| `running?` | `( pid -- bool )` | Non-blocking liveness via `waitid`+`WNOHANG`+`WNOWAIT`; true while running, false once exited. Non-reaping, so a later `wait` still returns the status | 1 syscall | none | O(1) |
 | `run` | `( s -- proc )` | lib.l4: split a command string on spaces and `start-process` it (`s " " split start-process`) | split + fork | `1a` + `1o` frame + 3 streams | O(\|s\| + argc) |
 | `write-in` | `( s proc -- )` | lib.l4: write the string to the child's `:in` stream | write syscalls | none | O(\|s\|) |
 | `read-out` | `( proc -- s )` | lib.l4: read the child's `:out` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
 | `read-err` | `( proc -- s )` | lib.l4: read the child's `:err` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
+| `parallel-run` | `( commands width -- results )` | lib.l4: run each argv array in `commands` as a subprocess, at most `width` at once; collect `{ :out :err :status }` per command in input order, refilling a slot as each child finishes | fork per command + poll | `1a` + per-child frames/streams | O(critical path) |
 
 Line access is `read "\n" split`.
 

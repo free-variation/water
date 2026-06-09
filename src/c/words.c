@@ -1592,6 +1592,26 @@ void p_now(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_sleep(Interpreter *interp) {
+	Val seconds_val = pop(interp);
+	if (interp->error_flag)
+		return;
+	if (VAL_TAG(seconds_val) != T_FLOAT) {
+		fail(interp, "sleep: expected a float; got %s", tag_name(VAL_TAG(seconds_val)));
+		return;
+	}
+
+	double seconds = VAL_NUMBER(seconds_val);
+	if (seconds > 0) {
+		struct timespec request;
+		request.tv_sec = (time_t)seconds;
+		request.tv_nsec = (long)((seconds - (double)(time_t)seconds) * 1e9);
+		nanosleep(&request, NULL);
+	}
+
+	DISPATCH(interp);
+}
+
 void p_env(Interpreter *interp) {
 	POP_STRING(name, "env");
 	const char *value = getenv(name->bytes);

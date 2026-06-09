@@ -745,6 +745,7 @@ void p_inc_poly(Interpreter *interp);
 void p_dec_poly(Interpreter *interp);
 void p_sq_poly(Interpreter *interp);
 void p_now(Interpreter *interp);
+void p_sleep(Interpreter *interp);
 void p_env(Interpreter *interp);
 void p_env_set(Interpreter *interp);
 void p_read_file(Interpreter *interp);
@@ -763,10 +764,6 @@ Interpreter *interp_new(void);
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 
 static inline __attribute__((always_inline))
-// Lower-bound binary search over indices [0, count). Binds `probe` to each
-// midpoint tested; `less` is a boolean expression, true when the element at
-// `probe` sorts before the target. Leaves `at` at the first index that does
-// not sort before the target (its insertion point); test element[at] for a hit.
 #define LOWER_BOUND(count, probe, less, at) \
 	int at = 0; \
 	for (int bsearch_high = (count); at < bsearch_high; ) { \

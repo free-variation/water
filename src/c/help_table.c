@@ -159,6 +159,7 @@ const HelpEntry help_entries[] = {
 	{ "num-elements", "( m -- n )", "lib.l4: dim *", "5", "none", "O(1)" },
 	{ "or", "( a b -- bool )", "logical or of truthiness", "3", "none", "O(1)" },
 	{ "over", "( a b -- a b a )", "Copy second over top", "5", "none", "O(1)" },
+	{ "parallel-run", "( commands width -- results )", "lib.l4: run each argv array in commands as a subprocess, at most width at once; collect { :out :err :status } per command in input order, refilling a slot as each child finishes", "fork per command + poll", "1a + per-child frames/streams", "O(critical path)" },
 	{ "pi", "( -- f )", "lib.l4: π (3.141592653589793) as a float", "1", "none", "O(1)" },
 	{ "quotient", "( a b -- quotient )", "lib.l4: % swap drop; toward zero", "9", "none", "O(1)" },
 	{ "r>", "return stack → ( -- a )", "Move return-stack top to data stack", "2", "none", "O(1)" },
@@ -187,7 +188,7 @@ const HelpEntry help_entries[] = {
 	{ "row-mins", "( m -- m' )", "r×1 of per-row minima", "1 + r×c", "1m(r×1)", "O(r×c)" },
 	{ "row-sums", "( m -- m' )", "r×1 of per-row sums", "1 + r×c", "1m(r×1)", "O(r×c)" },
 	{ "run", "( s -- proc )", "lib.l4: split a command string on spaces and start-process it (s \" \" split start-process)", "split + fork", "1a + 1o frame + 3 streams", "O(|s| + argc)" },
-	{ "running?", "( pid -- bool )", "Non-blocking liveness via waitpid+WNOHANG; true while running, false once exited — reaping it as a side effect", "1 syscall", "none", "O(1)" },
+	{ "running?", "( pid -- bool )", "Non-blocking liveness via waitid+WNOHANG+WNOWAIT; true while running, false once exited. Non-reaping, so a later wait still returns the status", "1 syscall", "none", "O(1)" },
 	{ "save", "( s -- )", "Write all user words as re-loadable .l4 source", "dict scan + write", "file I/O", "O(|user dict|)" },
 	{ "save-image", "( s -- )", "Binary snapshot of full state (dict, objects, stacks, continuations)", "serialize all", "file I/O", "O(objects + dict)" },
 	{ "see", "( xt -- )", "Print a word's source (: name … ;), or variable/symbol/primitive form", "dict scan", "none", "O(|dict|)" },
@@ -201,6 +202,7 @@ const HelpEntry help_entries[] = {
 	{ "sin", "( a -- sin a )", "sine (radians)", "2", "matrix 1m(r×c)", "same" },
 	{ "size", "( coll -- n )", "Element count of a set, array, or string; pair count of a frame", "2", "none", "O(1)" },
 	{ "skip", "( arr n -- arr )", "lib.l4: over size swap - swap reverse swap take reverse", "3n", "3×1a(n)", "O(n)" },
+	{ "sleep", "( seconds -- )", "Block for the given float seconds (sub-second supported); nanosleep", "blocks", "none", "O(1)" },
 	{ "slice!", "( arr tstart src sstart sstep slen -- arr )", "Copy slen elements src[sstart], src[sstart+sstep], … into arr[tstart…] in place", "6 + slen", "self-overlap may malloc slen", "O(slen)" },
 	{ "split", "( s pat -- [ piece… ] )", "Split s at each non-overlapping match of pat; the pieces are the gaps between matches, empty fields kept; no match → [ s ]", "n", "1a + pieces", "O(n)" },
 	{ "sq", "( a -- a² )", "float or matrix", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
@@ -256,4 +258,4 @@ const HelpEntry help_entries[] = {
 	{ "write-in", "( s proc -- )", "lib.l4: write the string to the child's :in stream", "write syscalls", "none", "O(|s|)" },
 };
 
-const int help_entry_count = 250;
+const int help_entry_count = 252;
