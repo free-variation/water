@@ -434,6 +434,7 @@ void print_val_compact(Interpreter *interp, Val value);
 void print_frame_pretty(Interpreter *interp, Object *frame, int indent);
 void print_prompt_state(Interpreter *interp);
 int find(Interpreter *interp, const char *name);
+const char *name_of(Interpreter *interp, int cfa);
 void docol(Interpreter *interp);
 void dosym(Interpreter *interp);
 void dovar(Interpreter *interp);
@@ -447,9 +448,23 @@ typedef struct {
 	int fast;
 } CallContext;
 
+
+
 void call_open(Interpreter *interp, int cfa, CallContext *ctx);
 void call_invoke(Interpreter *interp);
 void call_close(Interpreter *interp, CallContext *ctx);
+
+typedef struct {
+	const char *name;
+	const char *effect;
+	const char *summary;
+	const char *ops;
+	const char *alloc;
+	const char *order;
+} HelpEntry;
+
+extern const HelpEntry help_entries[];
+extern const int help_entry_count;
 
 static inline void call_step(Interpreter *interp, CallContext *ctx, int cfa) {
 	if (ctx->fast)
@@ -608,7 +623,8 @@ void p_times(Interpreter *interp);
 void p_i_times(Interpreter *interp);
 void p_words(Interpreter *interp);
 void p_see(Interpreter *interp);
-void p_semi(Interpreter *interp);
+void p_help(Interpreter *interp);
+void p_semicolon(Interpreter *interp);
 void p_if(Interpreter *interp);
 void p_qif(Interpreter *interp);
 void p_then(Interpreter *interp);
@@ -746,22 +762,24 @@ Interpreter *interp_new(void);
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 
 static inline __attribute__((always_inline))
-int frame_find(Object *frame, cell key) {
-	int low = 0;
-	int high = frame->len;
-	int mid;
-	cell mid_key;
-
-	while (low < high) {
-		mid = (low + high) / 2;
-		mid_key = frame->frame.keys[mid];
-		if (mid_key < key)
-			low = mid + 1;
-		else
-			high = mid;
+// Lower-bound binary search over indices [0, count). Binds `probe` to each
+// midpoint tested; `less` is a boolean expression, true when the element at
+// `probe` sorts before the target. Leaves `at` at the first index that does
+// not sort before the target (its insertion point); test element[at] for a hit.
+#define LOWER_BOUND(count, probe, less, at) \
+	int at = 0; \
+	for (int bsearch_high = (count); at < bsearch_high; ) { \
+		int probe = (at + bsearch_high) / 2; \
+		if (less) { \
+			at = probe + 1; \
+		} else { \
+			bsearch_high = probe; \
+		} \
 	}
 
-	return low;
+int frame_find(Object *frame, cell key) {
+	LOWER_BOUND(frame->len, mid, frame->frame.keys[mid] < key, at);
+	return at;
 }
 
 #define FRAME_LOOKUP(obj, key, at, present) \

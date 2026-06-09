@@ -3,14 +3,9 @@
 void set_add(Interpreter *interp, int set_handle, Val value) {
 	Object *set = interp->objects[set_handle];
 
-	int low = 0, high = set->len;
-	while (low < high) {
-		int mid = (low + high) / 2;
-		int cmp = val_cmp(interp, set->items[mid], value);
-
-		if (cmp == 0) return;
-		if (cmp < 0) low = mid + 1;
-		else high = mid;
+	LOWER_BOUND(set->len, mid, val_cmp(interp, set->items[mid], value) < 0, low);
+	if (low < set->len && val_cmp(interp, set->items[low], value) == 0) {
+		return;
 	}
 
 	if (set->len >= set->capacity) {
@@ -27,15 +22,8 @@ void set_add(Interpreter *interp, int set_handle, Val value) {
 int set_member(Interpreter *interp, int set_handle, Val value) {
 	Object *set = interp->objects[set_handle];
 
-	int low = 0, high = set->len;
-	while (low < high) {
-		int mid = (low + high) / 2;
-		int cmp = val_cmp(interp, set->items[mid], value);
-		if (cmp == 0) return 1;
-		if (cmp < 0) low = mid + 1;
-		else high = mid;
-	}
-	return 0;
+	LOWER_BOUND(set->len, mid, val_cmp(interp, set->items[mid], value) < 0, low);
+	return low < set->len && val_cmp(interp, set->items[low], value) == 0;
 }
 
 int set_union(Interpreter *interp, int handle_a, int handle_b) {

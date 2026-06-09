@@ -641,13 +641,8 @@ void p_words(Interpreter *interp) {
 void p_see(Interpreter *interp) {
 	POP_XT(target_cfa, "see");
 
-	const char *name = NULL;
-	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
-		if (cf == target_cfa) {
-			name = &interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)];
-			break;
-		}
-	}
+	const char *name = name_of(interp, target_cfa);
+
 	cfa_handler handler = (cfa_handler)interp->vocab->dict[target_cfa];
 	if (handler == docol) {
 		if (!name) {
@@ -676,7 +671,50 @@ void p_see(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_semi(Interpreter *interp) {
+static void help_put(Interpreter *interp, int frame_handle, const char *key, const char *text) {
+	int string_handle = object_new_string(interp, text, (int)strlen(text));
+	if (interp->error_flag) {
+		return;
+	}
+	frame_put(interp->objects[frame_handle], intern_symbol(interp, key), make_string(string_handle));
+}
+
+void p_help(Interpreter *interp) {
+	POP_XT(target_cfa, "help");
+
+	const char *name = name_of(interp, target_cfa);
+	const HelpEntry *entry = NULL;
+	if (name) {
+		LOWER_BOUND(help_entry_count, mid, strcmp(help_entries[mid].name, name) < 0, at);
+		if (at < help_entry_count && strcmp(help_entries[at].name, name) == 0) {
+			entry = &help_entries[at];
+		}
+	}
+
+	if (!entry) {
+		push(interp, make_tagged(T_NONE, 0));
+		DISPATCH(interp);
+	}
+
+	NEW_FRAME(frame_handle, frame);
+	(void)frame;
+	gc_root_push(interp, make_frame(frame_handle));
+	help_put(interp, frame_handle, "word", entry->name);
+	help_put(interp, frame_handle, "effect", entry->effect);
+	help_put(interp, frame_handle, "summary", entry->summary);
+	if (entry->ops) {
+		help_put(interp, frame_handle, "ops", entry->ops);
+		help_put(interp, frame_handle, "alloc", entry->alloc);
+		help_put(interp, frame_handle, "order", entry->order);
+	}
+	gc_root_pop(interp);
+
+	push(interp, make_frame(frame_handle));
+
+	DISPATCH(interp);
+}
+
+void p_semicolon(Interpreter *interp) {
 	leave_compile_scope(interp);
 	emit_call(interp, interp->vocab->exit_cfa);
 	if (interp->compiling_src_start > 0 && interp->vocab->latest_cfa != 0) {

@@ -157,6 +157,7 @@ The `shift-with` handler can also resume the captured continuation, giving the C
 - **`copy`** — deep copy of a value (strings, arrays, sets, frames, matrices).
 - **`now`** — current Unix time as a float (seconds since epoch).
 - **`see`** — prints a word's source definition; **`see-compiled`** disassembles its threaded body.
+- **`help`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes); `' word help`.
 - **`words`**, **`forget`**, **`bye`**, **`gc`**, **`clear`**, **`.s`**, **`.a`** — interpreter utilities.
 
 ## What's planned
@@ -184,7 +185,6 @@ Tracked in `PLAN.md`, with design notes for each.
 - **Sort** — `sort`, `sort-with`, `sort-by`.
 - **stdin / env** — `stdin`/`stdout`/`stderr` as streams (read/written with the subprocess `read`/`write`), environment variable access.
 - **Functional primitives** — `range` remains in C; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter`/`reduce`/`take`/`reverse`/`concat` done in C; `skip`/`last` in `lib.l4`.)
-- **Help system** — `help word` showing a one-line doc string.
 
 ### Logic layer
 

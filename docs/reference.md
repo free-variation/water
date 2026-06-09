@@ -63,6 +63,7 @@ float fast path first; the heavy cases are captured by the O column.
 | `1+` | `( a -- a+1 )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
 | `1-` | `( a -- a-1 )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
 | `sq` | `( a -- a² )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
+| `pi` | `( -- f )` | lib.l4: π (3.141592653589793) as a float | 1 | none | O(1) |
 
 ### In-place matrix arithmetic
 
@@ -98,8 +99,13 @@ Operate directly on stack slots' `.number`, in place, with only a depth check �
 | `fexp` | `( a -- eᵃ )` ⚠ | in place | 1 | none | O(1) |
 | `flog` | `( a -- log₁₀ a )` ⚠ | base-10 log, in place | 1 | none | O(1) |
 | `fln` | `( a -- ln a )` ⚠ | natural log, in place | 1 | none | O(1) |
-| `fsin` `fcos` `ftan` `ftanh` | `( a -- fn a )` ⚠ | trig/hyperbolic, in place | 1 | none | O(1) |
-| `fasin` `facos` `fatan` | `( a -- fn a )` ⚠ | inverse trig, in place | 1 | none | O(1) |
+| `fsin` | `( a -- sin a )` ⚠ | sine (radians), in place | 1 | none | O(1) |
+| `fcos` | `( a -- cos a )` ⚠ | cosine (radians), in place | 1 | none | O(1) |
+| `ftan` | `( a -- tan a )` ⚠ | tangent (radians), in place | 1 | none | O(1) |
+| `ftanh` | `( a -- tanh a )` ⚠ | hyperbolic tangent, in place | 1 | none | O(1) |
+| `fasin` | `( a -- asin a )` ⚠ | inverse sine, in place | 1 | none | O(1) |
+| `facos` | `( a -- acos a )` ⚠ | inverse cosine, in place | 1 | none | O(1) |
+| `fatan` | `( a -- atan a )` ⚠ | inverse tangent, in place | 1 | none | O(1) |
 | `fround` | `( a -- round a )` ⚠ | nearest, in place | 1 | none | O(1) |
 | `ftruncate` | `( a -- trunc a )` ⚠ | toward zero, in place | 1 | none | O(1) |
 | `fround-up` | `( a -- ceil a )` ⚠ | in place | 1 | none | O(1) |
@@ -118,8 +124,13 @@ Tag-checked; safe. Float input → float; matrix input → new matrix, element-w
 | `exp` | `( a -- eᵃ )` | `exp` | 2 | matrix `1m(r×c)` | same |
 | `log` | `( a -- log₁₀ a )` | `log10` | 2 | matrix `1m(r×c)` | same |
 | `ln` | `( a -- ln a )` | `log` — natural log | 2 | matrix `1m(r×c)` | same |
-| `sin` `cos` `tan` `tanh` | `( a -- fn a )` | trig/hyperbolic | 2 | matrix `1m(r×c)` | same |
-| `asin` `acos` `atan` | `( a -- fn a )` | inverse trig | 2 | matrix `1m(r×c)` | same |
+| `sin` | `( a -- sin a )` | sine (radians) | 2 | matrix `1m(r×c)` | same |
+| `cos` | `( a -- cos a )` | cosine (radians) | 2 | matrix `1m(r×c)` | same |
+| `tan` | `( a -- tan a )` | tangent (radians) | 2 | matrix `1m(r×c)` | same |
+| `tanh` | `( a -- tanh a )` | hyperbolic tangent | 2 | matrix `1m(r×c)` | same |
+| `asin` | `( a -- asin a )` | inverse sine | 2 | matrix `1m(r×c)` | same |
+| `acos` | `( a -- acos a )` | inverse cosine | 2 | matrix `1m(r×c)` | same |
+| `atan` | `( a -- atan a )` | inverse tangent | 2 | matrix `1m(r×c)` | same |
 | `round` | `( a -- round a )` | `round` | 2 | matrix `1m(r×c)` | same |
 | `truncate` | `( a -- trunc a )` | `trunc` | 2 | matrix `1m(r×c)` | same |
 | `round-up` | `( a -- ceil a )` | `ceil` | 2 | matrix `1m(r×c)` | same |
@@ -195,18 +206,18 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 
 | Word | Stack effect | Behavior |
 |------|-------------|----------|
-| `: name` | — | Begin a colon definition; read the name; enter compile mode |
+| `:` | — | Begin a colon definition; read the following name; enter compile mode |
 | `;` | — | End a colon definition; emit `exit`; store the source text for `see` |
-| `variable name` | — | Declare a global variable initialized to `0.0` |
-| `to name` | `( val -- )` | Assign to a local (in a definition) or a global. At the REPL, auto-creates the global if absent. In a definition, the variable must already exist. May trigger superword store-fusion while compiling. |
-| `symbol name` | — | Declare a word that pushes a specific interned symbol |
+| `variable` | — | Read the following name; declare a global variable initialized to `0.0` |
+| `to` | `( val -- )` | Assign to the named local (in a definition) or global. At the REPL, auto-creates the global if absent. In a definition, the variable must already exist. May trigger superword store-fusion while compiling. |
+| `symbol` | — | Read the following name; declare a word that pushes a specific interned symbol |
 | `:name` | `( -- sym )` | Symbol literal; interns the name at read time |
 | `string>symbol` | `( s -- sym )` | Intern a computed string as a symbol |
-| `[: … :]` | `( -- xt )` | Anonymous quotation; compiles its body and pushes its xt |
-| `' name` | `( -- xt )` | Push the xt of the named word |
+| `[:` | `( -- xt )` | Open an anonymous quotation (closed by `:]`); compiles its body and pushes its xt |
+| `'` | `( -- xt )` | Read the following name; push its xt |
 | `execute` | `( xt -- … )` | Call the word at xt |
 | `inline` | — | Mark the most recent definition inline; future calls splice its body |
-| `forget name` | — | Truncate the dictionary back to before `name` |
+| `forget` | — | Read the following name; truncate the dictionary back to before it |
 
 ### Locals
 
@@ -218,7 +229,14 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 | `\|> x y z \|` | Declare and receive from the stack: z ← top, y ← second, x ← third |
 | `\| x >y z \|` | Mixed: a `>` prefix marks an individual name as a receive slot; the rest initialize to 0 |
 
-`++ name` and `-- name` are compile-time words that increment / decrement a local by 1 in place, emitting a single fused instruction at depth 0.
+These compile-time words read a following local name and emit a single fused depth-0 instruction:
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `++` | `( -- )` | Increment the named local by 1 in place | 1 | none | O(1) |
+| `--` | `( -- )` | Decrement the named local by 1 in place | 1 | none | O(1) |
+| `f++` | `( -- )` ⚠ | Unsafe float increment: raw `.number` mutation, no tag check, for a local known to hold a float | 1 | none | O(1) |
+| `f--` | `( -- )` ⚠ | Unsafe float decrement: raw `.number` mutation, no tag check | 1 | none | O(1) |
 
 ---
 
@@ -248,7 +266,6 @@ Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is co
 | `split` | `( s pat -- [ piece… ] )` | Split `s` at each non-overlapping match of `pat`; the pieces are the gaps between matches, empty fields kept; no match → `[ s ]` | n | `1a` + pieces | O(n) |
 | `substring` | `( s start end -- sub )` | Half-open byte range `[start, end)`; bounds-checked | 2 + k | `1o` | O(k), k = end − start |
 | `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
-| `has?` | `( s pat -- bool )` | True if `pat` matches anywhere in `s` (string overload of frame `has?`) | n | none | O(n) |
 | `format` | `( … template -- s )` | Fill `template`'s `{n}` placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only `{digits}` substitute — other brace content is left literal | len + refs | `1o` | O(len) |
 
 `first match` and `findall` are spelled `match` and `match-all`; there is no separate search/match/fullmatch split. Anchor with `^`/`$` (or `\A`/`\z`) when you need it.
@@ -267,7 +284,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `intersection` | `( s₁ s₂ -- s₃ )` | Intersection into a new set | m log n | `1o` + reallocs | O(m log n) |
 | `difference` | `( s₁ s₂ -- s₃ )` | s₁ − s₂ into a new set | m log n | `1o` + reallocs | O(m log n) |
 | `member?` | `( set v -- bool )` | Binary-search membership | 3 + log n | none | O(log n) |
-| `size` | `( set -- n )` | Element count (also arrays, strings, frames) | 2 | none | O(1) |
+| `size` | `( coll -- n )` | Element count of a set, array, or string; pair count of a frame | 2 | none | O(1) |
 
 ---
 
@@ -307,14 +324,25 @@ Symbol-keyed sorted maps; binary-search lookup. A path is an array of symbols; t
 | `>frame` | `( arr -- fr )` | Build from an even-length alternating-kv array | 1 + n log n | `1o` + reallocs | O(n log n) |
 | `@` | `( fr sym/path -- val )` | Get by key or path; errors if absent | 3 + d log n | none | O(d log n) |
 | `!` | `( fr sym/path val -- fr )` | Set by key or path, vivifying intermediates; mutates fr | d log n | realloc on growth; `1o` per vivified frame | O(d log n) amortized |
-| `has?` | `( fr sym/path -- bool )` | Existence test; no error on miss | 3 + d log n | none | O(d log n) |
+| `has?` | `( fr sym/path -- bool )` | Existence test for a frame key or path, no error on miss; on a string `( s pat -- bool )`, true if regex `pat` matches anywhere | 3 + d log n | none | O(d log n) |
 | `delete-at` | `( fr sym/path -- fr )` | Remove a key (errors if absent); mutates fr | n | none | O(n) |
 | `update-at` | `( fr sym/path xt -- fr )` | Apply xt to the value at the key, store the result back | d log n + xt | none | O(d log n + xt) |
 | `keys` | `( fr -- arr )` | Keys (symbols) in sorted order | 1 + n | `1a(n)` | O(n) |
 | `values` | `( fr -- arr )` | Values in key order | 1 + n | `1a(n)` | O(n) |
 | `merge` | `( fr₁ fr₂ -- fr )` | New frame with all keys; fr₂ wins collisions | (m+n) log(m+n) | `1o` + reallocs | O((m+n) log(m+n)) |
-| `size` | `( fr -- n )` | Pair count | 2 | none | O(1) |
 | `copy` | `( a -- a' )` | Deep copy of any value (recurses into frames, arrays, matrices, strings, sets, continuations); identity for scalars. Defined generally, not frame-specific. | tree size | one object per node | O(tree size) |
+
+---
+
+## JSON
+
+Objects ↔ frames (keys interned as symbols), arrays ↔ arrays, strings ↔ strings, numbers ↔ floats. JSON `true`/`false` ↔ the reserved `:1`/`:0` symbols; `null` ↔ the none value.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `json>frame` | `( s -- val )` | Parse a JSON string. Escapes and `\uXXXX` (with surrogate pairs) decode to UTF-8; recursive-descent, depth-guarded; rejects trailing non-whitespace | scan + build | one object per node | O(\|s\|) |
+| `frame>json` | `( val -- s )` | Serialize a value to JSON. Floats use the shortest round-trip form; strings are escaped (non-ASCII emitted raw); object keys are the symbol names | walk + build | `1o` string | O(tree size) |
+| `null` | `( -- none )` | Push the none value (`T_NONE`) — what JSON `null` parses to, and what an unset `env` returns | 1 | none | O(1) |
 
 ---
 
@@ -336,7 +364,6 @@ Row-major `double` storage. `r` rows, `c` columns.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `@i` | `( m i -- row )` | Row i as a 1×c matrix (copy) | 2 + c | `1m(1×c)` | O(c) |
 | `@j` | `( m j -- col )` | Column j as an r×1 matrix (copy) | 2 + r | `1m(r×1)` | O(r) |
 | `@i,j` | `( m i j -- f )` | Single element as a float | 4 | none | O(1) |
 | `dim` | `( m -- r c )` | Push rows then columns | 3 | none | O(1) |
@@ -406,11 +433,26 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 
 Immediate compiler words usable only inside a definition. They detect a preceding variable-load and emit a single fused instruction that reads the variable's dict slot directly. All read `.number` without a tag check. Followed by `to dest`, they fuse further into a store variant that writes the result straight to the destination slot.
 
-| Word(s) | Syntax | Behavior |
-|---------|--------|----------|
-| `vvf+` `vvf-` `vvf*` `vvf/` | `vvf+ a b` | Load variables a and b, apply the op, push the result |
-| `vf+` `vf-` `vf*` `vf/` | `vf+ a` | Combine variable a with the stack top using the op, in place |
-| `vfsq` `vfneg` `vfabs` `vfsqrt` `vfexp` `vflog` `vfsin` `vfcos` `vftan` `vftanh` | `vfsq a` | Apply the unary function to variable a, push the result |
+| Word | Syntax | Behavior |
+|------|--------|----------|
+| `vvf+` | `vvf+ a b` | Load variables a and b, add, push the result |
+| `vvf-` | `vvf- a b` | Load variables a and b, subtract (a−b), push the result |
+| `vvf*` | `vvf* a b` | Load variables a and b, multiply, push the result |
+| `vvf/` | `vvf/ a b` | Load variables a and b, divide (a/b), push the result |
+| `vf+` | `vf+ a` | Add variable a to the stack top, in place |
+| `vf-` | `vf- a` | Subtract variable a from the stack top, in place |
+| `vf*` | `vf* a` | Multiply the stack top by variable a, in place |
+| `vf/` | `vf/ a` | Divide the stack top by variable a, in place |
+| `vfsq` | `vfsq a` | Square variable a, push the result |
+| `vfneg` | `vfneg a` | Negate variable a, push the result |
+| `vfabs` | `vfabs a` | Absolute value of variable a, push the result |
+| `vfsqrt` | `vfsqrt a` | Square root of variable a, push the result |
+| `vfexp` | `vfexp a` | eᵃ of variable a, push the result |
+| `vflog` | `vflog a` | base-10 log of variable a, push the result |
+| `vfsin` | `vfsin a` | sine of variable a, push the result |
+| `vfcos` | `vfcos a` | cosine of variable a, push the result |
+| `vftan` | `vftan a` | tangent of variable a, push the result |
+| `vftanh` | `vftanh a` | hyperbolic tangent of variable a, push the result |
 | `vvf*+` | `vvf*+ b c` | `( t -- t*b+c )`, reading variables b and c |
 | `vvf*-` | `vvf*- b c` | `( t -- c-t*b )`, reading variables b and c |
 
@@ -425,7 +467,7 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 | `words` | `( -- )` | List all non-internal words, newest first, 8 per line | dict scan | none | O(\|dict\|) |
 | `see` | `( xt -- )` | Print a word's source (`: name … ;`), or `variable`/`symbol`/primitive form | dict scan | none | O(\|dict\|) |
 | `see-compiled` | `( xt -- )` | Disassemble a colon definition's compiled cells | body scan | none | O(body) |
-| `.s` | `( -- )` | Print the stack, intact | print | none | O(depth) |
+| `help` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |
 | `bye` | `( -- )` | `exit(0)` | — | — | — |
 | `now` | `( -- f )` | `CLOCK_MONOTONIC` seconds as a float | 1 | none | O(1) |
@@ -444,6 +486,18 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 
 ---
 
+## Files and environment
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `read-file` | `( path -- s )` | Read a whole file as one string (byte-safe); errors if it can't be opened | file read | `1o` + buffer | O(file) |
+| `write-file` | `( s path -- )` | Create or truncate the file, then write the string's bytes | file write | none | O(\|s\|) |
+| `append-file` | `( s path -- )` | Open in append mode, write the string's bytes | file write | none | O(\|s\|) |
+| `env` | `( name -- val )` | Environment variable as a string, or the none value if unset (so set-empty `""` and unset stay distinct) | 1 | `1o` on hit | O(\|val\|) |
+| `env!` | `( name value -- )` | Set an environment variable (overwriting); process-wide, so subsequent `start-process` children inherit it | 1 | none | O(1) |
+
+---
+
 ## Subprocesses and streams
 
 A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process (later, a socket). `start-process` launches a program directly from an argv array (no shell, so no quoting or injection surface) and returns a frame `{ :pid :in :out :err }` whose `:in`/`:out`/`:err` are streams. The lifecycle is: `write` input → `close` `:in` (sends EOF) → `read` the output → `wait`. `SIGPIPE` is ignored process-wide, so a `write` to a child that has exited returns an error rather than killing the interpreter. Bytes are raw and length-counted, so streams are binary-safe.
@@ -457,8 +511,12 @@ A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process 
 | `wait` | `( pid -- status )` | Block until the child exits; return its exit code, or `128 + signo` if it was killed by a signal | blocks | none | O(1) |
 | `stop` | `( pid -- status )` | `SIGKILL` the child then reap it (137 = 128+9, or its code if it had already exited) | 2 syscalls | none | O(1) |
 | `running?` | `( pid -- bool )` | Non-blocking liveness via `waitpid`+`WNOHANG`; true while running, false once exited — reaping it as a side effect | 1 syscall | none | O(1) |
+| `run` | `( s -- proc )` | lib.l4: split a command string on spaces and `start-process` it (`s " " split start-process`) | split + fork | `1a` + `1o` frame + 3 streams | O(\|s\| + argc) |
+| `write-in` | `( s proc -- )` | lib.l4: write the string to the child's `:in` stream | write syscalls | none | O(\|s\|) |
+| `read-out` | `( proc -- s )` | lib.l4: read the child's `:out` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
+| `read-err` | `( proc -- s )` | lib.l4: read the child's `:err` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
 
-`lib.l4` conveniences: `run` ( s -- proc ) splits a command string on spaces and `start-process`es it (`s " " split start-process`); `write-in` ( s proc -- ), `read-out` ( proc -- s ), `read-err` ( proc -- s ) write/read the child's `:in`/`:out`/`:err`. Line access is `read "\n" split`.
+Line access is `read "\n" split`.
 
 ---
 

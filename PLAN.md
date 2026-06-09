@@ -589,36 +589,3 @@ Composable in one line, so not added: `count` (`[: pred :] filter size`),
 
 **Cost:** `find`, `any?`, `all?`, `flat-map`, `sort-by`, `each` → ~60 lines
 of `lib.l4`; `group-by` / `partition` build on frames.
-
----
-
-## Help system
-
-A `help` word showing a one-line description of any word — colon definition,
-variable, symbol, or primitive.
-
-**Design:**
-
-- **Storage**: reuse the existing `SRCIDX` header field. Primitives' SRCIDX
-  points to a doc string; colon defs' SRCIDX points to body source and
-  `help` extracts the first `( ... )` paren-comment.
-- **Primitives**: `define_primitive` takes a doc string; the ~170
-  user-facing primitives get short stack-effect docs (e.g. `( n -- n*n )
-  square the top`); internal words pass an empty doc.
-- **Colon defs**: the first `( ... )` after the name, Forth-style:
-  `: square ( n -- n*n ) dup * ;`. No new syntax.
-- **Variables, symbols**: `help` shows the kind and name.
-- **Lookup**: `' foo help`, xt-style (consistent with `see`). Dispatches on
-  the handler: `docol` → extract from body source; `dovar`/`dosym` → kind +
-  name; primitive → print the stored doc.
-
-**Cost:**
-
-- One signature change to `define_primitive` (touches ~230 call sites; add
-  a doc string, empty for internal words).
-- Static doc strings: ~600–1000 bytes.
-- ~12 lines for `p_help`.
-
-To settle at implementation: a no-argument `help` (or a separate `apropos`)
-listing all words; whether variables/symbols carry docs via `( comment )`
-parsing in `p_variable` / `p_symbol`.

@@ -558,6 +558,16 @@ int find(Interpreter *interp, const char *name) {
 	return 0;
 }
 
+const char *name_of(Interpreter *interp, int cfa) {
+	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
+		if (cf == cfa) {
+			return &interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)];
+		}
+	}
+	return NULL;
+}
+
+
 static inline __attribute__((always_inline)) void push_variable(Interpreter *interp, int var_cfa) {
 	Val value;
 	value.bits = (uint64_t)interp->vocab->dict[var_cfa + 1];
@@ -2486,6 +2496,7 @@ int main(void) {
 
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
+	define_primitive(interp, "help", p_help, 0);
 	define_primitive(interp, "see-compiled", p_see_compiled, 0);
 
 	interp->vocab->exit_cfa = define_primitive(interp, "exit", p_exit, 0);
@@ -2526,7 +2537,7 @@ int main(void) {
 	define_primitive(interp, "forget", p_forget, 0);
 	define_primitive(interp, "'", p_tick, 1);
 	define_primitive(interp, "to", p_to, 1);
-	define_primitive(interp, ";", p_semi, 1);
+	define_primitive(interp, ";", p_semicolon, 1);
 	define_primitive(interp, "inline", p_inline, 0);
 	define_primitive(interp, "if", p_if, 1);
 	define_primitive(interp, "?if", p_qif, 1);

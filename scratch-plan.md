@@ -54,8 +54,9 @@ PCRE2 vendoring) are not here.
 - [ ] `group-by` (→ frame)
 - [ ] `partition`
 
-## 11. Help system
-- [ ] `help word` — one-line doc / stack effect for any word
+## 11. Help system  ✓ DONE (tests/112)
+- [x] `help ( xt -- fr )` — frame of a word's reference entry; generated from
+      docs/reference.md by tools/gen-help.py into src/c/help_table.c
 
 ## 12. Matrix — small, deferred-until-use
 - [ ] `argmax` / `argmin` — index (or `(i,j)`) of max/min element
