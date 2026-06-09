@@ -679,8 +679,8 @@ static void help_put(Interpreter *interp, int frame_handle, const char *key, con
 	frame_put(interp->objects[frame_handle], intern_symbol(interp, key), make_string(string_handle));
 }
 
-void p_help(Interpreter *interp) {
-	POP_XT(target_cfa, "help");
+void p_man(Interpreter *interp) {
+	POP_XT(target_cfa, "man");
 
 	const char *name = name_of(interp, target_cfa);
 	const HelpEntry *entry = NULL;
@@ -854,17 +854,28 @@ void p_qsemi(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_tick(Interpreter *interp) {
+static int parse_word_cfa(Interpreter *interp, const char *op) {
 	char *token = next_token(interp);
+	
 	if (!token) {
-		fail(interp, "' : expected a word name");
-		return;
+		fail(interp, "%s : expected a word name", op);
+		return 0;
 	}
 	int target_cfa = find(interp, token);
 	if (!target_cfa) {
-		fail(interp, "' : unknown word: %s", token);
-		return;
+		fail(interp, "%s : unknown word: %s", op, token);
+		return 0;
 	}
+
+	return target_cfa;
+}
+	
+
+void p_tick(Interpreter *interp) {
+	int target_cfa = parse_word_cfa(interp, "'");
+	if (!target_cfa)
+		return;
+
 	Val value = make_xt(target_cfa);
 	if (interp->compiling)
 		emit_val_literal(interp, value);
@@ -874,6 +885,15 @@ void p_tick(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_lookup(Interpreter *interp) {
+	int target_cfa = parse_word_cfa(interp, "lookup");
+	if (!target_cfa)
+		return;
+
+	push(interp, make_xt(target_cfa));
+
+	DISPATCH(interp);
+}
 static void enter_compile_scope(Interpreter *interp) {
 	if (interp->n_local_scopes >= MAX_LOCAL_SCOPES) {
 		fail(interp, "compile: locals nesting deeper than %d", MAX_LOCAL_SCOPES);

@@ -214,7 +214,8 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 | `:name` | `( -- sym )` | Symbol literal; interns the name at read time |
 | `string>symbol` | `( s -- sym )` | Intern a computed string as a symbol |
 | `[:` | `( -- xt )` | Open an anonymous quotation (closed by `:]`); compiles its body and pushes its xt |
-| `'` | `( -- xt )` | Read the following name; push its xt |
+| `'` | `( "name" -- xt )` | Parse the following word at compile time and push its xt (immediate; folds the xt in as a literal) |
+| `lookup` | `( "name" -- xt )` | Parse the following word at run time and push its xt — the non-immediate counterpart of `'` |
 | `execute` | `( xt -- … )` | Call the word at xt |
 | `inline` | — | Mark the most recent definition inline; future calls splice its body |
 | `forget` | — | Read the following name; truncate the dictionary back to before it |
@@ -467,7 +468,8 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 | `words` | `( -- )` | List all non-internal words, newest first, 8 per line | dict scan | none | O(\|dict\|) |
 | `see` | `( xt -- )` | Print a word's source (`: name … ;`), or `variable`/`symbol`/primitive form | dict scan | none | O(\|dict\|) |
 | `see-compiled` | `( xt -- )` | Disassemble a colon definition's compiled cells | body scan | none | O(body) |
-| `help` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
+| `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
+| `help` | `( "name" -- )` | lib.l4: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |
 | `bye` | `( -- )` | `exit(0)` | — | — | — |
 | `now` | `( -- f )` | `CLOCK_MONOTONIC` seconds as a float | 1 | none | O(1) |

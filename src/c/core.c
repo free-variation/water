@@ -2496,7 +2496,7 @@ int main(void) {
 
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
-	define_primitive(interp, "help", p_help, 0);
+	define_primitive(interp, "man", p_man, 0);
 	define_primitive(interp, "see-compiled", p_see_compiled, 0);
 
 	interp->vocab->exit_cfa = define_primitive(interp, "exit", p_exit, 0);
@@ -2536,6 +2536,7 @@ int main(void) {
 	define_primitive(interp, "string>symbol", p_string_to_symbol, 0);
 	define_primitive(interp, "forget", p_forget, 0);
 	define_primitive(interp, "'", p_tick, 1);
+	define_primitive(interp, "lookup", p_lookup, 0);
 	define_primitive(interp, "to", p_to, 1);
 	define_primitive(interp, ";", p_semicolon, 1);
 	define_primitive(interp, "inline", p_inline, 0);

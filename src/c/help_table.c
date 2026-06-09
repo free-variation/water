@@ -7,7 +7,7 @@ const HelpEntry help_entries[] = {
 	{ "!", "( fr sym/path val -- fr )", "Set by key or path, vivifying intermediates; mutates fr", "d log n", "realloc on growth; 1o per vivified frame", "O(d log n) amortized" },
 	{ "!i", "( arr i val -- arr )", "Store val at index i in place; leaves arr on the stack", "4", "none", "O(1)" },
 	{ "%", "( a b -- remainder quotient )", "floats only; truncating division: pushes a − trunc(a/b)·b then trunc(a/b); errors on zero", "4", "none", "O(1)" },
-	{ "'", "( -- xt )", "Read the following name; push its xt", NULL, NULL, NULL },
+	{ "'", "( \"name\" -- xt )", "Parse the following word at compile time and push its xt (immediate; folds the xt in as a literal)", NULL, NULL, NULL },
 	{ "*", "( a b -- a*b )", "float: multiply. set∩set: intersection. matrix: element-wise. scalar/matrix broadcast.", "3 (float)", "as +", "as +" },
 	{ "*!", "( m a -- m )", "in-place multiply", "3 + r×c", "none", "O(r×c)" },
 	{ "+", "( a b -- a+b )", "float: add. string+string: concat → new string. set+set: union → new set. matrix+matrix: element-wise → new matrix. scalar+matrix / matrix+scalar: broadcast → new matrix. array+array: defers to concat.", "3 (float)", "float none; string 1s + temp buffer; set 1o; matrix 1m(r×c); array 1a(m+n)", "float O(1); string O(|s|); set O(n log n); matrix O(r×c); array O(m+n)" },
@@ -122,7 +122,7 @@ const HelpEntry help_entries[] = {
 	{ "gc", "( -- )", "Force a mark-sweep now", "walks stacks + dict + roots, frees unmarked", "none", "O(objects + dict)" },
 	{ "gt", "( a b -- bool )", "greater-than", "3 (float)", "none", "same" },
 	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)" },
-	{ "help", "( xt -- fr )", "Frame of a word's reference entry (:word :effect :summary, plus :ops :alloc :order for runtime words); T_NONE if undocumented", "dict scan + log n", "1o + strings", "O(|dict|)" },
+	{ "help", "( \"name\" -- )", "lib.l4: parse the next word and print its man frame (lookup man .)", "dict scan + log n", "1o + strings + print", "O(|dict|)" },
 	{ "i-times", "( xt n -- )", "Run xt n times, pushing index 0..n-1 first", "2 + n·(1+xt)", "none", "O(n·xt)" },
 	{ "identity-matrix", "( n -- m )", "lib.l4: 1 swap diagonal-matrix", "n", "1m(n×n)", "O(n)" },
 	{ "if", "( flag -- )", "Branch past the then/else if flag is falsy", NULL, NULL, NULL },
@@ -136,7 +136,9 @@ const HelpEntry help_entries[] = {
 	{ "load", "( s -- )", "Run a source file as if typed; record it for reload", "file read + run", "input buffer", "O(file)" },
 	{ "load-image", "( s -- )", "Restore a binary snapshot, replacing current state", "deserialize all", "reallocates all objects", "O(objects)" },
 	{ "log", "( a -- log₁₀ a )", "log10", "2", "matrix 1m(r×c)", "same" },
+	{ "lookup", "( \"name\" -- xt )", "Parse the following word at run time and push its xt — the non-immediate counterpart of '", NULL, NULL, NULL },
 	{ "lt", "( a b -- bool )", "less-than", "3 (float)", "none", "same" },
+	{ "man", "( xt -- fr )", "Frame of a word's reference entry (:word :effect :summary, plus :ops :alloc :order for runtime words); T_NONE if undocumented", "dict scan + log n", "1o + strings", "O(|dict|)" },
 	{ "map", "( arr/set xt -- arr )", "Apply xt to each element; xt must net exactly one value", "2 + n·xt", "1a(n)", "O(n·xt)" },
 	{ "mapn", "( arr₁ … arr_N xt N -- arr )", "N-ary zip-map over equal-length arrays", "rows·(N+xt)", "1a(rows)", "O(rows·xt)" },
 	{ "match", "( s pat -- [ whole cap… ] | 0 )", "First (leftmost) match as a flat array: whole match then each capture; no match returns 0", "n", "1a + captures", "O(n)" },
@@ -254,4 +256,4 @@ const HelpEntry help_entries[] = {
 	{ "write-in", "( s proc -- )", "lib.l4: write the string to the child's :in stream", "write syscalls", "none", "O(|s|)" },
 };
 
-const int help_entry_count = 248;
+const int help_entry_count = 250;
