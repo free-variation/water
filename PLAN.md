@@ -293,15 +293,17 @@ Two refinements on the same `serve`:
 
 - **Prefork** — spawn N children all `accept`ing on the same socket; the
   kernel load-balances. Worker count is a `serve` parameter.
-- **Worker pool (multi-core)** — once OS-thread actors exist (below), the
-  accept loop hands each connection to a worker thread through a mailbox.
+- **Worker pool (multi-core)** — a pool of OS threads, each running its own
+  accept/handle loop on the shared listen socket; the kernel load-balances.
+  Prefork's model inside one process. (The single-thread async server from
+  the non-blocking I/O layer is the other scale-up.)
 
 **Running from the REPL.** `serve` `fork()`s the server and returns
 immediately; the REPL parent continues while the child runs its own accept
 loop. The server runs a snapshot of fork-time definitions. Live
-redefinition and shared in-process state need the co-scheduled green-task
-build (non-blocking listen socket + stdin under a `select`/`kqueue`/`epoll`
-readiness wait), which arrives with the worker-pool scale-up.
+redefinition and shared in-process state need the async build (non-blocking
+listen socket + stdin under a `kqueue`/`epoll` readiness wait), which arrives
+with the non-blocking I/O layer.
 
 To settle at implementation: request size cap and overflow behavior (413 vs
 drop); whether `recv-request` returns a structured error or a sentinel for
@@ -438,10 +440,9 @@ This needs one new primitive: an in-place set insert (`set-add!`) for
 incremental `assert` (`set_add` already exists internally).
 
 **Parallelism deferred.** A mutable trail can't be shared across parallel
-branches, so parallel logic search is the isolated-interpreter + mailbox
-model (below): one trail per worker, subproblems farmed out, solutions
-returned by message. The whole logic layer is built and validated
-single-threaded first.
+branches, so parallel logic search is the fork-join model (below): one trail
+per worker, subproblems farmed out, solutions gathered at the join. The whole
+logic layer is built and validated single-threaded first.
 
 Not in the first cut: constraint logic programming (finite domains,
 intervals); tabling / memoization; negation as failure (`\+`); cut (`!`).
@@ -450,9 +451,10 @@ intervals); tabling / memoization; negation as failure (`\+`); cut (`!`).
 
 ## Cooperative green threads (single OS thread)
 
-Lightweight tasks within one OS thread, scheduled cooperatively via the
-continuation machinery — for interleaved I/O-bound work (multiple network
-requests, multiple SQLite queries, REPL-driven simulations).
+Lightweight tasks within one OS thread, scheduled cooperatively on the
+continuation machinery. On their own they are coroutines: producer/consumer
+pipelines, suspendable simulations, anything that interleaves straight-line
+tasks without parallelism.
 
 **API:**
 
@@ -473,71 +475,107 @@ run-scheduler     ( -- )           \ drive the queue until empty
 
 **Cost:** ~50 lines on `reset` / `shift` / `resume`.
 
-Single-threaded: no parallelism, and a blocking syscall blocks the whole
-scheduler. Each OS thread (below) has its own green-thread scheduler;
-mailboxes work the same whether sender and receiver are green tasks in one
-thread or in different OS threads.
+Scheduling alone runs on one core and does not overlap blocking syscalls — a
+blocking `read` stalls every task. The I/O payoff arrives only with the
+non-blocking I/O layer below, which is built on top of this scheduler.
 
 ---
 
-## OS-thread parallelism via isolated interpreters + mailboxes
+## Non-blocking I/O
 
-Multi-core parallelism on the Erlang actor model: multiple OS threads, each
-owning its own `Interpreter`, no shared mutable state, communication via
-per-thread mailboxes that deep-copy across the boundary. The
-per-interpreter `Interpreter`/`Vocabulary` foundation is already in place,
-so this layers on.
+Turns the green-thread scheduler into an async runtime: a task that would
+block on a socket yields instead, and the scheduler resumes it once the
+descriptor is ready.
 
-**New primitives:**
+**Pieces:**
 
-- `xt spawn-thread ( -- thread-id )` — fork a fresh `Interpreter` whose
-  `Vocabulary` is cloned *tight* from the parent's compiled state (copy the
-  used `dict` region and pools, capacity = `here`), so the worker inherits
-  every word defined so far and the body xt's dict index resolves in the
-  clone. The two vocabularies then evolve independently. Returns a
-  `T_THREAD` handle.
-- `thread-id join ( -- )` — wait for the thread to finish.
-- `thread-id message send ( -- )` — enqueue the message in the target's
-  mailbox. Non-blocking (mailbox unbounded).
-- `receive ( -- message )` — pull the oldest message; block if empty.
-- `xt receive-match ( -- message )` — pull the first message satisfying
-  `xt` (an `( msg -- bool )` predicate), leaving others queued (selective
-  receive).
-- `self ( -- thread-id )` — this thread's ID.
+- Non-blocking sockets and streams (`O_NONBLOCK`); `read` / `write` yield on
+  `EAGAIN` rather than blocking.
+- A readiness wait in the scheduler (`kqueue` on macOS, `epoll` on Linux):
+  when no task is runnable, wait on the descriptors that parked tasks are
+  blocked on, then wake the ready ones.
 
-**Cross-thread value semantics** (deep-copied into the receiver's
-`objects[]`):
+This is what makes green threads worth having: a single-thread server
+multiplexing thousands of connections, written in straight-line blocking
+style with the suspension hidden underneath. It is a larger build than the
+scheduler itself.
 
-- `T_FLOAT`, `T_THREAD`: bit-for-bit.
-- `T_SYMBOL`: travels as its byte name, re-interned in the receiver.
-- `T_STRING`, `T_ARRAY`, `T_SET`, `T_FRAME`, `T_MATRIX`: deep copy.
-- `T_XT`, `T_ADDR`, `T_CONT`, `T_STREAM`: not transmissible (they reference
-  interpreter- or process-specific state); sending one is a type error.
+**Build order:** green threads first (the scheduler, on continuations), then
+non-blocking I/O on top.
 
-**Mailbox storage.** Each `Interpreter` has its own mailbox: a queue of Vals
-plus a mutex + condvar. Addresses are thread IDs indexing the live-thread
-table.
+---
 
-**Cost:**
+## Multi-core parallelism: fork-join over a shared immutable heap
 
-- Mailbox + send + receive + receive-match: ~80 lines.
-- `spawn-thread` / `join` / `self`: ~80 lines (pthread wrappers, tight
-  vocabulary clone, ID assignment).
-- Deep-copy on send: ~100 lines, one case per object kind.
-- Output coordination: a shared stdout mutex or a dedicated output thread.
+Multiple OS threads, each with its own `Interpreter` and a private GC'd heap
+for scratch. Work is structured as fork-join, not message passing: a
+coordinator splits the work, hands each worker a slice, and gathers results
+when they join. Shared data is immutable; mutable scratch stays per-worker;
+no locks on the hot path. Three layers, built in order, each broadening
+coverage.
 
-Total ~350 lines.
+**1. Shared immutable heap.** A global object store every interpreter can
+read, alongside its private heap.
 
-Constraints: no shared mutable state (use a service thread that owns state,
-reached by `self` + `send` + `receive`); no preemption within a thread;
-sending a large object copies it; mailboxes are unbounded (a `receive` that
-backs off when the mailbox is large is the user-level flow control).
+- `x freeze ( x -- gx )` deep-copies `x` once into the global store and
+  returns a global handle; reads after that are zero-copy from every thread.
+- A `Val` distinguishes a global handle from a local one with a single tag
+  bit, so dereference is `is_global(h) ? global[h] : interp->objects[h]`.
+- The symbol pool moves to the shared store (intern is a synchronized append,
+  reads lock-free), so frame keys resolve identically in every worker.
+- Frozen objects are immutable: the in-place mutators check the frozen flag
+  and refuse, or copy back into the local heap.
+- Append-only to start (bounded broadcast data); reclamation by epoch or
+  explicit free is a later refinement.
 
-**Build order:**
+This removes the broadcast cost — handing a large read-only input (a corpus,
+a matrix) to every worker is free.
 
-1. Green threads (~50 lines), on the existing continuations.
-2. spawn-thread + mailboxes (~350 lines), on the existing per-interpreter
-   interpreters.
+**2. Fork-join workers.** A pool of OS threads, each running the same xt over
+a disjoint slice of the work.
+
+- `items width xt parallel-map ( -- results )`: partition `items` into
+  `width` ranges, each worker runs `xt` over its range in its own heap,
+  results are copied back once at the join barrier and gathered in input
+  order.
+- A worker reads frozen input zero-copy and builds its result in its private
+  heap. The single result-copy at join is unavoidable for boxed results —
+  intermediates have to be GC'd locally — and is dwarfed by per-chunk compute
+  for the work this targets (text processing, parsing, per-record transforms).
+- `spawn-thread` clones the vocabulary *tight* from the parent's compiled
+  state (used `dict` region and pools, capacity = `here`) so the worker
+  inherits every word defined so far and the xt's dict index resolves.
+
+The broad workhorse: any chunked text / object / numeric work where
+per-element compute is non-trivial.
+
+**3. Disjoint-write shared buffer (numeric).** For tight numeric kernels whose
+result is unboxed doubles, where a copy-back would cost as much as the compute.
+
+- A preallocated shared mutable matrix or float buffer in the global store;
+  each worker gets a disjoint index/row range and writes only there, so the
+  writes need no lock.
+- Sound only for unboxed `double` output — a boxed result would put a
+  worker-local handle into a shared slot. The buffer is rooted by the
+  coordinator and exempt from worker GC for the parallel region.
+- Highest value as the threading *under* the built-in matrix kernels (matmul,
+  element-wise, reductions): the user writes ordinary matrix code and it
+  saturates the cores, with no per-element interpreter dispatch.
+
+**Cost (rough):**
+
+- Shared immutable heap + `freeze` + global-handle dereference + shared symbol
+  pool: ~250 lines, touching the object-deref hot path.
+- Fork-join `parallel-map` + tight vocabulary clone + join/gather: ~200 lines.
+- Disjoint-write buffer + threaded matrix kernels: ~150 lines.
+
+Constraints: shared data is immutable (mutating a frozen object errors or
+copies back); workers communicate only through frozen inputs and joined
+results — never live shared mutable state, except the disjoint numeric
+buffer; output coordination via a shared stdout mutex.
+
+**Build order within this section:** shared immutable heap, then fork-join
+`parallel-map`, then the disjoint-write numeric buffer.
 
 ---
 
