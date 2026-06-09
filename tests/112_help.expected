@@ -1,6 +1,8 @@
 0 ok
 0 ok
 0 ok
+0 ok
+0 ok
 1 
 0 ok
 1 
@@ -42,5 +44,20 @@
 0 ok
 0 ok
 1 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+{
+  :word sin
+  :effect ( a -- sin a )
+  :summary sine (radians)
+  :ops 2
+  :alloc matrix 1m(r×c)
+  :order same
+}
 0 ok
 0 ok

@@ -72,3 +72,4 @@ inline
 ( string -- proc) \ start a process from an argv string
 : run " +" split start-process ;
 
+: help lookup man . ;

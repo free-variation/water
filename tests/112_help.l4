@@ -1,31 +1,39 @@
-\ help ( xt -- fr ): frame of a word's reference entry, or null if undocumented.
+\ man ( xt -- fr ): frame of a word's reference entry, or null if undocumented.
+\ lookup ( "name" -- xt ): parse the next word at run time, push its xt.
+\ help ( "name" -- ): lib.l4 convenience, prints a word's man frame.
 
 \ a runtime word: the three base keys carry the documented strings
-' sin help :word @ "sin" = . cr                    \ 1
-' sin help :effect @ "( a -- sin a )" = . cr       \ 1
-' sin help :summary @ "sine (radians)" = . cr      \ 1
+' sin man :word @ "sin" = . cr                    \ 1
+' sin man :effect @ "( a -- sin a )" = . cr       \ 1
+' sin man :summary @ "sine (radians)" = . cr      \ 1
 
 \ a runtime word also carries the three cost keys, as strings
-' sin help :ops has? . cr                          \ 1
-' sin help :ops @ "2" = . cr                       \ 1
-' sin help :alloc has? . cr                        \ 1
-' sin help :order has? . cr                        \ 1
-' sin help size . cr                               \ 6
+' sin man :ops has? . cr                          \ 1
+' sin man :ops @ "2" = . cr                       \ 1
+' sin man :alloc has? . cr                        \ 1
+' sin man :order has? . cr                        \ 1
+' sin man size . cr                               \ 6
 
 \ a compile-time word has the base keys but no cost keys
-' if help :word @ "if" = . cr                      \ 1
-' if help :ops has? . cr                           \ 0
-' if help :alloc has? . cr                         \ 0
-' if help :order has? . cr                         \ 0
-' if help size . cr                                \ 3
+' if man :word @ "if" = . cr                      \ 1
+' if man :ops has? . cr                           \ 0
+' if man :alloc has? . cr                         \ 0
+' if man :order has? . cr                         \ 0
+' if man size . cr                                \ 3
 
 \ a lib.l4 word is documented like any other
-' 2dup help :summary @ "lib.l4: over over (inlined)" = . cr   \ 1
+' 2dup man :summary @ "lib.l4: over over (inlined)" = . cr   \ 1
 
-\ help resolves its own entry
-' help help :word @ "help" = . cr                  \ 1
+\ man resolves its own entry
+' man man :word @ "man" = . cr                    \ 1
 
 \ an undocumented word (the array-literal delimiter) returns null
-' [ help null = . cr                               \ 1
+' [ man null = . cr                               \ 1
+
+\ lookup parses the next word and pushes its xt
+lookup sin man :word @ "sin" = . cr               \ 1
+
+\ help parses the next word and prints its man frame
+help sin
 
 bye

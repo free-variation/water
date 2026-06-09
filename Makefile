@@ -10,6 +10,9 @@ PCRE2 = /opt/homebrew/opt/pcre2
 logicforth: $(SRCS) $(HDRS)
 	$(CC) $(CFLAGS) -I$(PCRE2)/include -o logicforth $(SRCS) $(PCRE2)/lib/libpcre2-8.a $(LDLIBS)
 
+src/c/help_table.c: docs/reference.md tools/gen-help.py
+	python3 tools/gen-help.py
+
 test: logicforth
 	sh tests/run.sh
 

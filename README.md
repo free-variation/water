@@ -157,7 +157,7 @@ The `shift-with` handler can also resume the captured continuation, giving the C
 - **`copy`** — deep copy of a value (strings, arrays, sets, frames, matrices).
 - **`now`** — current Unix time as a float (seconds since epoch).
 - **`see`** — prints a word's source definition; **`see-compiled`** disassembles its threaded body.
-- **`help`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes); `' word help`.
+- **`man`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes). **`help name`** prints it for the named word.
 - **`words`**, **`forget`**, **`bye`**, **`gc`**, **`clear`**, **`.s`**, **`.a`** — interpreter utilities.
 
 ## What's planned
