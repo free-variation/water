@@ -1,5 +1,6 @@
 !
 !i
+$
 %
 '
 *
@@ -37,6 +38,7 @@
 abs
 acos
 again
+amb
 and
 append-file
 array
@@ -58,6 +60,7 @@ cos
 cr
 delete-at
 depth
+deref
 destruct
 destruct-to
 dgemm-nn
@@ -90,6 +93,7 @@ f1-
 f^
 fabs
 facos
+fail
 fasin
 fatan
 fcos
@@ -132,6 +136,7 @@ load-image
 log
 lookup
 lt
+lvar
 man
 map
 mapn
@@ -219,6 +224,7 @@ to-slice!
 transpose
 truncate
 try-catch
+unify
 union
 until
 update-at
@@ -250,3 +256,4 @@ words
 write
 write-file
 write-in
+~

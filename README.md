@@ -1,7 +1,7 @@
 # logicforth
 
 A Forth-flavored language for matrix work, set/array manipulation,
-string/regex processing, and (eventually) logic programming. A compact C
+string/regex processing, and logic programming. A compact C
 interpreter built with `clang -O3`.
 
 ## Building and running
@@ -52,6 +52,10 @@ zero-dependency build is planned.
 : yield shift ;
 : producer 1 yield 2 yield 3 ;
 reset producer                          \ leaves (1, k) — next value via resume
+
+\ Logic: unify binds variables; amb is a committed choice
+[ 1 2 3 ] [ X Y Z ] ~ drop  X $ . Y $ . Z $ . cr   \ 1 2 3
+[: fail :] [: "fallback" :] amb .                  \ fallback
 ```
 
 ## What's currently implemented
@@ -152,6 +156,14 @@ Built in `lib.l4` on top of the continuation primitives:
 
 The `shift-with` handler can also resume the captured continuation, giving the Common Lisp restart pattern — exceptions can recover rather than just abort.
 
+### Logic
+
+Unification and committed choice, on the trail and the continuation machinery:
+
+- **Logic variables** — `lvar` makes a fresh one; a **capitalized identifier** is a logic-var literal: a persistent global at the REPL, or a fresh per-call variable when declared in `| X |` inside a definition or quotation.
+- **`unify`** (`~`) — unifies two terms, binding logic vars through a trail so they match: atoms by value, arrays element-wise, frames as open records (shared keys must unify, extras allowed); on a mismatch it fails. **`deref`** (`$`) follows a variable's binding chain.
+- **`amb`** / **`fail`** — committed choice: run the first branch; if it fails (a `unify` mismatch or an explicit `fail`), roll its bindings back through the trail and run the second, committing to whichever succeeds.
+
 ### Other
 
 - **`depth`**, **`roll`** — stack-manipulation primitives.
@@ -189,7 +201,9 @@ Tracked in `PLAN.md`, with design notes for each.
 
 ### Logic layer
 
-- **Unification + nondeterminism** — `T_LOGIC_VAR`, trail-based binding, a `unify` primitive, with `amb`, `fail`, `once`, `fresh`, `run` as library words over the continuation machinery. microKanren-flavored.
+- **Cons pattern in `unify`** — head/tail destructuring inside an array literal (candidate `[ H :: T ]`), both directions.
+- **`_` wildcard** — a fresh anonymous variable that unifies with anything.
+- **Fact database** — relations as arrays of rows, queried by a `unify`-loop with per-column indices; `assert` / `retract` / `query`.
 
 ### Concurrency
 

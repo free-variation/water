@@ -1,0 +1,47 @@
+\ Committed amb ( xt1 xt2 -- ): run xt1; if it fails (explicit fail or a unify
+\ mismatch) roll back its bindings and run xt2.  Once a branch succeeds the
+\ choice is committed -- a later failure does NOT reopen it.  ~ is unify, $ deref.
+
+\ === first branch succeeds: commits, branch 2 never runs ===
+[: 1 :] [: 2 :] amb . cr                          \ 1
+[: 11 . :] [: 99 . :] amb cr                      \ 11   (branch 2 never prints)
+
+\ === a branch may leave a value ===
+[: 3 4 + :] [: 0 :] amb . cr                      \ 7
+
+\ === branch 1 fails via explicit fail -> branch 2 runs ===
+[: fail :] [: 7 :] amb . cr                       \ 7
+
+\ === branch 1 fails via unify mismatch -> branch 2 runs ===
+[: 1 2 ~ :] [: 8 :] amb . cr                      \ 8
+
+\ === trail rollback: branch 1 binds then fails, undone, branch 2 binds ===
+: t  | X |  [: X 1 ~ drop fail :] [: X 2 ~ drop :] amb  X $ . ;
+t cr                                              \ 2
+
+\ === branch 1 succeeds with a binding: it persists ===
+: u  | X |  [: X 5 ~ drop :] [: X 9 ~ drop :] amb  X $ . ;
+u cr                                              \ 5
+
+\ === nested amb in branch 2 (after branch 1 fails) ===
+[: fail :] [: [: fail :] [: 3 :] amb :] amb . cr  \ 3
+
+\ === nested amb in branch 1 (inner first branch wins) ===
+[: [: 5 :] [: 6 :] amb :] [: 9 :] amb . cr        \ 5
+
+\ === a def's local amb is fresh per call ===
+: pick  | X >n |  [: X n ~ drop :] [: X 0 ~ drop :] amb  X $ ;
+3 pick . cr                                       \ 3
+7 pick . cr                                       \ 7
+
+\ === sequential ambs each commit independently ===
+[: 1 :] [: 2 :] amb  [: 3 :] [: 4 :] amb  + . cr  \ 4
+
+\ === both branches fail -> top-level error ===
+[: fail :] [: fail :] amb                         \ error
+
+\ === commitment boundary: a downstream mismatch does NOT reopen a committed amb ===
+: c  | X |  [: X 1 ~ drop :] [: X 2 ~ drop :] amb  X 5 ~ ;
+c                                                 \ error: X committed to 1, no live amb
+
+bye
