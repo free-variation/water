@@ -30,6 +30,7 @@ typedef int64_t cell;
 #define SYMBOL_POOL 			262144
 #define SYMBOL_HASH_SIZE 		262144
 #define SIDESTACK_DEPTH 		1024
+#define TRAIL_DEPTH				65536
 #define MAX_LOADED_FILES 		64
 #define MAX_GC_ROOTS 			64
 #define LOCAL_NAMES_POOL_SIZE	8192
@@ -52,7 +53,8 @@ typedef enum {
 	T_ADDR,
 	T_CONT,
 	T_MARK,
-	T_STREAM
+	T_STREAM,
+	T_LOGIC_VAR
 } Tag;
 
 typedef union {
@@ -102,6 +104,7 @@ static inline Val make_xt(int cfa) { return make_tagged(T_XT, cfa); }
 static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_index); }
 static inline Val make_stream(int file_descriptor) {return make_tagged(T_STREAM, file_descriptor); }
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
+static inline Val make_logic_var(int handle) { return make_tagged(T_LOGIC_VAR, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
 static inline Val make_bool(int is_true) { return make_float(is_true ? 1.0 : 0.0); }
 
@@ -117,7 +120,8 @@ typedef enum {
 	OBJECT_ARRAY,
 	OBJECT_FRAME,
 	OBJECT_MATRIX,
-	OBJECT_CONTINUATION
+	OBJECT_CONTINUATION,
+	OBJECT_LOGIC_VAR
 } ObjectKind;
 
 typedef struct {
@@ -141,6 +145,10 @@ typedef struct {
 			int resume_ip;
 			int local_base_offset;
 		} continuation;
+		struct {
+			Val binding;
+			int id;
+		} logic_var;
 	};
 } Object;
 
@@ -184,6 +192,8 @@ typedef struct Interpreter {
 	Val side_stack[SIDESTACK_DEPTH];
 	int side_dsp;
 	int local_base;
+	int *trail;
+	int trail_top, trail_cap;
 
 	int ip;
 	int running;
@@ -214,7 +224,7 @@ typedef struct Interpreter {
 	char *loaded_files[MAX_LOADED_FILES];
 	int n_loaded_files, load_depth;
 
-	int unwinding, unwind_target, next_mark_id;
+	int unwinding, unwind_target, next_mark_id, next_lvar_id;
 
 	char error_message[256];
 	char token_buffer[INPUT_BUFFER_SIZE];
@@ -415,6 +425,7 @@ int object_new_set(Interpreter *interp);
 int object_new_array(Interpreter *interp, int num_elements);
 int object_new_frame(Interpreter *interp);
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns);
+int object_new_logic_var(Interpreter *interp);
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip);
 int val_cmp(Interpreter *interp, Val left, Val right);
 void set_add(Interpreter *interp, int set_handle, Val value);
@@ -544,6 +555,9 @@ void p_and(Interpreter *interp);
 void p_or(Interpreter *interp);
 void p_not(Interpreter *interp);
 void p_null(Interpreter *interp);
+void p_lvar(Interpreter *interp);
+void p_trail_mark(Interpreter *interp);
+void p_trail_undo(Interpreter *interp);
 void p_dup(Interpreter *interp);
 void p_drop(Interpreter *interp);
 void p_swap(Interpreter *interp);
@@ -760,6 +774,7 @@ void p_wait(Interpreter *interp);
 void p_stop_process(Interpreter *interp);
 void p_running(Interpreter *interp);
 Interpreter *interp_new(void);
+int interp_bootstrap(Interpreter *interp);
 
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 

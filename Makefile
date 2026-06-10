@@ -2,7 +2,7 @@ CC     = clang
 CFLAGS = -O3 -march=native -Wall -Wextra
 LDLIBS = -lm
 
-SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c
+SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c
 HDRS = src/c/logicforth.h
 
 PCRE2 = /opt/homebrew/opt/pcre2

@@ -1830,3 +1830,84 @@ void p_read(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_close(Interpreter *interp) {
+	PEEK_AT(stream_val, 0, "close");
+	if (VAL_TAG(stream_val) != T_STREAM) {
+		fail(interp, "close: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
+		return;
+	}
+	close((int)VAL_DATA(stream_val));
+	interp->dsp -= 1;
+
+	DISPATCH(interp);
+}
+
+void p_wait(Interpreter *interp) {
+	POP_INT(pid, "wait", "pid");
+
+	int status;
+	pid_t result;
+	do {
+		result = waitpid((pid_t)pid, &status, 0);
+	} while (result < 0 && errno == EINTR);
+
+	if (result < 0) {
+		fail(interp, "wait: %s", strerror(errno));
+		return;
+	}
+
+	int code;
+	if (WIFEXITED(status))
+		code = WEXITSTATUS(status);
+	else if (WIFSIGNALED(status))
+		code = 128 + WTERMSIG(status);
+	else
+		code = -1;
+	push(interp, make_float((double)code));
+
+	DISPATCH(interp);
+}
+
+void p_stop_process(Interpreter *interp) {
+	POP_INT(pid, "stop", "pid");
+
+	kill((pid_t)pid, SIGKILL);
+
+	int status;
+	pid_t result;
+	do {
+		result = waitpid((pid_t)pid, &status, 0);
+	} while (result < 0 && errno == EINTR);
+
+	if (result < 0) {
+		fail(interp, "stop: %s", strerror(errno));
+		return;
+	}
+
+	int code;
+	if (WIFEXITED(status))
+		code = WEXITSTATUS(status);
+	else if (WIFSIGNALED(status))
+		code = 128 + WTERMSIG(status);
+	else
+		code = -1;
+	push(interp, make_float((double)code));
+
+	DISPATCH(interp);
+}
+
+void p_running(Interpreter *interp) {
+	POP_INT(pid, "running?", "pid");
+
+	siginfo_t info;
+	info.si_pid = 0;
+	int result;
+	do {
+		result = waitid(P_PID, (id_t)pid, &info, WEXITED | WNOHANG | WNOWAIT);
+	} while (result < 0 && errno == EINTR);
+
+	push(interp, make_bool(result == 0 && info.si_pid == 0));
+
+	DISPATCH(interp);
+}
+

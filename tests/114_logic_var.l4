@@ -1,0 +1,21 @@
+\ logic variables: allocation, printing, identity, GC survival.
+\ (deref / unify cases get added as those land.)
+
+\ a fresh logic var prints as _N (first of the session is _1)
+lvar . cr                                  \ _1
+
+\ distinct lvars are not equal; a var equals itself
+lvar lvar = . cr                           \ 0
+lvar dup = . cr                            \ 1
+
+\ identity holds through storage
+lvar to A  A A = . cr                      \ 1
+lvar to B  A B = . cr                      \ 0
+
+\ a logic var on the stack survives GC
+lvar gc dup = . cr                         \ 1
+
+\ a logic var inside an array survives GC (mark reaches into the array)
+[ lvar ] gc dup 0 @i swap 0 @i = . cr      \ 1
+
+bye

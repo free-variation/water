@@ -351,24 +351,28 @@ fact-database design.
 
 **New machinery in C:**
 
-- `T_LOGIC_VAR` tag, `OBJECT_LOGIC_VAR` kind carrying a name (for display)
-  and a current binding (Val, or `T_NONE` if unbound).
+- `T_LOGIC_VAR` tag, `OBJECT_LOGIC_VAR` kind carrying an integer id (for
+  display, e.g. `_3`) and a current binding (Val, or `T_NONE` if unbound).
 - `make_logic_var()` / `object_new_logic_var()`.
-- A trail stack of `(var, prior_binding)` pairs; every binding `unify`
-  makes is recorded. Marks let `fail` undo to a known point.
+- A growable trail of bound-var handles; every binding `unify` makes is
+  recorded, and undo resets each var to unbound (only unbound vars are ever
+  bound, so the prior binding is always none). Marks let `fail` undo to a
+  known point.
 
 **Primitives:**
 
 - `lvar ( -- v )` — fresh logic variable.
 - `deref ( v -- val )` — follow the binding chain; returns `v` if unbound,
   else the (recursively dereffed) bound value.
-- `unify ( a b -- bool )` — try to unify; truthy on success (new bindings
-  trailed), falsy on failure. Atoms by `val_cmp`. Arrays unify structurally
-  and against a `[ H | T ]` cons pattern: an array of length ≥ 1 unifies
-  with `H` bound to the head and `T` to a fresh tail array. Works both
-  directions — decomposes a bound array, constructs from bound `H`/`T`.
-  This is the sole head/tail mechanism. Sets, matrices, xt's, continuations
-  unify by identity.
+- `unify ( a b -- unified )` — a goal. On success it leaves the unified
+  (dereffed) term and trails the new bindings; on a mismatch it `fail`s
+  rather than returning false — failure unwinds bindings to the nearest
+  choice point and resumes it, or reports false at the top level. Atoms by
+  `val_cmp`. Arrays unify structurally and against a `[ H | T ]` cons
+  pattern: an array of length ≥ 1 unifies with `H` bound to the head and `T`
+  to a fresh tail array. Works both directions — decomposes a bound array,
+  constructs from bound `H`/`T`. This is the sole head/tail mechanism. Sets,
+  matrices, xt's, continuations unify by identity.
 - **Frames unify as open records** — the logic-var destructuring mechanism
   for frames. A pattern frame constrains only the keys it names:
   `{ :name N :age A } { :name "Ann" :age 30 } unify` binds `N` and `A`;
@@ -380,6 +384,18 @@ fact-database design.
   `destruct-to` stay as the non-logic-var path.
 - `trail-mark ( -- m )` and `trail-undo ( m -- )` — manage the trail across
   choice points; `fail` calls `trail-undo`.
+
+**Writing logic vars — capitalization.** A capitalized identifier is a logic
+variable. It auto-vivifies to a variable holding a fresh `lvar` and takes
+ordinary variable scope: a local inside a definition (fresh on each call,
+shared across its occurrences in that call — Prolog's per-clause freshness
+for free) or a global at the REPL. REPL globals persist: a bound `X` keeps
+its binding across lines rather than resetting per query. Capitalization is
+reserved language-wide for this, so a capitalized token never raises an
+"unknown word" error — it becomes a fresh var.
+
+`_` is the anonymous wildcard: a fresh var that unifies with anything and
+binds nothing, distinct from `null` (the none value).
 
 **Library words (`lib.l4`, on `reset` / `shift` / `resume`):**
 
@@ -395,13 +411,11 @@ fact-database design.
 **Sample:**
 
 ```forth
-lvar lvar lvar                       \ X Y Z
-[ 1 2 3 ] [ X Y Z ] unify  drop      \ success
+[ 1 2 3 ] [ X Y Z ] unify  drop      \ binds X=1 Y=2 Z=3, drops the term
 X deref . Y deref . Z deref .        \ 1 2 3
 
-lvar  [: 1 over unify drop :]
-      [: 2 over unify drop :] amb
-      deref .                         \ 1 (first branch wins)
+[: X 1 unify drop :] [: X 2 unify drop :] amb
+X deref .                            \ 1 (first branch wins)
 ```
 
 **Cost:** ~140 lines of C (logic var, trail, `unify` with the `[H|T]` cons
@@ -410,12 +424,15 @@ pattern and open-record frames) plus ~30 lines of `lib.l4` for `amb` /
 
 **Handle at implementation:**
 
+- The `[ H | T ]` cons pattern needs a spelling: `|` is the locals
+  delimiter, so the head/tail separator inside an array literal is a distinct
+  token (candidate `::`, e.g. `[ H :: T ]`).
 - Occur check skipped (`X = [X]` makes a cyclic term) — match Prolog's
   default; document it.
 - Variable keys in frames not allowed; only values can be logic variables.
-- `forget` interaction: logic vars survive `forget`, but their namepool
-  offsets can be invalidated — copy the name into the object's storage, or
-  stop displaying names after `forget`.
+- `forget` interaction: logic vars survive `forget` cleanly — their display
+  id is self-contained in the object, with no dictionary or name-pool
+  reference to invalidate.
 - Image save/load: logic-var objects serialize like any other; the trail is
   session state and doesn't persist.
 

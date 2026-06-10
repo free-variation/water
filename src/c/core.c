@@ -92,6 +92,13 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 	return slot;
 }
 
+int object_new_logic_var(Interpreter *interp) {
+	NEW_OBJECT(obj, OBJECT_LOGIC_VAR);
+	obj->logic_var.binding = make_tagged(T_NONE, 0);
+	obj->logic_var.id = interp->next_lvar_id++;
+	return slot;
+}
+
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip) {
 	NEW_OBJECT(obj, OBJECT_CONTINUATION);
 	obj->continuation.return_len = return_len;
@@ -117,7 +124,7 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 						  	return 1;
 						  return 0;
 					  }
-		case T_SYMBOL: case T_XT: case T_ADDR:
+		case T_SYMBOL: case T_XT: case T_ADDR: case T_LOGIC_VAR:
 
 					  if (VAL_DATA(left) < VAL_DATA(right))
 					  	return -1;
@@ -340,6 +347,7 @@ void print_val(Interpreter *interp, Val value) {
 		case T_XT: printf("<xt %lld>", (long long)VAL_DATA(value)); break;
 		case T_ADDR: printf("<addr %lld>", (long long)VAL_DATA(value)); break;
 		case T_STREAM: printf("<stream %lld>", (long long)VAL_DATA(value)); break;
+		case T_LOGIC_VAR: printf("_%d", (int)interp->objects[VAL_DATA(value)]->logic_var.id); break;
 		case T_MATRIX: {
 						   Object *matrix = interp->objects[VAL_DATA(value)];
 						   print_depth_enter();
@@ -503,6 +511,7 @@ void print_val_compact(Interpreter *interp, Val value) {
 				   }
 		case T_ADDR: printf("@%lld", (long long)VAL_DATA(value)); break;
 		case T_CONT: fputs("k", stdout); break;
+		case T_LOGIC_VAR: printf("_%d", (int)interp->objects[VAL_DATA(value)]->logic_var.id); break;
 		default: fputs("?", stdout); break;
 	}
 }
@@ -1463,7 +1472,8 @@ void mark_value(Interpreter *interp, Val value) {
 			VAL_TAG(value) != T_ARRAY &&
 			VAL_TAG(value) != T_FRAME &&
 			VAL_TAG(value) != T_MATRIX &&
-			VAL_TAG(value) != T_CONT) return;
+			VAL_TAG(value) != T_CONT &&
+			VAL_TAG(value) != T_LOGIC_VAR) return;
 
 	int handle = (int)VAL_DATA(value);
 	if (handle < 0 || handle >= MAX_OBJECTS || !interp->objects[handle] || interp->object_mark[handle])
@@ -1480,6 +1490,8 @@ void mark_value(Interpreter *interp, Val value) {
 	} else if (obj->kind == OBJECT_CONTINUATION) {
 		for (int i = 0; i < obj->continuation.return_len; i++)
 			mark_value(interp, obj->continuation.return_slice[i]);
+	} else if (obj->kind == OBJECT_LOGIC_VAR) {
+		mark_value(interp, obj->logic_var.binding);
 	}
 }
 
@@ -2027,6 +2039,10 @@ void p_save_image(Interpreter *interp) {
 								w_i32(file, obj->continuation.resume_ip);
 								w_i32(file, obj->continuation.local_base_offset);
 								break;
+			case OBJECT_LOGIC_VAR:
+								w_val(file, obj->logic_var.binding);
+								w_i32(file, obj->logic_var.id);
+								break;
 		}
 	}
 
@@ -2047,6 +2063,7 @@ void free_one_object(Object *obj) {
 		case OBJECT_FRAME: free(obj->frame.keys); free(obj->frame.values); break;
 		case OBJECT_MATRIX: free(obj->matrix.elements); break;
 		case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
+		case OBJECT_LOGIC_VAR: break;
 	}
 	free(obj);
 }
@@ -2312,6 +2329,16 @@ void p_load_image(Interpreter *interp) {
 										  obj->continuation.local_base_offset = local_base_offset;
 										  break;
 									  }
+			case OBJECT_LOGIC_VAR: {
+									  int32_t id;
+									  if (!r_val(file, &obj->logic_var.binding) || !r_i32(file, &id)) {
+										  free(obj);
+										  fail(interp, "%s: truncated logic var", filename);
+										  goto done;
+									  }
+									  obj->logic_var.id = id;
+									  break;
+								  }
 			default:
 									  free(obj);
 									  fail(interp, "%s: unknown object kind %u", filename, kind);
@@ -2347,15 +2374,16 @@ Interpreter *interp_new(void) {
 	interp->vocab->source_here = 1;
 	interp->next_mark_id = 1;
 
+	interp->next_lvar_id = 1;
+	interp->trail = malloc(sizeof(int) * TRAIL_DEPTH);
+	interp->trail_cap = TRAIL_DEPTH;
+
 	interp->vocab->false_symbol = intern_symbol(interp, "0");
 	interp->vocab->true_symbol = intern_symbol(interp, "1");
 	return interp;
 }
 
-int main(void) {
-	Interpreter *interp = interp_new();
-	signal(SIGPIPE, SIG_IGN);
-
+int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "+", p_add, 0);
 	define_primitive(interp, "-", p_sub, 0);
 	define_primitive(interp, "*", p_mul, 0);
@@ -2413,6 +2441,9 @@ int main(void) {
 	define_primitive(interp, "or", p_or, 0);
 	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, "null", p_null, 0);
+	define_primitive(interp, "lvar", p_lvar, 0);
+	define_primitive(interp, "trail-mark", p_trail_mark, 0);
+	define_primitive(interp, "trail-undo", p_trail_undo, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
 	define_primitive(interp, "cr", p_cr, 0);
@@ -2626,6 +2657,14 @@ int main(void) {
 	}
 
 	interp->vocab->lib_end_latest_cfa = interp->vocab->latest_cfa;
+	return 0;
+}
+
+int main(void) {
+	Interpreter *interp = interp_new();
+	signal(SIGPIPE, SIG_IGN);
+	if (interp_bootstrap(interp))
+		return 1;
 
 	printf("logicforth %s\n", VERSION);
 	char line[1024];
@@ -2670,83 +2709,3 @@ int main(void) {
 	return 0;
 }
 
-void p_close(Interpreter *interp) {
-	PEEK_AT(stream_val, 0, "close");
-	if (VAL_TAG(stream_val) != T_STREAM) {
-		fail(interp, "close: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
-		return;
-	}
-	close((int)VAL_DATA(stream_val));
-	interp->dsp -= 1;
-
-	DISPATCH(interp);
-}
-
-void p_wait(Interpreter *interp) {
-	POP_INT(pid, "wait", "pid");
-
-	int status;
-	pid_t result;
-	do {
-		result = waitpid((pid_t)pid, &status, 0);
-	} while (result < 0 && errno == EINTR);
-
-	if (result < 0) {
-		fail(interp, "wait: %s", strerror(errno));
-		return;
-	}
-
-	int code;
-	 if (WIFEXITED(status))
-		 code = WEXITSTATUS(status);
-	 else if (WIFSIGNALED(status))
-		 code = 128 + WTERMSIG(status);
-	 else
-		 code = -1;
-	 push(interp, make_float((double)code));
-
-	 DISPATCH(interp);
-}
-		
-void p_stop_process(Interpreter *interp) {
-	POP_INT(pid, "stop", "pid");
-
-	kill((pid_t)pid, SIGKILL);
-	
-	int status;
-	pid_t result;
-	do {
-		result = waitpid((pid_t)pid, &status, 0);
-	} while (result < 0 && errno == EINTR);
-
-	if (result < 0) {
-		fail(interp, "stop: %s", strerror(errno));
-		return;
-	}
-
-	int code;
-	if (WIFEXITED(status))
-		code = WEXITSTATUS(status);
-	else if (WIFSIGNALED(status))
-		code = 128 + WTERMSIG(status);
-	else
-		code = -1;
-	push(interp, make_float((double)code));
-
-	DISPATCH(interp);
-}
-
-void p_running(Interpreter *interp) {
-	POP_INT(pid, "running?", "pid");
-
-	siginfo_t info;
-	info.si_pid = 0;
-	int result;
-	do {
-		result = waitid(P_PID, (id_t)pid, &info, WEXITED | WNOHANG | WNOWAIT);
-	} while (result < 0 && errno == EINTR);
-
-	push(interp, make_bool(result == 0 && info.si_pid == 0));
-
-	DISPATCH(interp);
-}
