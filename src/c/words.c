@@ -516,21 +516,19 @@ void p_execute(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-static void plant_prompt(Interpreter *interp, int kind) {
-	rpush(interp, make_tagged(T_MARK, (interp->next_mark_id++ << 1) | kind));
+int push_prompt(Interpreter *interp, int kind) {
+	Val mark = make_tagged(T_MARK, (interp->next_mark_id++ << 1) | kind);
+	rpush(interp, mark);
+
+	return (int)VAL_DATA(mark);
 }
 
 void p_reset(Interpreter *interp) {
-	plant_prompt(interp, PROMPT_EXCEPTION);
+	push_prompt(interp, PROMPT_EXCEPTION);
 
 	DISPATCH(interp);
 }
 
-void p_choice_reset(Interpreter *interp) {
-	plant_prompt(interp, PROMPT_CHOICE);
-
-	DISPATCH(interp);
-}
 
 static int find_prompt(Interpreter *interp, int kind) {
 	int mark_index = interp->rsp - 1;
@@ -589,7 +587,6 @@ void backtrack(Interpreter *interp) {
 		return;
 	
 	unwind_to(interp, mark_index);
-	push(interp, make_bool(1));
 	interp->unwinding = 1;
 }
 

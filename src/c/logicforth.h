@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.3.0"
+#define VERSION "0.4.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,13 +30,12 @@ typedef int64_t cell;
 #define SYMBOL_POOL 			262144
 #define SYMBOL_HASH_SIZE 		262144
 #define SIDESTACK_DEPTH 		1024
-#define TRAIL_DEPTH				65536
+#define BIND_TRAIL_DEPTH		65536
 #define MAX_LOADED_FILES 		64
 #define MAX_GC_ROOTS 			64
 #define LOCAL_NAMES_POOL_SIZE	8192
 #define MAX_LOCAL_NAMES			256
 #define MAX_LOCAL_SCOPES		64
-
 #define TRAMPOLINE_SLOT			0
 #define DICT_RESERVED			3
 #define PROMPT_EXCEPTION		0
@@ -195,8 +194,8 @@ typedef struct Interpreter {
 	Val side_stack[SIDESTACK_DEPTH];
 	int side_dsp;
 	int local_base;
-	int *trail;
-	int trail_top, trail_cap;
+	int *bind_trail;
+	int bind_trail_top, bind_trail_cap;
 
 	int ip;
 	int running;
@@ -561,8 +560,7 @@ void p_null(Interpreter *interp);
 void p_lvar(Interpreter *interp);
 void p_unify(Interpreter *interp);
 void p_deref(Interpreter *interp);
-void p_trail_mark(Interpreter *interp);
-void p_trail_undo(Interpreter *interp);
+void p_amb(Interpreter *interp);
 void p_dup(Interpreter *interp);
 void p_drop(Interpreter *interp);
 void p_swap(Interpreter *interp);
@@ -629,8 +627,8 @@ void p_union(Interpreter *interp);
 void p_intersect(Interpreter *interp);
 void p_difference(Interpreter *interp);
 void p_execute(Interpreter *interp);
+int push_prompt(Interpreter *interp, int kind);
 void p_reset(Interpreter *interp);
-void p_choice_reset(Interpreter *interp);
 void p_fail(Interpreter *interp);
 int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index);
 void backtrack(Interpreter *interp);

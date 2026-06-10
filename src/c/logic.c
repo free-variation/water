@@ -19,30 +19,20 @@ Val deref(Interpreter *interp, Val value) {
 }
 
 static void bind_var(Interpreter *interp, int var_handle, Val value) {
-	if (interp->trail_top == interp->trail_cap) {
-		interp->trail_cap *= 2;
-		interp->trail = realloc(interp->trail, sizeof(int) * (size_t)interp->trail_cap);
+	if (interp->bind_trail_top == interp->bind_trail_cap) {
+		interp->bind_trail_cap *= 2;
+		interp->bind_trail = realloc(interp->bind_trail, sizeof(int) * (size_t)interp->bind_trail_cap);
 	}
 
 	interp->objects[var_handle]->logic_var.binding = value;
-	interp->trail[interp->trail_top++] = var_handle;
+	interp->bind_trail[interp->bind_trail_top++] = var_handle;
 }
 
-void p_trail_mark(Interpreter *interp) {
-	push(interp, make_float((double)interp->trail_top));
-
-	DISPATCH(interp);
-}
-
-void p_trail_undo(Interpreter *interp) {
-	POP_INT(mark, "trail-undo", "mark");
-
-	while (interp->trail_top > mark) {
-		int var_handle = interp->trail[--interp->trail_top];
+static void trail_undo_to(Interpreter *interp, int mark) {
+	while (interp->bind_trail_top > mark) {
+		int var_handle = interp->bind_trail[--interp->bind_trail_top];
 		interp->objects[var_handle]->logic_var.binding = make_tagged(T_NONE, 0);
 	}
-
-	DISPATCH(interp);
 }
 
 int unify(Interpreter *interp, Val left_val, Val right_val) {
@@ -52,7 +42,7 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 	if (VAL_TAG(left_val) == T_LOGIC_VAR && VAL_TAG(right_val) == T_LOGIC_VAR
 			&& VAL_DATA(left_val) == VAL_DATA(right_val))
 		return 1;
-	
+
 	if (VAL_TAG(left_val) == T_LOGIC_VAR) {
 		bind_var(interp, (int)VAL_DATA(left_val), right_val);
 		return 1;
@@ -78,7 +68,7 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
 		Object *left = interp->objects[VAL_DATA(left_val)];
 		Object *right = interp->objects[VAL_DATA(right_val)];
-		
+
 		int i = 0, j = 0;
 		while (i < left->len && j < right->len) {
 			cell left_key = left->frame.keys[i];
@@ -117,3 +107,31 @@ void p_deref(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
+void p_amb(Interpreter *interp) {
+	POP_XT(branch2, "amb");
+	POP_XT(branch1, "amb");
+
+	int saved_dsp = interp->dsp;
+	int saved_trail = interp->bind_trail_top;
+
+	int mark_index = interp->rsp;
+	int mark_id = push_prompt(interp, PROMPT_CHOICE);
+
+	execute_cfa(interp, branch1);		
+
+	if (interp->unwinding && interp->unwind_target == mark_id) {
+		interp->unwinding = 0;
+		interp->rsp = mark_index;
+		interp->dsp = saved_dsp;
+		trail_undo_to(interp, saved_trail);
+
+		execute_cfa(interp, branch2);
+	} else if (!interp->unwinding)
+		interp->rsp = mark_index;
+
+
+	DISPATCH(interp);
+}
+
+

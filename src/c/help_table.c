@@ -6,6 +6,7 @@
 const HelpEntry help_entries[] = {
 	{ "!", "( fr sym/path val -- fr )", "Set by key or path, vivifying intermediates; mutates fr", "d log n", "realloc on growth; 1o per vivified frame", "O(d log n) amortized" },
 	{ "!i", "( arr i val -- arr )", "Store val at index i in place; leaves arr on the stack", "4", "none", "O(1)" },
+	{ "$", "( v -- val )", "lib.l4: deref (inlined)", "d", "none", "O(d)" },
 	{ "%", "( a b -- remainder quotient )", "floats only; truncating division: pushes a − trunc(a/b)·b then trunc(a/b); errors on zero", "4", "none", "O(1)" },
 	{ "'", "( \"name\" -- xt )", "Parse the following word at compile time and push its xt (immediate; folds the xt in as a literal)", NULL, NULL, NULL },
 	{ "*", "( a b -- a*b )", "float: multiply. set∩set: intersection. matrix: element-wise. scalar/matrix broadcast.", "3 (float)", "as +", "as +" },
@@ -43,6 +44,7 @@ const HelpEntry help_entries[] = {
 	{ "abs", "( a -- |a| )", "fabs", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
 	{ "acos", "( a -- acos a )", "inverse cosine", "2", "matrix 1m(r×c)", "same" },
 	{ "again", "—", "Unconditional branch back to begin", NULL, NULL, NULL },
+	{ "amb", "( xt1 xt2 -- … )", "Run xt1; if it fails (a unify mismatch or fail), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds.", "xt1", "none", "O(xt1 + xt2)" },
 	{ "and", "( a b -- bool )", "logical and of truthiness", "3", "none", "O(1)" },
 	{ "append-file", "( s path -- )", "Open in append mode, write the string's bytes", "file write", "none", "O(|s|)" },
 	{ "array", "( v₀ … vₙ₋₁ n -- arr )", "Gather the top n values into an array", "2 + n", "1a(n)", "O(n)" },
@@ -64,6 +66,7 @@ const HelpEntry help_entries[] = {
 	{ "cr", "( -- )", "Print a newline", "1", "none", "O(1)" },
 	{ "delete-at", "( fr sym/path -- fr )", "Remove a key (errors if absent); mutates fr", "n", "none", "O(n)" },
 	{ "depth", "( -- n )", "Push current depth", "1", "none", "O(1)" },
+	{ "deref", "( v -- val )", "Follow a logic var's binding chain: v if unbound, else the recursively dereffed value", "d", "none", "O(d)" },
 	{ "destruct", "( arr/set/fr -- v… )", "Spread elements onto the stack; a frame spreads alternating sym/value", "1 + n", "none", "O(n)" },
 	{ "destruct-to", "( source targets -- )", "source and target arrays; assign each source element to the variable named by the corresponding target (symbol or xt), creating it if needed", "2 + n", "may create variables", "O(n)" },
 	{ "dgemm-nn", "( α A B β C -- R )", "R = α·A·B + β·C, ikj fast path", "5 + m·k·n", "1m(m×n)", "O(m·k·n)" },
@@ -96,6 +99,7 @@ const HelpEntry help_entries[] = {
 	{ "f^", "( a b -- a^b ) ⚠", "pow", "2", "none", "O(1)" },
 	{ "fabs", "( a -- |a| ) ⚠", "in place", "1", "none", "O(1)" },
 	{ "facos", "( a -- acos a ) ⚠", "inverse cosine, in place", "1", "none", "O(1)" },
+	{ "fail", "( -- )", "Backtrack to the nearest enclosing amb, failing the current branch; with no enclosing amb, an error", "1", "none", "O(L)" },
 	{ "fasin", "( a -- asin a ) ⚠", "inverse sine, in place", "1", "none", "O(1)" },
 	{ "fatan", "( a -- atan a ) ⚠", "inverse tangent, in place", "1", "none", "O(1)" },
 	{ "fcos", "( a -- cos a ) ⚠", "cosine (radians), in place", "1", "none", "O(1)" },
@@ -138,6 +142,7 @@ const HelpEntry help_entries[] = {
 	{ "log", "( a -- log₁₀ a )", "log10", "2", "matrix 1m(r×c)", "same" },
 	{ "lookup", "( \"name\" -- xt )", "Parse the following word at run time and push its xt — the non-immediate counterpart of '", NULL, NULL, NULL },
 	{ "lt", "( a b -- bool )", "less-than", "3 (float)", "none", "same" },
+	{ "lvar", "( -- v )", "Push a fresh, unbound logic variable", "2", "1o", "O(1)" },
 	{ "man", "( xt -- fr )", "Frame of a word's reference entry (:word :effect :summary, plus :ops :alloc :order for runtime words); T_NONE if undocumented", "dict scan + log n", "1o + strings", "O(|dict|)" },
 	{ "map", "( arr/set xt -- arr )", "Apply xt to each element; xt must net exactly one value", "2 + n·xt", "1a(n)", "O(n·xt)" },
 	{ "mapn", "( arr₁ … arr_N xt N -- arr )", "N-ary zip-map over equal-length arrays", "rows·(N+xt)", "1a(rows)", "O(rows·xt)" },
@@ -225,6 +230,7 @@ const HelpEntry help_entries[] = {
 	{ "transpose", "( m -- m' )", "Rows/columns swapped", "1 + r×c", "1m(c×r)", "O(r×c)" },
 	{ "truncate", "( a -- trunc a )", "trunc", "2", "matrix 1m(r×c)", "same" },
 	{ "try-catch", "( normal-xt err-xt -- … )", "lib.l4: run normal-xt; on throw, run err-xt with exc on the stack", "—", "cont if thrown", "O(normal-xt)" },
+	{ "unify", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed term. Atoms by value; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. On a mismatch, fails.", "n", "none", "O(n)" },
 	{ "union", "( s₁ s₂ -- s₃ )", "Union into a new set", "(m+n) log(m+n)", "1o + reallocs", "O((m+n) log(m+n))" },
 	{ "until", "( flag -- )", "Branch back to begin if flag is falsy", NULL, NULL, NULL },
 	{ "update-at", "( fr sym/path xt -- fr )", "Apply xt to the value at the key, store the result back", "d log n + xt", "none", "O(d log n + xt)" },
@@ -256,6 +262,7 @@ const HelpEntry help_entries[] = {
 	{ "write", "( s stream -- )", "Write the string's bytes to the stream; loops over partial writes, retries EINTR", "write syscalls", "none", "O(|s|)" },
 	{ "write-file", "( s path -- )", "Create or truncate the file, then write the string's bytes", "file write", "none", "O(|s|)" },
 	{ "write-in", "( s proc -- )", "lib.l4: write the string to the child's :in stream", "write syscalls", "none", "O(|s|)" },
+	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 252;
+const int help_entry_count = 259;

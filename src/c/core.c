@@ -1720,15 +1720,17 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 }
 
 void gc(Interpreter *interp) {
+	int i;
+
 	memset(interp->object_mark, 0, sizeof(interp->object_mark));
 
-	for (int i = 0; i < interp->dsp; i++)
+	for (i = 0; i < interp->dsp; i++)
 		mark_value(interp, interp->data_stack[i]);
-	for (int i = 0; i < interp->rsp; i++)
+	for (i = 0; i < interp->rsp; i++)
 		mark_value(interp, interp->return_stack[i]);
-	for (int i = 0; i < interp->side_dsp; i++)
+	for (i = 0; i < interp->side_dsp; i++)
 		mark_value(interp, interp->side_stack[i]);
-	for (int i = 0; i < interp->n_gc_roots; i++)
+	for (i = 0; i < interp->n_gc_roots; i++)
 		mark_value(interp, interp->gc_roots[i]);
 
 	static int sorted_cfas[VOCABULARY_INIT_SIZE / 4];
@@ -1741,7 +1743,7 @@ void gc(Interpreter *interp) {
 		sorted_cfas[num_cfas++] = cfa;
 	}
 
-	for (int i = 1; i < num_cfas; i++) {
+	for (i = 1; i < num_cfas; i++) {
 		int current = sorted_cfas[i];
 		int slot = i - 1;
 		while (slot >= 0 && sorted_cfas[slot] > current) {
@@ -1751,7 +1753,7 @@ void gc(Interpreter *interp) {
 		sorted_cfas[slot + 1] = current;
 	}
 
-	for (int i = 0; i < num_cfas; i++) {
+	for (i = 0; i < num_cfas; i++) {
 		int cfa = sorted_cfas[i];
 		int body_start = cfa + 1;
 		int body_end = (i + 1 < num_cfas) ? sorted_cfas[i + 1] - 4 : interp->vocab->here;
@@ -2392,8 +2394,8 @@ Interpreter *interp_new(void) {
 	interp->next_mark_id = 1;
 
 	interp->next_lvar_id = 1;
-	interp->trail = malloc(sizeof(int) * TRAIL_DEPTH);
-	interp->trail_cap = TRAIL_DEPTH;
+	interp->bind_trail = malloc(sizeof(int) * BIND_TRAIL_DEPTH);
+	interp->bind_trail_cap = BIND_TRAIL_DEPTH;
 
 	interp->vocab->false_symbol = intern_symbol(interp, "0");
 	interp->vocab->true_symbol = intern_symbol(interp, "1");
@@ -2459,10 +2461,9 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, "null", p_null, 0);
 	define_primitive(interp, "lvar", p_lvar, 0);
-	define_primitive(interp, "trail-mark", p_trail_mark, 0);
-	define_primitive(interp, "trail-undo", p_trail_undo, 0);
 	define_primitive(interp, "unify", p_unify, 0);
 	define_primitive(interp, "deref", p_deref, 0);
+	define_primitive(interp, "amb", p_amb, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
 	define_primitive(interp, "cr", p_cr, 0);
@@ -2501,7 +2502,6 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "copy", p_copy, 0);
 
 	define_primitive(interp, "reset", p_reset, 0);
-	define_primitive(interp, "choice-reset", p_choice_reset, 0);
 	define_primitive(interp, "fail", p_fail, 0);
 	define_primitive(interp, "shift", p_shift, 0);
 	define_primitive(interp, "shift-with", p_shift_with, 0);

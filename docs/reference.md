@@ -430,6 +430,22 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 
 ---
 
+## Logic
+
+Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. A capitalized identifier is a logic-var literal: at the REPL it names a persistent global logic var (created on first mention); inside a definition or quotation, declare it in `| X |` for a fresh per-call variable. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `lvar` | `( -- v )` | Push a fresh, unbound logic variable | 2 | `1o` | O(1) |
+| `unify` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed term. Atoms by value; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. On a mismatch, `fail`s. | n | none | O(n) |
+| `~` | `( a b -- term )` | lib.l4: `unify` (inlined) | n | none | O(n) |
+| `deref` | `( v -- val )` | Follow a logic var's binding chain: v if unbound, else the recursively dereffed value | d | none | O(d) |
+| `$` | `( v -- val )` | lib.l4: `deref` (inlined) | d | none | O(d) |
+| `amb` | `( xt1 xt2 -- … )` | Run xt1; if it fails (a `unify` mismatch or `fail`), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds. | xt1 | none | O(xt1 + xt2) |
+| `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
+
+---
+
 ## Superwords (compile-time fusion) ⚠
 
 Immediate compiler words usable only inside a definition. They detect a preceding variable-load and emit a single fused instruction that reads the variable's dict slot directly. All read `.number` without a tag check. Followed by `to dest`, they fuse further into a store variant that writes the result straight to the destination slot.

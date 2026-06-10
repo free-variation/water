@@ -125,11 +125,4 @@ inline
 : $ deref ;
 inline
 
-( xt -- flag )  \ run xt under a choice prompt: 0 if it succeeds, 1 if it fails
-: choice-catch  choice-reset execute 0 ;
 
-( xt1 xt2 -- )  \ try xt1; on fail, undo its bindings and try xt2
-: amb  >side trail-mark swap choice-catch
-  if   trail-undo  side> execute
-  else drop        side-drop
-  then ;
