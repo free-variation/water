@@ -1,0 +1,38 @@
+\ Capitalized logic-var literal.  Bare X is a persistent global logic var;
+\ | X | is a fresh-per-call local logic var.  ~ is unify, $ is deref.
+
+\ === a bare capitalized token is a logic var ===
+Same Same = . cr                           \ 1   same name, same var
+One Two = . cr                             \ 0   distinct names, distinct vars
+Unbound $ Unbound = . cr                   \ 1   deref of an unbound var is itself
+
+\ === binding a global caps var ===
+Bound 5 ~ drop   Bound $ 5 = . cr          \ 1
+
+\ === a global caps var persists its binding across lines (unlike Prolog) ===
+Persist 11 ~ drop
+Persist $ 11 = . cr                        \ 1
+
+\ === aliasing two globals: binding one binds the other ===
+Al1 Al2 ~ drop   Al1 7 ~ drop   Al2 $ 7 = . cr   \ 1
+
+\ === caps vars inside structures bind via unify ===
+[ AP BP ] [ 1 2 ] ~ drop   AP $ 1 = .  BP $ 2 = . cr   \ 1 1
+{ :k Fk } { :k "v" :x 9 } ~ drop   Fk $ "v" = . cr     \ 1
+
+\ === | X | is a fresh local logic var, bound per call ===
+: bindit  | X >n |  X n ~ drop  X $ ;
+3 bindit . cr                              \ 3
+7 bindit . cr                              \ 7   fresh X each call; no clash with 3
+
+: twovars  | A B |  [ A B ] [ 8 9 ] ~ drop  A $ . B $ . cr ;
+twovars                                    \ 8 9
+
+\ === a capitalized RECEIVE local keeps its received value (not auto-lvar) ===
+: idr  | >R |  R ;
+42 idr . cr                                \ 42
+
+\ === caps locals work inside a quotation ===
+[: | Q |  Q 5 ~ drop  Q $ :] execute . cr  \ 5
+
+bye

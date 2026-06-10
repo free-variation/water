@@ -114,3 +114,22 @@ inline
   results ;
 
 : help lookup man . ;
+
+\ logic words
+
+( a b -- unified )  \ unify two terms; binds, leaves the unified term, fails on mismatch
+: ~ unify ;
+inline
+
+( v -- val )  \ resolve a logic var to its current binding
+: $ deref ;
+inline
+
+( xt -- flag )  \ run xt under a choice prompt: 0 if it succeeds, 1 if it fails
+: choice-catch  choice-reset execute 0 ;
+
+( xt1 xt2 -- )  \ try xt1; on fail, undo its bindings and try xt2
+: amb  >side trail-mark swap choice-catch
+  if   trail-undo  side> execute
+  else drop        side-drop
+  then ;

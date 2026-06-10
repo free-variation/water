@@ -516,22 +516,58 @@ void p_execute(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static void plant_prompt(Interpreter *interp, int kind) {
+	rpush(interp, make_tagged(T_MARK, (interp->next_mark_id++ << 1) | kind));
+}
+
 void p_reset(Interpreter *interp) {
-	Val mark = make_tagged(T_MARK, interp->next_mark_id++);
-	rpush(interp, mark);
+	plant_prompt(interp, PROMPT_EXCEPTION);
 
 	DISPATCH(interp);
 }
 
-int capture_continuation(Interpreter *interp, int *out_mark_index) {
+void p_choice_reset(Interpreter *interp) {
+	plant_prompt(interp, PROMPT_CHOICE);
+
+	DISPATCH(interp);
+}
+
+static int find_prompt(Interpreter *interp, int kind) {
 	int mark_index = interp->rsp - 1;
-	while (mark_index >= 0 && VAL_TAG(interp->return_stack[mark_index]) != T_MARK) {
+	
+	while (mark_index >= 0 && 
+			!(VAL_TAG(interp->return_stack[mark_index]) == T_MARK
+				&& (VAL_DATA(interp->return_stack[mark_index]) & 1) == kind)) {
 		mark_index--;
 	}
 	if (mark_index < 0) {
-		fail(interp, "shift/shift-with: no enclosing reset on the return stack");
+		fail(interp, kind == PROMPT_CHOICE
+				? "no enclosing amb to backtrack to"
+				: "shift/shift-with: no enclosing reset on the return stack");
 		return -1;
 	}
+
+	return mark_index;
+}
+
+static void restore_local_base_below(Interpreter *interp, int mark_index) {
+	int base = interp->local_base;
+	while (base > mark_index)
+		base = (int)VAL_DATA(interp->return_stack[base - 1]);
+	interp->local_base = base;
+}
+
+
+static void unwind_to(Interpreter *interp, int mark_index) {
+	interp->unwind_target = (int)VAL_DATA(interp->return_stack[mark_index]);
+	interp->rsp = mark_index + 1;
+	restore_local_base_below(interp, mark_index);
+}
+
+int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index) {
+	int mark_index = find_prompt(interp, what_kind);
+	if (mark_index < 0)
+		return -1;
 
 	int return_len = interp->rsp - mark_index - 1;
 	int resume_ip = interp->ip;
@@ -547,16 +583,25 @@ int capture_continuation(Interpreter *interp, int *out_mark_index) {
 	return slot;
 }
 
-static void restore_local_base_below(Interpreter *interp, int mark_index) {
-	int base = interp->local_base;
-	while (base > mark_index)
-		base = (int)VAL_DATA(interp->return_stack[base - 1]);
-	interp->local_base = base;
+void backtrack(Interpreter *interp) {
+	int mark_index = find_prompt(interp, PROMPT_CHOICE);
+	if (mark_index < 0)
+		return;
+	
+	unwind_to(interp, mark_index);
+	push(interp, make_bool(1));
+	interp->unwinding = 1;
+}
+
+void p_fail(Interpreter *interp) {
+	backtrack(interp);
+
+	DISPATCH(interp);
 }
 
 void p_shift(Interpreter *interp) {
 	int mark_index;
-	int cont_slot = capture_continuation(interp, &mark_index);
+	int cont_slot = capture_continuation(interp, PROMPT_EXCEPTION, &mark_index);
 	if (cont_slot < 0)
 		return;
 
@@ -571,13 +616,11 @@ void p_shift_with(Interpreter *interp) {
 	POP_XT(handler, "shift-with");
 
 	int mark_index;
-	int cont_slot = capture_continuation(interp, &mark_index);
+	int cont_slot = capture_continuation(interp, PROMPT_EXCEPTION, &mark_index);
 	if (cont_slot < 0)
 		return;
 
-	interp->unwind_target = (int)VAL_DATA(interp->return_stack[mark_index]);
-	interp->rsp = mark_index + 1;
-	restore_local_base_below(interp, mark_index);
+	unwind_to(interp, mark_index);
 	push(interp, make_continuation(cont_slot));
 
 	execute_cfa(interp, handler);
@@ -620,6 +663,7 @@ void p_resume(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
 
 void p_words(Interpreter *interp) {
 	int cnt = 0;
@@ -1047,6 +1091,25 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 		emit(interp, (cell)n_received);
 		for (int i = 0; i < n_received; i++)
 			emit(interp, (cell)receive_slots[i]);
+	}
+
+	int lvar_cfa = find(interp, "lvar");
+	for (int i = scope_start; i < interp->n_local_names; i++) {
+		const char *name = &interp->local_names_pool[interp->local_name_offsets[i]];
+		if (name[0] < 'A' || name[0] > 'Z')
+			continue;
+		int slot = i - scope_start;
+		int received = 0;
+		for (int r = 0; r < n_received; r++)
+			if (receive_slots[r] == slot) {
+				received = 1;
+				break;
+			}
+		if (received)
+			continue;
+		emit_call(interp, lvar_cfa);
+		emit_call(interp, interp->vocab->local_store_0depth_cfa);
+		emit(interp, (cell)slot);
 	}
 }
 

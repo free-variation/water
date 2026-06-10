@@ -1372,6 +1372,23 @@ void run_outer(Interpreter *interp) {
 			compile_or_push(interp, make_float(dv));
 			continue;
 		}
+
+		if (tok[0] >= 'A' && tok[0] <= 'Z') {
+			if (interp->compiling) {
+				fail(interp, "logic var %s is undeclared here; declare it in | | or create it at the top level first", tok);
+				return;
+			}
+			int var_cfa = create_variable(interp, tok);
+			if (interp->error_flag)
+				return;
+			int handle = object_new_logic_var(interp);
+			if (interp->error_flag)
+				return;
+			interp->vocab->dict[var_cfa + 1] = (cell)make_logic_var(handle).bits;
+			execute_cfa(interp, var_cfa);
+			continue;
+		}
+
 		fail(interp, "unknown word: %s", tok);
 		return;
 	}
@@ -2444,6 +2461,8 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "lvar", p_lvar, 0);
 	define_primitive(interp, "trail-mark", p_trail_mark, 0);
 	define_primitive(interp, "trail-undo", p_trail_undo, 0);
+	define_primitive(interp, "unify", p_unify, 0);
+	define_primitive(interp, "deref", p_deref, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
 	define_primitive(interp, "cr", p_cr, 0);
@@ -2482,6 +2501,8 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "copy", p_copy, 0);
 
 	define_primitive(interp, "reset", p_reset, 0);
+	define_primitive(interp, "choice-reset", p_choice_reset, 0);
+	define_primitive(interp, "fail", p_fail, 0);
 	define_primitive(interp, "shift", p_shift, 0);
 	define_primitive(interp, "shift-with", p_shift_with, 0);
 	define_primitive(interp, "resume", p_resume, 0);

@@ -1,0 +1,65 @@
+\ unify ( a b -- unified ): deep coverage.  ~ is unify, $ is deref.
+\ On success unify leaves the (dereffed) unified term and binds vars through
+\ the trail.  A mismatch fails; with no enclosing amb yet, that surfaces as a
+\ top-level error, so the mismatch cases below show error lines.
+
+\ === atoms unify with an equal atom (either is left/right) ===
+5 5 ~ 5 = . cr                                       \ 1
+2.5 2.5 ~ 2.5 = . cr                                 \ 1
+"hello" "hello" ~ "hello" = . cr                     \ 1
+:sym :sym ~ :sym = . cr                              \ 1
+
+\ === an unbound var unifies with anything, from either side ===
+lvar to X   X 42 ~ drop      X $ 42 = . cr           \ 1
+lvar to Y   99 Y ~ drop      Y $ 99 = . cr           \ 1
+lvar to S   S "str" ~ drop   S $ "str" = . cr        \ 1
+lvar to A   A [ 1 2 3 ] ~ drop   A $ [ 1 2 3 ] = . cr   \ 1
+lvar to F   F { :k 1 } ~ drop   F $ { :k 1 } = . cr  \ 1
+
+\ === a var unifies with itself: no binding, no cycle ===
+lvar to V   V V ~ drop   V $ V = . cr                \ 1
+
+\ === two vars alias; binding one then binds the other (both directions) ===
+lvar to P  lvar to Q   P Q ~ drop   P 7 ~ drop   Q $ 7 = . cr   \ 1
+lvar to R  lvar to T   R T ~ drop   8 T ~ drop   R $ 8 = . cr   \ 1
+
+\ === a bound var unifies through its value ===
+lvar to W   W 4 ~ drop   W 4 ~ drop   W $ 4 = . cr   \ 1
+lvar to Z   Z [ 1 2 ] ~ drop   [ 1 2 ] Z ~ drop   Z $ [ 1 2 ] = . cr   \ 1
+
+\ === arrays: same length, element-wise ===
+[ 1 2 3 ] [ 1 2 3 ] ~ [ 1 2 3 ] = . cr               \ 1
+[ ] [ ] ~ [ ] = . cr                                 \ 1
+lvar to X   [ 1 X 3 ] [ 1 2 3 ] ~ drop   X $ 2 = . cr   \ 1
+lvar to T   [ 1 2 ] T ~ drop   T $ [ 1 2 ] = . cr    \ 1
+
+\ === nested arrays, several vars at once ===
+lvar to X   [ 1 [ 2 X ] ] [ 1 [ 2 9 ] ] ~ drop   X $ 9 = . cr   \ 1
+lvar to X  lvar to Y   [ X Y ] [ 1 2 ] ~ drop   X $ 1 = .  Y $ 2 = . cr   \ 1 1
+
+\ === frames are open records: shared keys unify, extras on either side ok ===
+lvar to N   { :name N } { :name "Ann" :age 30 } ~ drop   N $ "Ann" = . cr   \ 1
+lvar to X   { :a X } { :a 1 :b 2 } ~ drop   X $ 1 = . cr   \ 1
+lvar to X   { :a X :z 9 } { :a 1 } ~ drop   X $ 1 = . cr   \ 1
+{ } { :a 1 } ~ size . cr                             \ 0
+
+\ === nested frames and frame/array mix ===
+lvar to C   { :addr { :city C } } { :addr { :city "NYC" :zip 10001 } } ~ drop   C $ "NYC" = . cr   \ 1
+lvar to X   { :xs [ 1 X ] } { :xs [ 1 2 ] } ~ drop   X $ 2 = . cr   \ 1
+lvar to X   { :a [ 1 { :b X } ] } { :a [ 1 { :b 7 } ] } ~ drop   X $ 7 = . cr   \ 1
+
+\ === identity types unify when structurally equal ===
+< 1 2 3 > < 1 2 3 > ~ < 1 2 3 > = . cr               \ 1
+
+\ === occur check is skipped: a var may bind to a term containing itself ===
+lvar to X   X [ X ] ~ drop   X $ size . cr           \ 1
+
+\ === mismatches fail -> top-level error (no enclosing amb) ===
+1 2 ~                                                \ error
+"a" "b" ~                                            \ error
+:foo :bar ~                                          \ error
+[ 1 2 ] [ 1 2 3 ] ~                                  \ error (length)
+[ 1 2 ] [ 1 9 ] ~                                    \ error (element)
+{ :a 1 } { :a 2 } ~                                  \ error (clashing shared key)
+
+bye

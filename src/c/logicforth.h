@@ -39,6 +39,9 @@ typedef int64_t cell;
 
 #define TRAMPOLINE_SLOT			0
 #define DICT_RESERVED			3
+#define PROMPT_EXCEPTION		0
+#define PROMPT_CHOICE			1
+
 
 typedef enum {
 	T_NONE = 0,
@@ -556,6 +559,8 @@ void p_or(Interpreter *interp);
 void p_not(Interpreter *interp);
 void p_null(Interpreter *interp);
 void p_lvar(Interpreter *interp);
+void p_unify(Interpreter *interp);
+void p_deref(Interpreter *interp);
 void p_trail_mark(Interpreter *interp);
 void p_trail_undo(Interpreter *interp);
 void p_dup(Interpreter *interp);
@@ -625,7 +630,10 @@ void p_intersect(Interpreter *interp);
 void p_difference(Interpreter *interp);
 void p_execute(Interpreter *interp);
 void p_reset(Interpreter *interp);
-int capture_continuation(Interpreter *interp, int *out_mark_index);
+void p_choice_reset(Interpreter *interp);
+void p_fail(Interpreter *interp);
+int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index);
+void backtrack(Interpreter *interp);
 void p_shift(Interpreter *interp);
 void p_shift_with(Interpreter *interp);
 void p_resume(Interpreter *interp);

@@ -44,3 +44,76 @@ void p_trail_undo(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
+int unify(Interpreter *interp, Val left_val, Val right_val) {
+	left_val = deref(interp, left_val);
+	right_val = deref(interp, right_val);
+
+	if (VAL_TAG(left_val) == T_LOGIC_VAR && VAL_TAG(right_val) == T_LOGIC_VAR
+			&& VAL_DATA(left_val) == VAL_DATA(right_val))
+		return 1;
+	
+	if (VAL_TAG(left_val) == T_LOGIC_VAR) {
+		bind_var(interp, (int)VAL_DATA(left_val), right_val);
+		return 1;
+	}
+
+	if (VAL_TAG(right_val) == T_LOGIC_VAR) {
+		bind_var(interp, (int)VAL_DATA(right_val), left_val);
+		return 1;
+	}
+
+	if (VAL_TAG(left_val) == T_ARRAY && VAL_TAG(right_val) == T_ARRAY) {
+		Object *left = interp->objects[VAL_DATA(left_val)];
+		Object *right = interp->objects[VAL_DATA(right_val)];
+
+		if (left->len != right->len)
+			return 0;
+		for (int i = 0; i < left->len; i++) 
+			if (!unify(interp, left->items[i], right->items[i]))
+				return 0;
+		return 1;
+	}
+
+	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
+		Object *left = interp->objects[VAL_DATA(left_val)];
+		Object *right = interp->objects[VAL_DATA(right_val)];
+		
+		int i = 0, j = 0;
+		while (i < left->len && j < right->len) {
+			cell left_key = left->frame.keys[i];
+			cell right_key = right->frame.keys[j];
+			if (left_key == right_key) {
+				if (!unify(interp, left->frame.values[i], right->frame.values[j]))
+					return 0;
+				i++;
+				j++;
+			} else if (left_key < right_key) 
+				i++;
+			else 
+				j++;
+		}
+		return 1;
+	}
+
+	return val_cmp(interp, left_val, right_val) == 0;
+}
+
+void p_unify(Interpreter *interp) {
+	POP(right);
+	POP(left);
+
+	if (unify(interp, left, right))
+		push(interp, deref(interp, left));
+	else
+		backtrack(interp);
+
+	DISPATCH(interp);
+}
+
+void p_deref(Interpreter *interp) {
+	POP(value);
+	push(interp, deref(interp, value));
+
+	DISPATCH(interp);
+}
