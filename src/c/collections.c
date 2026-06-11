@@ -124,6 +124,8 @@ void p_array_open(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+
+
 void p_array_close(Interpreter *interp) {
 	int mark_index = interp->dsp;
 	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
@@ -137,6 +139,33 @@ void p_array_close(Interpreter *interp) {
 		array->items[i] = interp->data_stack[mark_index + i];
 	interp->dsp = mark_index - 1;
 	push(interp, make_array(array_handle));
+
+	DISPATCH(interp);
+}
+
+void p_list_close(Interpreter *interp) {
+	int mark_index = interp->dsp;
+	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
+	if (mark_index == 0) {
+		fail(interp, ")] : no matching [( on the stack");
+		return;
+	}
+
+	int num_elements = interp->dsp - mark_index;
+	if (num_elements == 0) {
+		interp->data_stack[mark_index - 1] = make_tagged(T_NONE, 0);
+	} else {
+		interp->data_stack[mark_index - 1] = interp->data_stack[mark_index + num_elements - 1];
+		for (int i = num_elements - 2; i >= 0; i--) {
+			int slot = object_new_pair(interp);
+			if (interp->error_flag)
+				return;
+			interp->pairs[slot].head = interp->data_stack[mark_index + i];
+			interp->pairs[slot].tail = interp->data_stack[mark_index - 1];
+			interp->data_stack[mark_index - 1] = make_pair(slot);
+		}
+	}
+	interp->dsp = mark_index;
 
 	DISPATCH(interp);
 }
@@ -156,6 +185,25 @@ void p_array(Interpreter *interp) {
 	interp->dsp = first_item;
 
 	push(interp, make_array(array_handle));
+
+	DISPATCH(interp);
+}
+
+void p_cons(Interpreter *interp) {
+	if (interp->dsp < 2) {
+		fail(interp, "cons: stack too shallow");
+		return;
+	}
+
+	int slot = object_new_pair(interp);
+	if (interp->error_flag) return;
+
+	int first = interp->dsp - 2;
+	interp->pairs[slot].head = interp->data_stack[first];
+	interp->pairs[slot].tail = interp->data_stack[first + 1];
+	interp->dsp = first;
+
+	push(interp, make_pair(slot));
 
 	DISPATCH(interp);
 }

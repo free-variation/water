@@ -11,9 +11,10 @@ void p_lvar(Interpreter *interp) {
 
 Val deref(Interpreter *interp, Val value) {
 	while (VAL_TAG(value) == T_LOGIC_VAR) {
-		Object *var = interp->objects[VAL_DATA(value)];
-		if (VAL_TAG(var->logic_var.binding) == T_UNBOUND) break;
-		value = var->logic_var.binding;
+		Val binding = interp->lvar_stack[VAL_DATA(value)];
+		if (VAL_TAG(binding) == T_UNBOUND)
+			break;
+		value = binding;
 	}
 	return value;
 }
@@ -24,14 +25,14 @@ static void bind_var(Interpreter *interp, int var_handle, Val value) {
 		interp->bind_trail = realloc(interp->bind_trail, sizeof(int) * (size_t)interp->bind_trail_cap);
 	}
 
-	interp->objects[var_handle]->logic_var.binding = value;
+	interp->lvar_stack[var_handle] = value;
 	interp->bind_trail[interp->bind_trail_top++] = var_handle;
 }
 
 static void trail_undo_to(Interpreter *interp, int mark) {
 	while (interp->bind_trail_top > mark) {
 		int var_handle = interp->bind_trail[--interp->bind_trail_top];
-		interp->objects[var_handle]->logic_var.binding = make_tagged(T_UNBOUND, 0);
+		interp->lvar_stack[var_handle] = make_tagged(T_UNBOUND, 0);
 	}
 }
 
@@ -66,6 +67,15 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 			if (!unify(interp, left->items[i], right->items[i]))
 				return 0;
 		__attribute__((musttail)) return unify(interp, left->items[n - 1], right->items[n - 1]);
+	}
+
+	if (VAL_TAG(left_val) == T_PAIR && VAL_TAG(right_val) == T_PAIR) {
+		Pair *left = &interp->pairs[VAL_DATA(left_val)];
+		Pair *right = &interp->pairs[VAL_DATA(right_val)];
+
+		if (!unify(interp, left->head, right->head))
+			return 0;
+		__attribute__((musttail)) return unify(interp, left->tail, right->tail);
 	}
 
 	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
@@ -117,6 +127,7 @@ void p_amb(Interpreter *interp) {
 
 	int saved_dsp = interp->dsp;
 	int saved_trail = interp->bind_trail_top;
+	int saved_lvar = interp->lvar_top;
 
 	int mark_index = interp->rsp;
 	int mark_id = push_prompt(interp, PROMPT_CHOICE);
@@ -128,6 +139,7 @@ void p_amb(Interpreter *interp) {
 		interp->rsp = mark_index;
 		interp->dsp = saved_dsp;
 		trail_undo_to(interp, saved_trail);
+		interp->lvar_top = saved_lvar;
 
 		execute_cfa(interp, branch2);
 	} else if (!interp->unwinding)

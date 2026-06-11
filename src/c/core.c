@@ -71,6 +71,35 @@ int object_new_array(Interpreter *interp, int num_elements) {
 	return slot;
 }
 
+int object_new_pair(Interpreter *interp) {
+	int slot;
+
+	if (interp->pair_free_count > 0) {
+		slot = interp->pair_free_list[--interp->pair_free_count];
+		INIT_PAIR(slot);
+		return slot;
+	}
+
+	if (interp->n_pairs == interp->pairs_cap) {
+		gc(interp);
+		if (interp->pair_free_count > 0) {
+			slot = interp->pair_free_list[--interp->pair_free_count];
+			INIT_PAIR(slot);
+			return slot;
+		}
+
+		int new_cap = interp->pairs_cap * 2;
+		interp->pairs = realloc(interp->pairs, sizeof(Pair) * (size_t)new_cap);
+		interp->pair_mark = realloc(interp->pair_mark, sizeof(unsigned char) * (size_t)new_cap);
+		interp->pair_free_list = realloc(interp->pair_free_list, sizeof(int) * (size_t)new_cap);
+		interp->pairs_cap = new_cap;
+	}
+
+	slot = interp->n_pairs++;
+	INIT_PAIR(slot);
+	return slot;
+}
+
 int object_new_frame(Interpreter *interp) {
 	NEW_OBJECT(obj, OBJECT_FRAME);
 	obj->capacity = FRAME_INITIAL_CAPACITY;
@@ -98,10 +127,16 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 
 int object_new_logic_var(Interpreter *interp) {
 	alloc_count_lvar++;
-	NEW_OBJECT(obj, OBJECT_LOGIC_VAR);
-	obj->logic_var.binding = make_tagged(T_UNBOUND, 0);
-	obj->logic_var.id = interp->next_lvar_id++;
-	return slot;
+
+
+	if (interp->lvar_top == interp->lvar_cap) {
+		interp->lvar_cap *= 2;
+		interp->lvar_stack = realloc(interp->lvar_stack, sizeof(Val) * (size_t)interp->lvar_cap);
+	}
+
+	int id = interp->lvar_top++;
+	interp->lvar_stack[id] = make_tagged(T_UNBOUND, 0);
+	return id;
 }
 
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip) {
@@ -217,6 +252,7 @@ void print_double(double number) {
 #define PRINT_LAST 3
 
 #define MAX_NESTING_DEPTH 100
+#define LIST_PRINT_MAX 100000
 
 int print_truncate = 1;
 
@@ -316,7 +352,9 @@ void print_matrix_grid(Object *m) {
 }
 
 void print_val(Interpreter *interp, Val value) {
+	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
+		case T_NONE: fputs("null", stdout); break;
 		case T_FLOAT: print_double(VAL_NUMBER(value)); break;
 		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[VAL_DATA(value)]); break;
 		case T_STRING: {
@@ -349,10 +387,36 @@ void print_val(Interpreter *interp, Val value) {
 					   }
 					   print_depth_leave();
 					   break;
+		case T_PAIR: {
+			print_depth_enter();
+			if (print_depth > MAX_NESTING_DEPTH) {
+				fputs("[(...)]", stdout);
+			} else {
+				fputs("[( ", stdout);
+				Val cur = value;
+				int count = 0;
+				while (VAL_TAG(cur) == T_PAIR && count < LIST_PRINT_MAX) {
+					Pair *pair = &interp->pairs[VAL_DATA(cur)];
+					print_val(interp, pair->head);
+					putchar(' ');
+					cur = deref(interp, pair->tail);
+					count++;
+				}
+				if (count == LIST_PRINT_MAX)
+					fputs("... ", stdout);
+				else {
+					print_val(interp, cur);
+					putchar(' ');
+				}
+				fputs(")]", stdout);
+			}
+			print_depth_leave();
+			break;
+		}
 		case T_XT: printf("<xt %lld>", (long long)VAL_DATA(value)); break;
 		case T_ADDR: printf("<addr %lld>", (long long)VAL_DATA(value)); break;
 		case T_STREAM: printf("<stream %lld>", (long long)VAL_DATA(value)); break;
-		case T_LOGIC_VAR: printf("_%d", (int)interp->objects[VAL_DATA(value)]->logic_var.id); break;
+		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
 		case T_MATRIX: {
 						   Object *matrix = interp->objects[VAL_DATA(value)];
 						   print_depth_enter();
@@ -446,7 +510,9 @@ void print_val_inspect(Interpreter *interp, Val value) {
 }
 
 void print_val_compact(Interpreter *interp, Val value) {
+	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
+		case T_NONE: fputs("null", stdout); break;
 		case T_FLOAT: {
 						  double number = VAL_NUMBER(value);
 						  if (number == (double)(int64_t)number && number > -1e12 && number < 1e12)
@@ -482,6 +548,9 @@ void print_val_compact(Interpreter *interp, Val value) {
 					   printf("[%d]", interp->objects[VAL_DATA(value)]->len);
 					   print_depth_leave();
 					   break;
+		case T_PAIR:
+					   fputs("[(…)]", stdout);
+					   break;
 		case T_FRAME:
 					   print_depth_enter();
 					   printf("{%d}", interp->objects[VAL_DATA(value)]->len);
@@ -516,7 +585,7 @@ void print_val_compact(Interpreter *interp, Val value) {
 				   }
 		case T_ADDR: printf("@%lld", (long long)VAL_DATA(value)); break;
 		case T_CONT: fputs("k", stdout); break;
-		case T_LOGIC_VAR: printf("_%d", (int)interp->objects[VAL_DATA(value)]->logic_var.id); break;
+		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
 		default: fputs("?", stdout); break;
 	}
 }
@@ -848,6 +917,7 @@ const char *tag_name(Tag t) {
 		case T_STRING: return "a string";
 		case T_SET:    return "a set";
 		case T_ARRAY:  return "an array";
+		case T_PAIR:   return "a pair";
 		case T_FRAME:  return "a frame";
 		case T_MATRIX: return "a matrix";
 		case T_XT:     return "an execution token";
@@ -1498,13 +1568,28 @@ void p_reload(Interpreter *interp) {
 }
 
 void mark_value(Interpreter *interp, Val value) {
+	if (VAL_TAG(value) == T_LOGIC_VAR) {
+		mark_value(interp, interp->lvar_stack[VAL_DATA(value)]);
+		return;
+	}
+
 	if (VAL_TAG(value) != T_STRING &&
 			VAL_TAG(value) != T_SET &&
 			VAL_TAG(value) != T_ARRAY &&
+			VAL_TAG(value) != T_PAIR &&
 			VAL_TAG(value) != T_FRAME &&
 			VAL_TAG(value) != T_MATRIX &&
-			VAL_TAG(value) != T_CONT &&
-			VAL_TAG(value) != T_LOGIC_VAR) return;
+			VAL_TAG(value) != T_CONT) return;
+
+	if (VAL_TAG(value) == T_PAIR) {
+		int slot = (int)VAL_DATA(value);
+		if (interp->pair_mark[slot])
+			return;
+		interp->pair_mark[slot] = 1;
+		mark_value(interp, interp->pairs[slot].head);
+		mark_value(interp, interp->pairs[slot].tail);
+		return;
+	}
 
 	int handle = (int)VAL_DATA(value);
 	if (handle < 0 || handle >= MAX_OBJECTS || !interp->objects[handle] || interp->object_mark[handle])
@@ -1737,6 +1822,8 @@ void gc(Interpreter *interp) {
 	int i;
 
 	memset(interp->object_mark, 0, sizeof(interp->object_mark));
+	memset(interp->pair_mark, 0, sizeof(unsigned char) * (size_t)interp->n_pairs);
+	interp->pair_free_count = 0;
 
 	for (i = 0; i < interp->dsp; i++)
 		mark_value(interp, interp->data_stack[i]);
@@ -1794,6 +1881,10 @@ void gc(Interpreter *interp) {
 		}
 		interp->free_slots[interp->n_free_slots++] = handle;
 	}
+
+	for (int slot = 0; slot < interp->n_pairs; slot++)
+		if (!interp->pair_mark[slot])
+			interp->pair_free_list[interp->pair_free_count++] = slot;
 }
 
 static const char *handler_word_name(Interpreter *interp, cell handler) {
@@ -2110,6 +2201,14 @@ void forget_user(Interpreter *interp) {
 	}
 	interp->n_objects = 0;
 	interp->n_free_slots = 0;
+
+	interp->pairs = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
+	interp->pairs_cap = PAIR_TABLE_DEPTH;
+	interp->n_pairs = 0;
+	interp->pair_mark = malloc(sizeof(unsigned char) * PAIR_TABLE_DEPTH);
+	interp->pair_free_list = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
+	interp->pair_free_count = 0;
+
 	interp->dsp = 0;
 	interp->rsp = 0;
 	interp->vocab->here = interp->vocab->init_here;
@@ -2411,6 +2510,17 @@ Interpreter *interp_new(void) {
 	interp->bind_trail = malloc(sizeof(int) * BIND_TRAIL_DEPTH);
 	interp->bind_trail_cap = BIND_TRAIL_DEPTH;
 
+	interp->lvar_stack = malloc(sizeof(Val) * LVAR_STACK_DEPTH);
+	interp->lvar_cap = LVAR_STACK_DEPTH;
+	interp->lvar_top = 0;
+
+	interp->pairs = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
+	interp->pairs_cap = PAIR_TABLE_DEPTH;
+	interp->n_pairs = 0;
+	interp->pair_mark = malloc(sizeof(unsigned char) * PAIR_TABLE_DEPTH);
+	interp->pair_free_list = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
+	interp->pair_free_count = 0;
+
 	interp->vocab->false_symbol = intern_symbol(interp, "0");
 	interp->vocab->true_symbol = intern_symbol(interp, "1");
 	return interp;
@@ -2528,6 +2638,9 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, ">", p_setclose, 0);
 	define_primitive(interp, "[", p_array_open, 0);
 	define_primitive(interp, "]", p_array_close, 0);
+	define_primitive(interp, "[(", p_array_open, 0);
+	define_primitive(interp, ")]", p_list_close, 0);
+	define_primitive(interp, "cons", p_cons, 0);
 
 	define_primitive(interp, "array", p_array, 0);
 	define_primitive(interp, "array-of", p_array_of, 0);

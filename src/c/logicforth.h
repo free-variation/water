@@ -40,7 +40,8 @@ typedef int64_t cell;
 #define DICT_RESERVED			3
 #define PROMPT_EXCEPTION		0
 #define PROMPT_CHOICE			1
-
+#define LVAR_STACK_DEPTH		65536
+#define PAIR_TABLE_DEPTH		1 << 20
 
 typedef enum {
 	T_NONE = 0,
@@ -49,6 +50,7 @@ typedef enum {
 	T_STRING,
 	T_SET,
 	T_ARRAY,
+	T_PAIR,
 	T_FRAME,
 	T_MATRIX,
 	T_XT,
@@ -101,6 +103,7 @@ static inline Val make_symbol(int cfa) { return make_tagged(T_SYMBOL, cfa); }
 static inline Val make_string(int handle) { return make_tagged(T_STRING, handle); }
 static inline Val make_set(int handle) { return make_tagged(T_SET, handle); }
 static inline Val make_array(int handle) { return make_tagged(T_ARRAY, handle); }
+static inline Val make_pair(int handle) { return make_tagged(T_PAIR, handle); }
 static inline Val make_frame(int handle) { return make_tagged(T_FRAME, handle); }
 static inline Val make_matrix(int handle) { return make_tagged(T_MATRIX, handle); }
 static inline Val make_xt(int cfa) { return make_tagged(T_XT, cfa); }
@@ -155,6 +158,11 @@ typedef struct {
 	};
 } Object;
 
+typedef struct {
+	Val head;
+	Val tail;
+} Pair;
+
 #define MAT(m, i, j) ((m)->matrix.elements[(i) * (m)->matrix.columns + (j)])
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -197,6 +205,8 @@ typedef struct Interpreter {
 	int local_base;
 	int *bind_trail;
 	int bind_trail_top, bind_trail_cap;
+	Val *lvar_stack;
+	int lvar_top, lvar_cap;
 
 	int ip;
 	int running;
@@ -221,6 +231,13 @@ typedef struct Interpreter {
 	unsigned char object_mark[MAX_OBJECTS];
 	int free_slots[MAX_OBJECTS];
 	int n_free_slots;
+
+	Pair *pairs;
+	int n_pairs, pairs_cap;
+	unsigned char *pair_mark;
+	int *pair_free_list;
+	int pair_free_count;
+
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
 
@@ -372,6 +389,10 @@ static inline Val rpop(Interpreter *interp) {
 	Object *obj = object_new(interp, (kind), &slot); \
 	if (!obj) return -1
 
+#define INIT_PAIR(slot) \
+	interp->pairs[slot].head = make_tagged(T_NONE, 0); \
+	interp->pairs[slot].tail = make_tagged(T_NONE, 0)
+
 #define PEEK_AT(var, depth, op) \
 	if (interp->dsp <= (depth)) { \
 		fail(interp, "%s: stack too shallow", (op)); \
@@ -429,6 +450,7 @@ int object_new_array(Interpreter *interp, int num_elements);
 int object_new_frame(Interpreter *interp);
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns);
 int object_new_logic_var(Interpreter *interp);
+int object_new_pair(Interpreter *interp);
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip);
 int val_cmp(Interpreter *interp, Val left, Val right);
 void set_add(Interpreter *interp, int set_handle, Val value);
@@ -561,6 +583,7 @@ void p_null(Interpreter *interp);
 void p_lvar(Interpreter *interp);
 void p_unify(Interpreter *interp);
 void p_deref(Interpreter *interp);
+Val deref(Interpreter *interp, Val value);
 void p_amb(Interpreter *interp);
 void p_dup(Interpreter *interp);
 void p_drop(Interpreter *interp);
@@ -598,6 +621,8 @@ void p_frameopen(Interpreter *interp);
 void p_frameclose(Interpreter *interp);
 void p_array_open(Interpreter *interp);
 void p_array_close(Interpreter *interp);
+void p_list_close(Interpreter *interp);
+void p_cons(Interpreter *interp);
 void p_array(Interpreter *interp);
 void p_size(Interpreter *interp);
 void p_member(Interpreter *interp);
