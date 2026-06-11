@@ -12,7 +12,7 @@ void p_lvar(Interpreter *interp) {
 Val deref(Interpreter *interp, Val value) {
 	while (VAL_TAG(value) == T_LOGIC_VAR) {
 		Object *var = interp->objects[VAL_DATA(value)];
-		if (VAL_TAG(var->logic_var.binding) == T_NONE) break;
+		if (VAL_TAG(var->logic_var.binding) == T_UNBOUND) break;
 		value = var->logic_var.binding;
 	}
 	return value;
@@ -31,7 +31,7 @@ static void bind_var(Interpreter *interp, int var_handle, Val value) {
 static void trail_undo_to(Interpreter *interp, int mark) {
 	while (interp->bind_trail_top > mark) {
 		int var_handle = interp->bind_trail[--interp->bind_trail_top];
-		interp->objects[var_handle]->logic_var.binding = make_tagged(T_NONE, 0);
+		interp->objects[var_handle]->logic_var.binding = make_tagged(T_UNBOUND, 0);
 	}
 }
 
@@ -59,10 +59,13 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 
 		if (left->len != right->len)
 			return 0;
-		for (int i = 0; i < left->len; i++) 
+		int n = left->len;
+		if (n == 0)
+			return 1;
+		for (int i = 0; i < n - 1; i++)
 			if (!unify(interp, left->items[i], right->items[i]))
 				return 0;
-		return 1;
+		__attribute__((musttail)) return unify(interp, left->items[n - 1], right->items[n - 1]);
 	}
 
 	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {

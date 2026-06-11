@@ -56,7 +56,8 @@ typedef enum {
 	T_CONT,
 	T_MARK,
 	T_STREAM,
-	T_LOGIC_VAR
+	T_LOGIC_VAR,
+	T_UNBOUND
 } Tag;
 
 typedef union {

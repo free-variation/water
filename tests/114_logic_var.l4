@@ -18,4 +18,9 @@ lvar gc dup = . cr                         \ 1
 \ a logic var inside an array survives GC (mark reaches into the array)
 [ lvar ] gc dup 0 @i swap 0 @i = . cr      \ 1
 
+\ unbound is distinct from null: a var bound to null derefs to null,
+\ an unbound var does not (T_UNBOUND sentinel, separate from the none value)
+lvar to N  N null ~ drop  N $ null = . cr  \ 1   bound to null
+lvar to U  U $ null = . cr                 \ 0   unbound
+
 bye

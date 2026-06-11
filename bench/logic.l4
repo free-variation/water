@@ -1,0 +1,48 @@
+\ logic.l4 — heavy benchmark for the logic subsystem, sized to profile.
+\ Stresses unify (deep spine, wide, nested open-record frames), bind_var + the
+\ trail, deref, and the committed-amb machinery (push_prompt, backtrack,
+\ trail_undo_to, execute_cfa, run_inner) under a long exponential search.
+\
+\ Terms are built ONCE; each timed iteration unifies them — binding many logic
+\ vars down the structure — then fails, so amb rolls the trail back. The loop
+\ therefore measures unify + bind + deref + undo, not term construction.
+
+\ --- builders: a depth-d spine, var per level vs. ground per level ---------
+: nest-vars    | >d |  d 0= if lvar  else lvar  d 1- nest-vars  2 array then ;
+: nest-ground  | >d |  d 0= if 0     else d     d 1- nest-ground 2 array then ;
+
+variable DV  variable DG          \ deep spine: depth 2000 -> 2001 logic vars
+2000 nest-vars to DV
+2000 nest-ground to DG
+
+variable WV  variable WG          \ wide: 6000 distinct logic vars in one array
+1 6000 range [: drop lvar :] map to WV
+1 6000 range to WG
+
+variable FV  variable FG          \ richer nested open-record frame (~12 vars)
+{ :a lvar :b lvar :c lvar :d lvar
+  :addr { :geo { :lat lvar :lng lvar :alt lvar } :zip lvar :city lvar }
+  :tags { :p lvar :q lvar :r lvar } } to FV
+{ :a 1 :b 2 :c 3 :d 4
+  :addr { :geo { :lat 51 :lng 0 :alt 12 } :zip 10001 :city "ny" }
+  :tags { :p 7 :q 8 :r 9 } :extra :z } to FG
+
+\ --- 1. deep spine unification (depth 2000, 2001 vars), rolled back --------
+now [: [: DV DG ~ drop fail :] [: :] amb :] 300000 times
+now swap - "deep-unify   (depth 2000 x 300k): {0} s" format . cr
+
+\ --- 2. wide unification (6000 vars in one array), rolled back -------------
+now [: [: WV WG ~ drop fail :] [: :] amb :] 250000 times
+now swap - "wide-unify   (6000 vars x 250k):  {0} s" format . cr
+
+\ --- 3. nested open-record frame unification, rolled back -----------------
+now [: [: FV FG ~ drop fail :] [: :] amb :] 5000000 times
+now swap - "frame-unify  (12 vars x 5M):      {0} s" format . cr
+
+\ --- 4. long amb search: explore a 2^27 tree of failing leaves ------------
+: leaf  fail ;
+: tree  | >d |  d 0= if leaf else [: d 1- tree :] [: d 1- tree :] amb then ;
+now [: [: 27 tree :] [: :] amb :] 1 times
+now swap - "amb-tree     (2^27 leaves):       {0} s" format . cr
+
+bye

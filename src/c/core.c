@@ -59,7 +59,11 @@ int object_new_set(Interpreter *interp) {
 	return slot;
 }
 
+static long alloc_count_array = 0;
+static long alloc_count_lvar = 0;
+
 int object_new_array(Interpreter *interp, int num_elements) {
+	alloc_count_array++;
 	NEW_OBJECT(obj, OBJECT_ARRAY);
 	obj->len = num_elements;
 	obj->capacity = num_elements;
@@ -93,8 +97,9 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 }
 
 int object_new_logic_var(Interpreter *interp) {
+	alloc_count_lvar++;
 	NEW_OBJECT(obj, OBJECT_LOGIC_VAR);
-	obj->logic_var.binding = make_tagged(T_NONE, 0);
+	obj->logic_var.binding = make_tagged(T_UNBOUND, 0);
 	obj->logic_var.id = interp->next_lvar_id++;
 	return slot;
 }
@@ -850,6 +855,7 @@ const char *tag_name(Tag t) {
 		case T_STREAM: return "a stream";
 		case T_CONT:   return "a continuation";
 		case T_MARK:   return "a mark";
+		case T_LOGIC_VAR: return "a logic variable";
 		default:       return "an unknown value";
 	}
 }
@@ -871,6 +877,14 @@ void p_exit(Interpreter *interp) {
 
 void p_stop(Interpreter *interp) {
 	interp->running = 0;
+}
+
+void p_alloc_stats(Interpreter *interp) {
+	printf("lvars=%ld arrays=%ld\n", alloc_count_lvar, alloc_count_array);
+	alloc_count_lvar = 0;
+	alloc_count_array = 0;
+
+	DISPATCH(interp);
 }
 
 void p_literal(Interpreter *interp) {
@@ -2464,6 +2478,7 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "unify", p_unify, 0);
 	define_primitive(interp, "deref", p_deref, 0);
 	define_primitive(interp, "amb", p_amb, 0);
+	define_primitive(interp, "alloc-stats", p_alloc_stats, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
 	define_primitive(interp, "cr", p_cr, 0);
