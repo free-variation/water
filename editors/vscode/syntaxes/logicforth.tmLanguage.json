@@ -1,0 +1,92 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "logicforth",
+  "scopeName": "source.logicforth",
+  "patterns": [
+    { "include": "#comments" },
+    { "include": "#strings" },
+    { "include": "#numbers" },
+    { "include": "#quotation" },
+    { "include": "#control" },
+    { "include": "#defining" },
+    { "include": "#logic" },
+    { "include": "#constants" },
+    { "include": "#operators" },
+    { "include": "#builtins" },
+    { "include": "#symbol" },
+    { "include": "#path" },
+    { "include": "#logicvar" },
+    { "include": "#delimiters" }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.backslash.logicforth",
+          "match": "(?<=^|\\s)\\\\(?:\\s.*)?$"
+        },
+        {
+          "name": "comment.block.logicforth",
+          "begin": "(?<=^|\\s)\\(\\s",
+          "end": "\\)"
+        }
+      ]
+    },
+    "strings": {
+      "name": "string.quoted.double.logicforth",
+      "begin": "\"",
+      "end": "\"(?!\")",
+      "patterns": [
+        { "name": "constant.character.escape.logicforth", "match": "\"\"" }
+      ]
+    },
+    "numbers": {
+      "name": "constant.numeric.logicforth",
+      "match": "(?<=^|\\s)-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?(?=\\s|$)"
+    },
+    "quotation": {
+      "name": "keyword.declaration.logicforth",
+      "match": "(?<=^|\\s)(?:\\[:|:\\])(?=\\s|$)"
+    },
+    "control": {
+      "name": "keyword.control.logicforth",
+      "match": "(?<=^|\\s)(?:if|\\?if|else|then|begin|until|again|while|repeat|times|i-times|exit)(?=\\s|$)"
+    },
+    "defining": {
+      "name": "keyword.declaration.logicforth",
+      "match": "(?<=^|\\s)(?::|;|variable|symbol|to|forget|inline|lookup|'|immediate)(?=\\s|$)"
+    },
+    "logic": {
+      "name": "keyword.other.logic.logicforth",
+      "match": "(?<=^|\\s)(?:lvar|unify|~|deref|\\$|amb|fail)(?=\\s|$)"
+    },
+    "constants": {
+      "name": "constant.language.logicforth",
+      "match": "(?<=^|\\s)null(?=\\s|$)"
+    },
+    "operators": {
+      "name": "keyword.operator.logicforth",
+      "match": "(?<=^|\\s)(?:\\+!|-!|\\*!|/!|\\+\\+|--|f\\+\\+|f--|f1\\+|f1-|f\\+|f-|f\\*|f/|f\\^|1\\+|1-|0=|\\+|-|\\*|/|%|\\^|=|!i|!|@i,j|@i|@j|@|>frame|>r|>side|side>|2dup|\\.s|\\.a|\\.)(?=\\s|$)"
+    },
+    "builtins": {
+      "name": "support.function.logicforth",
+      "match": "(?<=^|\\s)(?:abs|acos|and|append-file|array-of|array|asin|atan|bye|catch|clear|close|column-maxes|column-means|column-mins|column-sums|concat|copy|cos|cr|delete-at|depth|dgemm-nn|dgemm-nt|dgemm-tn|dgemm-tt|diagonal-matrix|diagonal|difference|dim|drop|dup|emit|env!|env|exp|fabs|facos|fasin|fatan|fcos|fexp|filter|flatten|fln|flog|fmod|fnegate|format|frame>json|frame|fround-down|fround-up|fround|fsin|fsq|fsqrt|ftanh|ftan|ftruncate|gc|gt|has\\?|help|identity-matrix|intersection|join|json>frame|keys|last|ln|load-image|load|log|lt|man|mapn|map|match-all|match|matrix-range|matrix|max|mean|member\\?|merge|min|mod|negate|nip|not|now|num-elements|or|over|parallel-run|pi|quotient|range|read-err|read-file|read-out|read|reduce|reload|replace|reset|reshape|resume|reverse-slice!|reverse|roll|rot|round-down|round-up|round|row-maxes|row-means|row-mins|row-sums|running\\?|run|save-image|save|see-compiled|see|set|sin|size|skip|sleep|slice!|split|sqrt|sq|start-process|stop|string>symbol|substring|sum|swap|take|tanh|tan|throw|to-slice!|transpose|truncate|try-catch|union|update-at|values|wait|words|write-file|write-in|write|shift-with|shift|vfabs|vfcos|vfexp|vflog|vfneg|vfsin|vfsqrt|vfsq|vftanh|vftan|vf\\*|vf\\+|vf-|vf/|vvf\\*\\+|vvf\\*-|vvf\\*|vvf\\+|vvf-|vvf/|0-matrix)(?=\\s|$)"
+    },
+    "symbol": {
+      "name": "constant.other.symbol.logicforth",
+      "match": "(?<=^|\\s):\\S+"
+    },
+    "path": {
+      "name": "constant.other.path.logicforth",
+      "match": "(?<=^|\\s)/[A-Za-z]\\S*"
+    },
+    "logicvar": {
+      "name": "variable.other.logicvar.logicforth",
+      "match": "(?<=^|\\s)[A-Z][A-Za-z0-9_]*(?=\\s|$)"
+    },
+    "delimiters": {
+      "name": "punctuation.section.logicforth",
+      "match": "[\\[\\]{}<>]"
+    }
+  }
+}

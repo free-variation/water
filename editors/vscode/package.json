@@ -1,0 +1,26 @@
+{
+  "name": "logicforth",
+  "displayName": "logicforth",
+  "description": "Syntax highlighting, indentation, and bracket matching for logicforth (.l4)",
+  "version": "0.1.0",
+  "publisher": "logicforth",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Programming Languages"],
+  "contributes": {
+    "languages": [
+      {
+        "id": "logicforth",
+        "aliases": ["logicforth", "l4"],
+        "extensions": [".l4"],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "logicforth",
+        "scopeName": "source.logicforth",
+        "path": "./syntaxes/logicforth.tmLanguage.json"
+      }
+    ]
+  }
+}
