@@ -196,13 +196,18 @@ survives restarts and coordinates across processes (WAL); the fact database
 is in-memory relations queried by unification, loaded from SQLite into a
 working set; frames are the in-flight object shape and JSON wire mapping.
 
+A query result is represented the same way as a fact-database relation: a set
+of rows, each row a frame keyed by column name. So a SQLite table and a
+fact-database relation are one structure, and a result set drops straight into
+`query`/`assert` without reshaping.
+
 **API:**
 
 - `"path.db" db-open` — open (create if needed), push a database handle.
 - `db-handle db-close` — close the handle. Idempotent.
-- `db-handle "SELECT ..." sql` — run, return a nested array (rows of
-  cells). INTEGER / REAL → `T_FLOAT`, TEXT → `T_STRING`, NULL → sentinel,
-  BLOB → `T_STRING` of raw bytes.
+- `db-handle "SELECT ..." sql` — run, return a set of row frames (each
+  keyed by column name). INTEGER / REAL → `T_FLOAT`, TEXT → `T_STRING`, NULL →
+  sentinel, BLOB → `T_STRING` of raw bytes.
 - `db-handle "SELECT ..." sql-matrix` — materialize directly into a
   `T_MATRIX`; errors if any cell isn't numeric.
 - `db-handle "INSERT/UPDATE/DELETE ..." exec` — run a statement with no
@@ -340,14 +345,67 @@ into logicforth; struct-by-value arguments.
 
 ## Logic layer — remaining work
 
-- **Fact database** — a relational store over arrays of rows. `query` collects
-  *all* matches, so it's a deterministic loop with trail rollback (committed
-  `amb` yields only one solution): for each row, mark the bind trail, `unify` the
-  pattern against the row, collect the reified match on success, roll the trail
-  back, continue. Per-column indices (a frame from a symbol value to a set of row
-  ids) narrow the candidate rows before the scan. `assert` appends a row and
-  updates each index; `retract` drops matching rows. Builds on an in-place set
-  insert (`set-add!`).
+### Fact database
+
+A relational store built entirely from existing types — no new tag. A relation
+is a set of tuples in the relational sense (Codd), so it reuses frames for the
+rows and a set for the relation, and the same representation describes a SQLite
+table: a relation loaded from SQLite and a hand-built relation are the same
+structure (see SQLite integration).
+
+```
+db        = { :father <relation>  :age <relation> }      \ database: name -> relation
+relation  = { :rows <set of rows>  :index <index> }      \ a named relation
+row       = { :id 1  :parent :john  :child :django }      \ a tuple: column -> value
+index     = { :child  { :django <rows>  :bob <rows> }     \ column -> (value -> rows)
+              :parent { :john   <rows> } }
+```
+
+The relation's **name** is its key in the database frame — the functor in
+Prolog terms, the table name in SQL terms. A relation is reached only through
+its name; there is no anonymous relation.
+
+A **row** is a frame keyed by column name. Rows live in a set, so `val_cmp` on
+the whole frame dedups them: asserting an identical row is a no-op, one fact one
+row. A caller- or database-supplied `:id` column distinguishes rows that share
+all other values, so genuinely distinct tuples coexist; rows that the program
+duplicates outright disappear into one.
+
+**Query is unification.** Frame `unify` already behaves as an open record —
+shared keys must unify, keys present on only one side are allowed — which is
+exactly SQL selection and projection: a pattern `{ :child X }` unified against a
+row binds `X` to that row's `:child` and ignores the other columns. `query`
+collects *all* matches (committed `amb` yields only one solution), so it is a
+deterministic loop with trail rollback: for each candidate row, mark the bind
+trail, `unify` the pattern against the row, on success collect the reified row,
+then roll the trail back and continue. It returns an array of the matching rows
+(vars resolved); the pattern's logic vars serve only as the filter, and
+projection is reading columns off the returned rows.
+
+**Indices** are declared per relation at creation and cover symbol-valued
+columns only — which lets every level stay a plain symbol-keyed frame. `:index`
+maps each declared column to a frame from a value symbol to the set of rows
+holding that value (the same row frames as `:rows`, shared). `query` uses an
+index when the pattern grounds an indexed column to a symbol, taking that
+bucket as the candidate set instead of scanning `:rows`; otherwise it scans.
+
+`assert` adds a row to `:rows` and to the `:index` bucket for each indexed
+column; `retract` removes matching rows from both. Both are C primitives, since
+they maintain the set and the index buckets together.
+
+**Words.** The database is a plain frame of relations (`db :father @` reaches
+one), so it needs no words of its own. Four words operate on a relation:
+
+```
+[ :child :parent ] relation   ( [cols] -- rel )    \ empty relation; declare indexed columns
+rel  { :id 1 :parent :john :child :django }  assert    ( rel row -- rel )
+rel  { :child :django }                      query     ( rel pattern -- [rows] )
+rel  { :child :django }                      retract   ( rel pattern -- rel )
+```
+
+`assert`/`retract` mutate the relation in place — it is a frame — and return it
+for chaining. Stored facts are ground, so `query` hands back the row frames
+directly.
 
 ---
 
