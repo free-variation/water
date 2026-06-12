@@ -1,0 +1,9 @@
+\ head-tail ( pair -- head tail ): split a pair onto the stack (head under, tail
+\ on top), no auto-deref, errors on a non-pair. swap below prints head first.
+[( 1 2 3 )] head-tail swap . cr . cr        \ 1  then  [( 2 3 )]
+[( 1 2 3 null )] head-tail swap . cr . cr   \ 1  then  [( 2 3 null )]
+3 4 cons head-tail swap . cr . cr           \ 3  then  4
+[( 9 null )] head-tail swap . cr . cr       \ 9  then  null
+5 head-tail                                 \ error: expected a pair
+[( )] head-tail                             \ error: expected a pair (null)
+bye

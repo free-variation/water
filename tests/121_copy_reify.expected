@@ -1,31 +1,32 @@
 0 ok
 0 ok
 0 ok
-1 0 ok
 0 ok
 0 ok
-0 0 ok
-0 ok
-0 ok
-0 ok
-1 0 ok
-0 ok
-0 ok
-1 0 ok
+[( 3 4 )] 
 0 ok
 0 ok
 0 ok
-0 ok
-0 ok
-:cat 0 ok
-0 ok
-0 ok
-3 0 ok
-0 ok
-0 ok
-1 0 ok
+[( 1 2 3 null )] 
 0 ok
 0 ok
 0 ok
-0 0 ok
-1 0 ok
+[( :_0 :_0 null )] 
+0 ok
+0 ok
+0 ok
+7 
+0 ok
+0 ok
+0 ok
+[( 5 6 )] 
+0 ok
+0 ok
+0 ok
+[( :_0 :_1 :_0 null )] 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 ok

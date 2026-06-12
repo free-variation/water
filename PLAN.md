@@ -340,18 +340,14 @@ into logicforth; struct-by-value arguments.
 
 ## Logic layer — remaining work
 
-- **Cons pattern in `unify`** — head/tail destructuring inside an array literal,
-  working both directions: decompose a bound array, or build one from a bound
-  head and tail. `|` is the locals delimiter, so the head/tail separator is its
-  own token — candidate `[ H :: T ]`. The sole list head/tail mechanism.
-- **`_` wildcard** — a fresh anonymous logic var that unifies with anything and
-  binds nothing.
-- **Fact database** — a relational store over arrays of rows. `query` is a
-  `unify`-loop: per row, `trail-mark`, `unify` the pattern against it, collect
-  the dereffed match, `trail-undo`. Per-column indices (a frame from a symbol
-  value to a set of row ids) narrow the candidate rows before the scan. `assert`
-  appends a row and updates each index; `retract` drops matching rows. Needs one
-  new primitive: in-place set insert (`set-add!`).
+- **Fact database** — a relational store over arrays of rows. `query` collects
+  *all* matches, so it's a deterministic loop with trail rollback (committed
+  `amb` yields only one solution): for each row, mark the bind trail, `unify` the
+  pattern against the row, collect the reified match on success, roll the trail
+  back, continue. Per-column indices (a frame from a symbol value to a set of row
+  ids) narrow the candidate rows before the scan. `assert` appends a row and
+  updates each index; `retract` drops matching rows. Builds on an in-place set
+  insert (`set-add!`).
 
 ---
 
@@ -482,21 +478,6 @@ buffer; output coordination via a shared stdout mutex.
 
 **Build order within this section:** shared immutable heap, then fork-join
 `parallel-map`, then the disjoint-write numeric buffer.
-
----
-
-## Array head/tail decomposition
-
-Head/tail decomposition is the `[ H | T ]` cons pattern on `unify` (see
-"Unification + nondeterminism"): `arr [ H | T ] unify` binds `H` to the head
-and `T` to a fresh tail array; unifying a free variable with `[ H | T ]`
-where both are bound builds the array. One declarative mechanism, both
-directions. There are no `>head` / `head>` primitives, and no snoc-style
-back-end primitive (`last` covers last-N in `lib.l4`).
-
-Arrays are contiguous, so a recursive head-split walk allocates tail arrays
-of sizes N-1, N-2, …, 1 — O(N²) churn. Fine for shallow, clause-shaped
-decomposition; for large data iterate with the C-side `reduce` / `map`.
 
 ---
 

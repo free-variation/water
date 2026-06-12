@@ -1,0 +1,26 @@
+\ copy = copy_term, reify = reify. Both dereference bound vars to their values
+\ and recurse through pairs/arrays. copy mints fresh (shared) vars for unbound
+\ ones; reify names them :_N canonically by first appearance.
+
+\ copy dereferences bound vars to their values
+lvar to A   lvar to B   [( 3 4 )] [( A B )] ~ drop   [( A B )] copy . cr     \ [( 3 4 )]
+
+\ copy of a ground list is unchanged
+[( 1 2 3 null )] copy . cr                                                   \ [( 1 2 3 null )]
+
+\ copy preserves variable sharing (reify-of-copy canonicalises to reveal it)
+lvar to X   [( X X null )] copy reify . cr                                   \ [( :_0 :_0 null )]
+
+\ copy recurses into arrays and derefs
+lvar to M   M 7 ~ drop   [ M ] copy 0 @i . cr                                \ 7
+
+\ reify dereferences bound vars
+lvar to P   lvar to Q   [( 5 6 )] [( P Q )] ~ drop   [( P Q )] reify . cr     \ [( 5 6 )]
+
+\ reify names unbound vars :_N canonically, by first appearance, sharing kept
+lvar to U   lvar to V   [( U V U null )] reify . cr                          \ [( :_0 :_1 :_0 null )]
+
+\ a reified term is inert symbols, equal to the literal symbol list
+lvar to W   [( W null )] reify   [( :_0 null )] = . cr                       \ 1
+
+bye

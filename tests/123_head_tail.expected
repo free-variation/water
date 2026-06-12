@@ -1,0 +1,16 @@
+0 ok
+0 ok
+1 
+[( 2 3 )] 
+0 ok
+1 
+[( 2 3 null )] 
+0 ok
+3 
+4 
+0 ok
+9 
+null 
+0 ok
+0|error head-tail: expected a pair; got a float
+0|error head-tail: expected a pair; got none

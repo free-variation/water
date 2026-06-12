@@ -1,0 +1,15 @@
+\ _ : the anonymous wildcard. Unifies with anything, binds nothing, and (unlike
+\ a fresh lvar) allocates nothing — so it never builds up the lvar stack.
+_ . cr                                            \ _
+[( _ 2 )] [( 1 2 )] ~ . cr                         \ [( _ 2 )]   wildcard head matched 1
+[( 1 _ )] [( 1 8 )] ~ . cr                         \ [( 1 _ )]   wildcard matched 8
+lvar to T  [( 1 2 3 )] [( _ T )] ~ drop  T . cr    \ [( 2 3 )]   _ discards head, T = tail
+_ 5 ~ . cr                                         \ _
+\ a mismatch away from the wildcard still fails -> branch 2
+[: [( 1 2 )] [( _ 9 )] ~ "y" :] [: "n" :] amb . cr  \ n
+\ 100k wildcards allocate no logic vars (no lvar-stack buildup): reset the
+\ counters, run the loop, confirm the loop added nothing.
+alloc-stats                                        \ resets (prints prior tally)
+[: _ drop :] 100000 times
+alloc-stats                                        \ lvars=0 arrays=0
+bye

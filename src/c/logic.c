@@ -20,10 +20,7 @@ Val deref(Interpreter *interp, Val value) {
 }
 
 static void bind_var(Interpreter *interp, int var_handle, Val value) {
-	if (interp->bind_trail_top == interp->bind_trail_cap) {
-		interp->bind_trail_cap *= 2;
-		interp->bind_trail = realloc(interp->bind_trail, sizeof(int) * (size_t)interp->bind_trail_cap);
-	}
+	GROW_IF_FULL(interp->bind_trail_top, interp->bind_trail_cap, interp->bind_trail);
 
 	interp->lvar_stack[var_handle] = value;
 	interp->bind_trail[interp->bind_trail_top++] = var_handle;
@@ -53,6 +50,9 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 		bind_var(interp, (int)VAL_DATA(right_val), left_val);
 		return 1;
 	}
+
+	if (VAL_TAG(left_val) == T_UNBOUND || VAL_TAG(right_val) == T_UNBOUND)
+		return 1;
 
 	if (VAL_TAG(left_val) == T_ARRAY && VAL_TAG(right_val) == T_ARRAY) {
 		Object *left = interp->objects[VAL_DATA(left_val)];
@@ -149,4 +149,8 @@ void p_amb(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_wildcard(Interpreter *interp) {
+	push(interp, make_tagged(T_UNBOUND, 0));
 
+	DISPATCH(interp);
+}

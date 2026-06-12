@@ -24,3 +24,8 @@ baz :baz = .                       \ -1
 
 \ duplicate symbols dedup in a set
 :a :a :a 3 set size .       \ 1
+
+\ two symbols made with `symbol` are distinct; same name interns equal
+symbol one   symbol two
+one two = .                        \ 0
+one :one = .                       \ 1

@@ -1,4 +1,5 @@
 #include "logicforth.h"
+#include "lib_embed.h"
 
 int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_objects < MAX_OBJECTS) {
@@ -7,6 +8,9 @@ int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_free_slots > 0) {
 		return interp->free_slots[--interp->n_free_slots];
 	}
+
+	if (interp->gc_disabled)
+		return -1;
 
 	gc(interp);
 
@@ -81,7 +85,8 @@ int object_new_pair(Interpreter *interp) {
 	}
 
 	if (interp->n_pairs == interp->pairs_cap) {
-		gc(interp);
+		if (!interp->gc_disabled)
+			gc(interp);
 		if (interp->pair_free_count > 0) {
 			slot = interp->pair_free_list[--interp->pair_free_count];
 			INIT_PAIR(slot);
@@ -129,10 +134,7 @@ int object_new_logic_var(Interpreter *interp) {
 	alloc_count_lvar++;
 
 
-	if (interp->lvar_top == interp->lvar_cap) {
-		interp->lvar_cap *= 2;
-		interp->lvar_stack = realloc(interp->lvar_stack, sizeof(Val) * (size_t)interp->lvar_cap);
-	}
+	GROW_IF_FULL(interp->lvar_top, interp->lvar_cap, interp->lvar_stack);
 
 	int id = interp->lvar_top++;
 	interp->lvar_stack[id] = make_tagged(T_UNBOUND, 0);
@@ -195,6 +197,15 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 
 									  return left_collection->len - right_collection->len;
 								  }
+		case T_PAIR: {
+			Pair *left_pair = &interp->pairs[VAL_DATA(left)];
+			Pair *right_pair = &interp->pairs[VAL_DATA(right)];
+			int head_cmp = val_cmp(interp, left_pair->head, right_pair->head);
+			if (head_cmp)
+				return head_cmp;
+			return val_cmp(interp, left_pair->tail, right_pair->tail);
+		}
+
 		case T_MATRIX: {
 						   Object *left_matrix = interp->objects[VAL_DATA(left)];
 						   Object *right_matrix = interp->objects[VAL_DATA(right)];
@@ -355,6 +366,7 @@ void print_val(Interpreter *interp, Val value) {
 	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
 		case T_NONE: fputs("null", stdout); break;
+		case T_UNBOUND: fputs("_", stdout); break;
 		case T_FLOAT: print_double(VAL_NUMBER(value)); break;
 		case T_SYMBOL: printf(":%s", &interp->vocab->symbol_pool[VAL_DATA(value)]); break;
 		case T_STRING: {
@@ -513,6 +525,7 @@ void print_val_compact(Interpreter *interp, Val value) {
 	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
 		case T_NONE: fputs("null", stdout); break;
+		case T_UNBOUND: fputs("_", stdout); break;
 		case T_FLOAT: {
 						  double number = VAL_NUMBER(value);
 						  if (number == (double)(int64_t)number && number > -1e12 && number < 1e12)
@@ -1606,12 +1619,33 @@ void mark_value(Interpreter *interp, Val value) {
 	} else if (obj->kind == OBJECT_CONTINUATION) {
 		for (int i = 0; i < obj->continuation.return_len; i++)
 			mark_value(interp, obj->continuation.return_slice[i]);
-	} else if (obj->kind == OBJECT_LOGIC_VAR) {
-		mark_value(interp, obj->logic_var.binding);
 	}
 }
 
-static void copy_value_inner(Interpreter *interp, Val source_val, Val *copy_val, int depth) {
+static Val varmap_lookup(Interpreter *interp, VarMap *map, int slot) {
+	for (int i = 0; i < map->count; i++)
+		if (map->entries[i].slot == slot)
+			return map->entries[i].value;
+
+	Val fresh;
+	if (map->reify) {
+		char var_name[24];
+		snprintf(var_name, sizeof(var_name), "_%d", map->count);
+		fresh = make_symbol(intern_symbol(interp, var_name));
+	} else
+		fresh = make_logic_var(object_new_logic_var(interp));
+
+	GROW_IF_FULL(map->count, map->cap, map->entries);
+
+	map->entries[map->count].slot = slot;
+	map->entries[map->count].value = fresh;
+	map->count++;
+	return fresh;
+}
+
+
+
+static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, Val *copy_val, int depth) {
 	int i, copy_handle;
 
 	if (depth > MAX_NESTING_DEPTH) {
@@ -1619,7 +1653,13 @@ static void copy_value_inner(Interpreter *interp, Val source_val, Val *copy_val,
 		return;
 	}
 
+	source_val = deref(interp, source_val);
+
 	switch(VAL_TAG(source_val)) {
+		case T_LOGIC_VAR: {
+							  *copy_val = varmap_lookup(interp, map, (int)VAL_DATA(source_val));
+							  return;
+						  }
 		case T_STRING: {
 						   Object *source = interp->objects[VAL_DATA(source_val)];
 						   copy_handle = object_new_string(interp, source->bytes, source->len);
@@ -1658,10 +1698,45 @@ static void copy_value_inner(Interpreter *interp, Val source_val, Val *copy_val,
 						copy->len = source->len;
 						*copy_val = (VAL_TAG(source_val) == T_ARRAY) ? make_array(copy_handle) : make_set(copy_handle);
 						for (i = 0; i < source->len; i++)
-							copy_value_inner(interp, source->items[i], &copy->items[i], depth + 1);
+							copy_value_inner(interp, map, source->items[i], &copy->items[i], depth + 1);
 						return;
 					}
+		case T_PAIR: {
+						 int prev_slot = -1;
+						 int spine_len = 0;
+						 Val current = source_val;
 
+						 while(VAL_TAG(current) == T_PAIR) {
+							 if (spine_len++ > COPY_SPINE_MAX) {
+								 fail(interp, "copy: list too long or cyclic");
+								 return;
+							 }
+
+							 int source_slot = (int)VAL_DATA(current);
+							 int new_slot = object_new_pair(interp);
+							 if (interp->error_flag) return;
+
+							 if (prev_slot < 0)
+								 *copy_val = make_pair(new_slot);
+							 else
+								 interp->pairs[prev_slot].tail = make_pair(new_slot);
+
+							 Val head_copy;
+							 copy_value_inner(interp, map, interp->pairs[source_slot].head, &head_copy, depth + 1);
+							 if (interp->error_flag) return;
+
+							 interp->pairs[new_slot].head = head_copy;
+							 prev_slot = new_slot;
+							 current = deref(interp, interp->pairs[source_slot].tail);
+						 }
+
+						 Val tail_copy;
+						 copy_value_inner(interp, map, current, &tail_copy, depth + 1);
+						 if (interp->error_flag) return;
+
+						 interp->pairs[prev_slot].tail = tail_copy;
+						 return;
+					 }
 		case T_FRAME: {
 						  Object *source = interp->objects[VAL_DATA(source_val)];
 						  copy_handle = object_new_frame(interp);
@@ -1682,7 +1757,7 @@ static void copy_value_inner(Interpreter *interp, Val source_val, Val *copy_val,
 						  copy->len = source->len;
 						  *copy_val = make_frame(copy_handle);
 						  for (i = 0; i < source->len; i++)
-							  copy_value_inner(interp, source->frame.values[i], &copy->frame.values[i], depth + 1);
+							  copy_value_inner(interp, map, source->frame.values[i], &copy->frame.values[i], depth + 1);
 						  return;
 					  }
 		default:
@@ -1691,24 +1766,41 @@ static void copy_value_inner(Interpreter *interp, Val source_val, Val *copy_val,
 	}
 }
 
-void copy_value(Interpreter *interp, Val source_val, Val *copy_val) {
-	copy_value_inner(interp, source_val, copy_val, 0);
+void copy_or_reify(Interpreter *interp, Val source_val, Val *copy_val, int reify) {
+	VarMap map = { reify, NULL, 0, 0};
+	if (interp->n_objects > MAX_OBJECTS * 9 / 10) 
+		gc(interp);
+
+	interp->gc_disabled = 1;
+	copy_value_inner(interp, &map, source_val, copy_val, 0);
+	interp->gc_disabled = 0;
+
+	free(map.entries);
 }
 
-void p_copy(Interpreter *interp) {
+
+void do_copy_reify(Interpreter *interp, int reify) {
 	PEEK_AT(source_val, 0, "copy");
 	gc_root_push(interp, source_val);
 	if (interp->error_flag)
 		return;
 
-	copy_value(interp, source_val, &interp->gc_roots[interp->n_gc_roots - 1]);
+	copy_or_reify(interp, source_val, &interp->gc_roots[interp->n_gc_roots - 1], reify);
 	Val copy_val = interp->gc_roots[interp->n_gc_roots - 1];
 	gc_root_pop(interp);
 	if (interp->error_flag)
 		return;
 
 	interp->data_stack[interp->dsp - 1] = copy_val;
+}
 
+void p_copy(Interpreter *interp) {
+	do_copy_reify(interp, 0);
+	DISPATCH(interp);
+}
+
+void p_reify(Interpreter *interp) {
+	do_copy_reify(interp, 1);
 	DISPATCH(interp);
 }
 
@@ -2018,7 +2110,7 @@ void p_save(Interpreter *interp) {
 }
 
 #define IMAGE_MAGIC "LF4I"
-#define IMAGE_VERSION ((uint32_t)2)
+#define IMAGE_VERSION ((uint32_t)3)
 
 #define HANDLER_DOCOL 1
 #define HANDLER_DOVAR 2
@@ -2163,12 +2255,18 @@ void p_save_image(Interpreter *interp) {
 								w_i32(file, obj->continuation.resume_ip);
 								w_i32(file, obj->continuation.local_base_offset);
 								break;
-			case OBJECT_LOGIC_VAR:
-								w_val(file, obj->logic_var.binding);
-								w_i32(file, obj->logic_var.id);
-								break;
 		}
 	}
+
+	w_i32(file, interp->n_pairs);
+	for (int i = 0; i < interp->n_pairs; i++) {
+		w_val(file, interp->pairs[i].head);
+		w_val(file, interp->pairs[i].tail);
+	}
+
+	w_i32(file, interp->lvar_top);
+	for (int i = 0; i < interp->lvar_top; i++)
+		w_val(file, interp->lvar_stack[i]);
 
 	for (int i = 0; i < interp->dsp; i++)
 		w_val(file, interp->data_stack[i]);
@@ -2187,7 +2285,6 @@ void free_one_object(Object *obj) {
 		case OBJECT_FRAME: free(obj->frame.keys); free(obj->frame.values); break;
 		case OBJECT_MATRIX: free(obj->matrix.elements); break;
 		case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
-		case OBJECT_LOGIC_VAR: break;
 	}
 	free(obj);
 }
@@ -2461,16 +2558,6 @@ void p_load_image(Interpreter *interp) {
 										  obj->continuation.local_base_offset = local_base_offset;
 										  break;
 									  }
-			case OBJECT_LOGIC_VAR: {
-									  int32_t id;
-									  if (!r_val(file, &obj->logic_var.binding) || !r_i32(file, &id)) {
-										  free(obj);
-										  fail(interp, "%s: truncated logic var", filename);
-										  goto done;
-									  }
-									  obj->logic_var.id = id;
-									  break;
-								  }
 			default:
 									  free(obj);
 									  fail(interp, "%s: unknown object kind %u", filename, kind);
@@ -2480,6 +2567,44 @@ void p_load_image(Interpreter *interp) {
 	}
 	interp->n_objects = saved_n_objects;
 	interp->n_free_slots = 0;
+
+	int32_t saved_n_pairs;
+	if (!r_i32(file, &saved_n_pairs) || saved_n_pairs < 0) {
+		fail(interp, "%s: bad pair count", filename);
+		goto done;
+	}
+	while (interp->pairs_cap < saved_n_pairs) {
+		interp->pairs_cap *= 2;
+		interp->pairs = realloc(interp->pairs, sizeof(Pair) * (size_t)interp->pairs_cap);
+		interp->pair_mark = realloc(interp->pair_mark, sizeof(unsigned char) * (size_t)interp->pairs_cap);
+		interp->pair_free_list = realloc(interp->pair_free_list, sizeof(int) * (size_t)interp->pairs_cap);
+	}
+	for (int i = 0; i < saved_n_pairs; i++) {
+		if (!r_val(file, &interp->pairs[i].head) || !r_val(file, &interp->pairs[i].tail)) {
+			fail(interp, "%s: truncated pairs", filename);
+			goto done;
+		}
+	}
+	interp->n_pairs = saved_n_pairs;
+	interp->pair_free_count = 0;
+
+	int32_t saved_lvar_top;
+	if (!r_i32(file, &saved_lvar_top) || saved_lvar_top < 0) {
+		fail(interp, "%s: bad lvar count", filename);
+		goto done;
+	}
+	while (interp->lvar_cap < saved_lvar_top) {
+		interp->lvar_cap *= 2;
+		interp->lvar_stack = realloc(interp->lvar_stack, sizeof(Val) * (size_t)interp->lvar_cap);
+	}
+	for (int i = 0; i < saved_lvar_top; i++) {
+		if (!r_val(file, &interp->lvar_stack[i])) {
+			fail(interp, "%s: truncated lvars", filename);
+			goto done;
+		}
+	}
+	interp->lvar_top = saved_lvar_top;
+	interp->bind_trail_top = 0;
 
 	for (int i = 0; i < saved_dsp; i++) {
 		if (!r_val(file, &interp->data_stack[i])) {
@@ -2585,6 +2710,7 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, "null", p_null, 0);
 	define_primitive(interp, "lvar", p_lvar, 0);
+	define_primitive(interp, "_", p_wildcard, 0);
 	define_primitive(interp, "unify", p_unify, 0);
 	define_primitive(interp, "deref", p_deref, 0);
 	define_primitive(interp, "amb", p_amb, 0);
@@ -2625,6 +2751,7 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "update-at", p_update_at, 0);
 	define_primitive(interp, "merge", p_merge, 0);
 	define_primitive(interp, "copy", p_copy, 0);
+	define_primitive(interp, "reify", p_reify, 0);
 
 	define_primitive(interp, "reset", p_reset, 0);
 	define_primitive(interp, "fail", p_fail, 0);
@@ -2641,6 +2768,9 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "[(", p_array_open, 0);
 	define_primitive(interp, ")]", p_list_close, 0);
 	define_primitive(interp, "cons", p_cons, 0);
+	define_primitive(interp, "head-tail", p_head_tail, 0);
+	define_primitive(interp, "array>cons", p_array_to_cons, 0);
+	define_primitive(interp, "cons>array", p_cons_to_array, 0);
 
 	define_primitive(interp, "array", p_array, 0);
 	define_primitive(interp, "array-of", p_array_of, 0);
@@ -2798,8 +2928,16 @@ int interp_bootstrap(Interpreter *interp) {
 	interp->vocab->init_source_here = interp->vocab->source_here;
 	interp->vocab->init_symbol_pool_here = interp->vocab->symbol_pool_here;
 
-	push(interp, make_string(object_new_string(interp, "src/forth/lib.l4", 16)));
-	execute_cfa(interp, find(interp, "load"));
+	memcpy(interp->input_buffer, lib_l4, lib_l4_len);
+	interp->input_buffer[lib_l4_len] = 0;
+	interp->input_buffer_len = (int)lib_l4_len;
+	interp->input_buffer_pos = 0;
+	run_outer(interp);
+
+	interp->input_buffer_len = 0;
+	interp->input_buffer_pos = 0;
+	interp->input_buffer[0] = 0;
+
 	if (interp->error_flag) {
 		printf("lib.l4 load error\n");
 		return 1;

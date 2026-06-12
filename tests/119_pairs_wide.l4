@@ -1,0 +1,32 @@
+\ Pairs, wide: many pairs under GC churn, mixed aggregates, reachability.
+\ Pairs live in a GC'd table; these check survival, reclamation, and that the
+\ collector reaches pairs through arrays, through other pairs, and through
+\ logic-variable bindings.
+
+\ a kept pair survives heavy pair churn plus a collection
+variable KEEP
+[( 7 8 9 null )] to KEEP
+[: |> i | [( i i 1+ null )] drop :] 200000 i-times
+gc
+KEEP . cr                                          \ [( 7 8 9 null )]
+
+\ a pair reachable only through a logic-variable binding survives GC
+variable V
+lvar to V
+V [( 1 2 null )] ~ drop
+gc
+V . cr                                             \ [( 1 2 null )]
+
+\ a list whose elements are themselves lists
+[( [( 1 null )] [( 2 null )] [( 3 null )] null )] . cr
+
+\ pairs inside an array survive GC (mark reaches in through the array)
+[ [( 1 2 null )] [( 3 4 null )] ] gc . cr          \ [ [( 1 2 null )] [( 3 4 null )] ]
+
+\ arrays inside a pair survive GC (mark reaches in through the pair)
+[( [ 1 2 ] [ 3 4 ] null )] gc . cr                 \ [( [ 1 2 ] [ 3 4 ] null )]
+
+\ many distinct lists held in an array all survive
+[ [( 1 null )] [( 2 null )] [( 3 null )] [( 4 null )] [( 5 null )] ] gc . cr
+
+bye

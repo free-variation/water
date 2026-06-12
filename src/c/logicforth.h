@@ -27,8 +27,8 @@ typedef int64_t cell;
 #define MAX_OBJECTS    			4194304
 #define INPUT_BUFFER_SIZE    	1048576
 #define SOURCE_POOL 			4194304
-#define SYMBOL_POOL 			262144
-#define SYMBOL_HASH_SIZE 		262144
+#define SYMBOL_POOL 			4194304
+#define SYMBOL_HASH_SIZE 		1048576
 #define SIDESTACK_DEPTH 		1024
 #define BIND_TRAIL_DEPTH		65536
 #define MAX_LOADED_FILES 		64
@@ -42,6 +42,7 @@ typedef int64_t cell;
 #define PROMPT_CHOICE			1
 #define LVAR_STACK_DEPTH		65536
 #define PAIR_TABLE_DEPTH		1 << 20
+#define COPY_SPINE_MAX			(1 << 24)
 
 typedef enum {
 	T_NONE = 0,
@@ -126,8 +127,7 @@ typedef enum {
 	OBJECT_ARRAY,
 	OBJECT_FRAME,
 	OBJECT_MATRIX,
-	OBJECT_CONTINUATION,
-	OBJECT_LOGIC_VAR
+	OBJECT_CONTINUATION
 } ObjectKind;
 
 typedef struct {
@@ -151,10 +151,6 @@ typedef struct {
 			int resume_ip;
 			int local_base_offset;
 		} continuation;
-		struct {
-			Val binding;
-			int id;
-		} logic_var;
 	};
 } Object;
 
@@ -163,9 +159,26 @@ typedef struct {
 	Val tail;
 } Pair;
 
+typedef struct {
+	int slot;
+	Val value;
+} VarMapEntry;
+
+typedef struct {
+	int reify;
+	VarMapEntry *entries;
+	int count, cap;
+} VarMap;
+
 #define MAT(m, i, j) ((m)->matrix.elements[(i) * (m)->matrix.columns + (j)])
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define GROW_IF_FULL(count, cap, arr) do { \
+	if ((count) == (cap)) { \
+		(cap) = (cap) ? (cap) * 2 : 8; \
+		(arr) = realloc((arr), sizeof(*(arr)) * (size_t)(cap)); \
+	} \
+} while (0)
 
 typedef struct Vocabulary {
 	cell *dict;
@@ -237,6 +250,7 @@ typedef struct Interpreter {
 	unsigned char *pair_mark;
 	int *pair_free_list;
 	int pair_free_count;
+	int gc_disabled;
 
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
@@ -427,7 +441,6 @@ static inline Val rpop(Interpreter *interp) {
 	}
 
 
-/* ---- internal cross-file prototypes ---- */
 int create_variable(Interpreter *interp, const char *name);
 static inline void gc_root_push(Interpreter *interp, Val value) {
 	if (interp->n_gc_roots >= MAX_GC_ROOTS) {
@@ -581,6 +594,7 @@ void p_or(Interpreter *interp);
 void p_not(Interpreter *interp);
 void p_null(Interpreter *interp);
 void p_lvar(Interpreter *interp);
+void p_wildcard(Interpreter *interp);
 void p_unify(Interpreter *interp);
 void p_deref(Interpreter *interp);
 Val deref(Interpreter *interp, Val value);
@@ -612,6 +626,7 @@ void p_has(Interpreter *interp);
 void p_update_at(Interpreter *interp);
 void p_merge(Interpreter *interp);
 void p_copy(Interpreter *interp);
+void p_reify(Interpreter *interp);
 void p_frame_keys(Interpreter *interp);
 void p_frame_values(Interpreter *interp);
 void p_frame(Interpreter *interp);
@@ -623,6 +638,9 @@ void p_array_open(Interpreter *interp);
 void p_array_close(Interpreter *interp);
 void p_list_close(Interpreter *interp);
 void p_cons(Interpreter *interp);
+void p_head_tail(Interpreter *interp);
+void p_array_to_cons(Interpreter *interp);
+void p_cons_to_array(Interpreter *interp);
 void p_array(Interpreter *interp);
 void p_size(Interpreter *interp);
 void p_member(Interpreter *interp);
@@ -704,7 +722,6 @@ void load_file(Interpreter *interp, const char *filename);
 void p_load(Interpreter *interp);
 void p_reload(Interpreter *interp);
 void mark_value(Interpreter *interp, Val value);
-void copy_value(Interpreter *interp, Val source_val, Val *copy_val);
 void mark_body(Interpreter *interp, int body_start, int body_end);
 void gc(Interpreter *interp);
 void p_gc(Interpreter *interp);

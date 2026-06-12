@@ -314,6 +314,22 @@ Fixed length, 0-indexed, elements of any type.
 
 ---
 
+## Pairs (cons lists)
+
+Cons cells in a dense, GC'd table — the linked, recursively-decomposable counterpart to arrays (O(1) prepend, tail-sharing, head/tail recursion). A list is a chain of pairs; `null` is the empty list and the terminator. The `[( … )]` reader takes the **last element as the tail**, so `[( a b c )]` is `cons(a, cons(b, c))` and a proper list is written `[( a b c null )]`. That makes `[( H T )]` exactly Prolog's `[H|T]` under `unify`. Printing resolves bound vars; output round-trips.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `[( v… )]` | `( -- list )` | List literal; the last element is the tail (`[( a b c )]` = `cons(a, cons(b, c))`; `[( )]` = `null`; one element = itself) | n | `n−1` pairs | O(n) |
+| `cons` | `( head tail -- pair )` | Build a cons cell | 2 | `1 pair` | O(1) |
+| `head-tail` | `( pair -- head tail )` | Split a pair — head under, tail on top; no auto-deref; errors on a non-pair | 1 | none | O(1) |
+| `array>cons` | `( arr -- list )` | Cons chain from an array's elements (last element becomes the tail; `[ ]` → `null`) | n | `n−1` pairs | O(n) |
+| `cons>array` | `( list -- arr )` | Walk a cons chain into an array, **dereferencing** the spine and each element and including the terminal (works on relational results) | n | `1a(n)` | O(n) |
+
+`unify` decomposes/builds pairs (head then tail), and `=` compares them structurally — see Logic.
+
+---
+
 ## Frames
 
 Symbol-keyed sorted maps; binary-search lookup. A path is an array of symbols; the literal `/a/b/c` is a compile-time constant array and allocates nothing at run time. `d` = path depth, `n` = frame size.
@@ -331,7 +347,8 @@ Symbol-keyed sorted maps; binary-search lookup. A path is an array of symbols; t
 | `keys` | `( fr -- arr )` | Keys (symbols) in sorted order | 1 + n | `1a(n)` | O(n) |
 | `values` | `( fr -- arr )` | Values in key order | 1 + n | `1a(n)` | O(n) |
 | `merge` | `( fr₁ fr₂ -- fr )` | New frame with all keys; fr₂ wins collisions | (m+n) log(m+n) | `1o` + reallocs | O((m+n) log(m+n)) |
-| `copy` | `( a -- a' )` | Deep copy of any value (recurses into frames, arrays, matrices, strings, sets, continuations); identity for scalars. Defined generally, not frame-specific. | tree size | one object per node | O(tree size) |
+| `copy` | `( a -- a' )` | Deep copy of any value, `copy_term`-style: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations, pairs; identity for scalars. Defined generally, not frame-specific. | tree size | one object per node | O(tree size) |
+| `reify` | `( a -- a' )` | Like `copy`, but each unbound var becomes a canonical inert symbol `:_0`, `:_1`, … numbered by first appearance — a ground, storable, comparable snapshot. | tree size | one object per node | O(tree size) |
 
 ---
 
@@ -432,14 +449,15 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 
 ## Logic
 
-Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. A capitalized identifier is a logic-var literal: at the REPL it names a persistent global logic var (created on first mention); inside a definition or quotation, declare it in `| X |` for a fresh per-call variable. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`.
+Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. A capitalized identifier is a logic-var literal: at the REPL it names a persistent global logic var (created on first mention); inside a definition or quotation, declare it in `| X |` for a fresh per-call variable. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`. Lists are cons pairs (see Pairs): `[( H T )]` is the `[H|T]` head/tail pattern under `unify`. To keep a result past backtracking, snapshot it with `copy` (fresh vars) or `reify` (canonical `:_N`).
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `lvar` | `( -- v )` | Push a fresh, unbound logic variable | 2 | `1o` | O(1) |
-| `unify` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed term. Atoms by value; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. On a mismatch, `fail`s. | n | none | O(n) |
+| `lvar` | `( -- v )` | Push a fresh, unbound logic variable | 2 | `1 lvar` | O(1) |
+| `_` | `( -- wild )` | The anonymous wildcard — unifies with anything, binds nothing, allocates nothing (a constant, not a fresh var) | 2 | none | O(1) |
+| `unify` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A `_` on either side matches anything and binds nothing. On a mismatch, `fail`s. | n | none | O(n) |
 | `~` | `( a b -- term )` | lib.l4: `unify` (inlined) | n | none | O(n) |
-| `deref` | `( v -- val )` | Follow a logic var's binding chain: v if unbound, else the recursively dereffed value | d | none | O(d) |
+| `deref` | `( v -- val )` | Follow a logic var's binding chain to the first non-variable value (v itself if unbound). Shallow — a returned structure still has bound vars inside; for a fully resolved snapshot use `reify` or `copy` | d | none | O(d) |
 | `$` | `( v -- val )` | lib.l4: `deref` (inlined) | d | none | O(d) |
 | `amb` | `( xt1 xt2 -- … )` | Run xt1; if it fails (a `unify` mismatch or `fail`), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds. | xt1 | none | O(xt1 + xt2) |
 | `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
@@ -549,6 +567,7 @@ Line access is `read "\n" split`.
 | `T_SYMBOL` | symbol-pool offset; equal names share one offset |
 | `T_ARRAY` | heap object; `Val[]` |
 | `T_SET` | heap object; sorted `Val[]`, binary-search membership |
+| `T_PAIR` | cons cell in the dense, GC'd pair table; `{head, tail}`. Lists are `null`-terminated chains |
 | `T_FRAME` | heap object; sorted parallel keys (`cell[]`) and values (`Val[]`) |
 | `T_MATRIX` | heap object; r×c row-major `double[]` |
 | `T_XT` | execution token (dict index); first-class callable |
@@ -556,7 +575,9 @@ Line access is `read "\n" split`.
 | `T_STREAM` | OS file descriptor (pipe or socket end); an inline `int`, like `T_ADDR` |
 | `T_CONT` | heap object; a captured return-stack slice plus a resume IP |
 | `T_MARK` | ephemeral sentinel from `<`, `[`, `{`, `reset`; not user-visible |
-| `T_NONE` | uninitialized / sentinel |
+| `T_LOGIC_VAR` | index into the logic-var stack; unbound, or bound to a Val (resolve with `deref`) |
+| `T_UNBOUND` | binding sentinel for an unbound logic var; also the `_` wildcard value when on the stack |
+| `T_NONE` | uninitialized / sentinel; the empty list and `null` |
 
 Boolean convention: `1.0` true, `0.0` false.
 
@@ -564,7 +585,7 @@ Boolean convention: `1.0` true, `0.0` false.
 
 ## Object allocation
 
-Every heap value uses one slot in the 2M-entry `objects[]` table (pointer-bump, GC on exhaustion) plus a `calloc`'d `Object` struct plus one payload allocation:
+Most heap values use one slot in the 4M-entry `objects[]` table (pointer-bump, GC on exhaustion) plus a `calloc`'d `Object` struct plus one payload allocation. Two types are exceptions: **pairs** live in a separate dense, GC'd table (`{head, tail}` inline, no payload), and **logic vars** on a bump-allocated stack reclaimed by truncation on backtrack.
 
 | Type | Payload |
 |------|---------|

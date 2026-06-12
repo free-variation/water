@@ -3,7 +3,7 @@ CFLAGS = -O3 -march=native -Wall -Wextra
 LDLIBS = -lm
 
 SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c
-HDRS = src/c/logicforth.h
+HDRS = src/c/logicforth.h src/c/lib_embed.h
 
 PCRE2 = /opt/homebrew/opt/pcre2
 
@@ -12,6 +12,9 @@ logicforth: $(SRCS) $(HDRS)
 
 src/c/help_table.c: docs/reference.md tools/gen-help.py
 	python3 tools/gen-help.py
+
+src/c/lib_embed.h: src/forth/lib.l4
+	cd src/forth && xxd -i lib.l4 > ../../src/c/lib_embed.h
 
 test: logicforth
 	sh tests/run.sh

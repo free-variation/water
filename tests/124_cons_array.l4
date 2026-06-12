@@ -1,0 +1,11 @@
+\ array>cons / cons>array conversions. array>cons makes the last array element
+\ the tail (same rule as the [( reader); cons>array derefs the spine and each
+\ element and includes the terminal. Inverses for atom-element lists.
+[ 1 2 3 ] array>cons . cr                      \ [( 1 2 3 )]
+[ 1 2 3 ] array>cons cons>array . cr           \ [ 1 2 3 ]
+[( 1 2 3 )] cons>array . cr                    \ [ 1 2 3 ]
+[( 1 2 3 null )] cons>array . cr               \ [ 1 2 3 null ]
+[ ] array>cons . cr                            \ null
+[ 9 ] array>cons . cr                          \ 9
+lvar to X  lvar to T  [( 5 6 )] [( X T )] ~ drop  [( X T )] cons>array . cr    \ [ 5 6 ]
+bye

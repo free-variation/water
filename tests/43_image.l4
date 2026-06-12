@@ -1,28 +1,46 @@
-\ Round-trip test for save-image / load-image.
-\ Saves a variety of state, corrupts the live interpreter, restores from
-\ the image, and verifies everything came back.
+\ Comprehensive save-image / load-image round-trip. Covers, in one image:
+\ definitions with a cross-reference, a variable, a symbol, a pair-valued
+\ variable, a logic var bound to a value, a pair that shares a bound logic var,
+\ and a data stack holding a set, a string, a matrix, and a nested frame (frame
+\ + sub-frame + set). Save, clobber the live interpreter, load, verify all of it.
 
 : square dup * ;
 : cube dup square * ;
-variable counter
-42 to counter
+variable counter   42 to counter
 symbol red
+variable LST   [( 1 2 3 null )] to LST
+variable V     lvar to V   V 42 ~ drop
+variable P     lvar to X   [( X X null )] to P   X 9 ~ drop
+
+\ stack state to round-trip
 < 1 2 3 >
 "hello"
 [ 1 2 3 4 ] 2 2 matrix
-"/tmp/lf-test-43.image" save-image
+{ :a 1 :b { :c 2 } :d < 7 8 > }
 
-\ Scribble over live state — redefine square, clear stack, clobber counter.
+"/tmp/lf-image-test.image" save-image
+
+\ scribble over live state
 clear
 : square 0 ;
 0 to counter
-3 square .  cr   \ expects 0 from the clobbered version
+3 square . cr            \ 0  (clobbered)
 
-"/tmp/lf-test-43.image" load-image
+"/tmp/lf-image-test.image" load-image
 
-\ Stack and definitions should be restored.
-3 square .  cr   \ expects 9 from the original
-3 cube .    cr   \ expects 27; exercises cross-reference between user words
-counter .   cr   \ expects 42
-red .       cr   \ expects red
-.s          cr   \ expects < 1 2 3 > hello <matrix 2x2: ...>
+\ definitions + cross-reference restored
+3 square . cr            \ 9
+3 cube . cr              \ 27
+\ scalar / symbol / pair / lvar variables restored
+counter . cr             \ 42
+red . cr                 \ red
+LST . cr                 \ [( 1 2 3 null )]
+V . cr                   \ 42
+P . cr                   \ [( 9 9 null )]   shared lvar binding survived
+\ stack restored (frame on top): nested frame + set fields
+dup /a @ . cr            \ 1
+dup /b/c @ . cr          \ 2   nested frame survived
+dup /d @ size . cr       \ 2   nested set survived
+.s cr                    \ < 1 2 3 >  hello  <matrix 2x2 ...>  { ... }
+
+bye

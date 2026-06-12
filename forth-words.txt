@@ -35,6 +35,7 @@ $
 @j
 [:
 ^
+_
 abs
 acos
 again
@@ -43,6 +44,7 @@ and
 append-file
 array
 array-of
+array>cons
 asin
 atan
 begin
@@ -55,6 +57,8 @@ column-means
 column-mins
 column-sums
 concat
+cons
+cons>array
 copy
 cos
 cr
@@ -120,6 +124,7 @@ ftruncate
 gc
 gt
 has?
+head-tail
 help
 i-times
 identity-matrix
@@ -169,6 +174,7 @@ read-err
 read-file
 read-out
 reduce
+reify
 reload
 repeat
 replace

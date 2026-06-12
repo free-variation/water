@@ -8,10 +8,7 @@ void set_add(Interpreter *interp, int set_handle, Val value) {
 		return;
 	}
 
-	if (set->len >= set->capacity) {
-		set->capacity *= 2;
-		set->items = realloc(set->items, sizeof(Val) * (size_t)set->capacity);
-	}
+	GROW_IF_FULL(set->len, set->capacity, set->items);
 
 	memmove(&set->items[low + 1], &set->items[low],
 			sizeof(Val) * (size_t)(set->len - low));
@@ -204,6 +201,88 @@ void p_cons(Interpreter *interp) {
 	interp->dsp = first;
 
 	push(interp, make_pair(slot));
+
+	DISPATCH(interp);
+}
+
+void p_head_tail(Interpreter *interp) {
+	POP(pair_val);
+	if (VAL_TAG(pair_val) != T_PAIR) {
+		fail(interp, "head-tail: expected a pair; got %s", tag_name(VAL_TAG(pair_val)));
+		return;
+	}
+	Val head = interp->pairs[VAL_DATA(pair_val)].head;
+	Val tail = interp->pairs[VAL_DATA(pair_val)].tail;
+	push(interp, head);
+	push(interp, tail);
+
+	DISPATCH(interp);
+}
+
+void p_array_to_cons(Interpreter *interp) {
+	PEEK_AT(array_val, 0, "array>cons");
+	if (VAL_TAG(array_val) != T_ARRAY) {
+		fail(interp, "array>cons: expected an array; got %s", tag_name(VAL_TAG(array_val)));
+		return;
+	}
+	Object *array = interp->objects[VAL_DATA(array_val)];
+	int n = array->len;
+
+	Val result;
+	if (n == 0)
+		result = make_tagged(T_NONE, 0);
+	else {
+		/* acc lives in a gc root so the in-progress chain survives a collection
+		   triggered while allocating later pairs; the source stays rooted on the
+		   stack via PEEK, so array->items reads stay valid too. */
+		gc_root_push(interp, array->items[n - 1]);
+		for (int i = n - 2; i >= 0; i--) {
+			int slot = object_new_pair(interp);
+			if (interp->error_flag) {
+				gc_root_pop(interp);
+				return;
+			}
+			interp->pairs[slot].head = array->items[i];
+			interp->pairs[slot].tail = interp->gc_roots[interp->n_gc_roots - 1];
+			interp->gc_roots[interp->n_gc_roots - 1] = make_pair(slot);
+		}
+		result = interp->gc_roots[interp->n_gc_roots - 1];
+		gc_root_pop(interp);
+	}
+
+	interp->data_stack[interp->dsp - 1] = result;
+
+	DISPATCH(interp);
+}
+
+void p_cons_to_array(Interpreter *interp) {
+	PEEK_AT(list_val, 0, "cons>array");
+
+	int count = 1;
+	Val cur = deref(interp, list_val);
+	while (VAL_TAG(cur) == T_PAIR) {
+		if (count > COPY_SPINE_MAX) {
+			fail(interp, "cons>array: list too long or cyclic");
+			return;
+		}
+		count++;
+		cur = deref(interp, interp->pairs[VAL_DATA(cur)].tail);
+	}
+
+	int handle = object_new_array(interp, count);
+	if (interp->error_flag)
+		return;
+	Object *array = interp->objects[handle];
+
+	int i = 0;
+	cur = deref(interp, list_val);
+	while (VAL_TAG(cur) == T_PAIR) {
+		array->items[i++] = deref(interp, interp->pairs[VAL_DATA(cur)].head);
+		cur = deref(interp, interp->pairs[VAL_DATA(cur)].tail);
+	}
+	array->items[i] = deref(interp, cur);
+
+	interp->data_stack[interp->dsp - 1] = make_array(handle);
 
 	DISPATCH(interp);
 }
