@@ -376,11 +376,11 @@ shared keys must unify, keys present on only one side are allowed — which is
 exactly SQL selection and projection: a pattern `{ :child X }` unified against a
 row binds `X` to that row's `:child` and ignores the other columns. `query`
 collects *all* matches (committed `amb` yields only one solution), so it is a
-deterministic loop with trail rollback: for each candidate row, mark the bind
-trail, `unify` the pattern against the row, on success collect the reified row,
-then roll the trail back and continue. It returns an array of the matching rows
-(vars resolved); the pattern's logic vars serve only as the filter, and
-projection is reading columns off the returned rows.
+deterministic loop: for each candidate row test the pattern with `matches?`, and
+on success collect the row. Stored rows are ground, so the row is returned as-is
+and `matches?` rolls its own bindings back; the pattern's logic vars serve only
+as the filter, and projection is reading columns off the returned rows. `query`
+returns an array of the matching rows.
 
 **Indices** are declared per relation at creation and cover symbol-valued
 columns only — which lets every level stay a plain symbol-keyed frame. `:index`
@@ -389,9 +389,30 @@ holding that value (the same row frames as `:rows`, shared). `query` uses an
 index when the pattern grounds an indexed column to a symbol, taking that
 bucket as the candidate set instead of scanning `:rows`; otherwise it scans.
 
-`assert` adds a row to `:rows` and to the `:index` bucket for each indexed
-column; `retract` removes matching rows from both. Both are C primitives, since
-they maintain the set and the index buckets together.
+Index optimizations, all query-planner logic in lib.l4 over the existing set
+ops (`intersection`, `size`, `@`):
+
+- **Smallest bucket drives.** When several indexed columns are ground, pick the
+  bucket with the fewest rows (`size` is O(1)) to scan; `intersection` of two
+  sorted buckets narrows further in O(min).
+- **Empty bucket short-circuits.** A ground indexed value never asserted has no
+  bucket — return empty with no scan.
+- **Covering query skips the test.** If every constraint is a ground indexed
+  column, the (intersected) bucket already satisfies the pattern — return it
+  directly without `matches?` per row.
+- **Count without materializing.** A count over a ground indexed column is the
+  bucket's `size`, O(1), no scan.
+- **Index-nested-loop join.** Joining two relations on a shared column looks up
+  the other relation's bucket per row (O(log)) instead of scanning it, turning
+  an O(n·m) nested loop into O(n·log m).
+
+**Implementation.** The four words live in lib.l4, on top of three small C
+primitives: `set-add!` and `set-remove!` (in-place O(log n) set insert/remove,
+so `assert`/`retract` don't rebuild the set), and `matches?` ( pattern row -- f )
+— a non-destructive `unify` test that marks the bind trail, unifies, captures the
+result, and rolls the trail back, allocating nothing. `assert` adds the row to
+`:rows` and to each indexed column's bucket; `retract` removes matching rows from
+both.
 
 **Words.** The database is a plain frame of relations (`db :father @` reaches
 one), so it needs no words of its own. Four words operate on a relation:

@@ -1,125 +1,145 @@
 \ book-recs.l4 — top-N book recommendations via truncated SVD.
-\ exercises: SQLite, dicts, matrix+SVD, sort, throw/catch,
-\ regex, time, stdin and env, quotations.
+\ Exercises: SQLite, frames as rows, dense matrices, truncated SVD, sort,
+\ time, stdin, env, regex, quotations, try/catch.
+\
+\ Forward-looking example. These words are planned (see PLAN.md) and not yet
+\ implemented:
+\   db-open  ( path -- db )            open a SQLite database
+\   db-close ( db -- )                 close it
+\   sql      ( db query -- rows )      run a query, return a set of row frames
+\   sql-matrix ( db query -- matrix )  materialize a numeric result as a matrix
+\   svd      ( M k -- U S Vt )         truncated SVD: U is m×k, S is k×k
+\                                      diagonal, Vt is k×n
+\   !i,j     ( M i j v -- M )          store v at row i, column j (companion to @i,j)
+\   sort-with ( arr cmp-xt -- arr' )   sort by cmp ( a b -- flag ), true if a before b
+\   now      ( -- seconds )            wall-clock seconds
+\   read-line ( -- string )           read one line from stdin
+\   parse-number ( string -- number )  parse a numeric string
+\
+\ A `sql` result is a set of row frames keyed by column name — the same row
+\ representation as a fact-database relation, so `:rating @` reads a column.
 
-\ NOTE: this is a forward-looking example. Several primitives used
-\ here are planned (see PLAN.md) and not yet implemented: dicts,
-\ throw/catch, regex match, stdin read-line, env, sql/sql-matrix,
-\ svd-truncated, sort-with, time now, and a few helpers.
+\ ---- config from the environment ----
 
-\ ---- env-driven config ----
+: env-default ( name fallback -- string )
+    swap env dup size 0 = if drop else nip then ;
 
-: env-default ( var default -- s )
-    swap env dup length 0 = if drop else nip then ;
+: db-path   "BOOKDB_PATH" "./books.db" env-default ;
+: k-factors "K_FACTORS"   "16"         env-default parse-number ;
+: top-n     "TOP_N"       "10"         env-default parse-number ;
 
-: db-path     "BOOKDB_PATH" "./books.db" env-default ;
-: k-factors   "K_FACTORS"   "16"          env-default parse-int ;
-: top-n       "TOP_N"       "10"          env-default parse-int ;
-
-\ ---- small utilities ----
-
-: pair    ( a b -- arr )   2 array tuck 1 swap @i! tuck 0 swap @i! ;
-: empty?  ( a -- bool )    length 0 = ;
-: die     ( s -- )         throw ;
-
-\ ---- DB plumbing ----
+\ ---- SQLite plumbing ----
 
 variable db
-: connect    db-path db-open db ! ;
-: disconnect db @ db-close ;
-: run        ( q -- rows )    db @ swap sql ;
-: run-matrix ( q -- matrix )  db @ swap sql-matrix ;
+: connect    db-path db-open to db ;
+: disconnect db db-close ;
+: q          ( query -- rows )    db swap sql ;
+: q-matrix   ( query -- matrix )  db swap sql-matrix ;
 
-\ ---- load ratings into a dense matrix ----
+\ ---- load ratings into a dense user×book matrix ----
 
-variable n-users   variable n-books
+variable n-users
+variable n-books
 
 : load-shape
-    "SELECT MAX(user_id)+1, MAX(book_id)+1 FROM ratings" run-matrix
-    dup 0 0 @i,j n-users !
-        0 1 @i,j n-books ! ;
+    "SELECT MAX(user_id)+1, MAX(book_id)+1 FROM ratings" q-matrix
+    dup 0 0 @i,j to n-users
+        0 1 @i,j to n-books ;
 
-: scatter ( m triple -- m )
-    dup 0 at  swap dup 1 at  swap 2 at  @i,j! ;
-
-: load-ratings ( -- M )
-    load-shape
-    n-users @ n-books @ 0-matrix
-    "SELECT user_id, book_id, rating FROM ratings" run
-    [: scatter :] each ;
-
-\ ---- titles lookup ----
-
-: load-titles ( -- dict )
-    {} "SELECT id, title FROM books" run
-    [: dup 0 at swap 1 at rot ! :] each ;
+: ratings-matrix ( -- M )
+    "SELECT user_id, book_id, rating FROM ratings" q
+    n-users n-books 0-matrix
+    [: | >matrix >row | matrix row :user_id @ row :book_id @ row :rating @ !i,j :]
+    reduce ;
 
 \ ---- factor model ----
 
-variable U   variable S   variable Vt
+variable U  variable S  variable Vt
 
 : factorize
-    load-ratings k-factors svd-truncated
-    Vt ! S ! U ! ;
+    load-shape
+    ratings-matrix k-factors svd
+    to Vt  to S  to U ;
 
-: predict-row ( u -- scores )           \ U[u,:] · diag(S) · Vt
-    U @ swap row
-    S @ diagonal-matrix *
-    Vt @ * ;
+: predictions ( -- M )   U S *  Vt * ;          \ users×books predicted ratings
 
-: seen-books ( u -- idxs )
-    "SELECT book_id FROM ratings WHERE user_id = {0}" format run
-    [: 0 at :] map ;
+: user-scores ( preds u -- scores[] )           \ one score per book for user u
+    | >preds >u |
+    0 n-books 1- range
+    [: | >j | preds u j @i,j :] map ;
 
-: mask ( scores idxs -- scores )
-    [: 0 swap @j! :] each ;
+\ ---- mask already-rated books, rank, pick ----
 
-: rank ( scores -- pairs )              \ (book-idx, score), desc
-    dup length 0 [: dup over @i pair :] times
-    swap drop
-    [: 1 at swap 1 at > :] sort-with ;
+: seen-ids ( u -- ids[] )
+    "SELECT book_id FROM ratings WHERE user_id = {0}" format q
+    [: :book_id @ :] map ;
 
-: pick ( pairs -- idxs )
-    top-n take [: 0 at :] map ;
+: mask-seen ( scores[] u -- scores[] )          \ push rated books to the bottom
+    | >scores >u |
+    u seen-ids
+    scores
+    [: | >acc >id | acc id -1e30 !i :]
+    reduce ;
 
-: recommend-for ( u -- idxs )
-    dup predict-row
-    over seen-books mask
-    rank pick
-    nip ;
+: rank ( scores[] -- pairs[] )                  \ (book, score) frames, score desc
+    | >scores |
+    0 scores size 1- range
+    [: | >i | { :book i  :score scores i @i } :] map
+    [: | >a >b | a :score @  b :score @  gt :] sort-with ;
 
-\ ---- output ----
+: top-books ( pairs[] -- ids[] )
+    top-n take
+    [: :book @ :] map ;
+
+: recommend ( u -- ids[] )
+    | >u |
+    predictions u user-scores
+    u mask-seen
+    rank
+    top-books ;
+
+\ ---- titles, indexed by book id ----
 
 variable titles
 
-: show-title ( idx -- )   titles @ swap at . ;
-: show-list  ( idxs -- )  [: show-title cr :] each ;
+: load-titles
+    "" n-books array-of
+    "SELECT id, title FROM books" q
+    [: | >acc >row | acc row :id @ row :title @ !i :]
+    reduce
+    to titles ;
+
+: show ( ids[] -- )
+    | >ids |
+    [: | >i | titles ids i @i @i . cr :] ids size i-times ;
 
 \ ---- input ----
 
 : read-user ( -- u )
-    "Enter user id: " . read-line
-    "^[[:digit:]]+$" match dup empty?
-    if "invalid user id" die then
-    1 at parse-int ;
+    "Enter user id: " .
+    read-line
+    dup "^[0-9]+$" match size 0 =
+    if "invalid user id" throw then
+    parse-number ;
 
 \ ---- top level ----
+
+variable start-time
 
 : banner ( u -- u )
     "BookRec: top-" . top-n . " for user " . dup . cr ;
 
-: report-time ( t0 -- )
-    now swap - "elapsed " . . " s" . cr ;
+: run-recs
+    now to start-time
+    connect
+    factorize
+    load-titles
+    read-user banner
+    recommend show
+    disconnect
+    now start-time - "elapsed " . . " s" . cr ;
 
 : main
-    [
-        now
-        connect factorize
-        load-titles titles !
-        read-user banner
-        recommend-for show-list
-        disconnect
-        report-time
-    ] catch dup 0 = if drop else "fatal: " . . cr then ;
+    [: run-recs :] [: "fatal: " . . cr :] try-catch ;
 
 main
