@@ -23,35 +23,98 @@ int set_member(Interpreter *interp, int set_handle, Val value) {
 	return low < set->len && val_cmp(interp, set->items[low], value) == 0;
 }
 
+void set_remove(Interpreter *interp, int set_handle, Val value) {
+	Object *set = interp->objects[set_handle];
+
+	LOWER_BOUND(set->len, mid, val_cmp(interp, set->items[mid], value) < 0, low);
+	if (low < set->len && val_cmp(interp, set->items[low], value) == 0) {
+		memmove(&set->items[low], &set->items[low + 1],
+				sizeof(Val) * (size_t)(set->len - low - 1));
+		set->len--;
+	}
+}
+
 int set_union(Interpreter *interp, int handle_a, int handle_b) {
 	int union_handle = object_new_set(interp);
+	if (interp->error_flag) return -1;
+
+	Object *union_set = interp->objects[union_handle];
 	Object *set_a = interp->objects[handle_a];
 	Object *set_b = interp->objects[handle_b];
 
-	for (int i = 0; i < set_a->len; i++) set_add(interp, union_handle, set_a->items[i]);
-	for (int i = 0; i < set_b->len; i++) set_add(interp, union_handle, set_b->items[i]);
+	int i = 0, j = 0;
+	while (i < set_a->len || j < set_b->len) {
+		Val merged_value;
+		if (j >= set_b->len)
+			merged_value = set_a->items[i++];
+		else if (i >= set_a->len)
+			merged_value = set_b->items[j++];
+		else {
+			int cmp = val_cmp(interp, set_a->items[i], set_b->items[j]);
+			if (cmp < 0)
+				merged_value = set_a->items[i++];
+			else if (cmp > 0)
+				merged_value = set_b->items[j++];
+			else {
+				merged_value = set_a->items[i++];
+				j++;
+			}
+		}
+
+		GROW_IF_FULL(union_set->len, union_set->capacity, union_set->items);
+		union_set->items[union_set->len++] = merged_value;
+	}
 
 	return union_handle;
 }
 
 int set_intersect(Interpreter *interp, int handle_a, int handle_b) {
 	int intersection_handle = object_new_set(interp);
-	Object *set_a = interp->objects[handle_a];
+	if (interp->error_flag) return -1;
 
-	for (int i = 0; i < set_a->len; i++)
-		if (set_member(interp, handle_b, set_a->items[i]))
-			set_add(interp, intersection_handle, set_a->items[i]);
+	Object *intersection_set = interp->objects[intersection_handle];
+	Object *set_a = interp->objects[handle_a];
+	Object *set_b = interp->objects[handle_b];
+
+	int i = 0, j = 0;
+	while (i < set_a->len && j < set_b->len) {
+		int cmp = val_cmp(interp, set_a->items[i], set_b->items[j]);
+		if (cmp < 0)
+			i++;
+		else if (cmp > 0)
+			j++;
+		else {
+			GROW_IF_FULL(intersection_set->len, intersection_set->capacity, intersection_set->items);
+			intersection_set->items[intersection_set->len++] = set_a->items[i];
+			i++;
+			j++;
+		}
+	}
 
 	return intersection_handle;
 }
 
 int set_difference(Interpreter *interp, int handle_a, int handle_b) {
 	int difference_handle = object_new_set(interp);
-	Object *set_a = interp->objects[handle_a];
+	if (interp->error_flag) return -1;
 
-	for (int i = 0; i < set_a->len; i++)
-		if (!set_member(interp, handle_b, set_a->items[i]))
-			set_add(interp, difference_handle, set_a->items[i]);
+	Object *difference_set = interp->objects[difference_handle];
+	Object *set_a = interp->objects[handle_a];
+	Object *set_b = interp->objects[handle_b];
+
+	int i = 0, j = 0;
+	while (i < set_a->len) {
+		int cmp = (j >= set_b->len) ? -1 : val_cmp(interp, set_a->items[i], set_b->items[j]);
+		if (cmp < 0) {
+			GROW_IF_FULL(difference_set->len, difference_set->capacity, difference_set->items);
+			difference_set->items[difference_set->len++] = set_a->items[i++];
+		} else if (cmp > 0) {
+			j++;
+		} else {
+			i++;
+			j++;
+		}
+	}
 
 	return difference_handle;
 }
@@ -311,41 +374,53 @@ void p_member(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static void binary_set_op(Interpreter *interp, const char *op,
+		int (*combine)(Interpreter *, int, int)) {
+	PEEK_TYPE_AT(left, 1, op, T_SET);
+	PEEK_TYPE_AT(right, 0, op, T_SET);
+
+	int combined_handle = combine(interp, (int)VAL_DATA(left), (int)VAL_DATA(right));
+	if (interp->error_flag) return;
+
+	interp->dsp -= 2;
+	push(interp, make_set(combined_handle));
+}
+
 void p_union(Interpreter *interp) {
-	POP(right);
-	POP(left);
-	if (VAL_TAG(left) != T_SET || VAL_TAG(right) != T_SET) {
-		fail(interp, "union: expected two sets; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
-		return;
-	}
-	push(interp, make_set(set_union(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	binary_set_op(interp, "union", set_union);
 
 	DISPATCH(interp);
 }
 
 void p_intersect(Interpreter *interp) {
-	POP(right);
-	POP(left);
-	if (VAL_TAG(left) != T_SET || VAL_TAG(right) != T_SET) {
-		fail(interp, "intersection: expected two sets; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
-		return;
-	}
-	push(interp, make_set(set_intersect(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	binary_set_op(interp, "intersection", set_intersect);
 
 	DISPATCH(interp);
 }
 
 void p_difference(Interpreter *interp) {
-	POP(right);
-	POP(left);
-	if (VAL_TAG(left) != T_SET || VAL_TAG(right) != T_SET) {
-		fail(interp, "difference: expected two sets; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
-		return;
-	}
-	push(interp, make_set(set_difference(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	binary_set_op(interp, "difference", set_difference);
 
 	DISPATCH(interp);
 }
+
+void p_set_add(Interpreter *interp) {
+	POP(value);
+	PEEK_TYPE_AT(set_val, 0, "set-add!", T_SET);
+
+	set_add(interp, (int)VAL_DATA(set_val), value);
+
+	DISPATCH(interp);
+}
+
+void p_set_remove(Interpreter *interp) {
+	POP(value);
+	PEEK_TYPE_AT(set_val, 0, "set-remove!", T_SET);
+	set_remove(interp, (int)VAL_DATA(set_val), value);
+
+	DISPATCH(interp);
+}
+
 
 void p_array_of(Interpreter *interp) {
 	POP_INT(array_len, "array-of", "length");

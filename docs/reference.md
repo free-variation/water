@@ -281,9 +281,11 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 |------|-------------|----------|-----|-------|---|
 | `< v… >` | `( -- set )` | Set literal; `<` pushes a mark, `>` gathers everything above it into a sorted set | n log n | `1o` + reallocs | O(n log n) |
 | `set` | `( v₀ … vₙ₋₁ n -- set )` | Gather the top n values into a new set (the set analog of `array`) | 2 + n log n | `1o` + reallocs | O(n log n) |
-| `union` | `( s₁ s₂ -- s₃ )` | Union into a new set | (m+n) log(m+n) | `1o` + reallocs | O((m+n) log(m+n)) |
-| `intersection` | `( s₁ s₂ -- s₃ )` | Intersection into a new set | m log n | `1o` + reallocs | O(m log n) |
-| `difference` | `( s₁ s₂ -- s₃ )` | s₁ − s₂ into a new set | m log n | `1o` + reallocs | O(m log n) |
+| `union` | `( s₁ s₂ -- s₃ )` | Union into a new set, merging the two sorted arrays | m+n | `1o` + reallocs | O(m+n) |
+| `intersection` | `( s₁ s₂ -- s₃ )` | Intersection into a new set, merging the two sorted arrays | m+n | `1o` + reallocs | O(m+n) |
+| `difference` | `( s₁ s₂ -- s₃ )` | s₁ − s₂ into a new set, merging the two sorted arrays | m+n | `1o` + reallocs | O(m+n) |
+| `set-add!` | `( set v -- set )` | Insert v in sorted position if absent (dedups); leaves set on the stack | log n + n | reallocs | O(n) |
+| `set-remove!` | `( set v -- set )` | Remove v if present (no-op if absent); leaves set on the stack | log n + n | none | O(n) |
 | `member?` | `( set v -- bool )` | Binary-search membership | 3 + log n | none | O(log n) |
 | `size` | `( coll -- n )` | Element count of a set, array, or string; pair count of a frame | 2 | none | O(1) |
 
@@ -461,6 +463,27 @@ Logic variables, unification, and committed choice, built on the trail and a `PR
 | `$` | `( v -- val )` | lib.l4: `deref` (inlined) | d | none | O(d) |
 | `amb` | `( xt1 xt2 -- … )` | Run xt1; if it fails (a `unify` mismatch or `fail`), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds. | xt1 | none | O(xt1 + xt2) |
 | `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
+| `matches?` | `( a b -- flag )` | Non-destructive unify test: mark the trail, unify a and b, roll the trail back, push whether they unified. Leaves no bindings and never backtracks (so it composes in straight-line code, unlike `unify`) | n | none | O(n) |
+| `symbol?` | `( v -- flag )` | True when v is a symbol | 2 | none | O(1) |
+
+---
+
+## Fact database
+
+A relational store built entirely from frames and sets — no new type. A **relation** is `{ :rows <set of rows> :index <index> }`; a **row** is a frame keyed by column name; a **database**, if you want several relations, is just a frame keyed by relation name (`db :father @` reaches one — no words of its own). The same shape describes a SQLite query result, so a fetched table and a hand-built relation are interchangeable (see the SQLite section of PLAN.md).
+
+Rows live in a set, so an identical row asserted twice dedups to one (a relation is a set of tuples). A caller-supplied `:id` column keeps otherwise-identical rows distinct. Indexed columns are declared at creation and must be symbol-valued; `:index` maps each to a `{ value → <rows> }` frame whose buckets share the row frames in `:rows`.
+
+`query` is unification: a pattern frame unifies against rows as an open record — shared keys must match, a logic var matches anything (projection), extra columns are ignored — which is SQL selection and projection. It collects every match (returning an array of the matching rows) by testing each candidate with `matches?` and rolling bindings back, so the pattern is left unbound. Candidates come from the index when the pattern grounds an indexed column to a symbol (intersecting buckets across several such columns, empty when a value was never asserted); otherwise it scans `:rows`.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `relation` | `( [cols] -- rel )` | New empty relation; `cols` is an array of column symbols to index | k | frames + sets | O(k) |
+| `assert` | `( rel row -- rel )` | Add row to `:rows` and to each indexed column's bucket; identical row is a no-op. Mutates rel in place, returns it | k + n | reallocs | O(n) |
+| `retract` | `( rel pattern -- rel )` | Remove every row matching pattern from `:rows` and all buckets. Mutates rel, returns it | matches·(k+n) | `1a` | O(matches·n) |
+| `query` | `( rel pattern -- [rows] )` | Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans | candidates·n | `1a` + set ops | O(candidates·n) |
+
+These four are lib.l4 over the `matches?`, `symbol?`, `set-add!`, and `set-remove!` primitives. `assert` of a large relation built one row at a time is super-linear (each insert shifts the sorted `:rows` set); for bulk loads, build the rows and construct the set once.
 
 ---
 

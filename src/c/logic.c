@@ -114,6 +114,19 @@ void p_unify(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_matches(Interpreter *interp) {
+	POP(row);
+	POP(pattern);
+
+	int trail_mark = interp->bind_trail_top;
+	int matched = unify(interp, pattern, row);
+	trail_undo_to(interp, trail_mark);
+
+	push(interp, make_bool(matched));
+
+	DISPATCH(interp);
+}
+
 void p_deref(Interpreter *interp) {
 	POP(value);
 	push(interp, deref(interp, value));

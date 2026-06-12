@@ -345,88 +345,25 @@ into logicforth; struct-by-value arguments.
 
 ## Logic layer — remaining work
 
-### Fact database
+The fact database — `relation` / `assert` / `query` / `retract`, with declared
+symbol-column indices and index-narrowed queries — is implemented; see the Fact
+database section of docs/reference.md. The extensions below build on it and are
+not yet started.
 
-A relational store built entirely from existing types — no new tag. A relation
-is a set of tuples in the relational sense (Codd), so it reuses frames for the
-rows and a set for the relation, and the same representation describes a SQLite
-table: a relation loaded from SQLite and a hand-built relation are the same
-structure (see SQLite integration).
-
-```
-db        = { :father <relation>  :age <relation> }      \ database: name -> relation
-relation  = { :rows <set of rows>  :index <index> }      \ a named relation
-row       = { :id 1  :parent :john  :child :django }      \ a tuple: column -> value
-index     = { :child  { :django <rows>  :bob <rows> }     \ column -> (value -> rows)
-              :parent { :john   <rows> } }
-```
-
-The relation's **name** is its key in the database frame — the functor in
-Prolog terms, the table name in SQL terms. A relation is reached only through
-its name; there is no anonymous relation.
-
-A **row** is a frame keyed by column name. Rows live in a set, so `val_cmp` on
-the whole frame dedups them: asserting an identical row is a no-op, one fact one
-row. A caller- or database-supplied `:id` column distinguishes rows that share
-all other values, so genuinely distinct tuples coexist; rows that the program
-duplicates outright disappear into one.
-
-**Query is unification.** Frame `unify` already behaves as an open record —
-shared keys must unify, keys present on only one side are allowed — which is
-exactly SQL selection and projection: a pattern `{ :child X }` unified against a
-row binds `X` to that row's `:child` and ignores the other columns. `query`
-collects *all* matches (committed `amb` yields only one solution), so it is a
-deterministic loop: for each candidate row test the pattern with `matches?`, and
-on success collect the row. Stored rows are ground, so the row is returned as-is
-and `matches?` rolls its own bindings back; the pattern's logic vars serve only
-as the filter, and projection is reading columns off the returned rows. `query`
-returns an array of the matching rows.
-
-**Indices** are declared per relation at creation and cover symbol-valued
-columns only — which lets every level stay a plain symbol-keyed frame. `:index`
-maps each declared column to a frame from a value symbol to the set of rows
-holding that value (the same row frames as `:rows`, shared). `query` uses an
-index when the pattern grounds an indexed column to a symbol, taking that
-bucket as the candidate set instead of scanning `:rows`; otherwise it scans.
-
-Index optimizations, all query-planner logic in lib.l4 over the existing set
-ops (`intersection`, `size`, `@`):
-
-- **Smallest bucket drives.** When several indexed columns are ground, pick the
-  bucket with the fewest rows (`size` is O(1)) to scan; `intersection` of two
-  sorted buckets narrows further in O(min).
-- **Empty bucket short-circuits.** A ground indexed value never asserted has no
-  bucket — return empty with no scan.
-- **Covering query skips the test.** If every constraint is a ground indexed
-  column, the (intersected) bucket already satisfies the pattern — return it
-  directly without `matches?` per row.
+- **Bulk load.** Building a large relation with one `assert` per row is
+  super-linear: each insert shifts the sorted `:rows` set. A batch builder that
+  gathers the rows and constructs the set once is O(n log n) for a bulk load.
+- **Smallest bucket drives.** When a query grounds several indexed columns,
+  drive the scan from the smallest bucket (`size` is O(1)) before intersecting,
+  rather than intersecting in column order.
+- **Covering query skips the test.** When every pattern constraint is a ground
+  indexed column, the intersected bucket already satisfies the pattern — return
+  it without the per-row `matches?`.
 - **Count without materializing.** A count over a ground indexed column is the
-  bucket's `size`, O(1), no scan.
-- **Index-nested-loop join.** Joining two relations on a shared column looks up
-  the other relation's bucket per row (O(log)) instead of scanning it, turning
-  an O(n·m) nested loop into O(n·log m).
-
-**Implementation.** The four words live in lib.l4, on top of three small C
-primitives: `set-add!` and `set-remove!` (in-place O(log n) set insert/remove,
-so `assert`/`retract` don't rebuild the set), and `matches?` ( pattern row -- f )
-— a non-destructive `unify` test that marks the bind trail, unifies, captures the
-result, and rolls the trail back, allocating nothing. `assert` adds the row to
-`:rows` and to each indexed column's bucket; `retract` removes matching rows from
-both.
-
-**Words.** The database is a plain frame of relations (`db :father @` reaches
-one), so it needs no words of its own. Four words operate on a relation:
-
-```
-[ :child :parent ] relation   ( [cols] -- rel )    \ empty relation; declare indexed columns
-rel  { :id 1 :parent :john :child :django }  assert    ( rel row -- rel )
-rel  { :child :django }                      query     ( rel pattern -- [rows] )
-rel  { :child :django }                      retract   ( rel pattern -- rel )
-```
-
-`assert`/`retract` mutate the relation in place — it is a frame — and return it
-for chaining. Stored facts are ground, so `query` hands back the row frames
-directly.
+  bucket's `size` — no scan, no result array.
+- **Index-nested-loop join.** Joining two relations on a shared column can look
+  up the other relation's bucket per row (O(log)) instead of scanning it,
+  turning an O(n·m) nested loop into O(n·log m).
 
 ---
 

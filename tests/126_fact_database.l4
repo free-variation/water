@@ -1,0 +1,117 @@
+\ Fact database: relation / assert / query / retract over indexed columns.
+\ A relation is { :rows <set of row frames> :index { col -> { value -> <rows> } } }.
+\ A row is a frame keyed by column; rows dedup in :rows; indexed columns are symbols.
+
+variable r
+variable r2
+
+\ === relation creation ===
+[ ] relation :index @ keys . cr                        \ [ ]            no indexed columns
+[ :child ] relation :index @ keys . cr                 \ [ :child ]
+[ :child :parent ] relation to r
+r :index @ keys . cr                                   \ indexed columns
+r :rows @ size . cr                                    \ 0             empty to start
+r :index @ :child @ size . cr                          \ 0             empty value-index
+
+\ === assert populates :rows ===
+r { :id 1 :parent :john :child :django } assert drop
+r { :id 2 :parent :john :child :bob }    assert drop
+r { :id 3 :parent :anne :child :django } assert drop
+r :rows @ size . cr                                    \ 3
+
+\ assert returns the same relation (chainable, mutates in place)
+r { :id 4 :parent :bob :child :sue } assert  r = . cr  \ 1
+r :rows @ size . cr                                    \ 4
+
+\ dedup: re-asserting an identical row is a no-op
+r { :id 1 :parent :john :child :django } assert drop
+r :rows @ size . cr                                    \ 4
+
+\ === index buckets maintained by assert ===
+r :index @ :child @ :django @ size . cr                \ 2   ids 1,3
+r :index @ :child @ :bob @ size . cr                   \ 1   id 2
+r :index @ :child @ :sue @ size . cr                   \ 1   id 4
+r :index @ :parent @ :john @ size . cr                 \ 2   ids 1,2
+
+\ === query: indexed column ===
+r { :child :django } query size . cr                   \ 2
+r { :child :bob } query size . cr                      \ 1
+r { :child :nope } query size . cr                     \ 0
+
+\ === query: non-indexed column (plain scan) ===
+r { :parent :john } query size . cr                    \ 2
+r { :id 2 } query size . cr                            \ 1
+
+\ query returns the actual rows: read a field off the single match
+r { :id 4 } query 0 @i :child @ . cr                   \ :sue
+
+\ === query: multi-column pattern, all constraints must hold ===
+r { :parent :john :child :bob } query size . cr        \ 1
+r { :parent :john :child :sue } query size . cr        \ 0
+
+\ === query: an unbound var in the pattern matches anything ===
+lvar to C   r { :child :django :parent C } query size . cr   \ 2
+C 5 ~ drop  C $ 5 = . cr                               \ 1   C was free: query left no binding
+
+\ === query: a repeated var requires consistency ===
+lvar to S   r { :parent S :child S } query size . cr   \ 0   no row has parent = child
+r :rows @ size . cr                                    \ 4   query didn't mutate the relation
+
+\ === query on an empty relation ===
+[ :child ] relation { :child :anything } query size . cr   \ 0
+
+\ === retract by an indexed value: removes from :rows and the bucket ===
+r { :child :django } retract drop
+r { :child :django } query size . cr                   \ 0
+r :rows @ size . cr                                    \ 2   bob(2), sue(4) remain
+r :index @ :child @ :django @ size . cr                \ 0   bucket emptied
+r :index @ :child @ :bob @ size . cr                   \ 1   untouched
+
+\ retract with no match is a no-op
+r { :child :ghost } retract drop
+r :rows @ size . cr                                    \ 2
+
+\ retract returns the relation
+r { :child :bob } retract  r = . cr                    \ 1
+r :rows @ size . cr                                    \ 1   only sue(4) left
+
+\ retract with a variable pattern removes every match
+lvar to A   r { :child A } retract drop
+r :rows @ size . cr                                    \ 0
+
+\ re-assert after a full retract works
+r { :id 9 :parent :zoe :child :max } assert drop
+r :rows @ size . cr                                    \ 1
+r { :child :max } query size . cr                      \ 1
+
+\ === near-duplicate rows distinguished by :id both persist ===
+[ :child ] relation to r
+r { :id 1 :child :x } assert drop
+r { :id 2 :child :x } assert drop
+r :rows @ size . cr                                    \ 2   same :child, distinct :id
+r :index @ :child @ :x @ size . cr                     \ 2   both in the bucket
+r { :id 1 :child :x } retract drop                     \ remove only id 1
+r :rows @ size . cr                                    \ 1
+r :index @ :child @ :x @ size . cr                     \ 1   id 2 remains
+
+\ === distinct relations are independent ===
+[ :child ] relation to r
+[ :child ] relation to r2
+r  { :id 1 :child :a } assert drop
+r2 { :id 1 :child :b } assert drop
+r :rows @ size . cr                                    \ 1
+r2 :rows @ size . cr                                   \ 1
+r { :child :b } query size . cr                        \ 0   r2's data did not leak into r
+
+\ === index narrowing: candidates shrinks the scan set ===
+[ :child ] relation to r
+r { :id 1 :child :a } assert drop
+r { :id 2 :child :b } assert drop
+r { :id 3 :child :a } assert drop
+r { :child :a } candidates size . cr                   \ 2   narrowed to the :a bucket, not all 3 rows
+r { :child :nope } candidates size . cr                \ 0   unasserted value: empty, no scan
+r { :parent :x } candidates size . cr                  \ 3   non-indexed column: full :rows
+lvar to V
+r { :child V } candidates size . cr                    \ 3   projection var: cannot narrow, full :rows
+
+bye

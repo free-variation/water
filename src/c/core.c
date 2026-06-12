@@ -2709,9 +2709,11 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "or", p_or, 0);
 	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, "null", p_null, 0);
+	define_primitive(interp, "symbol?", p_symbol_q, 0);
 	define_primitive(interp, "lvar", p_lvar, 0);
 	define_primitive(interp, "_", p_wildcard, 0);
 	define_primitive(interp, "unify", p_unify, 0);
+	define_primitive(interp, "matches?", p_matches, 0);
 	define_primitive(interp, "deref", p_deref, 0);
 	define_primitive(interp, "amb", p_amb, 0);
 	define_primitive(interp, "alloc-stats", p_alloc_stats, 0);
@@ -2793,6 +2795,8 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "union", p_union, 0);
 	define_primitive(interp, "intersection", p_intersect, 0);
 	define_primitive(interp, "difference", p_difference, 0);
+	define_primitive(interp, "set-add!", p_set_add, 0);
+	define_primitive(interp, "set-remove!", p_set_remove, 0);
 	define_primitive(interp, "execute", p_execute, 0);
 	define_primitive(interp, "map", p_map, 0);
 	define_primitive(interp, "mapn", p_mapn, 0);

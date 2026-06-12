@@ -46,6 +46,7 @@ array
 array-of
 array>cons
 asin
+assert
 atan
 begin
 bye
@@ -147,6 +148,7 @@ map
 mapn
 match
 match-all
+matches?
 matrix
 matrix-range
 max
@@ -165,6 +167,7 @@ or
 over
 parallel-run
 pi
+query
 quotient
 r>
 r@
@@ -175,12 +178,14 @@ read-file
 read-out
 reduce
 reify
+relation
 reload
 repeat
 replace
 reset
 reshape
 resume
+retract
 reverse
 reverse-slice!
 roll
@@ -199,6 +204,8 @@ save-image
 see
 see-compiled
 set
+set-add!
+set-remove!
 shift
 shift-with
 side-depth
@@ -219,6 +226,7 @@ substring
 sum
 swap
 symbol
+symbol?
 take
 tan
 tanh

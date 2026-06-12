@@ -125,4 +125,74 @@ inline
 : $ deref ;
 inline
 
+\ Fact database
+( [cols] -- rel ) \ empty relation; cols is an array of symbols to index
+: relation
+	{ } [: |> index col | index col { } ! :] reduce
+	>side
+	{ :rows < > :index side> } ;
+
+( column-index inedxed-value row -- ) \ add row to the value's bucket in one column's index, creating the bucket if absent
+: bucket-add!
+	|> column-index indexed-value row |
+	column-index indexed-value has? not if 
+		column-index indexed-value < > ! drop
+	then
+	column-index indexed-value @ row set-add! drop ;
+
+( column-index indexed-value row -- ) \ remove row from the value's bucket in one column's index
+: bucket-remove!
+	|> column-index indexed-value row |
+	column-index indexed-value has? if
+		column-index indexed-value @ row set-remove! drop
+	then ;
+
+( rel row set-op bucket-op -- rel ) \ apply set-op to :rows and bucket-op to each indexed bucket for row
+: update-row!
+	|> row set-op bucket-op |
+	dup :rows @ row set-op execute drop
+	dup :index @ keys swap
+	[: |> rel col | rel :index @ col @ row col @ row bucket-op execute rel :] reduce ;
+
+( rel row -- rel ) \ add row to :rows and to each indexed column's bucket
+: assert ' set-add! ' bucket-add! update-row! ;
+inline
+
+( rel row -- rel ) \ remove this exact row from :rows and every indexed bucket
+: retract-row ' set-remove! ' bucket-remove! update-row! ;
+inline
+
+( candidate-rows column-index indexed-value -- candidate-rows') \ narrow candidate set by one column's bucket
+: narrow
+	|> column-index indexed-value |
+	column-index indexed-value has? if
+		column-index indexed-value @ intersection
+	else
+		drop < >
+	then ;
+
+( rel pattern -- candidate-rows ) \ :rows narrowed by each indexed column the pattern grounds to a symbol
+: candidates
+	|> rel pattern |
+	rel :index @ keys
+	rel :rows @
+	[: |> candidate-rows col |
+		pattern col has? if 
+			pattern col @ $ symbol? if
+				candidate-rows rel :index @ col @ pattern col @ $ narrow
+			else candidate-rows then
+		else candidate-rows then
+	:] reduce ;
+
+
+( rel pattern -- [rows] ) \ rows matching pattern; scans :rows
+: query
+	|> rel pattern |
+	rel pattern candidates [: |> row | pattern row matches? :] filter ;
+
+( rel row -- rel ) \ remove every row matching pattern
+: retract
+	|> rel pattern |
+	rel pattern query rel ' retract-row reduce ;
+
 

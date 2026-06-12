@@ -314,7 +314,14 @@ void p_not(Interpreter *interp) {
 
 void p_null(Interpreter *interp) {
 	push(interp, make_tagged(T_NONE,0));
-	
+
+	DISPATCH(interp);
+}
+
+void p_symbol_q(Interpreter *interp) {
+	POP(value);
+	push(interp, make_bool(VAL_TAG(value) == T_SYMBOL));
+
 	DISPATCH(interp);
 }
 

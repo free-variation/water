@@ -54,6 +54,13 @@ lvar to X   { :a [ 1 { :b X } ] } { :a [ 1 { :b 7 } ] } ~ drop   X $ 7 = . cr   
 \ === occur check is skipped: a var may bind to a term containing itself ===
 lvar to X   X [ X ] ~ drop   X $ size . cr           \ 1
 
+\ === matches? : non-destructive unify test; returns true/false, never backtracks ===
+{ :parent :john :child :django } { :child :django } matches? . cr      \ 1
+{ :parent :john :child :django } { :child :bob } matches? . cr         \ 0
+lvar to X   { :parent :john :child :django } { :parent X :child X } matches? . cr   \ 0  (repeated var)
+lvar to G   { :child :django } { :child G } matches? . cr              \ 1
+G 5 ~ drop   G $ 5 = . cr                                              \ 1  G still free: matches? rolled its binding back
+
 \ === mismatches fail -> top-level error (no enclosing amb) ===
 1 2 ~                                                \ error
 "a" "b" ~                                            \ error

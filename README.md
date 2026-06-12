@@ -163,6 +163,10 @@ Unification and committed choice, on the trail and the continuation machinery:
 - **Logic variables** — `lvar` makes a fresh one; a **capitalized identifier** is a logic-var literal: a persistent global at the REPL, or a fresh per-call variable when declared in `| X |` inside a definition or quotation.
 - **`unify`** (`~`) — unifies two terms, binding logic vars through a trail so they match: atoms by value, arrays element-wise, frames as open records (shared keys must unify, extras allowed); on a mismatch it fails. **`deref`** (`$`) follows a variable's binding chain.
 - **`amb`** / **`fail`** — committed choice: run the first branch; if it fails (a `unify` mismatch or an explicit `fail`), roll its bindings back through the trail and run the second, committing to whichever succeeds.
+- **`_`** — the anonymous wildcard: unifies with anything, binds nothing, and allocates nothing.
+- **`matches?`** — a non-destructive `unify` test: marks the trail, unifies, rolls back, and pushes whether the two unified — so it composes in straight-line code.
+- **Cons lists** — `[( a b c )]` builds cons pairs and `[( H T )]` is the `[H|T]` head/tail pattern under `unify`; with `cons`, `head-tail`, and `array`↔`cons` conversions.
+- **Fact database** — `relation` / `assert` / `query` / `retract`. A relation is a frame of a row-set plus per-column indexes (declared symbol columns); rows are column-keyed frames that dedup; `query` matches a pattern by unification, narrowing through the index when it can.
 
 ### Other
 
@@ -191,19 +195,13 @@ Tracked in `PLAN.md`, with design notes for each.
 ### External I/O
 
 - **TSV file I/O** — the sole tabular format; other formats convert outside logicforth.
-- **SQLite integration** — embedded relational storage via the vendored amalgamation. Queries return arrays of rows, or matrices when all columns are numeric.
+- **SQLite integration** — embedded relational storage via the vendored amalgamation. Queries return sets of column-keyed row frames — the same shape as a fact-database relation — or matrices when all columns are numeric.
 
 ### Language ergonomics
 
 - **Sort** — `sort`, `sort-with`, `sort-by`.
 - **stdin / env** — `stdin`/`stdout`/`stderr` as streams (read/written with the subprocess `read`/`write`), environment variable access.
 - **Functional primitives** — `range` remains in C; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter`/`reduce`/`take`/`reverse`/`concat` done in C; `skip`/`last` in `lib.l4`.)
-
-### Logic layer
-
-- **Cons pattern in `unify`** — head/tail destructuring inside an array literal (candidate `[ H :: T ]`), both directions.
-- **`_` wildcard** — a fresh anonymous variable that unifies with anything.
-- **Fact database** — relations as arrays of rows, queried by a `unify`-loop with per-column indices; `assert` / `retract` / `query`.
 
 ### Concurrency
 
