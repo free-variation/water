@@ -644,6 +644,8 @@ void p_cons(Interpreter *interp);
 void p_head_tail(Interpreter *interp);
 void p_array_to_cons(Interpreter *interp);
 void p_cons_to_array(Interpreter *interp);
+void p_array_to_set(Interpreter *interp);
+void p_group_by(Interpreter *interp);
 void p_array(Interpreter *interp);
 void p_size(Interpreter *interp);
 void p_member(Interpreter *interp);

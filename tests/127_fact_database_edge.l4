@@ -1,0 +1,124 @@
+\ Fact database: corner cases and scale. Companion to 126 (core behavior).
+
+variable r
+variable people
+variable cities
+
+\ === relation shape edge cases ===
+[ :a :a ] relation :index @ keys . cr                  \ [ :a ]        duplicate index column collapses
+[ :z :a :m ] relation :index @ keys . cr               \ index keys are sorted by symbol id, not input order
+
+\ === query: open-record unification corner cases ===
+[ :child ] relation to r
+r { :id 1 :child :a } assert drop
+r { :id 2 :child :b } assert drop
+\ a pattern column absent from every row constrains nothing (open record) -> matches all
+r { :bogus :anything } query size . cr                 \ 2   surprising but consistent: unknown column matches all
+\ an indexed column queried with a non-symbol value can't narrow and matches no row
+r { :child 42 } query size . cr                        \ 0
+\ a bound logic var in the pattern behaves like its value
+lvar to B   B :a ~ drop   r { :child B } query size . cr   \ 1
+
+\ === empty-pattern query and retract ===
+r { } query size . cr                                  \ 2   empty pattern matches every row
+r { } retract drop                                     \ removes everything
+r :rows @ size . cr                                    \ 0
+
+\ === retract corner cases ===
+[ :child ] relation to r
+r { :id 1 :child :a } assert drop
+r { :id 2 :child :a } assert drop
+r { :child :ghost } retract drop                       \ no match: no-op
+r :rows @ size . cr                                    \ 2
+r { } retract drop                                     \ empty pattern: clears the relation
+r :rows @ size . cr                                    \ 0
+r :index @ :child @ :a @ size . cr                     \ 0   bucket emptied too
+
+\ === multi-indexed-column intersection ===
+[ :cat :tag ] relation to r
+r { :id 1 :cat :x :tag :p } assert drop
+r { :id 2 :cat :x :tag :q } assert drop
+r { :id 3 :cat :y :tag :p } assert drop
+r { :cat :x :tag :p } count-matches . cr               \ 1   only id 1
+r { :cat :x } count-matches . cr                       \ 2   ids 1,2
+r { :tag :p } count-matches . cr                       \ 2   ids 1,3
+r { :cat :x :tag :nope } count-matches . cr            \ 0   empty bucket in the intersection
+
+\ === inner-join corner cases ===
+[ ] relation to people
+[ :city ] relation to cities
+people { :name :alice :city :nyc } assert drop
+\ one-to-many: a driver row matches several probed rows
+cities { :id 10 :city :nyc :country :usa } assert drop
+cities { :id 11 :city :nyc :country :usa-alt } assert drop
+people cities :city inner-join size . cr               \ 2   alice joins both nyc rows
+\ empty driver, and a driver row with no probed match, both yield empty
+[ ] relation to people
+[ :city ] relation to cities
+people cities :city inner-join size . cr               \ 0   empty driver -> empty result
+people { :name :bob :city :paris } assert drop
+people cities :city inner-join size . cr               \ 0   no probed rows match -> empty result
+
+\ column collision in merge: the probed row's column wins
+[ ] relation to people
+[ :city ] relation to cities
+people { :id 1 :city :nyc } assert drop
+cities { :id 99 :city :nyc :country :usa } assert drop
+people cities :city inner-join 0 @i :id @ . cr         \ 99  probed (:id 99) wins the :id collision
+people cities :city inner-join 0 @i :country @ . cr    \ :usa  merged in from the probed row
+
+\ === scale: single index, build / count / retract / recount ===
+[ :cat ] relation to r
+[ :w :x :y :z ] to people                              \ reuse 'people' var as a value table
+[: |> i | r { :id i :cat people i 4 mod @i } assert drop :] 1000 i-times
+r :rows @ size . cr                                    \ 1000
+r { :cat :w } count-matches . cr                       \ 250
+r { :cat :w } retract drop
+r :rows @ size . cr                                    \ 750
+r { :cat :w } count-matches . cr                       \ 0
+r { :cat :x } count-matches . cr                       \ 250   untouched
+r :index @ :cat @ :w @ size . cr                       \ 0     bucket cleared by retract
+
+\ === scale: two indexes, intersection narrowing at size ===
+[ :cat :tag ] relation to r
+[ :w :x :y :z ] to people
+[: |> i | r { :id i :cat people i 4 mod @i :tag people i 2 mod @i } assert drop :] 1000 i-times
+r :rows @ size . cr                                    \ 1000
+r { :cat :w } count-matches . cr                       \ 250   i mod 4 = 0
+r { :cat :w :tag :w } count-matches . cr               \ 250   i mod 4 = 0 implies i mod 2 = 0 (tag :w)
+r { :cat :w :tag :x } count-matches . cr               \ 0     i mod4=0 never has i mod2=1
+
+\ === bulk-load: same relation as building it with assert ===
+variable bl
+variable bl-rows
+[ :cat ] relation to bl
+[ { :id 1 :cat :x } { :id 2 :cat :y } { :id 3 :cat :x } { :id 1 :cat :x } ] to bl-rows
+bl bl-rows bulk-load drop
+bl :rows @ size . cr                                   \ 3   the repeated {:id 1 :cat :x} dedups
+bl { :cat :x } count-matches . cr                      \ 2
+bl { :cat :y } count-matches . cr                      \ 1
+bl :index @ :cat @ :x @ size . cr                      \ 2   bucket built correctly
+bl { :cat :z } count-matches . cr                      \ 0
+
+\ bulk-load with multiple indexed columns
+[ :cat :tag ] relation to bl
+[ { :id 1 :cat :x :tag :p } { :id 2 :cat :x :tag :q } { :id 3 :cat :y :tag :p } ] to bl-rows
+bl bl-rows bulk-load drop
+bl :rows @ size . cr                                   \ 3
+bl { :cat :x } count-matches . cr                      \ 2
+bl { :tag :p } count-matches . cr                      \ 2
+bl { :cat :x :tag :p } count-matches . cr              \ 1
+
+\ bulk-load of no rows leaves an empty relation
+[ :cat ] relation [ ] bulk-load :rows @ size . cr      \ 0
+
+\ bulk-load builds a usable index: scale, then query/retract
+[ :g ] relation to bl
+bl  0 1999 range [: |> i | { :id i :g [ :p :q :r :s ] i 4 mod @i } :] map  bulk-load drop
+bl :rows @ size . cr                                   \ 2000
+bl { :g :p } count-matches . cr                        \ 500
+bl { :g :p } retract drop
+bl { :g :p } count-matches . cr                        \ 0
+bl :rows @ size . cr                                   \ 1500
+
+bye

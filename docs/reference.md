@@ -287,6 +287,8 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `set-add!` | `( set v -- set )` | Insert v in sorted position if absent (dedups); leaves set on the stack | log n + n | reallocs | O(n) |
 | `set-remove!` | `( set v -- set )` | Remove v if present (no-op if absent); leaves set on the stack | log n + n | none | O(n) |
 | `member?` | `( set v -- bool )` | Binary-search membership | 3 + log n | none | O(log n) |
+| `array>set` | `( array -- set )` | Sort a copy of the array once and dedup into a set — the fast bulk constructor (one sort, not n inserts); the source array is unchanged | n log n | `1o` + realloc | O(n log n) |
+| `group-by` | `( array col -- frame )` | Group an array of frames by their symbol-valued `col` into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted | n log n | frame + sets | O(n log n) |
 | `size` | `( coll -- n )` | Element count of a set, array, or string; pair count of a frame | 2 | none | O(1) |
 
 ---
@@ -481,9 +483,12 @@ Rows live in a set, so an identical row asserted twice dedups to one (a relation
 | `relation` | `( [cols] -- rel )` | New empty relation; `cols` is an array of column symbols to index | k | frames + sets | O(k) |
 | `assert` | `( rel row -- rel )` | Add row to `:rows` and to each indexed column's bucket; identical row is a no-op. Mutates rel in place, returns it | k + n | reallocs | O(n) |
 | `retract` | `( rel pattern -- rel )` | Remove every row matching pattern from `:rows` and all buckets. Mutates rel, returns it | matches·(k+n) | `1a` | O(matches·n) |
-| `query` | `( rel pattern -- [rows] )` | Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans | candidates·n | `1a` + set ops | O(candidates·n) |
+| `query` | `( rel pattern -- [rows] )` | Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans. When every constraint is a ground indexed column the narrowed bucket *is* the answer, so the per-row `matches?` is skipped (covering query) | candidates·n | `1a` + set ops | O(candidates·n) |
+| `count-matches` | `( rel pattern -- n )` | How many rows match; for a covering query this is the bucket's `size` with no scan, otherwise `query size` | — | (covering: none) | O(candidates) |
+| `inner-join` | `( driver probed col -- [rows] )` | Inner join: each `driver` row merged (`probed` columns win collisions) with each `probed` row sharing `col`'s value; `probed` must index `col` | — | `1a` | O(driver·log probed) |
+| `bulk-load` | `( rel rows-array -- rel )` | Load all rows at once: builds `:rows` and each column's index in one sorted pass each, instead of row-by-row | — | sets + frame | O(n log n) |
 
-These four are lib.l4 over the `matches?`, `symbol?`, `set-add!`, and `set-remove!` primitives. `assert` of a large relation built one row at a time is super-linear (each insert shifts the sorted `:rows` set); for bulk loads, build the rows and construct the set once.
+These are lib.l4 over the C primitives `matches?`, `symbol?`, `set-add!`, `set-remove!`, `array>set`, and `group-by`. Building a relation with one `assert` per row is super-linear (each insert shifts the sorted `:rows` set, and per-value frames grow the same way); `bulk-load` avoids both by sorting once — `array>set` for `:rows` and `group-by` per indexed column — so a bulk load is O(n log n) at any index cardinality. Candidate narrowing drives from the smallest matching bucket.
 
 ---
 

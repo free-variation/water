@@ -343,30 +343,6 @@ into logicforth; struct-by-value arguments.
 
 ---
 
-## Logic layer — remaining work
-
-The fact database — `relation` / `assert` / `query` / `retract`, with declared
-symbol-column indices and index-narrowed queries — is implemented; see the Fact
-database section of docs/reference.md. The extensions below build on it and are
-not yet started.
-
-- **Bulk load.** Building a large relation with one `assert` per row is
-  super-linear: each insert shifts the sorted `:rows` set. A batch builder that
-  gathers the rows and constructs the set once is O(n log n) for a bulk load.
-- **Smallest bucket drives.** When a query grounds several indexed columns,
-  drive the scan from the smallest bucket (`size` is O(1)) before intersecting,
-  rather than intersecting in column order.
-- **Covering query skips the test.** When every pattern constraint is a ground
-  indexed column, the intersected bucket already satisfies the pattern — return
-  it without the per-row `matches?`.
-- **Count without materializing.** A count over a ground indexed column is the
-  bucket's `size` — no scan, no result array.
-- **Index-nested-loop join.** Joining two relations on a shared column can look
-  up the other relation's bucket per row (O(log)) instead of scanning it,
-  turning an O(n·m) nested loop into O(n·log m).
-
----
-
 ## Cooperative green threads (single OS thread)
 
 Lightweight tasks within one OS thread, scheduled cooperatively on the
@@ -520,8 +496,11 @@ and fill in C. Words returning a scalar, element, or boolean belong in
 
 **On frames:**
 
-- **`group-by`** — `arr [: ( elt -- key ) :] group-by` → frame from key to
-  array of elements (keys must be symbols).
+- **`group-by` (quotation-keyed variant)** — `arr [: ( elt -- key ) :]` grouping
+  by a computed key. The column form — `rows :col group-by`, grouping an array of
+  frames by a symbol field into a frame of row-sets — is already implemented as a
+  C primitive (see docs/reference.md); this would be the computed-key variant,
+  under a distinct name.
 - **`partition`** — `arr [: pred :] partition` → matches and non-matches.
 
 Composable in one line, so not added: `count` (`[: pred :] filter size`),

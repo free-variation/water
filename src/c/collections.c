@@ -350,6 +350,39 @@ void p_cons_to_array(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static int val_cmp_qsort(void *interp, const void *left, const void *right) {
+	return val_cmp((Interpreter *)interp, *(const Val *)left, *(const Val *)right);
+}
+
+void p_array_to_set (Interpreter *interp) {
+	PEEK_TYPE_AT(array_val, 0, "array>set", T_ARRAY);
+	Object *array = interp->objects[VAL_DATA(array_val)];
+
+	int set_handle = object_new_set(interp);
+	if (interp->error_flag) return;
+	Object *set = interp->objects[set_handle];
+
+	if (array->len > set->capacity) {
+		set->items = realloc(set->items, sizeof(Val) * (size_t)array->len);
+		set->capacity = array->len;
+	}
+	memcpy(set->items, array->items, sizeof(Val) * (size_t)array->len);
+
+	if (array->len > 0) {
+		qsort_r(set->items, (size_t)array->len, sizeof(Val), interp, val_cmp_qsort);
+
+		int unique = 1;
+		for (int i = 1; i < array->len; i++)
+			if (val_cmp(interp, set->items[unique - 1], set->items[i]) != 0)
+				set->items[unique++] = set->items[i];
+		set->len = unique;
+	}
+
+	interp->data_stack[interp->dsp - 1] = make_set(set_handle);
+
+	DISPATCH(interp);
+}
+
 void p_size(Interpreter *interp) {
 	POP(collection);
 	if (VAL_TAG(collection) == T_SET ||
@@ -854,6 +887,97 @@ void p_update_at(Interpreter *interp) {
 			parent_obj->frame.values[at] = pop(interp);
 			interp->dsp -= 2;
 			});
+
+	DISPATCH(interp);
+}
+
+static Val frame_field(Interpreter *interp, Val frame_val, cell col) {
+	if (VAL_TAG(frame_val) != T_FRAME)
+		return make_tagged(T_NONE, 0);
+
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	FRAME_LOOKUP(frame, col, at, present);
+	return present ? frame->frame.values[at] : make_tagged(T_NONE, 0);
+}
+
+typedef struct {
+	Interpreter *interp;
+	cell col;
+} GroupContext;
+
+static int group_cmp(void *context, const void *left, const void *right) {
+	GroupContext *group = context;
+	Val left_row = *(const Val *)left;
+	Val right_row = *(const Val *)right;
+	int by_field = val_cmp(group->interp,
+			frame_field(group->interp, left_row, group->col),
+			frame_field(group->interp, right_row, group->col));
+
+	if (by_field)
+		return by_field;
+
+	return val_cmp(group->interp, left_row, right_row);
+}
+
+void p_group_by(Interpreter *interp) {
+	POP(col_val);
+	if (VAL_TAG(col_val) != T_SYMBOL) {
+		fail(interp, "group-by: column must be a symbol; got %s", tag_name(VAL_TAG(col_val)));
+		return;
+	}
+	cell col = VAL_DATA(col_val);
+
+	PEEK_TYPE_AT(rows_val, 0, "group-by", T_ARRAY);
+	int row_count = interp->objects[VAL_DATA(rows_val)]->len;
+
+	int frame_handle = object_new_frame(interp);
+	if (interp->error_flag)
+		return;
+	gc_root_push(interp, make_frame(frame_handle));
+	if (interp->error_flag)
+		return;
+
+	if (row_count > 0) {
+		Val *sorted = malloc(sizeof(Val) * (size_t)row_count);
+		memcpy(sorted, interp->objects[VAL_DATA(rows_val)]->items, sizeof(Val) * (size_t)row_count);
+		GroupContext context = { interp, col };
+		qsort_r(sorted, (size_t)row_count, sizeof(Val), &context, group_cmp);
+
+		int run_start = 0;
+		while (run_start < row_count) {
+			Val value = frame_field(interp, sorted[run_start], col);
+			int run_end = run_start + 1;
+			while (run_end < row_count
+					&& val_cmp(interp, frame_field(interp, sorted[run_end], col), value) == 0)
+				run_end++;
+
+			int bucket = object_new_set(interp);
+			if (interp->error_flag) {
+				free(sorted);
+				gc_root_pop(interp);
+				return;
+			}
+			Object *bucket_set = interp->objects[bucket];
+			int run_length = run_end - run_start;
+			if (run_length > bucket_set->capacity) {
+				bucket_set->items = realloc(bucket_set->items, sizeof(Val) * (size_t)run_length);
+				bucket_set->capacity = run_length;
+			}
+			int unique = 0;
+			for (int source = run_start; source < run_end; source++)
+				if (unique == 0 || val_cmp(interp, bucket_set->items[unique - 1], sorted[source]) != 0)
+					bucket_set->items[unique++] = sorted[source];
+			bucket_set->len = unique;
+
+			frame_put(interp->objects[frame_handle], VAL_DATA(value), make_set(bucket));
+			run_start = run_end;
+		}
+		free(sorted);
+	}
+
+	Val grouped = interp->gc_roots[interp->n_gc_roots - 1];
+	gc_root_pop(interp);
+	interp->data_stack[interp->dsp - 1] = grouped;
 
 	DISPATCH(interp);
 }

@@ -1,0 +1,42 @@
+\ array>set ( array -- set ): one sorted pass (val_cmp) + dedup, O(n log n).
+\ Sorts by val_cmp, dedups equal elements, and does not mutate the source array.
+
+\ === ordering and dedup on floats ===
+[ 3 1 2 ] array>set . cr                       \ < 1 2 3 >
+[ 1 2 3 ] array>set . cr                       \ < 1 2 3 >    already sorted
+[ 3 2 1 ] array>set . cr                       \ < 1 2 3 >    reversed
+[ ] array>set . cr                             \ < >          empty
+[ 5 ] array>set . cr                           \ < 5 >        singleton
+[ 7 7 7 7 ] array>set . cr                     \ < 7 >        all duplicates collapse
+[ 3 1 2 1 3 2 ] array>set size . cr            \ 3            dedup count
+[ -2 0 -5 3 -2 ] array>set . cr                \ < -5 -2 0 3 >  negatives, with a dup
+
+\ === strings sort lexicographically and dedup by content ===
+[ "c" "a" "b" "a" ] array>set . cr             \ < "a" "b" "c" >
+
+\ === mixed types sort by tag (symbol < float < string) ===
+[ "x" 5 :a ] array>set . cr                    \ < :a 5 "x" >
+
+\ === null (T_NONE) sorts first and dedups ===
+[ null 1 null 2 ] array>set size . cr          \ 3            two nulls collapse to one
+
+\ === structural dedup of nested collections ===
+[ [ 1 2 ] [ 1 2 ] ] array>set size . cr        \ 1            equal arrays dedup
+[ [ 1 2 ] [ 1 3 ] ] array>set size . cr        \ 2            distinct arrays kept
+[ < 1 2 > < 2 1 > ] array>set size . cr        \ 1            equal sets dedup
+
+\ === the source array is not mutated ===
+[ 3 1 2 ] dup array>set drop . cr              \ [ 3 1 2 ]    original order intact
+
+\ === the result is a genuine set: membership and set ops work ===
+[ 3 1 2 ] array>set 2 member? . cr             \ 1
+[ 3 1 2 ] array>set 9 member? . cr             \ 0
+[ 3 1 2 ] array>set < 2 3 4 > intersection . cr  \ < 2 3 >
+[ 3 1 2 1 ] array>set < 1 2 3 > = . cr         \ 1            equal to the set literal
+
+\ === scale: sorts and dedups at size ===
+0 9999 range array>set size . cr               \ 10000
+0 9999 range reverse array>set 1 take 0 @i . cr  \ 0          smallest first after the sort
+0 100 range  0 100 range  concat  array>set size . cr   \ 101  the doubled range dedups
+
+bye

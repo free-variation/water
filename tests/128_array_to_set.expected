@@ -1,0 +1,63 @@
+0 ok
+0 ok
+0 ok
+0 ok
+< 1 2 3 > 
+0 ok
+< 1 2 3 > 
+0 ok
+< 1 2 3 > 
+0 ok
+< > 
+0 ok
+< 5 > 
+0 ok
+< 7 > 
+0 ok
+3 
+0 ok
+< -5 -2 0 3 > 
+0 ok
+0 ok
+0 ok
+< "a" "b" "c" > 
+0 ok
+0 ok
+0 ok
+< :a 5 "x" > 
+0 ok
+0 ok
+0 ok
+3 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+2 
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+[ 3 1 2 ] 
+0 ok
+0 ok
+0 ok
+1 
+0 ok
+0 
+0 ok
+< 2 3 > 
+0 ok
+1 
+0 ok
+0 ok
+0 ok
+10000 
+0 ok
+0 
+0 ok
+101 
+0 ok
+0 ok

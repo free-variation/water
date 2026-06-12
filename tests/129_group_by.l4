@@ -1,0 +1,31 @@
+\ group-by ( rows col -- { value -> set-of-rows } ): group an array of frames by a
+\ symbol column. Buckets are sets (identical rows dedup); keys are the distinct
+\ values, sorted; the column value must be a symbol.
+
+\ === basic grouping ===
+[ { :id 1 :cat :x } { :id 2 :cat :y } { :id 3 :cat :x } { :id 4 :cat :y } { :id 5 :cat :z } ] :cat group-by
+dup keys . cr                                  \ the distinct values, sorted
+dup :x @ size . cr                             \ 2
+dup :y @ size . cr                             \ 2
+:z @ size . cr                                 \ 1
+
+\ === empty input -> empty frame ===
+[ ] :cat group-by size . cr                    \ 0
+
+\ === one value, distinct rows -> a single group holding all of them ===
+[ { :id 1 :g :a } { :id 2 :g :a } { :id 3 :g :a } ] :g group-by
+dup keys . cr                                  \ [ :a ]
+:a @ size . cr                                 \ 3
+
+\ === identical rows dedup within a bucket (buckets are sets) ===
+[ { :id 1 :g :a } { :id 1 :g :a } { :id 2 :g :a } ] :g group-by :a @ size . cr   \ 2
+
+\ === all-distinct values -> one bucket each ===
+[ { :v :a } { :v :b } { :v :c } ] :v group-by keys size . cr   \ 3
+
+\ === aggregation: group, then map each bucket to its size (count per group) ===
+[ { :id 1 :c :x } { :id 2 :c :y } { :id 3 :c :x } { :id 4 :c :x } ] :c group-by values [: size :] map . cr   \ count per group: x->3, y->1
+
+\ === a non-symbol column is rejected ===
+[ { :id 1 } ] 5 group-by
+bye

@@ -5,6 +5,10 @@ variable pi
 : 2dup over over ;
 inline
 
+( a b -- )
+: 2drop drop drop ;
+inline
+
 ( a b -- b )
 : nip swap drop ;
 inline
@@ -162,37 +166,72 @@ inline
 : retract-row ' set-remove! ' bucket-remove! update-row! ;
 inline
 
-( candidate-rows column-index indexed-value -- candidate-rows') \ narrow candidate set by one column's bucket
-: narrow
-	|> column-index indexed-value |
-	column-index indexed-value has? if
-		column-index indexed-value @ intersection
-	else
-		drop < >
-	then ;
+( rel pattern col -- bucket ) \ rows bucket for pattern's value in column col, empty if that value was never asserted
+: bucket-of
+	|> rel pattern col |
+	rel :index @ col @  pattern col @ $
+	2dup has? if @ else 2drop < > then ;
 
-( rel pattern -- candidate-rows ) \ :rows narrowed by each indexed column the pattern grounds to a symbol
+( [sets] -- set ) \ the smallest set in a non-empty array
+: smallest-set
+	dup 0 @i
+	[: |> smallest s | smallest size s size lt if smallest else s then :] reduce ;
+
+( rel pattern -- candidate-rows ) \ :rows narrowed by the grounded indexed columns, intersected smallest-first
 : candidates
 	|> rel pattern |
 	rel :index @ keys
-	rel :rows @
-	[: |> candidate-rows col |
-		pattern col has? if 
-			pattern col @ $ symbol? if
-				candidate-rows rel :index @ col @ pattern col @ $ narrow
-			else candidate-rows then
-		else candidate-rows then
-	:] reduce ;
+	[: |> col | pattern col has? if pattern col @ $ symbol? else 0 then :] filter
+	[: |> col | rel pattern col bucket-of :] map
+	dup size 0 = if
+		drop rel :rows @
+	else
+		dup smallest-set [: |> acc b | acc b intersection :] reduce
+	then ;
 
+( rel pattern -- flag) \ true men every pattern column is a ground-symbol indexed column -- so the index alone answers the query
+: covering?
+	|> rel pattern |
+	pattern keys 1
+	[: |> ok col | ok rel :index @ col has? and pattern col @ $ symbol? and :] reduce ;
 
 ( rel pattern -- [rows] ) \ rows matching pattern; scans :rows
 : query
 	|> rel pattern |
-	rel pattern candidates [: |> row | pattern row matches? :] filter ;
+	rel pattern candidates 
+	rel pattern covering? if
+		dup size take
+	else
+		[: |> row | pattern row matches? :] filter 
+	then ;
 
 ( rel row -- rel ) \ remove every row matching pattern
 : retract
 	|> rel pattern |
 	rel pattern query rel ' retract-row reduce ;
 
+( rel pattern -- n ) \ number of rows matching pattern
+: count-matches
+	|> rel pattern |
+	rel pattern covering? if
+		rel pattern candidates size
+	else
+		rel pattern query size
+	then ;
 
+( driver probed col -- [rows] ) \ inner join: merge each driver row thi weach probed row sharing col's value; probed must index col
+: inner-join
+	|> driver probed col |
+	driver :rows @ null
+	[: |> joined driver-row |
+		probed driver-row col bucket-of joined
+		[: |> joined match | driver-row match merge joined cons :] reduce
+	:] reduce
+	cons>array dup size 1- take ;
+
+ ( rel rows-array -- rel ) \ load all rows: build :rows in one sorted pass, then index each row
+: bulk-load
+	|> rel rows-array |
+	rel :rows rows-array array>set !
+	dup :index @ keys [: |> col | rel :index @ col  rows-array col group-by  ! :] map drop ;
+	

@@ -1,0 +1,40 @@
+0 ok
+0 ok
+0 ok
+0 ok
+0 ok
+1|{3} ok
+[ :x :y :z ] 
+1|{3} ok
+2 
+1|{3} ok
+2 
+1|{3} ok
+1 
+0 ok
+0 ok
+0 ok
+0 
+0 ok
+0 ok
+0 ok
+1|{1} ok
+[ :a ] 
+1|{1} ok
+3 
+0 ok
+0 ok
+0 ok
+2 
+0 ok
+0 ok
+0 ok
+3 
+0 ok
+0 ok
+0 ok
+[ 3 1 ] 
+0 ok
+0 ok
+0 ok
+0|error group-by: column must be a symbol; got a float

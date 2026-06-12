@@ -45,10 +45,12 @@ append-file
 array
 array-of
 array>cons
+array>set
 asin
 assert
 atan
 begin
+bulk-load
 bye
 catch
 clear
@@ -62,6 +64,7 @@ cons
 cons>array
 copy
 cos
+count-matches
 cr
 delete-at
 depth
@@ -123,6 +126,7 @@ ftan
 ftanh
 ftruncate
 gc
+group-by
 gt
 has?
 head-tail
@@ -131,6 +135,7 @@ i-times
 identity-matrix
 if
 inline
+inner-join
 intersection
 join
 json>frame

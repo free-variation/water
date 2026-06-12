@@ -114,4 +114,22 @@ r { :parent :x } candidates size . cr                  \ 3   non-indexed column:
 lvar to V
 r { :child V } candidates size . cr                    \ 3   projection var: cannot narrow, full :rows
 
+\ === count-matches (covering uses the bucket size; non-covering counts the query) ===
+r { :child :a } count-matches . cr                     \ 2   covering: bucket size, no scan
+r { :child :nope } count-matches . cr                  \ 0   empty bucket
+r { :child :a :id 1 } count-matches . cr               \ 1   non-covering: :id not indexed
+r { } count-matches . cr                               \ 3   empty pattern: every row
+
+\ === inner-join: asymmetric (probed indexed on col), merged rows, inner ===
+variable people  variable cities
+[ ] relation to people
+[ :city ] relation to cities
+people { :name :alice :city :nyc }    assert drop
+people { :name :bob   :city :london } assert drop
+people { :name :dave  :city :paris }  assert drop
+cities { :city :nyc    :country :usa } assert drop
+cities { :city :london :country :uk }  assert drop
+people cities :city inner-join size . cr               \ 2   alice+nyc, bob+london; dave/paris no match
+people cities :city inner-join [: :country @ :] map size . cr   \ 2   merged rows carry :country
+
 bye

@@ -2773,6 +2773,8 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "head-tail", p_head_tail, 0);
 	define_primitive(interp, "array>cons", p_array_to_cons, 0);
 	define_primitive(interp, "cons>array", p_cons_to_array, 0);
+	define_primitive(interp, "array>set", p_array_to_set, 0);
+	define_primitive(interp, "group-by", p_group_by, 0);
 
 	define_primitive(interp, "array", p_array, 0);
 	define_primitive(interp, "array-of", p_array_of, 0);

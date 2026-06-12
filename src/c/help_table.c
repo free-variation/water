@@ -51,10 +51,12 @@ const HelpEntry help_entries[] = {
 	{ "array", "( v₀ … vₙ₋₁ n -- arr )", "Gather the top n values into an array", "2 + n", "1a(n)", "O(n)" },
 	{ "array-of", "( val n -- arr )", "New n-element array, every slot = val", "3 + n", "1a(n)", "O(n)" },
 	{ "array>cons", "( arr -- list )", "Cons chain from an array's elements (last element becomes the tail; [ ] → null)", "n", "n−1 pairs", "O(n)" },
+	{ "array>set", "( array -- set )", "Sort a copy of the array once and dedup into a set — the fast bulk constructor (one sort, not n inserts); the source array is unchanged", "n log n", "1o + realloc", "O(n log n)" },
 	{ "asin", "( a -- asin a )", "inverse sine", "2", "matrix 1m(r×c)", "same" },
 	{ "assert", "( rel row -- rel )", "Add row to :rows and to each indexed column's bucket; identical row is a no-op. Mutates rel in place, returns it", "k + n", "reallocs", "O(n)" },
 	{ "atan", "( a -- atan a )", "inverse tangent", "2", "matrix 1m(r×c)", "same" },
 	{ "begin", "—", "Mark a loop top", NULL, NULL, NULL },
+	{ "bulk-load", "( rel rows-array -- rel )", "Load all rows at once: builds :rows and each column's index in one sorted pass each, instead of row-by-row", "—", "sets + frame", "O(n log n)" },
 	{ "bye", "( -- )", "exit(0)", "—", "—", "—" },
 	{ "catch", "( xt -- result 0 | exc 1 )", "lib.l4: reset execute 0", "—", "cont if thrown", "O(xt)" },
 	{ "clear", "( … -- )", "Reset data stack depth to 0", "1", "none", "O(1)" },
@@ -68,6 +70,7 @@ const HelpEntry help_entries[] = {
 	{ "cons>array", "( list -- arr )", "Walk a cons chain into an array, **dereferencing** the spine and each element and including the terminal (works on relational results)", "n", "1a(n)", "O(n)" },
 	{ "copy", "( a -- a' )", "Deep copy of any value, copy_term-style: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations, pairs; identity for scalars. Defined generally, not frame-specific.", "tree size", "one object per node", "O(tree size)" },
 	{ "cos", "( a -- cos a )", "cosine (radians)", "2", "matrix 1m(r×c)", "same" },
+	{ "count-matches", "( rel pattern -- n )", "How many rows match; for a covering query this is the bucket's size with no scan, otherwise query size", "—", "(covering: none)", "O(candidates)" },
 	{ "cr", "( -- )", "Print a newline", "1", "none", "O(1)" },
 	{ "delete-at", "( fr sym/path -- fr )", "Remove a key (errors if absent); mutates fr", "n", "none", "O(n)" },
 	{ "depth", "( -- n )", "Push current depth", "1", "none", "O(1)" },
@@ -129,6 +132,7 @@ const HelpEntry help_entries[] = {
 	{ "ftanh", "( a -- tanh a ) ⚠", "hyperbolic tangent, in place", "1", "none", "O(1)" },
 	{ "ftruncate", "( a -- trunc a ) ⚠", "toward zero, in place", "1", "none", "O(1)" },
 	{ "gc", "( -- )", "Force a mark-sweep now", "walks stacks + dict + roots, frees unmarked", "none", "O(objects + dict)" },
+	{ "group-by", "( array col -- frame )", "Group an array of frames by their symbol-valued col into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted", "n log n", "frame + sets", "O(n log n)" },
 	{ "gt", "( a b -- bool )", "greater-than", "3 (float)", "none", "same" },
 	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)" },
 	{ "head-tail", "( pair -- head tail )", "Split a pair — head under, tail on top; no auto-deref; errors on a non-pair", "1", "none", "O(1)" },
@@ -137,6 +141,7 @@ const HelpEntry help_entries[] = {
 	{ "identity-matrix", "( n -- m )", "lib.l4: 1 swap diagonal-matrix", "n", "1m(n×n)", "O(n)" },
 	{ "if", "( flag -- )", "Branch past the then/else if flag is falsy", NULL, NULL, NULL },
 	{ "inline", "—", "Mark the most recent definition inline; future calls splice its body", NULL, NULL, NULL },
+	{ "inner-join", "( driver probed col -- [rows] )", "Inner join: each driver row merged (probed columns win collisions) with each probed row sharing col's value; probed must index col", "—", "1a", "O(driver·log probed)" },
 	{ "intersection", "( s₁ s₂ -- s₃ )", "Intersection into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)" },
 	{ "join", "( arr sep -- s )", "Concatenate the string elements of arr separated by sep; errors on a non-string element", "2 + total", "1o", "O(total)" },
 	{ "json>frame", "( s -- val )", "Parse a JSON string. Escapes and \\uXXXX (with surrogate pairs) decode to UTF-8; recursive-descent, depth-guarded; rejects trailing non-whitespace", "scan + build", "one object per node", "O(|s|)" },
@@ -173,7 +178,7 @@ const HelpEntry help_entries[] = {
 	{ "over", "( a b -- a b a )", "Copy second over top", "5", "none", "O(1)" },
 	{ "parallel-run", "( commands width -- results )", "lib.l4: run each argv array in commands as a subprocess, at most width at once; collect { :out :err :status } per command in input order, refilling a slot as each child finishes", "fork per command + poll", "1a + per-child frames/streams", "O(critical path)" },
 	{ "pi", "( -- f )", "lib.l4: π (3.141592653589793) as a float", "1", "none", "O(1)" },
-	{ "query", "( rel pattern -- [rows] )", "Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans", "candidates·n", "1a + set ops", "O(candidates·n)" },
+	{ "query", "( rel pattern -- [rows] )", "Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans. When every constraint is a ground indexed column the narrowed bucket *is* the answer, so the per-row matches? is skipped (covering query)", "candidates·n", "1a + set ops", "O(candidates·n)" },
 	{ "quotient", "( a b -- quotient )", "lib.l4: % swap drop; toward zero", "9", "none", "O(1)" },
 	{ "r>", "return stack → ( -- a )", "Move return-stack top to data stack", "2", "none", "O(1)" },
 	{ "r@", "( -- a )", "Copy return-stack top to data stack", "2", "none", "O(1)" },
@@ -279,4 +284,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 273;
+const int help_entry_count = 278;
