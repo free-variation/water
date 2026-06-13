@@ -1,0 +1,55 @@
+\ Extreme load test — works the whole system at and past its declared limits.
+\ Run:  ./logicforth -b < bench/extreme-load.l4
+\ The object-table section fills the real 64M ceiling (~7 GB, a few seconds).
+\ To hit that limit cheaply instead, lower the ceiling:
+\   ./logicforth -b --max-objects 100000 < bench/extreme-load.l4
+\
+\ Declared limits (src/c/logicforth.h): data/return stack 1<<16, side stack
+\ 1<<10, objects 1<<26 (default; tune with --max-objects), symbol pool 1<<22
+\ bytes / hash 1<<20, copy/print nesting 100.  The logic-var stack and bind
+\ trail start at 1<<16 but grow.
+\ Each "past limits" line below should fail with a graceful "error: ..." and
+\ let the script continue.
+
+\ ---------------- very large arrays ----------------
+"=== very large arrays ===" . cr
+1 1000000 range
+dup 0 [: + :] reduce                   "sum 1..1e6        = {0}" format . cr
+dup [: dup * :] map 0 [: + :] reduce   "sum of squares    = {0}" format . cr
+dup array>set size                     "distinct (sorted) = {0}" format . cr
+size                                   "array length      = {0}" format . cr
+
+\ ---------------- ultra-deep unification ----------------
+\ unify recurses on the head and tail-calls (musttail) on the tail, so a long
+\ cons list unifies in constant C stack however deep it is.
+"=== ultra-deep unification ===" . cr
+1 500000 range array>cons
+dup copy ~ cons>array size             "unified two 500k-deep lists, len = {0}" format . cr
+\ one unify that binds a very large number of logic vars — grows the lvar
+\ stack and the bind trail past their declared 65536 starting size.
+1 200000 range [: drop lvar :] map array>cons
+1 200000 range array>cons
+~ cons>array size                      "deep unify bound {0} logic vars" format . cr
+
+\ ---------------- very large numbers of objects ----------------
+"=== very large numbers of objects ===" . cr
+[: < 0 > drop :] 3000000 times         "churned 3,000,000 transient sets through GC" . cr
+1 3000000 range [: drop < 0 > :] map size  "held {0} live sets at once" format . cr
+gc                                     "forced gc with all of the above live: ok" . cr
+
+\ ---------------- past the declared limits (each should error gracefully) ----------------
+"=== past the limits (each line should error gracefully) ===" . cr
+"-- data stack overflow (push > 65536):" . cr
+[: 1 :] 70000 times
+clear
+"-- copy past nesting depth 100:" . cr
+0 [: 1 array :] 200 times  copy drop
+clear
+"-- symbol pool/hash full (intern many distinct symbols):" . cr
+[: |> i | i "s{0}" format string>symbol drop :] 2000000 i-times
+clear
+"-- object registry full (fills the 64M object table):" . cr
+1 70000000 range [: drop < 0 > :] map drop
+clear
+
+"=== done ===" . cr

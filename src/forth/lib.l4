@@ -129,6 +129,17 @@ inline
 : $ deref ;
 inline
 
+( list cont -- )  \ run cont with each element of list in turn; commit to the first element for which cont succeeds, fail if none do
+: choose
+	| head tail >list >cont |
+	list null = if fail exit then
+	list head-tail to tail to head
+	tail null = if
+		head cont execute
+	else
+		[: head cont execute :] [: tail cont choose :] amb
+	then ;
+
 \ Fact database
 ( [cols] -- rel ) \ empty relation; cols is an array of symbols to index
 : relation

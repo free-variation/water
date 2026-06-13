@@ -138,6 +138,7 @@ void p_setclose(Interpreter *interp) {
 	FIND_MARK(mark_index, "> : no matching < on the stack");
 
 	int set_handle = object_new_set(interp);
+	if (interp->error_flag) return;
 	for (int i = mark_index; i < interp->dsp; i++) {
 		set_add(interp, set_handle, interp->data_stack[i]);
 	}

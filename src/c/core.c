@@ -2,7 +2,7 @@
 #include "lib_embed.h"
 
 int object_alloc_slot(Interpreter *interp) {
-	if (interp->n_objects < MAX_OBJECTS) {
+	if (interp->n_objects < interp->max_objects) {
 		return interp->n_objects++;
 	}
 	if (interp->n_free_slots > 0) {
@@ -897,6 +897,8 @@ int create_header(Interpreter *interp, const char *name, int flags) {
 int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int flags) {
 	int cfa = create_header(interp, name, flags);
 	emit(interp, (cell)handler);
+	if (interp->n_handlers < MAX_HANDLERS)
+		interp->handler_registry[interp->n_handlers++] = (void *)handler;
 	return cfa;
 }
 
@@ -1768,7 +1770,7 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 
 void copy_or_reify(Interpreter *interp, Val source_val, Val *copy_val, int reify) {
 	VarMap map = { reify, NULL, 0, 0};
-	if (interp->n_objects > MAX_OBJECTS * 9 / 10) 
+	if (interp->n_objects > interp->max_objects * 9 / 10)
 		gc(interp);
 
 	interp->gc_disabled = 1;
@@ -1913,7 +1915,7 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 void gc(Interpreter *interp) {
 	int i;
 
-	memset(interp->object_mark, 0, sizeof(interp->object_mark));
+	memset(interp->object_mark, 0, (size_t)interp->n_objects);
 	memset(interp->pair_mark, 0, sizeof(unsigned char) * (size_t)interp->n_pairs);
 	interp->pair_free_count = 0;
 
@@ -2110,11 +2112,47 @@ void p_save(Interpreter *interp) {
 }
 
 #define IMAGE_MAGIC "LF4I"
-#define IMAGE_VERSION ((uint32_t)3)
+#define IMAGE_VERSION ((uint32_t)4)
 
 #define HANDLER_DOCOL 1
 #define HANDLER_DOVAR 2
 #define HANDLER_DOSYM 3
+
+int handler_to_id(Interpreter *interp, cell value) {
+	for (int i = 0; i < interp->n_handlers; i++)
+		if (interp->handler_registry[i] == (void *)value)
+			return i;
+	return -1;
+}
+
+/* Width of the op at `cursor`, for image translation. dovar/dosym always
+   carry a trailing target-cfa operand (op_cell_count returns 1 for them, since
+   mark_body absorbs that cell harmlessly; here it must be skipped explicitly).
+   docol is variable width and is handled by the callers' peek logic, not here.
+   The dispatch cell at `cursor` must hold a handler pointer (on load, translate
+   id->pointer before calling this). */
+static int image_op_cells(Interpreter *interp, int cursor) {
+	cell handler = interp->vocab->dict[cursor];
+	if (handler == (cell)dovar || handler == (cell)dosym)
+		return 2;
+	return op_cell_count(interp->vocab, interp->vocab->dict, cursor);
+}
+
+static int body_end_of(Interpreter *interp, const int *sorted_cfas, int count, int index) {
+	return (index + 1 < count) ? sorted_cfas[index + 1] - 4 : interp->vocab->here;
+}
+
+static void sort_cfas_ascending(int *cfas, int count) {
+	for (int i = 1; i < count; i++) {
+		int current = cfas[i];
+		int slot = i - 1;
+		while (slot >= 0 && cfas[slot] > current) {
+			cfas[slot + 1] = cfas[slot];
+			slot--;
+		}
+		cfas[slot + 1] = current;
+	}
+}
 
 void w_u8 (FILE *file, uint8_t value) { fwrite(&value, 1, 1, file); }
 
@@ -2191,8 +2229,42 @@ void p_save_image(Interpreter *interp) {
 	w_i32(file, interp->vocab->init_source_here);
 	w_i32(file, interp->vocab->init_symbol_pool_here);
 
+	int init_here = interp->vocab->init_here;
+	int *sorted_cfas = malloc(sizeof(int) * (size_t)(user_word_count > 0 ? user_word_count : 1));
+	cell *out = malloc(sizeof(cell) * (size_t)(user_dict_cells > 0 ? user_dict_cells : 1));
+	for (int i = 0; i < user_word_count; i++)
+		sorted_cfas[i] = collected[i];
+	sort_cfas_ascending(sorted_cfas, user_word_count);
+	memcpy(out, &interp->vocab->dict[init_here], sizeof(cell) * (size_t)user_dict_cells);
+
+	for (int w = 0; w < user_word_count; w++) {
+		int cfa = sorted_cfas[w];
+		if (interp->vocab->dict[cfa] != (cell)docol)
+			continue;
+		int end = body_end_of(interp, sorted_cfas, user_word_count, w);
+		for (int c = cfa + 1; c < end; ) {
+			cell handler = interp->vocab->dict[c];
+			int id = handler_to_id(interp, handler);
+			if (id < 0) {
+				fail(interp, "save-image: unrecognised handler in body of '%s' at offset %d", &interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)], c - cfa);
+				free(out);
+				free(sorted_cfas);
+				fclose(file);
+				gc_root_pop(interp);
+				return;
+			}
+			out[c - init_here] = (cell)id;
+			if (handler == (cell)docol)
+				c += (handler_to_id(interp, interp->vocab->dict[c + 1]) >= 0) ? 1 : 2;
+			else
+				c += image_op_cells(interp, c);
+		}
+	}
+
 	for (int i = 0; i < user_dict_cells; i++)
-		w_i64(file, (int64_t)interp->vocab->dict[interp->vocab->init_here + i]);
+		w_i64(file, (int64_t)out[i]);
+	free(out);
+	free(sorted_cfas);
 
 	w_i32(file, user_word_count);
 	for (int i = 0; i < user_word_count; i++) {
@@ -2409,6 +2481,11 @@ void p_load_image(Interpreter *interp) {
 		fail(interp, "%s: missing handler table", filename);
 		goto done;
 	}
+	static int load_cfas[VOCABULARY_INIT_SIZE / 4];
+	if (user_word_count < 0 || user_word_count > (int)(sizeof load_cfas / sizeof load_cfas[0])) {
+		fail(interp, "%s: bad word count", filename);
+		goto done;
+	}
 	for (int i = 0; i < user_word_count; i++) {
 		int32_t c;
 		uint8_t kind;
@@ -2428,6 +2505,28 @@ void p_load_image(Interpreter *interp) {
 			goto done;
 		}
 		interp->vocab->dict[c] = (cell)h;
+		load_cfas[i] = c;
+	}
+
+	sort_cfas_ascending(load_cfas, user_word_count);
+	for (int w = 0; w < user_word_count; w++) {
+		int cfa = load_cfas[w];
+		if (interp->vocab->dict[cfa] != (cell)docol)
+			continue;
+		int end = body_end_of(interp, load_cfas, user_word_count, w);
+		for (int c = cfa + 1; c < end; ) {
+			int id = (int)interp->vocab->dict[c];
+			if (id < 0 || id >= interp->n_handlers) {
+				fail(interp, "%s: handler id %d out of range", filename, id);
+				goto done;
+			}
+			cell next_raw = interp->vocab->dict[c + 1];
+			interp->vocab->dict[c] = (cell)interp->handler_registry[id];
+			if (interp->vocab->dict[c] == (cell)docol)
+				c += (next_raw >= 0 && next_raw < interp->n_handlers) ? 1 : 2;
+			else
+				c += image_op_cells(interp, c);
+		}
 	}
 
 	if (fread(&interp->vocab->name_pool[interp->vocab->init_names_here], 1, (size_t)user_namepool_bytes, file) != (size_t)user_namepool_bytes
@@ -2540,7 +2639,7 @@ void p_load_image(Interpreter *interp) {
 										  }
 										  int32_t resume_ip;
 										  if (!r_i32(file, &resume_ip)
-												  || resume_ip < interp->vocab->init_here || resume_ip >= interp->vocab->here)
+												  || resume_ip < DICT_RESERVED || resume_ip >= interp->vocab->here)
 										  {
 											  free(obj->continuation.return_slice);
 											  free(obj);
@@ -2630,6 +2729,7 @@ Interpreter *interp_new(void) {
 	interp->vocab->here = DICT_RESERVED;
 	interp->vocab->source_here = 1;
 	interp->next_mark_id = 1;
+	interp->max_objects = MAX_OBJECTS;
 
 	interp->bind_trail = malloc(sizeof(int) * BIND_TRAIL_DEPTH);
 	interp->bind_trail_cap = BIND_TRAIL_DEPTH;
@@ -2651,6 +2751,9 @@ Interpreter *interp_new(void) {
 }
 
 int interp_bootstrap(Interpreter *interp) {
+	interp->handler_registry[interp->n_handlers++] = (void *)docol;
+	interp->handler_registry[interp->n_handlers++] = (void *)dovar;
+	interp->handler_registry[interp->n_handlers++] = (void *)dosym;
 	define_primitive(interp, "+", p_add, 0);
 	define_primitive(interp, "-", p_sub, 0);
 	define_primitive(interp, "*", p_mul, 0);
@@ -2927,12 +3030,6 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "stop", p_stop_process, 0);
 	define_primitive(interp, "running?", p_running, 0);
 
-	interp->vocab->init_here = interp->vocab->here;
-	interp->vocab->init_latest_cfa = interp->vocab->latest_cfa;
-	interp->vocab->init_names_here = interp->vocab->names_here;
-	interp->vocab->init_source_here = interp->vocab->source_here;
-	interp->vocab->init_symbol_pool_here = interp->vocab->symbol_pool_here;
-
 	memcpy(interp->input_buffer, lib_l4, lib_l4_len);
 	interp->input_buffer[lib_l4_len] = 0;
 	interp->input_buffer_len = (int)lib_l4_len;
@@ -2948,17 +3045,56 @@ int interp_bootstrap(Interpreter *interp) {
 		return 1;
 	}
 
+	/* lib.l4 is part of the rebuilt-each-process base, not user state: the
+	   init_* watermarks (the boundary an image saves above) sit after it, so
+	   images carry only words defined after bootstrap. */
+	interp->vocab->init_here = interp->vocab->here;
+	interp->vocab->init_latest_cfa = interp->vocab->latest_cfa;
+	interp->vocab->init_names_here = interp->vocab->names_here;
+	interp->vocab->init_source_here = interp->vocab->source_here;
+	interp->vocab->init_symbol_pool_here = interp->vocab->symbol_pool_here;
+
 	interp->vocab->lib_end_latest_cfa = interp->vocab->latest_cfa;
 	return 0;
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+	int interactive = isatty(fileno(stdin));
+	long max_objects_arg = 0;
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0)
+			interactive = 1;
+		else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batch") == 0)
+			interactive = 0;
+		else if (strcmp(argv[i], "--max-objects") == 0) {
+			if (i + 1 >= argc) {
+				fprintf(stderr, "logicforth: --max-objects needs a value\n");
+				return 2;
+			}
+			max_objects_arg = strtol(argv[++i], NULL, 10);
+			if (max_objects_arg < 1) {
+				fprintf(stderr, "logicforth: --max-objects must be a positive integer\n");
+				return 2;
+			}
+		}
+		else {
+			fprintf(stderr, "logicforth: unknown option '%s'\n", argv[i]);
+			return 2;
+		}
+	}
+
 	Interpreter *interp = interp_new();
+	if (max_objects_arg > 0) {
+		if (max_objects_arg > MAX_OBJECTS)
+			max_objects_arg = MAX_OBJECTS;
+		interp->max_objects = (int)max_objects_arg;
+	}
 	signal(SIGPIPE, SIG_IGN);
 	if (interp_bootstrap(interp))
 		return 1;
 
-	printf("logicforth %s\n", VERSION);
+	if (interactive)
+		printf("logicforth %s\n", VERSION);
 	char line[1024];
 
 	while (fgets(line, sizeof(line), stdin)) {
@@ -2988,13 +3124,18 @@ int main(void) {
 		if (interp->compiling)
 			continue;
 
-		print_prompt_state(interp);
-		if (interp->error_flag)
-			fputs(interp->error_message, stdout);
-		else
-			fputs("ok", stdout);
-		putchar('\n');
-		fflush(stdout);
+		if (interactive) {
+			print_prompt_state(interp);
+			if (interp->error_flag)
+				fputs(interp->error_message, stdout);
+			else
+				fputs("ok", stdout);
+			putchar('\n');
+			fflush(stdout);
+		} else if (interp->error_flag) {
+			fprintf(stdout, "error: %s\n", interp->error_message);
+			fflush(stdout);
+		}
 
 		inbuf_reset(interp);
 	}

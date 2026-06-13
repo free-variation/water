@@ -7,9 +7,9 @@ This document is a primer on how logicforth packs a tagged value into 8 bytes by
 - How those unused patterns become storage for tagged non-float values
 - The encoding logicforth uses, with the accessor macros that hide the bit manipulation
 - The one place where care is required — distinguishing a real float NaN from a boxed value — and how `make_float` handles it
-- What changed across the codebase when `Val` shrank from 16 bytes to 8
+- How the single-word representation shapes the code that builds, stores, and inspects Vals
 
-The implementation is in `src/c/logicforth.h`, in the `Val` union and the surrounding `VAL_*` macros and `make_*` constructors. The change touches every site that creates or inspects a Val, but only the helpers actually know about the bit layout. The aim of this document is to make that bit layout feel obvious in retrospect, rather than clever.
+The implementation is in `src/c/logicforth.h`, in the `Val` union and the surrounding `VAL_*` macros and `make_*` constructors. Every site that creates or inspects a Val goes through those helpers; only they know the bit layout. The aim of this document is to make that bit layout feel obvious in retrospect, rather than clever.
 
 ---
 
@@ -28,7 +28,7 @@ typedef struct {
 } Val;
 ```
 
-Tags are small integers — logicforth has 12 of them, fitting comfortably in 4 bits. The payload is a 64-bit field that's either the bit pattern of a double (when the tag is `T_FLOAT`) or a 32-bit handle/index/cfa (for everything else).
+Tags are small integers; the tag field is 4 bits, so there can be up to 16 of them. The payload is a 64-bit field that's either the bit pattern of a double (when the tag is `T_FLOAT`) or a 32-bit handle/index/cfa (for everything else).
 
 With 8-byte alignment for the 64-bit data field, that struct comes out to 16 bytes per Val: 4 tag bytes, 4 bytes of padding, 8 payload bytes.
 
@@ -92,7 +92,7 @@ logicforth uses this layout for boxed (non-float) values:
 
 ```
 bits 63..48: 0x7FF8 (the quiet-NaN prefix — 16 bits)
-bits 47..44: tag (4 bits, room for 16 tags; we use 12)
+bits 47..44: tag (4 bits, up to 16 tags)
 bits 43..0:  payload (44 bits, holding the int64_t value)
 ```
 
@@ -108,7 +108,7 @@ The constants in `logicforth.h`:
 #define VAL_DATA_MASK  0x00000FFFFFFFFFFFULL
 ```
 
-The `Val` type itself is now a union:
+The `Val` type itself is a union:
 
 ```c
 typedef union {
@@ -177,7 +177,7 @@ Real float arithmetic occasionally produces NaN — `0.0/0.0`, `sqrt(-1)`, `inf 
 
 A NaN that happens to fall in the `0x7FF8...` region collides with the boxed-value space. `VAL_IS_FLOAT` would see the prefix, conclude this Val is boxed, and decode a bogus tag and payload from the NaN's bits.
 
-logicforth's current handling is partial. The `make_float` helper canonicalizes any prefix-region NaN to a single fixed pattern:
+logicforth's handling is partial. The `make_float` helper canonicalizes any prefix-region NaN to a single fixed pattern:
 
 ```c
 static inline Val make_float(double number) {
@@ -192,9 +192,9 @@ static inline Val make_float(double number) {
 
 The canonicalization guarantees deterministic behavior — a Val constructed by `make_float` from any NaN-producing double ends up with the same bit pattern. But it doesn't *resolve* the collision: that canonical pattern still has the prefix, so `VAL_IS_FLOAT` will read it as boxed (tag = `T_NONE`, garbage payload).
 
-The scheme is sound in practice because lforth programs rarely produce float NaNs. Standard arithmetic doesn't hit the failure modes, and there's no user-level primitive that constructs a specific NaN bit pattern. If float NaNs become a real workload concern, the fix is to reserve one extra bit (say, the sign bit at position 63) to distinguish "real float NaN" from "boxed value" and update `VAL_IS_FLOAT` to check both. The current code doesn't do that because the cost would apply on every tag inspection in every hot loop, and no benchmark needs it.
+The scheme is sound in practice because lforth programs rarely produce float NaNs. Standard arithmetic doesn't hit the failure modes, and there's no user-level primitive that constructs a specific NaN bit pattern. One way to resolve the collision fully is to reserve an extra bit (say, the sign bit at position 63) to distinguish "real float NaN" from "boxed value" and have `VAL_IS_FLOAT` check both. The code doesn't, because that cost would apply on every tag inspection in every hot loop, and the partial scheme suffices in practice.
 
-This is the one place where NaN-boxing requires care that a 16-byte struct didn't. The win — half the bytes per Val, halved stack bandwidth, single-register passing — is paid for by this corner.
+This is the one place where NaN-boxing requires care that a plain tagged struct wouldn't. The win — half the bytes per Val, halved stack bandwidth, single-register passing — is paid for by this corner.
 
 ---
 
@@ -213,7 +213,7 @@ The single-word Val shapes the surrounding code in a few places.
 - `p_to`'s interpret-mode branch (REPL `to var`)
 - `mark_body`'s `dovar` arm (GC walks variable cells)
 
-**Stack arrays.** The data stack, return stack, side stack, and frame value arrays are all `Val[]`, so at 8 bytes per Val the 256-entry data stack is 2 KB — comfortably in L1 cache.
+**Stack arrays.** The data stack, return stack, side stack, and frame value arrays are all `Val[]`, so each slot is 8 bytes rather than 16 — half the footprint, and the hot top-of-stack working set stays comfortably in cache.
 
 **Function calling convention.** An 8-byte Val passes by value in a single register; functions taking or returning Val (notably `pop`, the `make_*` helpers) get tighter code than a 16-byte struct that occupies two registers. The effect on per-op cost is small but real where the same Val passes through several helpers.
 
@@ -227,7 +227,7 @@ The other gain is qualitative: with 8-byte Vals, function signatures involving V
 
 ---
 
-## Part 9: What it cost
+## Part 9: What it costs
 
 The cost has two pieces.
 
@@ -258,5 +258,5 @@ The compact variable layout (one cell per variable's value) shows up in:
 
 For broader context:
 
-- **`docs/gc.md`** — the `mark_value` walker that inspects a Val's tag still works the same way; the inspection now goes through `VAL_TAG` instead of a struct field read.
-- **`docs/threading.md`** — the dispatch loop is unchanged by NaN-boxing. The Val representation is independent of how handlers are dispatched.
+- **`docs/gc.md`** — the `mark_value` walker inspects a Val's tag through `VAL_TAG`.
+- **`docs/threading.md`** — the Val representation is independent of how handlers are dispatched.

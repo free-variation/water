@@ -34,7 +34,7 @@ Because frame construction interns *every key of every object*, and a workload l
 The names themselves live in one flat buffer on the `Vocabulary`:
 
 ```c
-char symbol_pool[SYMBOL_POOL];   // SYMBOL_POOL == 262144
+char symbol_pool[SYMBOL_POOL];   // contiguous NUL-terminated names
 int  symbol_pool_here;           // bytes used so far
 ```
 
@@ -100,9 +100,9 @@ The pool stays exactly as it is. We add a side table that maps a name to its poo
 The table is a fixed array of ints on the `Vocabulary`:
 
 ```c
-char symbol_pool[SYMBOL_POOL];        // 262144
+char symbol_pool[SYMBOL_POOL];        // interned name bytes
 int  symbol_pool_here;
-int  symbol_hash[SYMBOL_HASH_SIZE];   // 262144 slots
+int  symbol_hash[SYMBOL_HASH_SIZE];   // open-addressing slots: offset+1, or 0 for empty
 ```
 
 It is **open-addressed**: the table is the storage, with no per-entry allocation and no pointer chasing. A slot holds an offset into the pool — but encoded as `offset + 1`, so that the value `0` can mean "empty." That detail matters: offset 0 is a real, valid symbol id (`:0`, the boolean false), so we cannot use 0 as the empty marker directly. Storing `offset + 1` lets a freshly `calloc`-zeroed table read as all-empty while still letting offset 0 live in it.
@@ -159,15 +159,15 @@ A worked collision: suppose `age` hashes to slot 5, and that slot is occupied. W
 
 ---
 
-## Part 7: Why it never rehashes
+## Part 7: Sizing the table
 
-Open-addressing tables usually grow and rehash when they get too full, because probe chains lengthen badly past ~70% load. logicforth's table never does, and the reason is a fixed relationship between two constants.
+Open-addressing tables usually grow and rehash when they get too full, because probe chains lengthen badly past ~70% load. logicforth's table never grows — it is sized once, `calloc`-zeroed with the rest of the `Vocabulary`, and that is the whole lifecycle (no rehash code, no growth check, no resize). What that buys in headroom comes down to two constants: `SYMBOL_POOL` (the pool's size in bytes) and `SYMBOL_HASH_SIZE` (the table's slot count).
 
-The symbol pool is `SYMBOL_POOL` = 262144 bytes. The smallest possible symbol is a one-character name plus its NUL terminator — 2 bytes. So the pool can hold **at most `SYMBOL_POOL / 2` = 131072 distinct symbols**, ever; it runs out of bytes before it could hold more.
+The smallest possible symbol is a one-character name plus its NUL terminator — 2 bytes — so the pool can hold at most `SYMBOL_POOL / 2` distinct symbols, ever.
 
-The hash table has `SYMBOL_HASH_SIZE` = 262144 slots. So the load factor can never exceed `131072 / 262144` = **50%**, no matter what a program does. At 50% load, linear-probe chains stay short (a couple of slots on average), and there is no point at which growth would be needed. The table is sized once, `calloc`-zeroed with the rest of the `Vocabulary`, and that is the whole lifecycle — no rehash code, no growth check, no resize.
+The invariant that matters is `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2`: with at least that many slots, the table can never be more than half full, an empty slot always exists, and the linear-probe loop always terminates. logicforth sizes the table below that, so it can fill *before* the pool does — a program interning enough distinct symbols (JSON ingests strings as symbols, so high counts are reachable) exhausts the slots. To keep that from becoming an infinite probe, `intern_symbol` caps its scan at `SYMBOL_HASH_SIZE` steps and fails with `"symbol table full"` when no empty slot remains. Either way the table never rehashes: at or above the threshold it cannot overflow; below it, interning fails cleanly when the table is full.
 
-The cost of that guarantee is memory: 262144 ints is a flat 1 MB, always allocated, mostly empty for a typical program that interns a few hundred symbols. That is the deliberate trade — a megabyte of mostly-idle table in exchange for never thinking about load factor or rehashing. It is a coupling worth noting, though: the "no rehash" property holds *because* `SYMBOL_HASH_SIZE` ≥ `SYMBOL_POOL`. Shrinking the table relative to the pool would reintroduce the possibility of overflow.
+The cost is memory: `SYMBOL_HASH_SIZE` ints, always allocated, mostly empty for a typical program that interns a few hundred symbols. Keeping `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2` preserves the overflow-impossible guarantee; sizing it smaller trades that headroom for less memory, with the probe cap as the backstop.
 
 ---
 
@@ -207,7 +207,7 @@ This is why the reserved boolean symbols survive a reset cleanly. `:0` and `:1` 
 
 ## Part 9: What it cost, and what it bought
 
-**Memory.** A flat 1 MB added to every `Vocabulary` (Part 7). For a process that interns a few hundred symbols, that table is ~99.9% empty. This is the price of never rehashing.
+**Memory.** `SYMBOL_HASH_SIZE` ints added to every `Vocabulary` (Part 7), always allocated. For a process that interns a few hundred symbols, that table is nearly all empty. This is the price of a fixed-size, never-rehashing table.
 
 **A second copy of the truth.** The index restates what the pool already encodes, so any code that mutates the pool out of band has to keep the index in step. Today that is exactly the two truncation sites, both calling `rebuild_symbol_hash`. A future operation that edits the pool would need the same discipline.
 
@@ -226,7 +226,7 @@ That confirmed the profile's claim that interning was about half the work. And t
 
 In `src/c/logicforth.h`:
 
-- **`SYMBOL_POOL` and `SYMBOL_HASH_SIZE`** — both 262144, the relationship that bounds load factor at 50% and removes any need to rehash.
+- **`SYMBOL_POOL` and `SYMBOL_HASH_SIZE`** — when `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2` the table can't overflow and never rehashes; the current config sizes the hash below that, so `intern_symbol` caps its probe and fails with "symbol table full" when the table fills (Part 7).
 - **`symbol_pool` / `symbol_pool_here` / `symbol_hash`** on the `Vocabulary` struct — the name buffer, its high-water mark, and the open-addressing index.
 
 In `src/c/core.c`:

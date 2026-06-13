@@ -1,18 +1,9 @@
-0 ok
 1 
-0 ok
 0 
-0 ok
 1 
-0 ok
 0 
-0 ok
 1 
-0 ok
 0 
-0 ok
 1 
-0 ok
 0 
-0 ok
-0|error regex: missing terminating ] for character class
+error: regex: missing terminating ] for character class

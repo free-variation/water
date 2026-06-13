@@ -175,21 +175,15 @@ The side stack is a small additional piece for situations where library code nee
 Forth's execution model is built around an *inner interpreter* — a small loop that dispatches one word at a time. Here's the basic structure:
 
 ```c
-while (running && !error_flag) {
-    int cfa_index       = (int)*ip++;
-    cfa_handler handler = (cfa_handler)dict[cfa_index];
-    handler(&dict[cfa_index]);
+while (interp->running && !interp->error_flag) {
+    cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
+    handler(interp);            /* the handler tail-calls the next */
 }
 ```
 
-`ip` is the instruction pointer. `dict[]` is the dictionary — a flat array where all compiled code lives. Each word has a code-field-address (CFA), an index into `dict[]` at which its handler function pointer is stored. The next cells after that are the word's body.
+`ip` is the instruction pointer — an integer index into `dict[]`, the flat array where all compiled code lives. Each cell of a compiled body holds a handler function pointer directly (logicforth is direct-threaded; threading.md covers dispatch in detail). The loop reads the next cell, advances `ip`, and calls the handler.
 
-The loop:
-1. Reads the next cell at `ip` (it's a CFA index), and advances `ip`.
-2. Looks up that CFA's handler function in `dict[]`.
-3. Calls the handler.
-
-For a primitive (like `+`), the handler does the work directly and returns. For a colon-defined word, the handler is a small function called `docol` that saves the current `ip` onto the return stack and points `ip` at the word's body. The next iteration of the loop dispatches the first cell of the body, and so on.
+A handler doesn't return to this loop between ops: it ends by tail-calling the next handler (the `DISPATCH` macro), so a run of compiled code executes as a chain of jumps, and control only comes back here when something halts, errors, or unwinds. For a primitive (like `+`), the handler does its work and dispatches on. For a colon-defined word, the handler is `docol`, which saves the current `ip` onto the return stack and points `ip` at the word's body before dispatching into it.
 
 When the body's EXIT runs, it pops the saved `ip` from the return stack and restores it, so the next iteration continues where we were before the call.
 
@@ -220,15 +214,21 @@ Each of the four primitives we'll meet (`reset`, `shift`, `shift-with`, `resume`
 `reset` is the simplest of the four continuation primitives. It does just one thing: push a `T_MARK` value onto the return stack, with a unique numeric id.
 
 ```c
-static void p_reset(cell *cfa) {
-    (void)cfa;
-    Val mark = make_mark();
-    mark.data = next_mark_id++;
-    rpush(mark);
+int push_prompt(Interpreter *interp, int kind) {
+    Val mark = make_tagged(T_MARK, (interp->next_mark_id++ << 1) | kind);
+    rpush(interp, mark);
+    return (int)VAL_DATA(mark);
+}
+
+void p_reset(Interpreter *interp) {
+    push_prompt(interp, PROMPT_EXCEPTION);
+    DISPATCH(interp);
 }
 ```
 
-That's the entire implementation. `reset` returns immediately. The mark sits on the return stack, mixed in with the regular saved-ip frames from the call chain.
+That's the entire implementation. `reset` pushes the mark and dispatches on. The mark sits on the return stack, mixed in with the regular saved-ip frames from the call chain.
+
+The mark's data field is `(id << 1) | kind`: a monotonic id in the high bits and a one-bit *prompt kind* in the low bit. There are two kinds — `PROMPT_EXCEPTION`, which `reset`/`shift`/`shift-with` use, and `PROMPT_CHOICE`, which the backtracking primitives `amb`/`fail` use (Part 14). Encoding the kind in the mark lets `shift` scan past choice marks to find the nearest *exception* prompt, and `fail` scan past exception marks to find the nearest *choice* prompt, so the two control mechanisms can nest without colliding.
 
 Why is it harmless to leave a marker on the return stack? Because EXIT is taught to skip MARK frames. When EXIT pops a frame and sees that it's a MARK, it discards the mark and pops the next frame instead — the real saved-ip that EXIT needs to jump back to. The mark is invisible to normal control flow; it's just a tag that says "this is a reset boundary."
 
@@ -295,36 +295,49 @@ This is a different design from Scheme's `prompt`, which takes a body expression
 Here's the implementation. The capture logic is factored into a helper because `shift-with` reuses it:
 
 ```c
-static int capture_continuation(int *out_mark_index) {
-    int mark_index = rsp - 1;
-    while (mark_index >= 0 && return_stack[mark_index].tag != T_MARK) {
-        mark_index--;
+static int find_prompt(Interpreter *interp, int kind) {
+    int mark_index = interp->rsp - 1;
+    while (mark_index >= 0 &&
+            !(VAL_TAG(interp->return_stack[mark_index]) == T_MARK
+                && (VAL_DATA(interp->return_stack[mark_index]) & 1) == kind)) {
+        mark_index--;                       /* skip frames and other-kind marks */
     }
     if (mark_index < 0) {
-        fail("shift outside reset");
+        fail(interp, "shift/shift-with: no enclosing reset on the return stack");
         return -1;
     }
+    return mark_index;
+}
 
-    int return_len = rsp - mark_index - 1;
-    int resume_ip = (int)(ip - dict);
-    int slot = object_new_continuation(&return_stack[mark_index + 1],
+int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index) {
+    int mark_index = find_prompt(interp, what_kind);
+    if (mark_index < 0) return -1;
+
+    int return_len = interp->rsp - mark_index - 1;
+    int resume_ip = interp->ip;
+    int slot = object_new_continuation(interp, &interp->return_stack[mark_index + 1],
                                        return_len, resume_ip);
-    if (error_flag) return -1;
+    if (interp->error_flag) return -1;
 
+    interp->objects[slot]->continuation.local_base_offset =
+        interp->local_base - (mark_index + 1);
     *out_mark_index = mark_index;
     return slot;
 }
 
-static void p_shift(cell *cfa) {
-    (void)cfa;
+void p_shift(Interpreter *interp) {
     int mark_index;
-    int cont_slot = capture_continuation(&mark_index);
+    int cont_slot = capture_continuation(interp, PROMPT_EXCEPTION, &mark_index);
     if (cont_slot < 0) return;
 
-    rsp = mark_index;             /* discard the mark and frames above */
-    push(make_continuation(cont_slot));
+    interp->rsp = mark_index;               /* discard the mark and frames above */
+    restore_local_base_below(interp, mark_index);
+    push(interp, make_continuation(cont_slot));
+    DISPATCH(interp);
 }
 ```
+
+`find_prompt` takes a *kind*: `p_shift` asks for `PROMPT_EXCEPTION`, so it scans past any intervening `PROMPT_CHOICE` marks to the nearest reset. `capture_continuation` also records `local_base`, the word-locals frame pointer, relative to the captured region, and `restore_local_base_below` rewinds the live `local_base` to before the discarded frames — so a slice captured mid-word restores its locals correctly when resumed.
 
 The captured continuation, stored in an `OBJECT_CONTINUATION`, contains:
 
@@ -339,12 +352,13 @@ Think of `k` as a small heap object with two fields:
 
 ```
 OBJECT_CONTINUATION {
-    return_slice: [frame1, frame2, ..., frameN]   // a copy
-    resume_ip:    integer offset into dict[]
+    return_slice:      [frame1, frame2, ..., frameN]   // a copy
+    resume_ip:         integer index into dict[]
+    local_base_offset: where the locals frame sits within the slice
 }
 ```
 
-The frames are *copies*, not references. The live return stack has been truncated; the captured frames now live only inside the continuation object. This is what makes multi-shot resumption possible (Part 7).
+The frames are *copies*, not references. The live return stack has been truncated; the captured frames now live only inside the continuation object. This is what makes multi-shot resumption possible (Part 7). `local_base_offset` lets resume re-anchor word-local variables relative to wherever the slice's frames land on the live return stack.
 
 The `resume_ip` is the address of the cell that the inner interpreter would have dispatched next if `shift` had returned normally. In a typical use, `shift` is the last word in a `yield`-like definition, so `resume_ip` points at the EXIT cell of that definition's body.
 
@@ -439,36 +453,39 @@ The captured frames (R_producer and R_yield) plus the MARK are gone from the liv
 `resume` takes a `T_CONT` on the data stack and re-enters the captured slice. The data stack is left otherwise alone — whatever the caller has arranged is what the slice sees as it resumes.
 
 ```c
-static void p_resume(cell *cfa) {
-    (void)cfa;
-    POP(k);
-    if (k.tag != T_CONT) { type_error("resume"); return; }
+void p_resume(Interpreter *interp) {
+    POP(continuation_val);
+    if (VAL_TAG(continuation_val) != T_CONT) {
+        fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(continuation_val)));
+        return;
+    }
+    Object *continuation = interp->objects[VAL_DATA(continuation_val)];
 
-    Object *cont = objects[k.data];
-    if (!cont) { fail("resume: continuation is dead"); return; }
+    int saved_ip = interp->ip;
+    int saved_running = interp->running;
+    int saved_local_base = interp->local_base;
 
-    cell *saved_ip = ip;
-    int saved_running = running;
-
-    /* Trampoline-stop frame so the slice's eventual EXIT chain
-     * terminates cleanly here. */
-    trampoline[1] = (cell)stop_cfa;
-    rpush(make_addr((int)((trampoline + 1) - dict)));
+    /* Trampoline-stop frame so the slice's EXIT chain terminates here. */
+    rpush(interp, make_addr(TRAMPOLINE_SLOT + 2));
 
     /* Fresh MARK delimits the resumed slice. */
-    rpush(make_mark());
+    rpush(interp, make_mark());
 
-    /* Splice the captured frames on top. */
-    for (int i = 0; i < cont->continuation.return_len; i++) {
-        rpush(cont->continuation.return_slice[i]);
-    }
+    /* Splice the captured frames on top, re-anchoring the locals frame. */
+    int slice_base = interp->rsp;
+    for (int i = 0; i < continuation->continuation.return_len; i++)
+        rpush(interp, continuation->continuation.return_slice[i]);
+    if (continuation->continuation.local_base_offset >= 0)
+        interp->local_base = slice_base + continuation->continuation.local_base_offset;
 
-    ip = &dict[cont->continuation.resume_ip];
-    running = 1;
-    run_inner();
+    interp->ip = continuation->continuation.resume_ip;
+    interp->running = 1;
+    run_inner(interp);
 
-    running = saved_running;
-    ip = saved_ip;
+    interp->running = saved_running;
+    interp->ip = saved_ip;
+    interp->local_base = saved_local_base;
+    DISPATCH(interp);
 }
 ```
 
@@ -559,24 +576,26 @@ For most exception-style and coroutine uses, every continuation is one-shot in p
 The implementation reuses `shift`'s capture logic, then does additional work:
 
 ```c
-static void p_shift_with(cell *cfa) {
-    (void)cfa;
+static void unwind_to(Interpreter *interp, int mark_index) {
+    interp->unwind_target = (int)VAL_DATA(interp->return_stack[mark_index]);
+    interp->rsp = mark_index + 1;     /* keep the mark; run_inner pops it */
+    restore_local_base_below(interp, mark_index);
+}
 
-    POP(handler);
-    if (handler.tag != T_XT) { type_error("shift-with"); return; }
+void p_shift_with(Interpreter *interp) {
+    POP_XT(handler, "shift-with");
 
     int mark_index;
-    int cont_slot = capture_continuation(&mark_index);
+    int cont_slot = capture_continuation(interp, PROMPT_EXCEPTION, &mark_index);
     if (cont_slot < 0) return;
 
-    unwind_target = (int)return_stack[mark_index].data;
-    rsp = mark_index + 1;         /* keep the mark; run_inner pops it */
-    push(make_continuation(cont_slot));
+    unwind_to(interp, mark_index);
+    push(interp, make_continuation(cont_slot));
 
-    execute_cfa((int)handler.data);
-    if (error_flag) return;
+    execute_cfa(interp, handler);
+    if (interp->error_flag) return;
 
-    unwinding = 1;
+    interp->unwinding = 1;
 }
 ```
 
@@ -617,23 +636,23 @@ This is the subtle piece that makes exception-style flow work.
 After `shift-with`'s handler returns, the `unwinding` flag is set. But just setting a flag doesn't accomplish anything — we need the interpreter to *react* to it. The `run_inner` loop has been modified to check the flag at the top of every iteration:
 
 ```c
-static void run_inner(void) {
-    int initial_rsp = rsp;             /* remember entry-depth */
-    while (running && !error_flag) {
-        if (unwinding) {
+void run_inner(Interpreter *interp) {
+    int initial_rsp = interp->rsp;             /* remember entry-depth */
+    while (interp->running && !interp->error_flag) {
+        if (interp->unwinding) {
             /* If the target mark is below this level's entry depth,
              * it belongs to an outer run_inner — break to propagate. */
-            if (rsp <= initial_rsp) break;
+            if (interp->rsp <= initial_rsp) break;
 
-            Val frame = return_stack[--rsp];
-            if (frame.tag == T_MARK && (int)frame.data == unwind_target) {
+            Val frame = interp->return_stack[--interp->rsp];
+            if (VAL_TAG(frame) == T_MARK && (int)VAL_DATA(frame) == interp->unwind_target) {
                 /* Found the target. Clear the flag, pop the docol frame
                  * just below, and use its saved ip to resume past the
                  * reset region. */
-                unwinding = 0;
-                if (rsp > 0) {
-                    Val ret = return_stack[--rsp];
-                    ip = (cell *)(dict + ret.data);
+                interp->unwinding = 0;
+                if (interp->rsp > 0) {
+                    Val ret = interp->return_stack[--interp->rsp];
+                    interp->ip = (int)VAL_DATA(ret);
                 }
                 continue;
             }
@@ -642,10 +661,9 @@ static void run_inner(void) {
             continue;
         }
 
-        /* Normal dispatch */
-        int cfa_index       = (int)*ip++;
-        cfa_handler handler = (cfa_handler)dict[cfa_index];
-        handler(&dict[cfa_index]);
+        /* Normal dispatch — the handler tail-calls onward via DISPATCH */
+        cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
+        handler(interp);
     }
 }
 ```
@@ -1275,329 +1293,66 @@ If we have first-class continuations:
 3. The slice runs. If it calls `fail`, the runtime pops the "try-next" stack: get a saved continuation and a list of remaining options, pick the next option (say 2), resume.
 4. If a slice succeeds, the runtime either reports the solution and stops, or treats success as a kind of fail (to enumerate all solutions).
 
-This is the entire engine. Two primitives (`amb`, `fail`), one global "try-next" stack, multi-shot continuations doing the heavy lifting.
+That sketch — capture a continuation, stash it with the untried options, resume on `fail` — is one way to build a backtracking engine on continuations, and it's worth understanding as the general technique. logicforth's own engine is a close cousin that takes a more direct route.
 
-### A first implementation in logicforth
+### How logicforth implements amb and fail
+
+`amb` and `fail` are C primitives, not library words. They reuse the return-stack-mark machinery of Part 5, but with the *other* prompt kind: `amb` pushes a `PROMPT_CHOICE` mark, and `fail` targets that kind, so choice points and the `PROMPT_EXCEPTION` marks of `reset`/`shift` nest without interfering.
+
+`amb` takes two branch quotations and tries them in order:
+
+```c
+void p_amb(Interpreter *interp) {
+    POP_XT(branch2, "amb");
+    POP_XT(branch1, "amb");
+
+    int saved_dsp   = interp->dsp;          /* snapshot the choice point */
+    int saved_trail = interp->bind_trail_top;
+    int saved_lvar  = interp->lvar_top;
+
+    int mark_index = interp->rsp;
+    int mark_id = push_prompt(interp, PROMPT_CHOICE);
+
+    execute_cfa(interp, branch1);           /* try the first branch */
+
+    if (interp->unwinding && interp->unwind_target == mark_id) {
+        interp->unwinding = 0;              /* a fail backtracked to us */
+        interp->rsp = mark_index;
+        interp->dsp = saved_dsp;            /* restore the snapshot ... */
+        trail_undo_to(interp, saved_trail);
+        interp->lvar_top = saved_lvar;
+        execute_cfa(interp, branch2);       /* ... and try the second */
+    } else if (!interp->unwinding) {
+        interp->rsp = mark_index;           /* branch1 succeeded; drop the prompt */
+    }
+    DISPATCH(interp);
+}
+
+void p_fail(Interpreter *interp) {
+    backtrack(interp);                      /* unwind to the nearest PROMPT_CHOICE */
+    DISPATCH(interp);
+}
+```
+
+Two things distinguish this from the continuation-capture sketch above:
+
+- **`amb` is binary.** It chooses between two branches, not an option list. A choice among many options is expressed by nesting `amb` (or a `choose` helper that does so). On `fail`, the snapshot is restored and the second branch runs.
+- **It restores state instead of resuming a captured slice.** `amb` snapshots the data stack, the unification trail (`bind_trail_top`), and the logic-variable stack (`lvar_top`) at the choice point; a `fail` that unwinds back rewinds all three before running the alternative. That trail/lvar integration is what lets `amb`/`fail` drive logic-programming search — unification bindings made down a failed branch are undone — which a bare continuation engine wouldn't handle on its own.
+
+`fail`'s `backtrack` is the `PROMPT_CHOICE` counterpart of `shift-with`'s unwind: it finds the nearest choice mark, sets `unwind_target`, and raises `unwinding`, so the cascade in `run_inner` carries control back to the enclosing `amb`.
+
+A search reads as a description of the constraints. The lib word `choose` (built on `amb`) tries each element of a list in turn, committing to the first for which its continuation succeeds:
 
 ```forth
-\ The try-next stack lives on the side stack. Each "choice point" stashes:
-\   - the list of remaining options
-\   - the continuation back into amb's caller
-
-variable choice-depth          \ how many choice points are pending
-
-: amb ( option-list -- choice )
-    \ option-list is a list of values to try. amb pushes the first one,
-    \ saves the rest plus a continuation to retry, and returns.
-    [: ( option-list k )
-        \ k is "the rest of the computation, expecting a value on the
-        \ data stack." option-list is "values not yet tried."
-        over empty? if
-            \ no more options — fall back to outer fail
-            2drop side> resume  \ resume the next-outer choice point
-        then
-        uncons              \ option-list -> (first, rest)
-        swap >side          \ stash k temporarily
-        >side               \ stash rest of options
-        >side               \ stash k
-        \ first is on top of data stack — that's our chosen value
-        side> dup >side     \ peek at k for resume
-        swap resume         \ resume with first on data stack
-    :] shift-with ;
-
-: fail ( -- )
-    \ Pop the most recent saved (k, options) pair. If there are no
-    \ untried options, fail the next-outer choice point.
-    side-depth 0= if
-        ." no solution" exit
-    then
-    side>               \ pop k
-    side>               \ pop options
-    \ tail-call amb-style logic to try the next option
-    ... ;
+\ commit to the first x in 1..5 that is greater than 3  (leaves 4)
+[( 1 2 3 4 5 null )] [: |> x | x 3 gt if x else fail then :] choose
 ```
 
-This is sketchy because the bookkeeping requires care; the real version threads more state than fits cleanly into a few lines of Forth. But the pattern is recognizable.
+To enumerate *every* solution rather than commit to the first, make success itself backtrack: do something with each answer, then `fail` to drive the search on to the next leaf. That is the same idiom that turns a search into a generator — each solution is a pause point, and forcing the next is one more `fail` — which is why coroutines and backtracking are the same machinery seen from two angles (Part 11).
 
-The skeleton:
+logicforth's logic layer — logic variables, two-directional unification, the trail that undoes bindings at a choice point, reification, and the relational fact database — is built entirely on this `amb`/`fail` mechanism plus a backtrackable binding store. **`docs/logic.md`** covers it in full: how unification binds variables, how the trail rewinds them on backtrack, and how the pieces compose into a query engine.
 
-- `amb` captures `k`, picks an option, stashes the rest plus `k` on the side stack, resumes with the chosen option.
-- `fail` retrieves the most recent saved `(k, options)`, picks the next option, resumes.
-- If `fail` has no untried options, it propagates outward to the next-most-recent choice point.
-
-Multi-shot resume is essential: each saved `k` may be invoked multiple times if the slice succeeds and the user asks for more solutions, or if a deeper branch fails after the saved point.
-
-### A worked example: the N-queens problem
-
-Place N queens on an N×N chessboard so that no two attack each other. The constraints: no two in the same row, column, or diagonal.
-
-```forth
-\ Returns true if a queen at (r1,c1) attacks (r2,c2).
-: attacks? ( r1 c1 r2 c2 -- bool )
-    >r >r                       \ stash r2 c2
-    r@ = if r> r> 2drop true exit then              \ same row
-    swap r@ swap = if r> r> 2drop true exit then    \ same col
-    \ diagonal: |r1-r2| == |c1-c2|
-    r> swap r> swap             \ now have r1 c1 r2 c2 again
-    rot - abs swap - abs = ;
-
-\ Try to place queen i in some column; collect (row, col) pairs in a list.
-: place-queens ( i n placed-so-far -- list-of-placements | fails )
-    over i >= if exit then      \ all placed; return placed-so-far
-    \ choose a column for queen i
-    1 2 3 4 5 6 7 8 list amb    \ for 8x8 board, choose column 1-8
-    \ check it doesn't attack any previously placed queen
-    ...
-    \ recurse to place queen i+1
-    place-queens ;
-```
-
-Pseudo-code, not real Forth, but the structure is the point: the search is described as
-
-> for each queen, choose a column; check non-attack against previous; recurse.
-
-The `amb` call introduces nondeterminism. The constraint check uses `fail` when violated. The recursion threads through choice points naturally. The runtime explores the tree.
-
-A naive imperative solution would have nested loops, an array of placements, manual backtracking with index decrements. With `amb`/`fail`, the description matches the specification.
-
-### From amb to Prolog: unification and logical variables
-
-`amb`/`fail` gives nondeterministic *choice* and *failure*. Prolog adds two more ideas: *logical variables* and *unification*.
-
-A logical variable is a name that may be bound to a value or may be unbound. Unification is the operation of trying to make two terms equal by binding any unbound variables in them.
-
-```
-?- X = 5.
-X = 5.
-
-?- foo(X, 3) = foo(7, Y).
-X = 7, Y = 3.
-
-?- foo(X, 3) = foo(7, 4).
-false.
-```
-
-The first unification binds `X` to 5. The second unifies the structures `foo(X, 3)` and `foo(7, Y)`, binding `X = 7` and `Y = 3`. The third tries to make `foo(X, 3)` equal `foo(7, 4)`, which fails on the `3 ≠ 4` mismatch.
-
-Crucially, bindings made during unification must be *backtrackable*. If unification succeeds and the rest of the proof later fails, the bindings need to be undone so other branches can try.
-
-This is the same pattern as `amb`: a piece of state that gets mutated, with an obligation to undo on backtrack. With continuations, the implementation is straightforward.
-
-### Implementing logical variables
-
-A logical variable is a cell with two states: *unbound* (empty) or *bound to a term*. We need three operations:
-
-- `make-var`: allocate a fresh unbound variable.
-- `bind`: bind an unbound variable to a value. If the variable is already bound, fail.
-- `deref`: follow the chain of bindings to find the value (or terminal unbound variable).
-
-The "fail" outcome of `bind` is critical: if we're trying to unify `X` with `5` and `X` is already bound to `7`, the unification fails. The engine then backtracks to the previous choice point.
-
-Now the key piece: when `bind` succeeds, it records the binding *and stashes an undo entry on a trail*. The trail is a stack of "what to undo." When `fail` causes backtracking, the trail is rolled back to the depth at which the most recent choice point was made.
-
-```forth
-\ Each logical variable is an object with a "value" slot; unbound is :unbound.
-
-symbol :unbound
-
-: make-var ( -- var )
-    :unbound box ;        \ allocate a box containing :unbound
-
-: deref ( var -- value-or-var )
-    dup @ :unbound = if exit then
-    @ recurse ;           \ if bound to another var, follow it
-
-: bind ( var value -- )
-    \ Bind var to value, recording the old value on the trail.
-    over @ :unbound <> if 2drop fail exit then
-    over @ trail-push     \ remember old value
-    over trail-push       \ remember which var
-    swap ! ;              \ do the bind
-
-\ The trail is a side-stack-style structure.
-variable trail-depth
-\ trail-push and trail-pop manipulate it
-```
-
-Now when `amb` captures a choice point, it also records the current trail depth. When `fail` backtracks, it pops the trail back to that depth, undoing every binding made during the failed branch. Then it resumes the saved continuation with the next option.
-
-```forth
-\ Augmented amb that snapshots trail depth.
-: amb-with-trail ( option-list -- choice )
-    [: ( option-list k )
-        trail-depth @ >side  \ stash trail depth
-        ... rest as before ...
-    :] shift-with ;
-
-: fail ( -- )
-    side> trail-rewind   \ undo bindings back to saved depth
-    side> resume         \ resume continuation with next option
-    ... ;
-```
-
-The combination of:
-
-- Multi-shot continuations for trying different choices
-- Logical variables with a trail
-- `amb` snapshotting trail depth, `fail` rewinding the trail
-
-…is the heart of a Prolog implementation. Real Prolog adds many features (indexing, cut, negation-as-failure, definite clause grammars, constraint logic programming) but the engine *core* is exactly this: a few hundred lines on top of continuations.
-
-### Unification as a function
-
-Unification is a recursive procedure that walks two terms, binding logical variables to make the terms equal. The pseudocode:
-
-```
-unify(t1, t2):
-    t1 = deref(t1)
-    t2 = deref(t2)
-    if t1 is an unbound var:
-        bind(t1, t2)
-    else if t2 is an unbound var:
-        bind(t2, t1)
-    else if t1 and t2 are both atoms:
-        if t1 == t2: succeed
-        else: fail
-    else if t1 and t2 are both compound terms:
-        if functor(t1) ≠ functor(t2): fail
-        if arity(t1) ≠ arity(t2): fail
-        for each argument pair (a1, a2): unify(a1, a2)
-    else:
-        fail
-```
-
-Note how `fail` is used as a control primitive throughout. It's not "return an error"; it's "backtrack." The unification function doesn't explicitly handle the backtracking — `fail` does it implicitly via the continuation machinery.
-
-This is the elegance of the continuation-based approach: components compose without tangling control flow through return codes. Each piece can call `fail` whenever it sees a problem, and the runtime takes care of getting to the right backup point.
-
-### Rules and clauses
-
-A Prolog rule has the form `head :- body`. To prove the head, you must prove each goal in the body. To find a rule that proves a particular query, you unify the query with each rule's head; for each match (using `amb` over all matching rules), you recursively prove the body.
-
-```forth
-\ A "clause" is a pair: head-pattern and body-goals.
-\ The database is a list of clauses.
-
-: prove ( goal -- )
-    \ Find all clauses whose head unifies with goal.
-    \ For each, prove the body with the bindings.
-    database matching-clauses amb   \ choose a clause
-    dup head unify-with-goal        \ may fail
-    body prove-all ;                \ prove each goal in the body
-
-: prove-all ( goals -- )
-    \ Prove each goal in turn; if any fails, the whole thing fails.
-    empty? if exit then
-    uncons swap prove prove-all ;
-```
-
-This is the Prolog interpreter, in pseudo-Forth. About 20 lines. Real Prolog implementations are more sophisticated for performance (clause indexing, last-call optimization, WAM-style instruction sets), but the conceptual core is this small.
-
-### Cut: pruning the search
-
-Sometimes you want to *commit* to a choice. Once you've found a particular clause that matches, you don't want to backtrack into other clauses. Prolog has `!` (cut) for this.
-
-Cut is straightforward with continuations: it removes saved choice points up to a specified depth. "Cut" means "discard all choice points back to the most recent rule's entry point." When `fail` is later invoked, it skips past the cut and resumes at an even earlier choice point.
-
-```forth
-: cut-to-rule-entry ( -- )
-    \ Remove saved continuations from the side stack down to the marker
-    \ left when the current rule started.
-    rule-entry-mark begin
-        side-depth over <= if drop exit then
-        side-drop
-    again ;
-```
-
-Each rule entry marks the side stack depth. `cut` removes everything above that mark.
-
-Cut is controversial in logic programming because it breaks the purely declarative model — it introduces operational concerns. But for performance and for expressing certain patterns (like `if-then-else`), it's indispensable.
-
-### Negation as failure
-
-Another Prolog idiom: `\+ G` succeeds if proving `G` fails. With continuations:
-
-```forth
-: negation ( goal -- )
-    [: prove drop-all-solutions :]
-    [: success-means-failure :]
-    try-catch ;
-```
-
-Sketch: try to prove `goal`. If it succeeds (we got at least one solution), the negation fails. If proving `goal` fails (no solutions exist), the negation succeeds.
-
-The control flow inversion is awkward in any imperative implementation but trivial with delimited continuations: each leaf of the search tree is a separate continuation invocation, and you can decide based on whether any of them succeeded.
-
-### Search strategies
-
-The simplest implementation does depth-first search: try a branch all the way, fail back, try the next. This is what Prolog does, and it can be unfair (infinite loops in one branch prevent exploration of others) but it's simple and stack-efficient.
-
-With continuations, alternative strategies are easy. Saved continuations are first-class values; you can store them in any data structure and pick them out in any order.
-
-- **Breadth-first**: instead of a stack of choice points, use a queue. Adds the same exploration but level-by-level. Fair, but uses more memory.
-
-- **Iterative deepening**: depth-first with a depth limit, repeatedly increased. Combines fairness with memory efficiency.
-
-- **Best-first**: priority queue of choice points, ranked by some heuristic. Branch-and-bound, A*, beam search — all just particular policies for which saved continuation to resume next.
-
-The mechanism doesn't care about the strategy. Different policies give different exploration orders.
-
-### Reusing continuations: streams of solutions
-
-A Prolog query may have multiple solutions. The user wants to see them one at a time, asking for "more" between each.
-
-This is the same as a coroutine that yields each solution and suspends:
-
-```forth
-: solve-all ( goal -- )
-    [: prove print-solution fail :]      \ try to prove, print, then force backtrack
-    [: drop ;]                            \ when fail propagates out, we're done
-    try-catch ;
-
-: solve-next ( -- solution | done )
-    [: prove yield-solution :]
-    \ if prove succeeds, we yield the solution
-    \ if it fails (all branches exhausted), we report "done"
-    ... ;
-```
-
-`yield-solution` is `shift` — capture the continuation (which is "the rest of the search, ready to find the next solution") and bubble it out. The user gets one solution at a time. When they ask for the next, they `resume` the saved continuation, which calls `fail` in the prove engine, which backtracks to find the next solution.
-
-This unification of coroutines and backtracking is a striking property of the continuation substrate: they're the same thing seen from different angles. A search-with-multiple-solutions *is* a generator. The generator's `yield` is the search engine's "we found a solution; pause." The driver's `resume` is "force backtrack to find the next."
-
-### Constraint logic programming
-
-CLP extends logic programming with arithmetic and other constraints over various domains (integers, reals, intervals, finite sets). Variables can have *partial* values — "X is between 1 and 10" — that get refined as constraints are added.
-
-Implementing CLP on top of `amb`/`fail` and logical variables requires one extra piece: *constraint propagation*. When a new constraint is posted, the runtime checks consistency with existing constraints and may infer new bindings or detect inconsistency (failure).
-
-The continuation machinery handles the search exactly as before. What's new is the *state* — constraint stores need to be backtrackable like the trail of bindings was. Adding entries to a constraint store records a trail entry; on backtrack, the entries are removed.
-
-Same pattern, same primitives. Multi-shot continuations + backtrackable state + a domain-specific solver.
-
-### Why this is more than a parlor trick
-
-Logic programming, by itself, is a niche tool. But the patterns generalize.
-
-*Constraint solvers*. SAT solvers, SMT solvers, theorem provers, and type-checkers all do tree search with backtracking. Implementing them on top of continuations gives you natural support for incremental search, multi-shot exploration, and clean separation of search policy from search mechanics.
-
-*Probabilistic programming*. Languages like Church, Anglican, and Pyro express probabilistic models as ordinary programs that "sample" from distributions. Inference proceeds by running the program many times, accumulating statistics. Each run is a captured continuation; resampling means resuming a captured point with a different random draw. Continuations are the natural substrate.
-
-*Game-tree search*. Minimax, alpha-beta, MCTS — all are tree explorations with backtracking and policy. Same machinery.
-
-*Parser combinators with backtracking*. A parser tries alternatives at choice points; on failure, it backtracks and tries another. Same machinery.
-
-*Theorem provers*. Tableaux-based and resolution-based provers explore proof trees. Same machinery.
-
-In each case, what we wrote is recognizable as a special case of "search with multi-shot continuations." The shared infrastructure is the continuation primitives plus a backtrackable state mechanism. Everything else is policy.
-
-### The bigger philosophical claim
-
-The claim continuation enthusiasts have been making for decades — and which the logic engine demonstrates concretely — is that *control flow itself is a domain that should be programmable*. Mainstream languages give you a few fixed patterns: function call/return, exceptions, loops, maybe generators or async/await. Each is hardcoded; if you want something different, you can't get it without modifying the compiler.
-
-Continuations give you the substrate to *build* control patterns. A logic engine is a control pattern. A scheduler is a control pattern. An event loop is a control pattern. A backtracking parser, a state machine generator, an effect handler, an actor system — all are control patterns. With continuations, they're libraries. Without continuations, they're compiler features.
-
-This is why a 700-line Forth interpreter with delimited continuations gives you more expressive control flow than a million-line C++ runtime without them. The C++ runtime has more features. But it doesn't let you express new ones.
+The point for *this* document is the narrow one: backtracking search is not a separate language feature but a use of delimited continuations together with a small amount of backtrackable state — the same substrate that makes exceptions, coroutines, and green threads fall out of the same primitives. Constraint solvers, probabilistic-programming samplers, game-tree search, and backtracking parsers are all that shape: explore a tree, undo on backtrack, let a policy choose what to try next.
 
 ---
 
@@ -1783,7 +1538,7 @@ The mark id counter (`next_mark_id`) is global and monotonic. If you serialize a
 
 ### Escaping the reset
 
-`shift` outside a reset is an error. The capture has no target. The runtime detects this and signals `"shift outside reset"`. But if your code path can reach `shift` without a guaranteed enclosing `reset`, you have a bug. Wrap top-level coroutine drivers in `reset`.
+`shift` outside a reset is an error. The capture has no target. The runtime detects this and signals `"shift/shift-with: no enclosing reset on the return stack"`. But if your code path can reach `shift` without a guaranteed enclosing `reset`, you have a bug. Wrap top-level coroutine drivers in `reset`.
 
 ---
 
@@ -1793,10 +1548,12 @@ The mark id counter (`next_mark_id`) is global and monotonic. If you serialize a
 
 | Word | Stack effect | Effect |
 |---|---|---|
-| `reset` | `( -- )` | Push uniquely-tagged MARK on return stack. |
-| `shift` | `( -- k )` | Capture up to nearest MARK, remove MARK and frames above, push k. |
-| `shift-with` | `( handler -- ... )` | Like shift, but keep MARK, run handler in outer context, set unwinding flag. |
-| `resume` | `( ... k -- ... )` | Re-enter captured slice; effects appear on the data stack. |
+| `reset` | `( -- )` | Push an exception-kind MARK (a prompt) on the return stack. |
+| `shift` | `( -- k )` | Capture up to the nearest exception MARK; remove it and the frames above; push k. |
+| `shift-with` | `( handler -- ... )` | Like shift, but keep the MARK, run handler in the outer context, then unwind. |
+| `resume` | `( ... k -- ... )` | Re-enter a captured slice; effects appear on the data stack. |
+| `amb` | `( branch1 branch2 -- ... )` | Push a choice-kind MARK; run branch1; on a fail back to it, restore the choice point and run branch2. |
+| `fail` | `( -- )` | Unwind to the nearest choice MARK to try its alternative. |
 | `>side` | `( v -- )` | Push v on side stack. |
 | `side>` | `( -- v )` | Pop side stack onto data stack. |
 | `side-drop` | `( -- )` | Discard top of side stack. |
@@ -1818,11 +1575,11 @@ The mark id counter (`next_mark_id`) is global and monotonic. If you serialize a
 | Recovery / restart | Handler that calls `resume` on k | `shift-with` (use k) |
 | Coroutine yield/resume | `yield = shift`, driver calls `resume` | bare `shift` |
 | Generator | Same as coroutine, with values | bare `shift` |
-| Backtracking choice | `amb` saves k, `fail` resumes it | `shift-with` (stash k) |
+| Backtracking choice | `amb` between branches, `fail` to retry | `amb`/`fail` primitives (choice prompt) |
 | Green thread | `yield = shift-with(enqueue+pick)` | `shift-with` + scheduler |
 | Async/await | `await = shift-with(register-with-event-loop)` | `shift-with` + event loop |
 | Cooperative I/O | `read-async`, `write-async`, etc. via await | `shift-with` |
-| Logic programming | unification + `amb` + `fail` | `shift-with` (multi-shot) |
+| Logic programming | unification + `amb` + `fail` | `amb`/`fail` + the unification trail |
 
 ---
 
@@ -1834,9 +1591,11 @@ If you want to dig into the C code:
 - **`capture_continuation`** — shared helper for shift and shift-with.
 - **`p_shift`** — calls the helper, truncates the return stack including the mark.
 - **`p_shift_with`** — calls the helper, keeps the mark, runs the handler, sets unwinding.
-- **`p_resume`** — splices captured frames back onto the return stack, runs the nested inner loop.
-- **`run_inner`** — the modified loop with unwinding-aware behavior. Look at the top-of-loop check.
-- **`OBJECT_CONTINUATION`** — the union arm holding a captured slice.
+- **`p_resume`** — splices captured frames back onto the return stack, re-anchors the locals frame, runs the nested inner loop.
+- **`run_inner`** — the unwinding-aware loop. Look at the top-of-loop check.
+- **`p_amb` / `p_fail` / `backtrack`** — backtracking on the choice-kind prompt; `amb` snapshots and restores the data stack, unification trail, and logic-var stack across a `fail`.
+- **`push_prompt` / `find_prompt`** — push a kind-tagged MARK; scan for the nearest MARK of a given kind.
+- **`OBJECT_CONTINUATION`** — the union arm holding a captured slice (`return_slice`, `resume_ip`, `local_base_offset`).
 
 If you want to read the library code:
 

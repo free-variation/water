@@ -1,36 +1,9 @@
-0 ok
-0 ok
-0 ok
-2 0 ok
-3 0 ok
-0 0 ok
-0 ok
-0 ok
-0 0 ok
-1 0 ok
-0 ok
-0 ok
-1024 0 ok
-3 0 ok
-0.5 0 ok
-1 0 ok
-0 ok
-0 ok
-<matrix 2x2>
+2 3 0 0 1 1024 3 0.5 1 <matrix 2x2>
           1          4
           9         16
-0 ok
-0 ok
-0 ok
 <matrix 1x4>
           1          2          4          8
-0 ok
-0 ok
-0 ok
 <matrix 1x3>
           8          9          4
-0 ok
-0 ok
-0 ok
-0|error ^: expected floats or matrices; got a string and a float
-0|error ^: matrix shapes differ (1x2 vs 1x3)
+error: ^: expected floats or matrices; got a string and a float
+error: ^: matrix shapes differ (1x2 vs 1x3)

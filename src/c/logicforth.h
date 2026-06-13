@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.5.0"
+#define VERSION "0.6.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,29 +20,30 @@
 
 typedef int64_t cell;
 
-#define VOCABULARY_INIT_SIZE    1048576
-#define NAME_POOL   			262144
-#define DATA_STACK_DEPTH		65536
-#define RETURN_STACK_DEPTH  	65536
-#define MAX_OBJECTS    			4194304
-#define INPUT_BUFFER_SIZE    	1048576
-#define SOURCE_POOL 			4194304
-#define SYMBOL_POOL 			4194304
-#define SYMBOL_HASH_SIZE 		1048576
-#define SIDESTACK_DEPTH 		1024
-#define BIND_TRAIL_DEPTH		65536
-#define MAX_LOADED_FILES 		64
-#define MAX_GC_ROOTS 			64
-#define LOCAL_NAMES_POOL_SIZE	8192
-#define MAX_LOCAL_NAMES			256
-#define MAX_LOCAL_SCOPES		64
-#define TRAMPOLINE_SLOT			0
-#define DICT_RESERVED			3
-#define PROMPT_EXCEPTION		0
-#define PROMPT_CHOICE			1
-#define LVAR_STACK_DEPTH		65536
-#define PAIR_TABLE_DEPTH		1 << 20
-#define COPY_SPINE_MAX			(1 << 24)
+#define VOCABULARY_INIT_SIZE (1 << 20)
+#define NAME_POOL (1 << 18)
+#define DATA_STACK_DEPTH (1 << 16)
+#define RETURN_STACK_DEPTH (1 << 16)
+#define MAX_OBJECTS (1 << 26)
+#define INPUT_BUFFER_SIZE (1 << 20)
+#define SOURCE_POOL (1 << 22)
+#define SYMBOL_POOL (1 << 22)
+#define SYMBOL_HASH_SIZE (1 << 20)
+#define SIDESTACK_DEPTH (1 << 10)
+#define BIND_TRAIL_DEPTH (1 << 16)
+#define MAX_LOADED_FILES (1 << 6)
+#define MAX_GC_ROOTS (1 << 6)
+#define LOCAL_NAMES_POOL_SIZE (1 << 13)
+#define MAX_LOCAL_NAMES (1 << 8)
+#define MAX_LOCAL_SCOPES (1 << 6)
+#define MAX_HANDLERS (1 << 10)
+#define TRAMPOLINE_SLOT 0
+#define DICT_RESERVED 3
+#define PROMPT_EXCEPTION 0
+#define PROMPT_CHOICE 1
+#define LVAR_STACK_DEPTH (1 << 16)
+#define PAIR_TABLE_DEPTH (1 << 20)
+#define COPY_SPINE_MAX (1 << 24)
 
 typedef enum {
 	T_NONE = 0,
@@ -241,6 +242,7 @@ typedef struct Interpreter {
 
 	Object *objects[MAX_OBJECTS];
 	int n_objects;
+	int max_objects;
 	unsigned char object_mark[MAX_OBJECTS];
 	int free_slots[MAX_OBJECTS];
 	int n_free_slots;
@@ -254,6 +256,9 @@ typedef struct Interpreter {
 
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
+
+	void *handler_registry[MAX_HANDLERS];
+	int n_handlers;
 
 	char *loaded_files[MAX_LOADED_FILES];
 	int n_loaded_files, load_depth;

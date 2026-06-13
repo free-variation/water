@@ -1,0 +1,16 @@
+\ choose ( list cont -- ): run cont with each element in turn; commit to the
+\ first element for which cont succeeds, fail if none do.
+
+\ commits to the first element greater than 3
+[( 1 2 3 4 5 null )] [: |> x | x 3 gt if x . else fail then :] choose cr
+
+\ a single-element list
+[( 9 null )] [: |> x | x . :] choose cr
+
+\ enumerate every element by printing and failing; an outer amb catches the final fail
+[: [( 1 2 3 null )] [: |> x | x . fail :] choose :] [: 0 . :] amb cr
+
+\ no element succeeds: the whole choose fails into the outer branch
+[: [( 1 2 null )] [: drop fail :] choose :] [: 42 . :] amb cr
+
+bye

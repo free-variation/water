@@ -1,22 +1,6 @@
-0 ok
-0 ok
-0 ok
 *****
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
 7 7 7 
-0 ok
-0 ok
-0 ok
-0 ok
 0 1 2 3 4 
-0 ok
-0 ok
-0 ok
-0|error times: count must be non-negative; got -1
-0|error times: expected a float count; got an execution token
-0|error times: expected an execution token; got a float
+error: times: count must be non-negative; got -1
+error: times: expected a float count; got an execution token
+error: times: expected an execution token; got a float

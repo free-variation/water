@@ -1,26 +1,10 @@
-0 ok
-0 ok
-0 ok
-0 ok
 [ 99 88 77 ] 
-0 ok
 [ 0 99 88 77 0 ] 
-0 ok
 [ 1 2 3 4 5 ] 
-0 ok
-0 ok
-0 ok
 [ 1 2 3 ] 
-1|"keep" ok
 "keep" 
-0 ok
-0 ok
-0 ok
 [ "hi" :sym 42 ] 
-0 ok
-0 ok
-0 ok
-0|error to-slice!: slice [5, 8) out of bounds for length 3
-0|error to-slice!: count must be non-negative; got -1
-0|error to-slice!: expected an array; got a float
-0|error to-slice!: stack too shallow (need 5 values plus target)
+error: to-slice!: slice [5, 8) out of bounds for length 3
+error: to-slice!: count must be non-negative; got -1
+error: to-slice!: expected an array; got a float
+error: to-slice!: stack too shallow (need 5 values plus target)

@@ -1,38 +1,10 @@
-0 ok
-0 ok
-0 ok
-0 ok
 1 
-0 ok
-0 ok
-0 ok
-0 ok
 hello 
-0 ok
 1 
-0 ok
-0 ok
-0 ok
-0 ok
 world 
-0 ok
-0 ok
-0 ok
-0 ok
 0 
-0 ok
 0 
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
 1 
-0 ok
-0 ok
 1 
-0 ok
-0 ok
-0 ok
-0|error env: expected a string; got a float
-0|error env!: expected a string; got a float
+error: env: expected a string; got a float
+error: env!: expected a string; got a float
