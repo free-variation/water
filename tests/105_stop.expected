@@ -1,13 +1,3 @@
-0 ok
-0 ok
-0 ok
-0 ok
 137 
-0 ok
-0 ok
-0 ok
 137 
-0 ok
-0 ok
-0 ok
-0|error stop: expected a float pid; got a string
+error: stop: expected a float pid; got a string

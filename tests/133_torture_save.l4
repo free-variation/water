@@ -1,0 +1,42 @@
+\ Cross-system seam torture, part 1 of 2: build a deliberately awkward live
+\ state that crosses many subsystems at once, force a GC with it all live,
+\ then save an image.  Part 2 (134) reloads it in a SEPARATE process, so
+\ every piece must survive serialization, a fresh ASLR layout, and GC.
+
+\ dispatch seam: a fused superword, an inlined call, recursion + a branch
+variable g1   6 to g1
+variable g2   7 to g2
+: prod  vvf* g1 g2 ;
+: inc   1 + ;
+inline
+: dbl   dup + ;
+: poly  |> x |  x dbl inc ;
+: sumto dup 0 gt if dup 1 - sumto + then ;
+
+\ logic seam: a bound logic var, and a pair sharing a bound var (reify must
+\ preserve the sharing)
+variable V   lvar to V   V 99 ~ drop
+variable P   lvar to X   [( X X null )] to P   X 5 ~ drop
+
+\ fact-database seam: an indexed relation with two rows
+variable REL
+[ :role ] relation to REL
+REL { :name :gandalf :role :wizard } assert drop
+REL { :name :frodo  :role :hobbit } assert drop
+
+\ continuation seam: capture a slice mid-computation and stash it
+: shifter shift ;
+: ex  reset 99 shifter 2 * ;
+variable K
+ex  to K  drop
+
+\ a matrix held in a variable
+variable M
+[ 1 2 3 4 ] 2 2 matrix to M
+
+\ make some garbage, then force a collection with all of the above live
+[: [ 0 0 0 0 ] drop :] 2000 times
+gc
+
+clear
+"/tmp/lf-torture.image" save-image

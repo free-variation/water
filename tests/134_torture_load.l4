@@ -1,0 +1,16 @@
+\ Cross-system seam torture, part 2 of 2: load the image built by 133 in a
+\ fresh process and prove every seam survived the round-trip and a GC.
+"/tmp/lf-torture.image" load-image
+gc
+prod . cr                                       \ 42   fused superword
+5 poly . cr                                     \ 11   locals + inlined call
+4 sumto . cr                                    \ 10   recursion + branch
+V $ . cr                                        \ 99   bound logic var
+P reify . cr                                    \ [( 5 5 null )]   shared var preserved
+REL { :role :wizard } query size . cr           \ 1    relation query
+REL { :role :wizard } query 0 @i :name @ . cr    \ :gandalf   row content
+5 K resume . cr                                 \ 10   continuation resumed cross-process
+M . cr                                          \ the 2x2 matrix
+[: [ 0 0 0 0 ] drop :] 2000 times  gc            \ post-load GC ...
+prod . cr                                       \ 42   ... dispatch still works
+bye

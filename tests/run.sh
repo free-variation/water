@@ -28,9 +28,9 @@ for input in "$here"/*.l4; do
         continue
     fi
     actual=$(mktemp "${TMPDIR:-/tmp}/logicforth.XXXXXX")
-    # Drop the startup banner (line 1) so the version isn't baked into every
-    # expected file; expected files start from the first command's output.
-    "$bin" < "$input" 2>&1 | tail -n +2 > "$actual"
+    # Batch mode (-b): no banner, no per-line prompt — just the program's own
+    # output (and errors), so expected files hold exactly what the script prints.
+    "$bin" -b < "$input" > "$actual" 2>&1
     if diff -q "$expected" "$actual" > /dev/null 2>&1; then
         pass=$((pass + 1))
         printf "  ok   %s\n" "$name"
@@ -44,4 +44,9 @@ done
 
 echo
 echo "$pass passed, $fail failed"
-[ "$fail" -eq 0 ]
+
+echo
+sh "$here/cli_tests.sh"
+cli_status=$?
+
+[ "$fail" -eq 0 ] && [ "$cli_status" -eq 0 ]

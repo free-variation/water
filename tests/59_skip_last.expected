@@ -1,45 +1,4 @@
-0 ok
-0 ok
-[ 3 4 5 ] 0 ok
-0 ok
-0 ok
-[ 1 2 3 4 5 ] 0 ok
-[ ] 0 ok
-0 ok
-0 ok
-[ ] 0 ok
-[ 1 2 3 4 5 ] 0 ok
-0 ok
-0 ok
-[ ] 0 ok
-0 ok
-0 ok
-[ 3 4 5 ] 0 ok
-0 ok
-0 ok
-4 0 ok
-[ 5 4 3 2 ] 0 ok
-0 ok
-0 ok
-0 ok
-[ 4 5 ] 0 ok
-0 ok
-0 ok
-[ ] 0 ok
-[ 1 2 3 4 5 ] 0 ok
-0 ok
-0 ok
-[ 1 2 3 ] 0 ok
-0 ok
-0 ok
-[ ] 0 ok
-0 ok
-0 ok
-[ 3 4 5 ] 0 ok
-0 ok
-0 ok
-0 ok
-0|error - : expected two floats, two sets, two matrices, or scalar/matrix; got a float and a string
-0|error reverse: expected array or set; got a string
-0|error take: expected a float length; got a string
-0|error reverse: expected array or set; got a string
+[ 3 4 5 ] [ 1 2 3 4 5 ] [ ] [ ] [ 1 2 3 4 5 ] [ ] [ 3 4 5 ] 4 [ 5 4 3 2 ] [ 4 5 ] [ ] [ 1 2 3 4 5 ] [ 1 2 3 ] [ ] [ 3 4 5 ] error: - : expected two floats, two sets, two matrices, or scalar/matrix; got a float and a string
+error: reverse: expected array or set; got a string
+error: take: expected a float length; got a string
+error: reverse: expected array or set; got a string

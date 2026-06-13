@@ -42,7 +42,7 @@ The interpreter holds this array as a member of `Interpreter`:
 ```c
 typedef struct Interpreter {
     ...
-    Object *objects[MAX_OBJECTS];   // MAX_OBJECTS = 262144
+    Object *objects[MAX_OBJECTS];   // the object registry
     int n_objects;                  // highest slot used so far + 1
     ...
 } Interpreter;
@@ -97,31 +97,38 @@ typedef enum {
     T_STRING,
     T_SET,
     T_ARRAY,
+    T_PAIR,
     T_FRAME,
     T_MATRIX,
     T_XT,
     T_ADDR,
     T_CONT,
-    T_MARK
+    T_MARK,
+    T_STREAM,
+    T_LOGIC_VAR,
+    T_UNBOUND
 } Tag;
 
-typedef struct {
-    Tag tag;
-    int64_t data;
+typedef union {
+    uint64_t bits;
+    double   number;
 } Val;
 ```
 
-A `Val` is 16 bytes: a `Tag` and a 64-bit `data` field. The tag tells you what's in `data`:
+A `Val` is 8 bytes, NaN-boxed: a `T_FLOAT` is the `double` stored directly, and every other value packs a tag and a payload into the unused bits of a quiet NaN (the bit layout is nan-boxing.md's subject). For GC, what matters is the tag — read with `VAL_TAG(v)` — and what it says the payload `VAL_DATA(v)` means:
 
-- `T_FLOAT` — `data` holds the bits of an IEEE 754 double.
+- `T_FLOAT` — the Val *is* the IEEE 754 double.
 - `T_SYMBOL` — `data` is an offset into the symbol pool (a static string area).
 - `T_XT` / `T_ADDR` — `data` is a position in the dictionary.
-- `T_MARK` / `T_NONE` — `data` is unused or a small integer (a mark id).
+- `T_STREAM` — `data` is an open file descriptor.
+- `T_MARK` / `T_NONE` / `T_UNBOUND` — `data` is unused or a small integer (a mark id, or the unbound-variable marker).
 - `T_STRING`, `T_SET`, `T_ARRAY`, `T_FRAME`, `T_MATRIX`, `T_CONT` — `data` is a *handle*: an index into `objects[]`.
+- `T_PAIR` — `data` is a slot in the separate `pairs` table; cons cells live there, not in `objects[]`.
+- `T_LOGIC_VAR` — `data` is an index into the `lvar_stack`, where the variable's binding lives.
 
-That last group is the only group the GC cares about. Everything else (floats, symbols, execution tokens, dictionary addresses, marks) is self-contained in the `Val` and doesn't refer to any heap object.
+The last three groups are the ones the GC must trace. The `objects[]` handles and `T_PAIR` cells point at collectable storage directly; a `T_LOGIC_VAR` is followed to whatever it's bound to. Everything else (floats, symbols, execution tokens, dictionary addresses, marks, file descriptors) is self-contained in the `Val` and refers to no managed storage.
 
-So the GC's job, in slogan form: find all the live `objects[]` slots, free the dead ones.
+So the GC's job, in slogan form: find every live cell — `objects[]` slot and pair alike — reachable from the roots, and free the dead ones.
 
 ---
 
@@ -174,6 +181,8 @@ Look at the "scan roots" code in `gc()`:
 ```c
 void gc(Interpreter *interp) {
     memset(interp->object_mark, 0, sizeof(interp->object_mark));
+    memset(interp->pair_mark, 0, sizeof(unsigned char) * (size_t)interp->n_pairs);
+    interp->pair_free_count = 0;
 
     for (int i = 0; i < interp->dsp; i++) mark_value(interp, interp->data_stack[i]);
     for (int i = 0; i < interp->rsp; i++) mark_value(interp, interp->return_stack[i]);
@@ -182,9 +191,11 @@ void gc(Interpreter *interp) {
 
     /* ... mark dictionary bodies (see Part 6) ... */
 
-    /* ... sweep (see Part 8) ... */
+    /* ... sweep objects[] and the pairs table (see Part 8) ... */
 }
 ```
+
+There are two mark arrays because there are two collectable tables: `objects[]` for the composite heap objects, and the `pairs` table for cons cells. Both get cleared here, both get traced by `mark_value`, and both get swept at the end. Logic-variable bindings need no array of their own — a reachable `T_LOGIC_VAR` is followed into the `lvar_stack` during marking, so its binding is traced wherever it's reached.
 
 The three stacks plus the `gc_roots` array — that's four of the five root sources right there, each handled by one loop. The dictionary is a Part 6 topic because it needs more machinery.
 
@@ -196,14 +207,26 @@ The three stacks plus the `gc_roots` array — that's four of the five root sour
 
 ```c
 void mark_value(Interpreter *interp, Val value) {
-    if (value.tag != T_STRING &&
-            value.tag != T_SET &&
-            value.tag != T_ARRAY &&
-            value.tag != T_FRAME &&
-            value.tag != T_MATRIX &&
-            value.tag != T_CONT) return;
+    if (VAL_TAG(value) == T_LOGIC_VAR) {            // a logic var: follow it into the lvar stack
+        mark_value(interp, interp->lvar_stack[VAL_DATA(value)]);
+        return;
+    }
 
-    int handle = (int)value.data;
+    if (VAL_TAG(value) != T_STRING && VAL_TAG(value) != T_SET &&
+            VAL_TAG(value) != T_ARRAY && VAL_TAG(value) != T_PAIR &&
+            VAL_TAG(value) != T_FRAME && VAL_TAG(value) != T_MATRIX &&
+            VAL_TAG(value) != T_CONT) return;       // not a heap reference
+
+    if (VAL_TAG(value) == T_PAIR) {                 // cons cells live in their own table
+        int slot = (int)VAL_DATA(value);
+        if (interp->pair_mark[slot]) return;
+        interp->pair_mark[slot] = 1;
+        mark_value(interp, interp->pairs[slot].head);
+        mark_value(interp, interp->pairs[slot].tail);
+        return;
+    }
+
+    int handle = (int)VAL_DATA(value);
     if (handle < 0 || handle >= MAX_OBJECTS || !interp->objects[handle] || interp->object_mark[handle]) return;
 
     interp->object_mark[handle] = 1;
@@ -221,26 +244,28 @@ void mark_value(Interpreter *interp, Val value) {
 
 Read it line by line:
 
-1. **First filter: is this even a heap reference?** Floats, symbols, xts, addrs, marks, and the empty `T_NONE` tag all carry no heap pointer. Return immediately.
+1. **Logic var? Follow the binding.** A `T_LOGIC_VAR` is not a heap object — it's an index into the bump-allocated `lvar_stack`. Mark whatever the variable is bound to (which may itself be a heap reference) and return.
 
-2. **Second filter: is the handle in bounds and the slot live?** Defensive — handles should always be valid, but this guards against bugs. If the slot's already been freed (`NULL`) or never allocated, skip.
+2. **Is this even a heap reference?** Floats, symbols, xts, addrs, marks, and the empty `T_NONE` tag carry no heap pointer. Return immediately.
 
-3. **Third filter: is it already marked?** This is the key to terminating on cycles. If we've already visited this object during this collection, don't visit it again. Otherwise, an array containing itself would loop forever.
+3. **Pair? Mark it in the pair table.** Cons cells (`T_PAIR`) live in a separate `pairs` table with their own `pair_mark` bits, not in `objects[]`. If the cell is already marked, stop (the cycle guard); otherwise set the bit and recurse into its head and tail.
 
-4. **Mark it.** Set `object_mark[handle] = 1`.
+4. **In bounds and live?** Defensive — handles should always be valid, but this guards against bugs. If the slot's already freed (`NULL`) or never allocated, skip.
 
-5. **Recurse into children, if any.** Strings and matrices don't contain Vals — their internal `bytes` and `elements` arrays are leaf data. Sets and arrays contain Vals (their items); frames contain Vals (their `values` array, parallel to `keys`); continuations contain Vals (the captured return-stack slice). For those, walk each child and recurse.
+5. **Already marked?** The key to terminating on cycles: if we've visited this object during this collection, don't visit it again. Otherwise an array containing itself would loop forever.
 
-   Notice that for frames we walk `values[]` but not `keys[]`. The keys are `cell`s — symbol-pool offsets, plain integers — not Vals, so they don't reference any heap object and need no marking.
+6. **Mark it, then recurse into children, if any.** Strings and matrices are leaf data — their `bytes`/`elements` arrays hold no Vals. Sets and arrays hold Vals (their items); frames hold Vals (their `values`, parallel to `keys`); continuations hold Vals (the captured return-stack slice). Walk each child and recurse.
+
+   For frames we walk `values[]` but not `keys[]`: keys are `cell`s — symbol-pool offsets, plain integers — not Vals, so they reference no heap object.
 
 Notice what `mark_value` does *not* do:
 
-- It doesn't unmark anything. Only the `memset` at the start of `gc()` clears the mark array.
+- It doesn't unmark anything. Only the `memset`s at the start of `gc()` clear the mark arrays (`object_mark` and `pair_mark`).
 - It doesn't look inside strings or matrices. Those are flat numeric or byte data — no further Vals inside.
 - It doesn't walk frame `keys` arrays (they're cells, not Vals).
 - It doesn't traverse the `Object` struct's bookkeeping fields (`kind`, `len`, `capacity`). Those aren't Vals.
 
-The recursion terminates because every recursive call either (a) hits a leaf object kind (string, matrix), (b) hits an already-marked object (cycle), or (c) hits a non-handle Val (float, symbol, etc.).
+The recursion terminates because every recursive call either (a) hits a leaf object kind (string, matrix), (b) hits an already-marked object or pair (cycle), or (c) hits a non-reference Val (float, symbol, etc.).
 
 ### A worked example
 
@@ -282,58 +307,53 @@ The dictionary is different. The dictionary is one giant `cell[]` array (an arra
 A `Val` literal compiled into a word body looks like this in the dictionary:
 
 ```
-... [literal_cfa] [tag] [data] [next_cfa] ...
+... [literal_cfa] [packed Val] [next_cfa] ...
 ```
 
-The `tag` and `data` cells together encode a `Val`. If that Val is a heap reference (say a `T_ARRAY`), GC must mark the referenced object — otherwise the compiled code that *will* use that Val later would find its target freed underneath it.
+A `Val` is a single 64-bit cell — it's NaN-boxed, so tag and payload both fit in one `cell`. The literal op carries exactly one operand cell: the Val's raw bits. If that Val is a heap reference (say a `T_ARRAY`), GC must mark the referenced object — otherwise the compiled code that *will* use that Val later would find its target freed underneath it.
 
-Similarly, `variable` storage lives inline in the dictionary. A `variable` word has a 2-cell body: `[tag] [data]`, encoding the variable's current Val.
+Similarly, `variable` storage lives inline in the dictionary. A `variable` word has a one-cell body: the packed Val of the variable's current value.
 
-So the GC has to walk every word body, look at the cells, identify which are part of a Val literal or variable, and mark those Vals.
+So the GC has to walk every word body, look at the cells, identify which are Vals (literal operands and variable bodies), and mark those.
 
 This is what `mark_body` does:
 
 ```c
 void mark_body(Interpreter *interp, int body_start, int body_end) {
+    Vocabulary *vocab = interp->vocab;
+    cell literal_ptr = vocab->dict[vocab->literal_cfa];
+    cell dostr_ptr = vocab->dict[vocab->dostr_cfa];
+
     int cursor = body_start;
     while (cursor < body_end) {
-        cell ref = interp->vocab->dict[cursor];
-        if (ref == (cell)interp->vocab->literal_cfa && cursor + 2 < body_end) {
-            Tag tag = (Tag)interp->vocab->dict[cursor + 1];
-            Val value; value.tag = tag; value.data = interp->vocab->dict[cursor + 2];
+        cell handler = vocab->dict[cursor];
+        int n = op_cell_count(vocab, vocab->dict, cursor);
+
+        if (handler == literal_ptr) {
+            Val value;
+            value.bits = (uint64_t)vocab->dict[cursor + 1];
             mark_value(interp, value);
-            cursor += 3;
-        } else if (ref == (cell)interp->vocab->dostr_cfa && cursor + 1 < body_end) {
-            Val value; value.tag = T_STRING; value.data = interp->vocab->dict[cursor + 1];
+        } else if (handler == dostr_ptr) {
+            Val value = make_string((int)vocab->dict[cursor + 1]);
             mark_value(interp, value);
-            cursor += 2;
-        } else if ((ref == (cell)interp->vocab->branch_cfa
-                    || ref == (cell)interp->vocab->zbranch_cfa) && cursor + 1 < body_end) {
-            cursor += 2;          /* branches: 1 operand cell, no Vals */
-        } else if ((ref == (cell)interp->vocab->to_var_cfa
-                    || ref == (cell)interp->vocab->enter_locals_cfa
-                    || ref == (cell)interp->vocab->leave_locals_cfa) && cursor + 1 < body_end) {
-            cursor += 2;          /* one-cell operand, no Vals */
-        } else if ((ref == (cell)interp->vocab->local_fetch_cfa
-                    || ref == (cell)interp->vocab->local_store_cfa) && cursor + 2 < body_end) {
-            cursor += 3;          /* two-cell operand, no Vals */
-        } else {
-            cursor++;             /* plain CFA, no inline operand */
         }
+
+        cursor += n;
     }
 }
 ```
 
-Walk the body cell by cell. For each cell:
+Walk the body cell by cell. For each cell, `op_cell_count` reports how many cells this op occupies — the CFA plus any inline operands. Then:
 
-- If it's the CFA of `(literal)`, the next two cells are the tag+data of a literal Val. Build the Val and mark it. Skip three cells total (the CFA plus its two operands).
-- If it's the CFA of `(dostr)`, the next cell is a string handle. Build a `T_STRING` Val and mark it. Skip two cells.
-- If it's a CFA with non-Val inline operands (branches, the locals ops, `(to-var)`), skip the operand cells but don't mark anything — those operands are just plain integers, not Vals.
-- Otherwise, it's a plain CFA with no inline operands. Move forward one cell.
+- If it's the CFA of `(literal)`, the next cell is the packed Val — read its raw bits straight into a `Val` and mark it.
+- If it's the CFA of `(dostr)`, the next cell is a string handle. Build a `T_STRING` Val and mark it.
+- Otherwise nothing to mark — branches, locals ops, and `(to-var)` carry only plain-integer operands, and a bare CFA carries none.
 
-The crucial property: each branch must correctly identify how many cells the op consumes. If the GC miscounts, it could (a) walk past the end of the body, or (b) mistake an operand cell for a CFA on the next iteration and try to read it as a Val. Either is a corruption bug.
+Either way, advance by `n` cells.
 
-This is also why each new compiler-emitted op with inline operands has to be registered here. When word-local variable ops were added (`(enter-locals)`, `(local@)`, etc.), `mark_body` had to learn how many operand cells each consumes. If you ever add a new op with inline operands, this is the first place to update.
+The crucial property: `op_cell_count` must report the right width for every op. If it miscounts, the walk could (a) run past the end of the body, or (b) mistake an operand cell for a CFA on the next iteration and read it as a Val. Either is a corruption bug.
+
+That's why `op_cell_count` is the single place that knows each compiler-emitted op's width. Every op with inline operands — `(literal)`, `(dostr)`, the branches, the word-local variable ops, the fused superwords — is accounted for there, and it's the first place to update when a new such op is added.
 
 ### How does GC find each word's body range?
 
@@ -349,10 +369,9 @@ for (int i = 0; i < num_cfas; i++) {
     cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
     if (handler == docol) {
         mark_body(interp, body_start, body_end);
-    } else if (handler == dovar && body_start + 1 < body_end) {
+    } else if (handler == dovar && body_start < body_end) {
         Val value;
-        value.tag = (Tag)interp->vocab->dict[body_start];
-        value.data = interp->vocab->dict[body_start + 1];
+        value.bits = (uint64_t)interp->vocab->dict[body_start];
         mark_value(interp, value);
     }
 }
@@ -361,7 +380,7 @@ for (int i = 0; i < num_cfas; i++) {
 The dispatch on handler type matters:
 
 - **`docol`**: a colon-defined word. Body is compiled code — walk with `mark_body`.
-- **`dovar`**: a variable. Body is exactly two cells (tag, data). Read directly and mark.
+- **`dovar`**: a variable. Body is a single cell holding the packed Val. Read it directly and mark.
 - **Other handlers** (primitive C functions, `dosym`, etc.): nothing in the body to mark. Skip.
 
 ---
@@ -413,8 +432,6 @@ This is the C-level analog of a "rooted but unrooted" bug that comes up in any G
 A small array of "in-flight Vals" that C code can push to and pop from:
 
 ```c
-#define MAX_GC_ROOTS 16
-
 typedef struct Interpreter {
     ...
     Val gc_roots[MAX_GC_ROOTS];
@@ -423,13 +440,15 @@ typedef struct Interpreter {
 } Interpreter;
 ```
 
-Two helpers, both in `core.c`:
+Two helpers:
 
 ```c
 void gc_root_push(Interpreter *interp, Val value) {
-    if (interp->n_gc_roots < MAX_GC_ROOTS) {
-        interp->gc_roots[interp->n_gc_roots++] = value;
+    if (interp->n_gc_roots >= MAX_GC_ROOTS) {
+        fail(interp, "gc roots exhausted");
+        return;
     }
+    interp->gc_roots[interp->n_gc_roots++] = value;
 }
 
 void gc_root_pop(Interpreter *interp) {
@@ -474,9 +493,9 @@ Each follows the same pattern: a C primitive holds a Val that hasn't reached a s
 
 ### Why the array is small (and what it costs)
 
-`MAX_GC_ROOTS` is 16. That's tiny on purpose: the array is meant for **in-flight, transient** references that exist only inside a single C primitive's body. Each push has a matching pop a few lines later. Deeply nested in-flight roots would mean deeply nested C primitives, which we don't have.
+`MAX_GC_ROOTS` is deliberately small: the array is meant for **in-flight, transient** references that exist only inside a single C primitive's body. Each push has a matching pop a few lines later. Deeply nested in-flight roots would mean deeply nested C primitives, which we don't have.
 
-If you exceed 16, `gc_root_push` silently does nothing — there's no error path. This is a latent bug: if user code somehow triggered 17 concurrent in-flight roots, the 17th would be at risk during the next GC. In practice the depth is always 1 or 2.
+If the depth ever exceeds `MAX_GC_ROOTS`, `gc_root_push` raises an error ("gc roots exhausted") rather than overrunning the array. Dropping a root silently would risk freeing a live in-flight object during the next GC, so it fails loudly instead. In practice the depth is always 1 or 2.
 
 ### A picture of when it matters
 
@@ -525,32 +544,32 @@ This pattern is general. Any time C code holds a freshly-allocated handle in a l
 After mark, the sweep is mechanical:
 
 ```c
+interp->n_free_slots = 0;
 for (int handle = 0; handle < interp->n_objects; handle++) {
     Object *obj = interp->objects[handle];
-    if (!obj || interp->object_mark[handle]) continue;
+    if (obj && interp->object_mark[handle]) continue;    // live: keep, not free
 
-    switch (obj->kind) {
-        case OBJECT_STRING:       free(obj->bytes); break;
-        case OBJECT_SET:
-        case OBJECT_ARRAY:        free(obj->items); break;
-        case OBJECT_FRAME:        free(obj->frame.keys); free(obj->frame.values); break;
-        case OBJECT_MATRIX:       free(obj->matrix.elements); break;
-        case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
+    if (obj) {
+        free_one_object(obj);                            // payload + Object struct
+        interp->objects[handle] = NULL;
     }
-    free(interp->objects[handle]);
-    interp->objects[handle] = NULL;
+    interp->free_slots[interp->n_free_slots++] = handle; // record the empty slot
 }
 ```
 
-Walk every slot from 0 to `n_objects`. If the slot's already `NULL` (already free), skip. If it's marked (still live), skip. Otherwise free the object: first the kind-specific payload (the bytes, items, frame keys *and* values, matrix elements, or continuation return_slice — whichever applies), then the outer Object struct itself. Null out the slot so it can be reused. Frames are the only kind with two inner allocations to free.
+Walk every slot from 0 to `n_objects`. A marked, non-`NULL` slot is live — keep it. Everything else is an empty slot: if an unmarked object is sitting there, `free_one_object` releases it — first the kind-specific payload (the bytes, items, frame keys *and* values, matrix elements, or continuation return_slice — whichever applies), then the outer Object struct — and the slot is nulled out. Either way, the now-empty handle is pushed onto `free_slots`.
 
-The next mark cycle starts with `memset(object_mark, 0, ...)`, clearing every survivor's mark bit. They'll be re-marked on the next collection if still reachable.
+That last step is the point of the sweep: it rebuilds the free list. `free_slots` is a stack of reusable handles, reset to empty at the start of the sweep and refilled with every dead or already-empty slot. The allocator pops from it, so reusing a freed slot is O(1) — no scanning required. Frames are the only kind with two inner allocations to free.
+
+The pairs table is swept the same way, right after. Cons cells aren't `calloc`'d individually — they live in one preallocated `pairs` array — so there's nothing to `free`; the sweep just walks the table and pushes every unmarked slot onto `pair_free_list`. Allocating a pair pops from that list, exactly as object allocation pops from `free_slots`.
+
+The next mark cycle starts by clearing both mark arrays. Every survivor's mark bit is reset, to be re-set on the next collection if it's still reachable.
 
 ### Why not compact?
 
 After sweep, `objects[]` has holes — freed slots scattered among live ones. logicforth doesn't compact (move live objects together at the bottom of the array). Compaction would let new allocations always use the highest free slot (cheap O(1) allocation), but it would require updating every reference to a moved object. Logically straightforward: walk every root and every internal reference, fixing up handles. Implementationally bigger than the entire current GC put together.
 
-The cost of not compacting: `object_alloc_slot` may have to search for a free slot, which is a linear scan in the worst case. In practice, allocation fills the high water mark first and only scans on the rare full-table case. Acceptable.
+The cost of not compacting: `objects[]` stays sparse — freed slots are reused in place rather than packed down, so the array never shrinks below its high-water mark. Allocation stays cheap regardless: the sweep leaves behind a `free_slots` stack of reusable handles, and `object_alloc_slot` just pops one. No scan, no fixups. Acceptable.
 
 ---
 
@@ -561,32 +580,33 @@ In logicforth, GC is lazy. It fires in exactly one place: when `object_alloc_slo
 ```c
 int object_alloc_slot(Interpreter *interp) {
     if (interp->n_objects < MAX_OBJECTS) {
-        return interp->n_objects++;        // common path: use next slot
+        return interp->n_objects++;                       // common path: next slot
     }
-
-    for (int i = 0; i < MAX_OBJECTS; i++) {
-        if (interp->objects[i] == NULL) {
-            return i;                      // a hole exists somewhere
-        }
+    if (interp->n_free_slots > 0) {
+        return interp->free_slots[--interp->n_free_slots]; // reuse a freed slot
     }
-    gc(interp);                            // no hole — must collect
-
-    for (int i = 0; i < MAX_OBJECTS; i++) {
-        if (interp->objects[i] == NULL) {
-            return i;                      // gc made room
-        }
+    if (interp->gc_disabled) {
+        return -1;                                        // collection suppressed
     }
-    return -1;                             // truly stuck
+    gc(interp);                                           // full table — must collect
+    if (interp->n_free_slots > 0) {
+        return interp->free_slots[--interp->n_free_slots]; // gc refilled the free list
+    }
+    return -1;                                            // truly stuck
 }
 ```
 
-Three cases:
+Four cases:
 
-1. **Common path.** `n_objects < MAX_OBJECTS`: hand out the next slot, bump `n_objects`. O(1).
+1. **Common path.** `n_objects < MAX_OBJECTS`: hand out the next never-used slot, bump `n_objects`. O(1).
 
-2. **High water hit, but holes exist.** Linear scan finds a `NULL` slot, reuses it.
+2. **High water hit, but freed slots exist.** Pop one off `free_slots`. Still O(1) — the sweep already built this list.
 
-3. **No holes either.** Run GC. Scan again for `NULL`. If still nothing, the program is hopelessly stuck holding `MAX_OBJECTS = 262144` live references at once.
+3. **No free slots, and GC is allowed.** Run a collection, which sweeps dead objects and refills `free_slots`. Pop from it.
+
+4. **GC disabled, or still nothing after collecting.** Return `-1`; the caller turns that into an "object registry full" error. The program is holding `MAX_OBJECTS` live references at once.
+
+The `gc_disabled` flag exists for deep copy and reify. Those routines build a new structure piece by piece, and the intermediate handles aren't reachable from any root until the copy is finished — a collection partway through would free them. So `copy_or_reify` collects up front if the heap is nearly full, sets `gc_disabled` for the duration of the copy, and accepts that an allocation may fail (returning `-1`) rather than risk a mid-copy sweep.
 
 The user can also call GC manually with the `gc` Forth word, which just delegates to the C `gc(interp)` function. This is useful for measuring memory use or for debugging — most user programs never need to.
 
@@ -599,7 +619,7 @@ A more aggressive collector would run periodically: every N allocations, every M
 - **Allocation-count-based**: a counter, fire every N. Reasonable.
 - **On-demand (logicforth's choice)**: zero overhead when not collecting; one large pause when it does.
 
-For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it can take a while — but at the scale of `MAX_OBJECTS = 262144`, "a while" is still well under a millisecond on modern hardware.
+For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it can take a while — but at the scale of `MAX_OBJECTS`, "a while" is still well under a millisecond on modern hardware.
 
 ---
 
@@ -682,7 +702,7 @@ State after the difference operation:
 
 Data stack: `[T_SET(7)]`.
 
-Now suppose for the sake of the example that `MAX_OBJECTS = 8` (the real value is 65536). The user does something that allocates one more object — anything: build a new string, a new array. The registry is full. `object_alloc_slot` triggers GC.
+Now suppose for the sake of the example that the registry holds only 8 slots and all are in use. The user does something that allocates one more object — anything: build a new string, a new array. The registry is full and `free_slots` is empty. `object_alloc_slot` triggers GC.
 
 GC runs:
 
@@ -702,11 +722,11 @@ Marks after the mark phase: {1, 2, 3, 4, 7}.
 - Slot 2: marked. Skip.
 - Slot 3: marked. Skip.
 - Slot 4: marked. Skip.
-- Slot 5: unmarked. Free the string bytes (`obj->bytes`) and the Object struct itself. `objects[5] = NULL`.
-- Slot 6: unmarked. Free the items array and the Object. `objects[6] = NULL`.
+- Slot 5: unmarked. Free the string bytes (`obj->bytes`) and the Object struct itself. `objects[5] = NULL`. Push 5 onto `free_slots`.
+- Slot 6: unmarked. Free the items array and the Object. `objects[6] = NULL`. Push 6 onto `free_slots`.
 - Slot 7: marked. Skip.
 
-After sweep: slots 5 and 6 are free. `object_alloc_slot` re-scans, finds slot 5, returns 5. The next allocation uses slot 5. The program continues.
+After sweep: `free_slots` holds 5 and 6. `object_alloc_slot` pops one and returns it; the next allocation reuses that handle. The program continues.
 
 In this example, the GC reclaimed two objects: handle 5 (the temporary `"the iliad"` string used only inside the difference expression) and handle 6 (the temporary singleton set holding it). Both became unreachable as soon as `-` finished and only its result remained on the stack.
 
@@ -722,9 +742,9 @@ The GC, in slogan form:
 The details that make it work:
 
 - A small set of roots that captures everything: three stacks, the dictionary, and a temporary-roots array for C-level in-flight Vals.
-- A type-aware mark function that descends into composite Vals (sets, arrays, continuations) and respects already-visited marks (so cycles terminate).
+- A type-aware mark function that descends into composite Vals (sets, arrays, frames, continuations), marks cons cells in the pairs table, follows logic variables into their bindings, and respects already-visited marks (so cycles terminate).
 - A dictionary walker that knows the layout of compiled code well enough to find literals and variable values, and to skip operand cells without misreading them.
-- A sweep that frees the right inner allocation per object kind, then the outer struct.
+- A sweep that frees the right inner allocation per object kind, then the outer struct, and rebuilds the free lists for both tables.
 - A lazy trigger: GC fires only when out of slots, keeping steady-state allocation O(1).
 
 The total size of the GC implementation is under 100 lines. It's a small piece of machinery that does a large job — and once you've understood it, you've understood the core of every mark-and-sweep collector ever built.

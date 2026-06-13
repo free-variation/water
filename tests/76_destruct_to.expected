@@ -1,47 +1,9 @@
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
 1 2 3 
-0 ok
-0 ok
-0 ok
-0 ok
 10 20 30 
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
 11 12 
-0 ok
-0 ok
-0 ok
-0 ok
-0 ok
 100 200 300 
-0 ok
-0 ok
-0 ok
-0 ok
 hi :sym 42 
-0 ok
-0 ok
-0 ok
-0|error destruct-to: length mismatch (source 2, target 3)
-0 ok
-0 ok
-0|error destruct-to: source must be an array; got a float
-0 ok
-0 ok
-0|error destruct-to: target must be an array; got a float
-0 ok
-0 ok
-0|error destruct-to: target item at index 0 must be symbol or xt; got a float
+error: destruct-to: length mismatch (source 2, target 3)
+error: destruct-to: source must be an array; got a float
+error: destruct-to: target must be an array; got a float
+error: destruct-to: target item at index 0 must be symbol or xt; got a float
