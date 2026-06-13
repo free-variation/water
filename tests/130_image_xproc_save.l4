@@ -1,0 +1,8 @@
+\ Cross-process image round-trip (part 1 of 2): save in this process.
+\ Part 2 (131) loads this image in a SEPARATE process invocation.
+\ caller's body references other words, so its compiled body holds
+\ handler pointers that must survive across process launches.
+: square dup * ;
+variable counter   42 to counter
+: caller square counter + ;
+"/tmp/lf-xproc-test.image" save-image

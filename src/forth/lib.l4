@@ -80,39 +80,39 @@ inline
 \ at most width at a time; collect { :out :err :status } per command in input
 \ order, refilling a slot as soon as its child finishes (as-completed).
 : parallel-run
-  | n w results slotprocs slotidx next done >commands >width |
-  commands size to n
+  | command-count slot-count results slotprocs slot-commands next-command completed-count >commands >width |
+  commands size to command-count
   width 1 lt if 1 to width then
-  width n lt if width else n then to w
-  null n array-of to results
-  null w array-of to slotprocs
-  0 w array-of to slotidx
-  [: | proc >s |
-    commands s @i start-process to proc
-    slotprocs s proc !i drop
-    slotidx s s !i drop
-  :] w i-times
-  w to next
-  0 to done
-  begin done n lt while
-    [: | proc c >s |
-      slotprocs s @i to proc
+  width command-count lt if width else command-count then to slot-count
+  null command-count array-of to results
+  null slot-count array-of to slotprocs
+  0 slot-count array-of to slot-commands
+  [: | proc >slot |
+    commands slot @i start-process to proc
+    slotprocs slot proc !i drop
+    slot-commands slot slot !i drop
+  :] slot-count i-times
+  slot-count to next-command
+  0 to completed-count
+  begin completed-count command-count lt while
+    [: | proc command-index >slot |
+      slotprocs slot @i to proc
       proc null = not if
         proc :pid @ running? not if
-          slotidx s @i to c
-          results c { :out proc read-out :err proc read-err :status proc :pid @ wait } !i drop
-          done 1 + to done
-          next n lt if
-            commands next @i start-process to proc
-            slotprocs s proc !i drop
-            slotidx s next !i drop
-            next 1 + to next
+          slot-commands slot @i to command-index
+          results command-index { :out proc read-out :err proc read-err :status proc :pid @ wait } !i drop
+          completed-count 1 + to completed-count
+          next-command command-count lt if
+            commands next-command @i start-process to proc
+            slotprocs slot proc !i drop
+            slot-commands slot next-command !i drop
+            next-command 1 + to next-command
           else
-            slotprocs s null !i drop
+            slotprocs slot null !i drop
           then
         then
       then
-    :] w i-times
+    :] slot-count i-times
     0.005 sleep
   repeat
   results ;
@@ -175,7 +175,7 @@ inline
 ( [sets] -- set ) \ the smallest set in a non-empty array
 : smallest-set
 	dup 0 @i
-	[: |> smallest s | smallest size s size lt if smallest else s then :] reduce ;
+	[: |> smallest candidate | smallest size candidate size lt if smallest else candidate then :] reduce ;
 
 ( rel pattern -- candidate-rows ) \ :rows narrowed by the grounded indexed columns, intersected smallest-first
 : candidates
@@ -186,14 +186,14 @@ inline
 	dup size 0 = if
 		drop rel :rows @
 	else
-		dup smallest-set [: |> acc b | acc b intersection :] reduce
+		dup smallest-set [: |> narrowed bucket | narrowed bucket intersection :] reduce
 	then ;
 
 ( rel pattern -- flag) \ true men every pattern column is a ground-symbol indexed column -- so the index alone answers the query
 : covering?
 	|> rel pattern |
 	pattern keys 1
-	[: |> ok col | ok rel :index @ col has? and pattern col @ $ symbol? and :] reduce ;
+	[: |> covered? col | covered? rel :index @ col has? and pattern col @ $ symbol? and :] reduce ;
 
 ( rel pattern -- [rows] ) \ rows matching pattern; scans :rows
 : query
@@ -225,7 +225,7 @@ inline
 	driver :rows @ null
 	[: |> joined driver-row |
 		probed driver-row col bucket-of joined
-		[: |> joined match | driver-row match merge joined cons :] reduce
+		[: |> joined probed-row | driver-row probed-row merge joined cons :] reduce
 	:] reduce
 	cons>array dup size 1- take ;
 

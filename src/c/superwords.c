@@ -12,7 +12,7 @@
 	X(abs,  fabs(v), p_abs) \
 	X(sqrt, sqrt(v), p_sqrt) \
 	X(exp,  exp(v),  p_exp) \
-	X(log,  log(v),  p_log) \
+	X(log,  log10(v),  p_log) \
 	X(sin,  sin(v),  p_sin) \
 	X(cos,  cos(v),  p_cos) \
 	X(tan,  tan(v),  p_tan) \

@@ -1,0 +1,4 @@
+\ Cross-process image round-trip (part 2 of 2): load in a fresh process.
+"/tmp/lf-xproc-test.image" load-image
+5 caller .
+counter .
