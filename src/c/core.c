@@ -842,11 +842,16 @@ void rebuild_symbol_hash(Interpreter *interp) {
 int intern_symbol(Interpreter *interp, const char *name) {
 	Vocabulary *vocab = interp->vocab;
 	unsigned int index = symbol_hash_index(name);
+	int probe_count = 0;
 	while (vocab->symbol_hash[index] != 0) {
 		int offset = vocab->symbol_hash[index] - 1;
 		if (strcmp(&vocab->symbol_pool[offset], name) == 0)
 			return offset;
 		index = (index + 1) & (SYMBOL_HASH_SIZE - 1);
+		if (++probe_count == SYMBOL_HASH_SIZE) {
+			fail(interp, "symbol table full");
+			return 0;
+		}
 	}
 
 	int length = (int)strlen(name) + 1;
@@ -862,17 +867,17 @@ int intern_symbol(Interpreter *interp, const char *name) {
 }
 
 void dict_ensure(Interpreter *interp, int extra) {
-	Vocabulary *v = interp->vocab;
-	if (v->here + extra <= v->dict_cap) {
+	Vocabulary *vocab = interp->vocab;
+	if (vocab->here + extra <= vocab->dict_cap) {
 		return;
 	}
-	int newcap = v->dict_cap;
-	while (v->here + extra > newcap) {
-		newcap *= 2;
+	int new_capacity = vocab->dict_cap;
+	while (vocab->here + extra > new_capacity) {
+		new_capacity *= 2;
 	}
-	v->dict = realloc(v->dict, (size_t)newcap * sizeof(cell));
-	memset(v->dict + v->dict_cap, 0, (size_t)(newcap - v->dict_cap) * sizeof(cell));
-	v->dict_cap = newcap;
+	vocab->dict = realloc(vocab->dict, (size_t)new_capacity * sizeof(cell));
+	memset(vocab->dict + vocab->dict_cap, 0, (size_t)(new_capacity - vocab->dict_cap) * sizeof(cell));
+	vocab->dict_cap = new_capacity;
 }
 
 int create_header(Interpreter *interp, const char *name, int flags) {
@@ -1337,12 +1342,12 @@ void run_outer(Interpreter *interp) {
 		if (interp->input_buffer_pos >= interp->input_buffer_len)
 			return;
 
-		char ch = interp->input_buffer[interp->input_buffer_pos];
-		if (ch == '"') {
-			int n = read_string_literal(interp);
-			if (n < 0)
+		char lead_char = interp->input_buffer[interp->input_buffer_pos];
+		if (lead_char == '"') {
+			int literal_len = read_string_literal(interp);
+			if (literal_len < 0)
 				return;
-			int handle = object_new_string(interp, interp->token_buffer, n);
+			int handle = object_new_string(interp, interp->token_buffer, literal_len);
 			if (interp->compiling) {
 				emit_val_literal(interp, make_string(handle));
 			} else {
@@ -1352,13 +1357,13 @@ void run_outer(Interpreter *interp) {
 			interp->fuse_prev2_var = 0;
 			continue;
 		}
-		if (ch == '(' && comment_starts_here(interp)) {
+		if (lead_char == '(' && comment_starts_here(interp)) {
 			skip_to_char(interp, ')');
-			if (interp->input_buffer_pos < interp->input_buffer_len) 
+			if (interp->input_buffer_pos < interp->input_buffer_len)
 				interp->input_buffer_pos++;
 			continue;
 		}
-		if (ch == '\\' && comment_starts_here(interp)) {
+		if (lead_char == '\\' && comment_starts_here(interp)) {
 			skip_to_char(interp, '\n');
 			continue;
 		}
@@ -1464,9 +1469,9 @@ void run_outer(Interpreter *interp) {
 			continue;
 		}
 
-		double dv;
-		if (parse_float(tok, &dv)) {
-			compile_or_push(interp, make_float(dv));
+		double parsed_number;
+		if (parse_float(tok, &parsed_number)) {
+			compile_or_push(interp, make_float(parsed_number));
 			continue;
 		}
 
@@ -1744,12 +1749,7 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 						  	return;
 
 						  Object *copy = interp->objects[copy_handle];
-						  if (source->len > copy->capacity) {
-							  while (copy->capacity < source->len)
-								  copy->capacity *= 2;
-							  copy->frame.keys = realloc(copy->frame.keys, sizeof(cell) * (size_t)copy->capacity);
-							  copy->frame.values = realloc(copy->frame.values, sizeof(Val) * (size_t)copy->capacity);
-						  }
+						  frame_reserve(copy, source->len);
 
 						  for (i = 0; i < source->len; i++)
 							  copy->frame.keys[i] = source->frame.keys[i];
@@ -2116,31 +2116,31 @@ void p_save(Interpreter *interp) {
 #define HANDLER_DOVAR 2
 #define HANDLER_DOSYM 3
 
-void w_u8 (FILE *f, uint8_t v) { fwrite(&v, 1, 1, f); }
+void w_u8 (FILE *file, uint8_t value) { fwrite(&value, 1, 1, file); }
 
-void w_i32(FILE *f, int32_t v) { fwrite(&v, 4, 1, f); }
+void w_i32(FILE *file, int32_t value) { fwrite(&value, 4, 1, file); }
 
-void w_i64(FILE *f, int64_t v) { fwrite(&v, 8, 1, f); }
+void w_i64(FILE *file, int64_t value) { fwrite(&value, 8, 1, file); }
 
-void w_val(FILE *f, Val value) {
-	w_i32(f, (int32_t)VAL_TAG(value));
-	w_i64(f, VAL_DATA(value));
+void w_val(FILE *file, Val value) {
+	w_i32(file, (int32_t)VAL_TAG(value));
+	w_i64(file, VAL_DATA(value));
 }
 
-int r_u8 (FILE *f, uint8_t *v) { return fread(v, 1, 1, f) == 1; }
+int r_u8 (FILE *file, uint8_t *out_value) { return fread(out_value, 1, 1, file) == 1; }
 
-int r_u32(FILE *f, uint32_t *v) { return fread(v, 4, 1, f) == 1; }
+int r_u32(FILE *file, uint32_t *out_value) { return fread(out_value, 4, 1, file) == 1; }
 
-int r_i32(FILE *f, int32_t *v) { return fread(v, 4, 1, f) == 1; }
+int r_i32(FILE *file, int32_t *out_value) { return fread(out_value, 4, 1, file) == 1; }
 
-int r_i64(FILE *f, int64_t *v) { return fread(v, 8, 1, f) == 1; }
+int r_i64(FILE *file, int64_t *out_value) { return fread(out_value, 8, 1, file) == 1; }
 
-int r_val(FILE *f, Val *v) {
+int r_val(FILE *file, Val *out_value) {
 	int32_t tag;
 	int64_t data;
-	if (!r_i32(f, &tag) || !r_i64(f, &data))
+	if (!r_i32(file, &tag) || !r_i64(file, &data))
 		return 0;
-	*v = make_tagged((Tag)tag, data);
+	*out_value = make_tagged((Tag)tag, data);
 	return 1;
 }
 
@@ -2631,7 +2631,6 @@ Interpreter *interp_new(void) {
 	interp->vocab->source_here = 1;
 	interp->next_mark_id = 1;
 
-	interp->next_lvar_id = 1;
 	interp->bind_trail = malloc(sizeof(int) * BIND_TRAIL_DEPTH);
 	interp->bind_trail_cap = BIND_TRAIL_DEPTH;
 

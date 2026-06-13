@@ -434,8 +434,8 @@ void p_cr(Interpreter *interp) {
 }
 
 void p_emit_(Interpreter *interp) {
-	POP_INT(c, "emit", "character code");
-	putchar(c);
+	POP_INT(char_code, "emit", "character code");
+	putchar(char_code);
 	fflush(stdout);
 
 	DISPATCH(interp);
@@ -635,13 +635,13 @@ void p_shift_with(Interpreter *interp) {
 }
 
 void p_resume(Interpreter *interp) {
-	POP(k);
-	if (VAL_TAG(k) != T_CONT) {
-		fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(k)));
+	POP(continuation_val);
+	if (VAL_TAG(continuation_val) != T_CONT) {
+		fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(continuation_val)));
 		return;
 	}
 
-	Object *cont = interp->objects[VAL_DATA(k)];
+	Object *continuation = interp->objects[VAL_DATA(continuation_val)];
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
 	int saved_local_base = interp->local_base;
@@ -651,13 +651,13 @@ void p_resume(Interpreter *interp) {
 	rpush(interp, make_mark());
 
 	int slice_base = interp->rsp;
-	for (int i = 0; i < cont->continuation.return_len; i++)
-		rpush(interp, cont->continuation.return_slice[i]);
+	for (int i = 0; i < continuation->continuation.return_len; i++)
+		rpush(interp, continuation->continuation.return_slice[i]);
 
-	if (cont->continuation.local_base_offset >= 0)
-		interp->local_base = slice_base + cont->continuation.local_base_offset;
+	if (continuation->continuation.local_base_offset >= 0)
+		interp->local_base = slice_base + continuation->continuation.local_base_offset;
 
-	interp->ip = cont->continuation.resume_ip;
+	interp->ip = continuation->continuation.resume_ip;
 	interp->running = 1;
 	run_inner(interp);
 
@@ -670,16 +670,16 @@ void p_resume(Interpreter *interp) {
 
 
 void p_words(Interpreter *interp) {
-	int cnt = 0;
-	for (int cf = interp->vocab->latest_cfa; cf != 0; cf = (int)WORD_LINK(interp->vocab, cf)) {
-		if (WORD_IS_INTERNAL(interp->vocab, cf))
+	int printed_count = 0;
+	for (int cfa = interp->vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
+		if (WORD_IS_INTERNAL(interp->vocab, cfa))
 			continue;
-		fputs(&interp->vocab->name_pool[WORD_NAME(interp->vocab, cf)], stdout);
+		fputs(&interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)], stdout);
 		putchar(' ');
-		if (++cnt % 8 == 0)
+		if (++printed_count % 8 == 0)
 			putchar('\n');
 	}
-	if (cnt % 8)
+	if (printed_count % 8)
 		putchar('\n');
 	fflush(stdout);
 
@@ -1131,8 +1131,8 @@ void p_bar_to(Interpreter *interp) {
 
 void p_to_var(Interpreter *interp) {
 	int var_cfa = (int)interp->vocab->dict[interp->ip++];
-	POP(v);
-	interp->vocab->dict[var_cfa + 1] = (cell)v.bits;
+	POP(value);
+	interp->vocab->dict[var_cfa + 1] = (cell)value.bits;
 
 	DISPATCH(interp);
 }

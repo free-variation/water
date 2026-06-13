@@ -119,6 +119,15 @@ int set_difference(Interpreter *interp, int handle_a, int handle_b) {
 	return difference_handle;
 }
 
+#define FIND_MARK(mark_index, errmsg) \
+	int mark_index = interp->dsp; \
+	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) \
+		mark_index--; \
+	if (mark_index == 0) { \
+		fail(interp, "%s", (errmsg)); \
+		return; \
+	}
+
 void p_setopen(Interpreter *interp) {
 	push(interp, make_mark());
 
@@ -126,12 +135,7 @@ void p_setopen(Interpreter *interp) {
 }
 
 void p_setclose(Interpreter *interp) {
-	int mark_index = interp->dsp;
-	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
-	if (mark_index == 0) {
-		fail(interp, "> : no matching < on the stack");
-		return;
-	}
+	FIND_MARK(mark_index, "> : no matching < on the stack");
 
 	int set_handle = object_new_set(interp);
 	for (int i = mark_index; i < interp->dsp; i++) {
@@ -150,12 +154,7 @@ void p_frameopen(Interpreter *interp) {
 }
 
 void p_frameclose(Interpreter *interp) {
-	int mark_index = interp->dsp;
-	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
-	if (mark_index == 0) {
-		fail(interp, "} : no matching { on the stack");
-		return;
-	}
+	FIND_MARK(mark_index, "} : no matching { on the stack");
 
 	int count = interp->dsp - mark_index;
 	if (count % 2 != 0) {
@@ -187,12 +186,7 @@ void p_array_open(Interpreter *interp) {
 
 
 void p_array_close(Interpreter *interp) {
-	int mark_index = interp->dsp;
-	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
-	if (mark_index == 0) {
-		fail(interp, "] : no matching [ on the stack");
-		return;
-	}
+	FIND_MARK(mark_index, "] : no matching [ on the stack");
 	int num_elements = interp->dsp - mark_index;
 	NEW_ARRAY(array_handle, array, num_elements);
 	for (int i = 0; i < num_elements; i++)
@@ -204,12 +198,7 @@ void p_array_close(Interpreter *interp) {
 }
 
 void p_list_close(Interpreter *interp) {
-	int mark_index = interp->dsp;
-	while (mark_index > 0 && VAL_TAG(interp->data_stack[mark_index - 1]) != T_MARK) mark_index--;
-	if (mark_index == 0) {
-		fail(interp, ")] : no matching [( on the stack");
-		return;
-	}
+	FIND_MARK(mark_index, ")] : no matching [( on the stack");
 
 	int num_elements = interp->dsp - mark_index;
 	if (num_elements == 0) {
@@ -571,6 +560,15 @@ void p_range(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void frame_reserve(Object *frame, int needed) {
+	if (frame->capacity >= needed)
+		return;
+	while (frame->capacity < needed)
+		frame->capacity *= 2;
+	frame->frame.keys = realloc(frame->frame.keys, sizeof(cell) * (size_t)frame->capacity);
+	frame->frame.values = realloc(frame->frame.values, sizeof(Val) * (size_t)frame->capacity);
+}
+
 void frame_put(Object *frame, cell key, Val value) {
 	FRAME_LOOKUP(frame, key, at, present);
 	if (present) {
@@ -578,11 +576,7 @@ void frame_put(Object *frame, cell key, Val value) {
 		return;
 	}
 
-	if (frame->len >= frame->capacity) {
-		frame->capacity *= 2;
-		frame->frame.keys = realloc(frame->frame.keys, sizeof(cell) * (size_t)frame->capacity);
-		frame->frame.values = realloc(frame->frame.values, sizeof(Val) * (size_t)frame->capacity);
-	}
+	frame_reserve(frame, frame->len + 1);
 
 	memmove(&frame->frame.keys[at + 1], &frame->frame.keys[at], sizeof(cell) * (size_t)(frame->len - at));
 	memmove(&frame->frame.values[at + 1], &frame->frame.values[at], sizeof(Val) * (size_t)(frame->len - at));
@@ -1097,17 +1091,17 @@ void p_slice_store(Interpreter *interp) {
 	}
 
 	if (target == src) {
-		Val small_buf[64];
-		Val *tmp = (slen <= 64) ? small_buf : malloc(slen * sizeof(Val));
-		if (!tmp) {
+		Val inline_staging[64];
+		Val *staged = (slen <= 64) ? inline_staging : malloc(slen * sizeof(Val));
+		if (!staged) {
 			fail(interp, "slice!: out of memory");
 			return;
 		}
 		for (int i = 0; i < slen; i++)
-			tmp[i] = src->items[sstart + i * sstep];
+			staged[i] = src->items[sstart + i * sstep];
 		for (int i = 0; i < slen; i++)
-			target->items[tstart + i] = tmp[i];
-		if (tmp != small_buf) free(tmp);
+			target->items[tstart + i] = staged[i];
+		if (staged != inline_staging) free(staged);
 	} else {
 		for (int i = 0; i < slen; i++)
 			target->items[tstart + i] = src->items[sstart + i * sstep];
@@ -1387,12 +1381,7 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 		parser->cursor++;
 
 		Object *frame = interp->objects[handle];
-		if (frame->len == frame->capacity) {
-			int capacity = frame->capacity * 2;
-			frame->frame.keys = realloc(frame->frame.keys, sizeof(cell) * (size_t)capacity);
-			frame->frame.values = realloc(frame->frame.values, sizeof(Val) * (size_t)capacity);
-			frame->capacity = capacity;
-		}
+		frame_reserve(frame, frame->len + 1);
 
 		frame->frame.keys[frame->len] = key_symbol;
 		frame->frame.values[frame->len] = make_tagged(T_NONE, 0);

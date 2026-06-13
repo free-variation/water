@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.4.0"
+#define VERSION "0.5.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -258,7 +258,7 @@ typedef struct Interpreter {
 	char *loaded_files[MAX_LOADED_FILES];
 	int n_loaded_files, load_depth;
 
-	int unwinding, unwind_target, next_mark_id, next_lvar_id;
+	int unwinding, unwind_target, next_mark_id;
 
 	char error_message[256];
 	char token_buffer[INPUT_BUFFER_SIZE];
@@ -765,6 +765,7 @@ void p_destruct_to(Interpreter *interp);
 void p_slice_store(Interpreter *interp);
 void p_to_slice(Interpreter *interp);
 void p_range(Interpreter *interp);
+void frame_reserve(Object *frame, int needed);
 void frame_put(Object *frame, cell key, Val value);
 int frame_delete(Object *frame, cell key);
 void p_to_frame(Interpreter *interp);
