@@ -2371,6 +2371,9 @@ void forget_user(Interpreter *interp) {
 	interp->n_objects = 0;
 	interp->n_free_slots = 0;
 
+	free(interp->pairs);
+	free(interp->pair_mark);
+	free(interp->pair_free_list);
 	interp->pairs = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
 	interp->pairs_cap = PAIR_TABLE_DEPTH;
 	interp->n_pairs = 0;
@@ -2717,6 +2720,13 @@ void p_load_image(Interpreter *interp) {
 
 done:
 	fclose(file);
+
+	if (interp->error_flag) {
+		interp->n_objects = saved_n_objects;
+		forget_user(interp);
+		interp->lvar_top = 0;
+		interp->bind_trail_top = 0;
+	}
 
 	DISPATCH(interp);
 }

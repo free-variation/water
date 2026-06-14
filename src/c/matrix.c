@@ -530,6 +530,12 @@ void p_matrix_range(Interpreter *interp) {
 	POP(end_val);
 	POP(start_val);
 
+	if (VAL_TAG(start_val) != T_FLOAT || VAL_TAG(end_val) != T_FLOAT || VAL_TAG(step_val) != T_FLOAT) {
+		fail(interp, "matrix-range: expected three floats (start end step); got %s, %s, %s",
+				tag_name(VAL_TAG(start_val)), tag_name(VAL_TAG(end_val)), tag_name(VAL_TAG(step_val)));
+		return;
+	}
+
 	double start = VAL_NUMBER(start_val);
 	double end = VAL_NUMBER(end_val);
 	double step = VAL_NUMBER(step_val);

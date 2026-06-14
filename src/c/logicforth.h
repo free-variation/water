@@ -11,7 +11,6 @@
 #include <stdarg.h>
 #include <math.h>
 #include <limits.h>
-#include <regex.h>
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
@@ -44,6 +43,7 @@ typedef int64_t cell;
 #define LVAR_STACK_DEPTH (1 << 16)
 #define PAIR_TABLE_DEPTH (1 << 20)
 #define COPY_SPINE_MAX (1 << 24)
+#define REGEX_CACHE_SIZE (1 << 10)
 
 typedef enum {
 	T_NONE = 0,
@@ -259,6 +259,13 @@ typedef struct Interpreter {
 
 	void *handler_registry[MAX_HANDLERS];
 	int n_handlers;
+
+	struct {
+		char *pattern;
+		void *re;
+		int in_use;
+	} regex_cache[REGEX_CACHE_SIZE];
+	int regex_cache_next;
 
 	char *loaded_files[MAX_LOADED_FILES];
 	int n_loaded_files, load_depth;
@@ -840,7 +847,6 @@ int interp_bootstrap(Interpreter *interp);
 
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 
-static inline __attribute__((always_inline))
 #define LOWER_BOUND(count, probe, less, at) \
 	int at = 0; \
 	for (int bsearch_high = (count); at < bsearch_high; ) { \
@@ -852,7 +858,7 @@ static inline __attribute__((always_inline))
 		} \
 	}
 
-int frame_find(Object *frame, cell key) {
+static inline __attribute__((always_inline)) int frame_find(Object *frame, cell key) {
 	LOWER_BOUND(frame->len, mid, frame->frame.keys[mid] < key, at);
 	return at;
 }

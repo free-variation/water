@@ -29,7 +29,8 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 		double * restrict target_elements = target->matrix.elements; \
 		for (size_t i = 0; i < num_elements; i++) \
 			target_elements[i] = scalar op source_elements[i]; \
-		push(interp, make_matrix(target_handle)); \
+		interp->data_stack[interp->dsp - 2] = make_matrix(target_handle); \
+		interp->dsp--; \
 	} while (0)
 
 #define BROADCAST_MATRIX_OP_SCALAR(op) \
@@ -44,34 +45,45 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 		double * restrict target_elements = target->matrix.elements; \
 		for (size_t i = 0; i < num_elements; i++) \
 			target_elements[i] = source_elements[i] op scalar; \
-		push(interp, make_matrix(target_handle)); \
+		interp->data_stack[interp->dsp - 2] = make_matrix(target_handle); \
+		interp->dsp--; \
 	} while (0)
 
 void p_add(Interpreter *interp) {
-	POP(right);
-	POP(left);
+	PEEK_AT(left, 1, "+");
+	PEEK_AT(right, 0, "+");
 
-	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT)
-		push(interp, make_float(VAL_NUMBER(left) + VAL_NUMBER(right)));
-	else if (VAL_TAG(left) == T_STRING && VAL_TAG(right) == T_STRING)
-		push(interp, make_string(string_concat(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
-	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
-		push(interp, make_set(set_union(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		interp->data_stack[interp->dsp - 2] = make_float(VAL_NUMBER(left) + VAL_NUMBER(right));
+		interp->dsp--;
+	}
+	else if (VAL_TAG(left) == T_STRING && VAL_TAG(right) == T_STRING) {
+		int handle = string_concat(interp, (int)VAL_DATA(left), (int)VAL_DATA(right));
+		if (interp->error_flag)
+			return;
+		interp->data_stack[interp->dsp - 2] = make_string(handle);
+		interp->dsp--;
+	}
+	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET) {
+		int handle = set_union(interp, (int)VAL_DATA(left), (int)VAL_DATA(right));
+		if (interp->error_flag)
+			return;
+		interp->data_stack[interp->dsp - 2] = make_set(handle);
+		interp->dsp--;
+	}
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		int target_handle = matrix_add(interp, left, right);
 		if (target_handle < 0)
 			return;
-		push(interp, make_matrix(target_handle));
+		interp->data_stack[interp->dsp - 2] = make_matrix(target_handle);
+		interp->dsp--;
 	}
 	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
 		BROADCAST_SCALAR_OP_MATRIX(+);
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
 		BROADCAST_MATRIX_OP_SCALAR(+);
-	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY) {
-		push(interp, left);
-		push(interp, right);
+	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY)
 		execute_cfa(interp, find(interp, "concat"));
-	}
 	else
 		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
@@ -79,18 +91,26 @@ void p_add(Interpreter *interp) {
 }
 
 void p_sub(Interpreter *interp) {
-	POP(right);
-	POP(left);
+	PEEK_AT(left, 1, "-");
+	PEEK_AT(right, 0, "-");
 
-	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT)
-		push(interp, make_float(VAL_NUMBER(left) - VAL_NUMBER(right)));
-	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
-		push(interp, make_set(set_difference(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		interp->data_stack[interp->dsp - 2] = make_float(VAL_NUMBER(left) - VAL_NUMBER(right));
+		interp->dsp--;
+	}
+	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET) {
+		int handle = set_difference(interp, (int)VAL_DATA(left), (int)VAL_DATA(right));
+		if (interp->error_flag)
+			return;
+		interp->data_stack[interp->dsp - 2] = make_set(handle);
+		interp->dsp--;
+	}
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		int target_handle = matrix_sub(interp, left, right);
 		if (target_handle < 0)
 			return;
-		push(interp, make_matrix(target_handle));
+		interp->data_stack[interp->dsp - 2] = make_matrix(target_handle);
+		interp->dsp--;
 	}
 	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
 		BROADCAST_SCALAR_OP_MATRIX(-);
@@ -103,18 +123,26 @@ void p_sub(Interpreter *interp) {
 }
 
 void p_mul(Interpreter *interp) {
-	POP(right);
-	POP(left);
+	PEEK_AT(left, 1, "*");
+	PEEK_AT(right, 0, "*");
 
-	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT)
-		push(interp, make_float(VAL_NUMBER(left) * VAL_NUMBER(right)));
-	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET)
-		push(interp, make_set(set_intersect(interp, (int)VAL_DATA(left), (int)VAL_DATA(right))));
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		interp->data_stack[interp->dsp - 2] = make_float(VAL_NUMBER(left) * VAL_NUMBER(right));
+		interp->dsp--;
+	}
+	else if (VAL_TAG(left) == T_SET && VAL_TAG(right) == T_SET) {
+		int handle = set_intersect(interp, (int)VAL_DATA(left), (int)VAL_DATA(right));
+		if (interp->error_flag)
+			return;
+		interp->data_stack[interp->dsp - 2] = make_set(handle);
+		interp->dsp--;
+	}
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		int target_handle = matrix_mul(interp, left, right);
 		if (target_handle < 0)
 			return;
-		push(interp, make_matrix(target_handle));
+		interp->data_stack[interp->dsp - 2] = make_matrix(target_handle);
+		interp->dsp--;
 	}
 	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
 		BROADCAST_SCALAR_OP_MATRIX(*);
@@ -127,14 +155,15 @@ void p_mul(Interpreter *interp) {
 }
 
 void p_div(Interpreter *interp) {
-	POP(right);
-	POP(left);
+	PEEK_AT(left, 1, "/");
+	PEEK_AT(right, 0, "/");
 	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
 		if (VAL_NUMBER(right) == 0.0) {
 			fail(interp, "/ : division by zero");
 			return;
 		}
-		push(interp, make_float(VAL_NUMBER(left) / VAL_NUMBER(right)));
+		interp->data_stack[interp->dsp - 2] = make_float(VAL_NUMBER(left) / VAL_NUMBER(right));
+		interp->dsp--;
 	}
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		Object *divisor = interp->objects[VAL_DATA(right)];
@@ -148,7 +177,8 @@ void p_div(Interpreter *interp) {
 		int target_handle = matrix_div(interp, left, right);
 		if (target_handle < 0)
 			return;
-		push(interp, make_matrix(target_handle));
+		interp->data_stack[interp->dsp - 2] = make_matrix(target_handle);
+		interp->dsp--;
 	}
 	else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX)
 		BROADCAST_SCALAR_OP_MATRIX(/);

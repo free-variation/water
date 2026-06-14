@@ -3,22 +3,10 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
 
-typedef pcre2_code *compiled_pattern_t;
-
-#define REGEX_CACHE_SIZE 512
-
-static struct {
-	char *pattern;
-	pcre2_code *re;
-	int in_use;
-} regex_cache[REGEX_CACHE_SIZE];
-
-static int regex_cache_next;
-
 static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	for (int i = 0; i < REGEX_CACHE_SIZE; i++)
-		if (regex_cache[i].in_use && strcmp(regex_cache[i].pattern, pattern->bytes) == 0)
-			return regex_cache[i].re;
+		if (interp->regex_cache[i].in_use && strcmp(interp->regex_cache[i].pattern, pattern->bytes) == 0)
+			return interp->regex_cache[i].re;
 
 	int errcode;
 	PCRE2_SIZE erroffset;
@@ -32,15 +20,15 @@ static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	}
 	pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
 
-	int slot = regex_cache_next;
-	regex_cache_next = (regex_cache_next + 1) % REGEX_CACHE_SIZE;
-	if (regex_cache[slot].in_use) {
-		pcre2_code_free(regex_cache[slot].re);
-		free(regex_cache[slot].pattern);
+	int slot = interp->regex_cache_next;
+	interp->regex_cache_next = (interp->regex_cache_next + 1) % REGEX_CACHE_SIZE;
+	if (interp->regex_cache[slot].in_use) {
+		pcre2_code_free(interp->regex_cache[slot].re);
+		free(interp->regex_cache[slot].pattern);
 	}
-	regex_cache[slot].pattern = strdup(pattern->bytes);
-	regex_cache[slot].re = re;
-	regex_cache[slot].in_use = 1;
+	interp->regex_cache[slot].pattern = strdup(pattern->bytes);
+	interp->regex_cache[slot].re = re;
+	interp->regex_cache[slot].in_use = 1;
 	return re;
 }
 
@@ -55,18 +43,18 @@ static int group_count(pcre2_code *compiled) {
 	if (interp->error_flag) return; \
 	int num_groups = group_count(re)
 
-static int capture_array(Interpreter *interp, Object *subject, regmatch_t *offsets, int num_groups) {
+static int capture_array(Interpreter *interp, Object *subject, const int *offsets, int num_groups) {
 	int handle = object_new_array(interp, num_groups);
 	if (interp->error_flag) return -1;
 	Object *match = interp->objects[handle];
 	memset(match->items, 0, sizeof(Val) * (size_t)num_groups);
 	gc_root_push(interp, make_array(handle));
 	for (int i = 0; i < num_groups; i++) {
-		if (offsets[i].rm_so < 0) {
+		int start = offsets[2 * i];
+		if (start < 0) {
 			match->items[i] = make_float(0.0);
 		} else {
-			int start = (int)offsets[i].rm_so;
-			int length = (int)(offsets[i].rm_eo - offsets[i].rm_so);
+			int length = offsets[2 * i + 1] - start;
 			match->items[i] = make_string(object_new_string(interp, subject->bytes + start, length));
 		}
 	}
@@ -75,7 +63,7 @@ static int capture_array(Interpreter *interp, Object *subject, regmatch_t *offse
 }
 
 static int next_match(pcre2_code *compiled, const char *bytes, int length, int from,
-		int num_groups, regmatch_t *match_offsets, pcre2_match_data *md) {
+		int num_groups, int *match_offsets, pcre2_match_data *md) {
 	int rc = pcre2_match(compiled, (PCRE2_SPTR)bytes, (PCRE2_SIZE)length,
 			(PCRE2_SIZE)from, 0, md, NULL);
 	if (rc < 0)
@@ -83,16 +71,18 @@ static int next_match(pcre2_code *compiled, const char *bytes, int length, int f
 	PCRE2_SIZE *ovector = pcre2_get_ovector_pointer(md);
 	for (int i = 0; i < num_groups; i++) {
 		if (ovector[2 * i] == PCRE2_UNSET) {
-			match_offsets[i].rm_so = -1;
-			match_offsets[i].rm_eo = -1;
+			match_offsets[2 * i] = -1;
+			match_offsets[2 * i + 1] = -1;
 		} else {
-			match_offsets[i].rm_so = (regoff_t)ovector[2 * i];
-			match_offsets[i].rm_eo = (regoff_t)ovector[2 * i + 1];
+			match_offsets[2 * i] = (int)ovector[2 * i];
+			match_offsets[2 * i + 1] = (int)ovector[2 * i + 1];
 		}
 	}
-	int resume_from = (int)match_offsets[0].rm_eo;
-	if (match_offsets[0].rm_eo == match_offsets[0].rm_so)
-		resume_from = (int)match_offsets[0].rm_eo + 1;
+	int match_start = match_offsets[0];
+	int match_end = match_offsets[1];
+	int resume_from = match_end;
+	if (match_end == match_start)
+		resume_from = match_end + 1;
 	return resume_from;
 }
 
@@ -111,14 +101,14 @@ void p_match_all(Interpreter *interp) {
 	COMPILE_PATTERN(compiled, num_groups, pattern);
 
 	pcre2_match_data *md = pcre2_match_data_create(num_groups, NULL);
-	regmatch_t *spans = NULL;
+	int *spans = NULL;
 	int count = 0, capacity = 0;
 	for (int from = 0; from <= subject->len; ) {
 		if (count + 1 > capacity) {
 			capacity = capacity ? capacity * 2 : 16;
-			spans = realloc(spans, (size_t)capacity * (size_t)num_groups * sizeof(regmatch_t));
+			spans = realloc(spans, (size_t)capacity * (size_t)num_groups * 2 * sizeof(int));
 		}
-		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, &spans[count * num_groups], md);
+		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, &spans[count * num_groups * 2], md);
 		if (resume_from < 0) break;
 		count++;
 		from = resume_from;
@@ -137,7 +127,7 @@ void p_match_all(Interpreter *interp) {
 	gc_root_push(interp, make_array(result_handle));
 
 	for (int match_index = 0; match_index < count; match_index++) {
-		int match_handle = capture_array(interp, subject, &spans[match_index * num_groups], num_groups);
+		int match_handle = capture_array(interp, subject, &spans[match_index * num_groups * 2], num_groups);
 		if (interp->error_flag) {
 			gc_root_pop(interp);
 			free(spans);
@@ -159,7 +149,7 @@ void p_match(Interpreter *interp) {
 	PEEK_STRING_AT(subject, 1, "match");
 	COMPILE_PATTERN(compiled, num_groups, pattern);
 
-	regmatch_t match_offsets[num_groups];
+	int match_offsets[num_groups * 2];
 	pcre2_match_data *md = pcre2_match_data_create(num_groups, NULL);
 	int resume_from = next_match(compiled, subject->bytes, subject->len, 0, num_groups, match_offsets, md);
 	pcre2_match_data_free(md);
@@ -184,7 +174,7 @@ void p_split(Interpreter *interp) {
 	PEEK_STRING_AT(subject, 1, "split");
 	COMPILE_PATTERN(compiled, num_groups, pattern);
 
-	regmatch_t match_offsets[num_groups];
+	int match_offsets[num_groups * 2];
 	pcre2_match_data *md = pcre2_match_data_create(num_groups, NULL);
 
 	int match_count = 0;
@@ -206,9 +196,9 @@ void p_split(Interpreter *interp) {
 		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, match_offsets, md);
 		if (resume_from < 0)
 			break;
-		int piece_length = (int)match_offsets[0].rm_so - previous_end;
+		int piece_length = match_offsets[0] - previous_end;
 		result->items[piece_index++] = make_string(object_new_string(interp, subject->bytes + previous_end, piece_length));
-		previous_end = (int)match_offsets[0].rm_eo;
+		previous_end = match_offsets[1];
 		from = resume_from;
 	}
 	result->items[piece_index] = make_string(object_new_string(interp, subject->bytes + previous_end, subject->len - previous_end));
@@ -239,7 +229,7 @@ void p_replace(Interpreter *interp) {
 	PEEK_STRING_AT(pattern, 1, "replace");
 	PEEK_STRING_AT(subject, 2, "replace");
 	COMPILE_PATTERN(compiled, num_groups, pattern);
-	regmatch_t match_offsets[num_groups];
+	int match_offsets[num_groups * 2];
 	pcre2_match_data *md = pcre2_match_data_create(num_groups, NULL);
 
 	char *out = NULL;
@@ -249,8 +239,8 @@ void p_replace(Interpreter *interp) {
 	for (int from = 0; from <= subject->len; ) {
 		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, match_offsets, md);
 		if (resume_from < 0) break;
-		int start = (int)match_offsets[0].rm_so;
-		int end = (int)match_offsets[0].rm_eo;
+		int start = match_offsets[0];
+		int end = match_offsets[1];
 
 		append_bytes(&out, &length, &capacity, subject->bytes + pos, start - pos);
 
@@ -269,17 +259,17 @@ void p_replace(Interpreter *interp) {
 						fail(interp, "replace: backref \\%d but pattern has %d group(s)", group, num_groups - 1);
 						return;
 					}
-					if (match_offsets[group].rm_so >= 0)
-						append_bytes(&out, &length, &capacity, subject->bytes + match_offsets[group].rm_so,
-								(int)(match_offsets[group].rm_eo - match_offsets[group].rm_so));
+					if (match_offsets[2 * group] >= 0)
+						append_bytes(&out, &length, &capacity, subject->bytes + match_offsets[2 * group],
+								match_offsets[2 * group + 1] - match_offsets[2 * group]);
 					i += 2;
 				} else {
 					append_bytes(&out, &length, &capacity, &c, 1);
 					i += 1;
 				}
 			} else if (c == '&') {
-				append_bytes(&out, &length, &capacity, subject->bytes + match_offsets[0].rm_so,
-						(int)(match_offsets[0].rm_eo - match_offsets[0].rm_so));
+				append_bytes(&out, &length, &capacity, subject->bytes + match_offsets[0],
+						match_offsets[1] - match_offsets[0]);
 				i += 1;
 			} else {
 				append_bytes(&out, &length, &capacity, &c, 1);

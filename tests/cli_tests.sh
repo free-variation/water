@@ -61,5 +61,20 @@ has   "--max-objects rejects non-number" '' "positive integer"   2 --max-objects
 # unknown flag is rejected
 has   "unknown flag rejected"           ''  "unknown option"     2 --bogus
 
+# a truncated image must fail cleanly (no crash) and leave the interpreter
+# usable: load-image errors, then the next line still computes 2 3 + = 5
+img=$(mktemp "${TMPDIR:-/tmp}/lf_img.XXXXXX")
+printf ': sq dup * ; variable v < 1 2 3 > to v [ 10 20 30 ] "%s" save-image\n' "$img" | "$bin" -b >/dev/null 2>&1
+imgsize=$(wc -c < "$img")
+trunc=$(mktemp "${TMPDIR:-/tmp}/lf_trunc.XXXXXX")
+head -c $((imgsize / 2)) "$img" > "$trunc"
+out=$(printf '"%s" load-image\n< 9 8 7 > gc 2 3 + . cr\n' "$trunc" | "$bin" -b 2>&1)
+code=$?
+case "$out" in
+    *error:*5*) ok "truncated image: clean error + recovery" ;;
+    *) bad "truncated image: clean error + recovery" "want an error then 5 (exit 0)" "got (exit $code): [$out]" ;;
+esac
+rm -f "$img" "$trunc"
+
 printf "%d passed, %d failed\n" "$pass" "$fail"
 [ "$fail" -eq 0 ]
