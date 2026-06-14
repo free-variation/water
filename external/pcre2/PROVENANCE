@@ -1,0 +1,9 @@
+PCRE2 vendored source.
+
+upstream:  https://github.com/PCRE2Project/pcre2/releases/download/pcre2-10.47/pcre2-10.47.tar.gz
+version:   10.47
+sha256:    c08ae2388ef333e8403e670ad70c0a11f1eed021fd88308d7e02f596fcd9dc16
+config:    SUPPORT_PCRE2_8, SUPPORT_UNICODE, SUPPORT_JIT enabled in src/config.h
+
+Produced by tools/vendor-pcre2.sh. Do not edit these files by hand; re-run the
+script to update. PCRE2 is distributed under the terms in LICENCE.md.

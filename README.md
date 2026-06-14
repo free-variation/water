@@ -12,9 +12,10 @@ make test      # runs the golden-output test suite
 ./logicforth   # REPL
 ```
 
-Links PCRE2 (`libpcre2-8.a`, statically) for the regex engine — install it
-first (`brew install pcre2`). Vendoring PCRE2 to restore the self-contained,
-zero-dependency build is planned.
+Self-contained: the only external library, PCRE2 (the regex engine), is vendored
+under `external/pcre2` and built from source into the binary, so `make` needs
+nothing but a C compiler. Refresh the vendored copy with `make vendor-pcre2`
+(see `external/pcre2/PROVENANCE`).
 
 ## A taste
 
@@ -191,7 +192,6 @@ Tracked in `PLAN.md`, with design notes for each.
 
 - **`lib.l4` wrappers** over the regex layer — `split`, `index-of`, `starts-with`, `ends-with`, `trim`, `lines`.
 - **UTF-8 / codepoint indexing** — string ops are byte-indexed today; codepoint-indexed at the user level is planned.
-- **Vendor PCRE2** — bundle the PCRE2 sources to restore the self-contained build.
 
 ### External I/O
 
