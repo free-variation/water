@@ -340,9 +340,10 @@ Symbol-keyed sorted maps; binary-search lookup. A path is an array of symbols; t
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `{ :k v … }` | `( -- fr )` | Frame literal from alternating symbol/value pairs above the `{` mark | n log n | `1o` + reallocs | O(n log n) |
+| `{ :k v … }` | `( -- fr )` | Frame literal from alternating key/value pairs above the `{` mark; a path key (`/a/b/c`) vivifies nested frames | n log n | `1o` + reallocs | O(n log n) |
 | `frame` | `( keys values -- fr )` | Build from parallel key and value arrays of equal length | 2 + n log n | `1o` + reallocs | O(n log n) |
-| `>frame` | `( arr -- fr )` | Build from an even-length alternating-kv array | 1 + n log n | `1o` + reallocs | O(n log n) |
+| `array>frame` | `( arr -- fr )` | Build from an even-length alternating-kv array; a path key (`/a/b/c`) vivifies nested frames | 1 + n log n | `1o` + reallocs | O(n log n) |
+| `frame>array` | `( fr -- arr )` | Flatten to a key-sorted alternating-kv array; inverse of `array>frame` | 1 + n | `1o` | O(n) |
 | `@` | `( fr sym/path -- val )` | Get by key or path; errors if absent | 3 + d log n | none | O(d log n) |
 | `!` | `( fr sym/path val -- fr )` | Set by key or path, vivifying intermediates; mutates fr | d log n | realloc on growth; `1o` per vivified frame | O(d log n) amortized |
 | `has?` | `( fr sym/path -- bool )` | Existence test for a frame key or path, no error on miss; on a string `( s pat -- bool )`, true if regex `pat` matches anywhere | 3 + d log n | none | O(d log n) |

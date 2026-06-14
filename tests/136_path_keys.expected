@@ -1,0 +1,10 @@
+1 
+2 
+{"c": 42} 
+7 
+9 
+error: }: empty path key
+error: }: path elements must be symbols; got a float
+error: }: keys must be symbols or paths; got a float
+error: array>frame: empty path key
+error: array>frame: path elements must be symbols; got a float

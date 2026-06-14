@@ -1,10 +1,10 @@
-\ Frames: { :sym val ... } literal, >frame builder, @ path get.
+\ Frames: { :sym val ... } literal, array>frame builder, @ path get.
 
 \ literal, pretty-printed by .
 { :a 1 :b 2 } . cr
 
 \ builder from a key/value array
-[ :a 1 :b 2 ] >frame . cr
+[ :a 1 :b 2 ] array>frame . cr
 
 \ keys are stored sorted regardless of insertion order
 { :b 2 :a 1 } . cr
@@ -202,3 +202,39 @@
 
 \ copy : independent at the top level too
 { :a 1 } dup copy /a 9 ! drop /a @ . cr
+
+\ frame>array : flatten to a key-sorted alternating-kv array
+{ :a 1 :b 2 } frame>array . cr
+
+\ frame>array : round-trips with array>frame
+{ :a 1 :b 2 } frame>array array>frame frame>json . cr
+
+\ frame>array : nested values survive the round-trip
+{ :x { :y 9 } } frame>array array>frame frame>json . cr
+
+\ frame>array : empty frame gives an empty array
+{ } frame>array . cr
+
+\ frame>array : deep nesting round-trips structurally (= ignores print order)
+{ :a { :b { :c 42 } } } dup frame>array array>frame = . cr
+
+\ frame>array : path-built deep frame round-trips
+{ /a/b/c/d 7 } dup frame>array array>frame = . cr
+
+\ frame>array : array and frame values both survive a round-trip
+{ :nums [ 1 2 3 ] :child { :k "v" } } dup frame>array array>frame = . cr
+
+\ frame>array : an array of frames as a value round-trips
+{ :rows [ { :id 1 } { :id 2 } ] } dup frame>array array>frame = . cr
+
+\ frame>array : shallow — flattens only the top level, so a nested-frame value stays one element
+{ :a { :b 1 :c 2 } } frame>array size . cr
+
+\ frame>array : empty nested frame survives
+{ :a { } } dup frame>array array>frame = . cr
+
+\ frame>array : deep json round-trip preserves the whole chain
+{ /w/x/y/z 5 } frame>array array>frame frame>json . cr
+
+\ frame>array : double round-trip is stable
+{ :a { :b { :c 1 } } :d [ 2 3 ] } frame>array array>frame frame>array array>frame frame>json . cr

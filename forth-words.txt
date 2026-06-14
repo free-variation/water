@@ -25,7 +25,6 @@ $
 :name
 ;
 =
->frame
 >r
 >side
 ?if
@@ -45,6 +44,7 @@ append-file
 array
 array-of
 array>cons
+array>frame
 array>set
 asin
 assert
@@ -115,6 +115,7 @@ fnegate
 forget
 format
 frame
+frame>array
 frame>json
 fround
 fround-down

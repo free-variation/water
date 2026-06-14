@@ -101,8 +101,8 @@ reset producer                          \ leaves (1, k) — next value via resum
 Symbol-keyed nested maps — the associative type, and the compound term the planned logic layer builds on. The three bracket families are distinct: `[ ]` arrays, `{ }` frames, `< >` sets.
 
 - **Literals** — `{ :a 1 :b 2 }`; values may be any Val, including nested frames, arrays, and sets.
-- **Builders** — `frame` ( keys values -- frame ) from two parallel collections, `>frame` ( kv-array -- frame ) from an alternating key/value array.
-- **Path literals** — `/a/b/c` is a symbol array `[ :a :b :c ]`, built once at compile time, used to address into the tree.
+- **Builders** — `frame` ( keys values -- frame ) from two parallel collections, `array>frame` ( kv-array -- frame ) from an alternating key/value array, and `frame>array` ( frame -- kv-array ) the inverse, flattening to a key-sorted alternating array.
+- **Path literals** — `/a/b/c` is a symbol array `[ :a :b :c ]`, built once at compile time, used to address into the tree — and usable as a key when constructing a frame (`{ /a/b/c v }` / `array>frame`), where it vivifies nested frames.
 - **Access** — `@` ( frame key/path -- value ) get, `!` ( frame key/path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, `merge` combine two frames (right wins), plus `keys` / `values` / `size`. Each accessor takes a single `:symbol` key or a `/a/b/c` path.
 - **Representation** — sorted parallel key/value arrays with binary-search lookup; mutable in place, reference semantics. Structurally comparable, so frames work as set members and round-trip through their `{ }` literal.
 

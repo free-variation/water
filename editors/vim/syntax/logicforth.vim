@@ -51,7 +51,7 @@ syn match   logicforthDelimiter "\s\zs|\ze\s"
 
 " --- Built-in words -------------------------------------------------------
 syn keyword logicforthBuiltin ! !i % * *! + +! ++ - -! -- . .a .s / /! 0= 1+ 1-
-syn keyword logicforthBuiltin = >frame >r >side side> @ @i @i,j @j ^ 2dup nip
+syn keyword logicforthBuiltin = >r >side side> @ @i @i,j @j ^ 2dup nip
 syn keyword logicforthBuiltin dup drop swap over rot depth roll clear
 syn keyword logicforthBuiltin and or not 0= lt gt
 syn keyword logicforthBuiltin negate abs sqrt exp log ln sq mod quotient pi now sleep
@@ -62,7 +62,7 @@ syn keyword logicforthBuiltin fsin fsq fsqrt ftan ftanh ftruncate
 syn keyword logicforthBuiltin set array array-of range concat reverse reverse-slice! take skip last
 syn keyword logicforthBuiltin destruct destruct-to slice! to-slice! member? size union intersection difference
 syn keyword logicforthBuiltin map mapn filter reduce
-syn keyword logicforthBuiltin frame >frame keys values has? merge delete-at update-at copy
+syn keyword logicforthBuiltin frame array>frame frame>array keys values has? merge delete-at update-at copy
 syn keyword logicforthBuiltin json>frame frame>json
 syn keyword logicforthBuiltin matrix 0-matrix diagonal-matrix identity-matrix matrix-range reshape
 syn keyword logicforthBuiltin dim flatten transpose diagonal num-elements

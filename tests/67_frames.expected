@@ -168,3 +168,15 @@ error: update-at: expected a symbol or path (array of symbols); got a float
 1 
 1 
 1 
+[ :a 1 :b 2 ] 
+{"a": 1, "b": 2} 
+{"x": {"y": 9}} 
+[ ] 
+1 
+1 
+1 
+1 
+2 
+1 
+{"w": {"x": {"y": {"z": 5}}}} 
+{"a": {"b": {"c": 1}}, "d": [2, 3]} 

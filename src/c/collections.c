@@ -1,7 +1,9 @@
 #include "logicforth.h"
 
+
 void set_add(Interpreter *interp, int set_handle, Val value) {
 	Object *set = interp->objects[set_handle];
+
 
 	LOWER_BOUND(set->len, mid, val_cmp(interp, set->items[mid], value) < 0, low);
 	if (low < set->len && val_cmp(interp, set->items[low], value) == 0) {
@@ -154,6 +156,9 @@ void p_frameopen(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+
+static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val value, const char *op);
+
 void p_frameclose(Interpreter *interp) {
 	FIND_MARK(mark_index, "} : no matching { on the stack");
 
@@ -164,16 +169,20 @@ void p_frameclose(Interpreter *interp) {
 	}
 
 	NEW_FRAME(frame_handle, frame);
+	(void)frame;
+	Val built_frame = make_frame(frame_handle);
+	gc_root_push(interp, built_frame);
 	for (int i = mark_index; i < interp->dsp; i += 2) {
-		if (VAL_TAG(interp->data_stack[i]) != T_SYMBOL) {
-			fail(interp, "} : frame keys must be symbols; got %s", tag_name(VAL_TAG(interp->data_stack[i])));
+		frame_set_pair(interp, frame_handle, interp->data_stack[i], interp->data_stack[i + 1], "}");
+		if (interp->error_flag) {
+			gc_root_pop(interp);
 			return;
 		}
-		frame_put(frame, VAL_DATA(interp->data_stack[i]), interp->data_stack[i + 1]);
 	}
+	gc_root_pop(interp);
 
 	interp->dsp = mark_index - 1;
-	push(interp, make_frame(frame_handle));
+	push(interp, built_frame);
 
 	DISPATCH(interp);
 }
@@ -183,8 +192,6 @@ void p_array_open(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
-
-
 
 void p_array_close(Interpreter *interp) {
 	FIND_MARK(mark_index, "] : no matching [ on the stack");
@@ -596,29 +603,34 @@ int frame_delete(Object *frame, cell key) {
 }
 
 
-void p_to_frame(Interpreter *interp) {
-	PEEK_SEQUENCE_AT(source_val, 0, ">frame");
+void p_array_to_frame(Interpreter *interp) {
+	PEEK_SEQUENCE_AT(source_val, 0, "array>frame");
 	if (VAL_TAG(source_val) != T_ARRAY) {
-		fail(interp, ">frame: expected an array; got %s", tag_name(VAL_TAG(source_val)));
+		fail(interp, "array>frame: expected an array; got %s", tag_name(VAL_TAG(source_val)));
 		return;
 	}
 	Object *source = interp->objects[VAL_DATA(source_val)];
 	if (source->len % 2 != 0) {
-		fail(interp, ">frame: array needs an even number of kv pairs");
+		fail(interp, "array>frame: array needs an even number of kv pairs");
 		return;
 	}
 
 	NEW_FRAME(frame_handle, frame);
+	(void)frame;
+	Val built_frame = make_frame(frame_handle);
+	gc_root_push(interp, built_frame);
+
 	for (int i = 0; i < source->len; i += 2) {
-		if (VAL_TAG(source->items[i]) != T_SYMBOL) {
-			fail(interp, ">frame: keys must be symbols; got %s", tag_name(VAL_TAG(source->items[i])));
+		frame_set_pair(interp, frame_handle, source->items[i], source->items[i + 1], "array>frame");
+		if (interp->error_flag) {
+			gc_root_pop(interp);
 			return;
 		}
-		frame_put(frame, VAL_DATA(source->items[i]), source->items[i + 1]);
 	}
+	gc_root_pop(interp);
 
 	interp->dsp--;
-	push(interp, make_frame(frame_handle));
+	push(interp, built_frame);
 
 	DISPATCH(interp);
 }
@@ -637,6 +649,32 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 		}
 	}
 	return path;
+}
+
+static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val value, const char *op) {
+	if (VAL_TAG(key) == T_SYMBOL) {
+		frame_put(interp->objects[frame_handle], VAL_DATA(key), value);
+		return;
+	}
+
+	if (VAL_TAG(key) == T_ARRAY) {
+		Object *path = frame_path(interp, key, op);
+		if (!path) 
+			return;
+
+		if (path->len == 0) {
+			fail(interp, "%s: empty path key", op);
+			return;
+		}
+
+		Val parent = frame_walk(interp, make_frame(frame_handle), path, path->len - 1, WALK_VIVIFY, NULL, op);
+		if (interp->error_flag) return;
+
+		frame_put(interp->objects[VAL_DATA(parent)], VAL_DATA(path->items[path->len - 1]), value);
+		return;
+	}
+
+	fail(interp, "%s: keys must be symbols or paths; got %s", op, tag_name(VAL_TAG(key)));
 }
 
 #define PEEK_FRAME_PATH(frame, path, op) \
@@ -761,6 +799,21 @@ void p_frame_values(Interpreter *interp) {
 
 	for (int i = 0; i < frame->len; i++)
 		result->items[i] = frame->frame.values[i];
+
+	replace_top_with_array(interp, result_handle);
+
+	DISPATCH(interp);
+}
+
+void p_frame_to_array(Interpreter *interp) {
+	PEEK_TYPE_AT(frame_val, 0, "frame>array", T_FRAME);
+	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	NEW_ARRAY(result_handle, result, frame->len * 2);
+
+	for (int i = 0; i < frame->len; i++) {
+		result->items[2 * i] = make_symbol((int)frame->frame.keys[i]);
+		result->items[2 * i + 1] = frame->frame.values[i];
+	}
 
 	replace_top_with_array(interp, result_handle);
 

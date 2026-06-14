@@ -61,3 +61,6 @@ bench/.leibniz_ref.py
 
 # huge generated json load-test fixture
 bench/big.json
+
+.claude
+.logicforth_history

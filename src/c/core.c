@@ -2890,7 +2890,8 @@ int interp_bootstrap(Interpreter *interp) {
 
 	define_primitive(interp, "array", p_array, 0);
 	define_primitive(interp, "array-of", p_array_of, 0);
-	define_primitive(interp, ">frame", p_to_frame, 0);
+	define_primitive(interp, "array>frame", p_array_to_frame, 0);
+	define_primitive(interp, "frame>array", p_frame_to_array, 0);
 	define_primitive(interp, "frame", p_frame, 0);
 	define_primitive(interp, "json>frame", p_json_to_frame, 0);
 	define_primitive(interp, "frame>json", p_frame_to_json, 0);

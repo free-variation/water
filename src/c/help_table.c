@@ -31,7 +31,6 @@ const HelpEntry help_entries[] = {
 	{ ":name", "( -- sym )", "Symbol literal; interns the name at read time", NULL, NULL, NULL },
 	{ ";", "—", "End a colon definition; emit exit; store the source text for see", NULL, NULL, NULL },
 	{ "=", "( a b -- bool )", "structural equality", "3 (float)", "none", "float O(1); string O(|s|); array/set O(n); frame O(n); matrix O(r×c)" },
-	{ ">frame", "( arr -- fr )", "Build from an even-length alternating-kv array", "1 + n log n", "1o + reallocs", "O(n log n)" },
 	{ ">r", "( a -- ) → return stack", "Move top to return stack", "2", "none", "O(1)" },
 	{ ">side", "( a -- )", "Push to side stack", "2", "none", "O(1)" },
 	{ "?if", "( flag -- flag )", "Like if, but peeks the flag instead of consuming it — the flag stays on the stack in both branches", NULL, NULL, NULL },
@@ -51,6 +50,7 @@ const HelpEntry help_entries[] = {
 	{ "array", "( v₀ … vₙ₋₁ n -- arr )", "Gather the top n values into an array", "2 + n", "1a(n)", "O(n)" },
 	{ "array-of", "( val n -- arr )", "New n-element array, every slot = val", "3 + n", "1a(n)", "O(n)" },
 	{ "array>cons", "( arr -- list )", "Cons chain from an array's elements (last element becomes the tail; [ ] → null)", "n", "n−1 pairs", "O(n)" },
+	{ "array>frame", "( arr -- fr )", "Build from an even-length alternating-kv array; a path key (/a/b/c) vivifies nested frames", "1 + n log n", "1o + reallocs", "O(n log n)" },
 	{ "array>set", "( array -- set )", "Sort a copy of the array once and dedup into a set — the fast bulk constructor (one sort, not n inserts); the source array is unchanged", "n log n", "1o + realloc", "O(n log n)" },
 	{ "asin", "( a -- asin a )", "inverse sine", "2", "matrix 1m(r×c)", "same" },
 	{ "assert", "( rel row -- rel )", "Add row to :rows and to each indexed column's bucket; identical row is a no-op. Mutates rel in place, returns it", "k + n", "reallocs", "O(n)" },
@@ -121,6 +121,7 @@ const HelpEntry help_entries[] = {
 	{ "forget", "—", "Read the following name; truncate the dictionary back to before it", NULL, NULL, NULL },
 	{ "format", "( … template -- s )", "Fill template's {n} placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only {digits} substitute — other brace content is left literal", "len + refs", "1o", "O(len)" },
 	{ "frame", "( keys values -- fr )", "Build from parallel key and value arrays of equal length", "2 + n log n", "1o + reallocs", "O(n log n)" },
+	{ "frame>array", "( fr -- arr )", "Flatten to a key-sorted alternating-kv array; inverse of array>frame", "1 + n", "1o", "O(n)" },
 	{ "frame>json", "( val -- s )", "Serialize a value to JSON. Floats use the shortest round-trip form; strings are escaped (non-ASCII emitted raw); object keys are the symbol names", "walk + build", "1o string", "O(tree size)" },
 	{ "fround", "( a -- round a ) ⚠", "nearest, in place", "1", "none", "O(1)" },
 	{ "fround-down", "( a -- floor a ) ⚠", "in place", "1", "none", "O(1)" },
@@ -284,4 +285,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 278;
+const int help_entry_count = 279;

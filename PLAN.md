@@ -81,20 +81,6 @@ and sljit for the JIT).
 
 ## Core language additions
 
-### Path keys in frame literals
-
-A path (`/a/b/c`) in key position when building a frame is construction
-sugar for nested frames: `{ /addr/city C }` builds `{ :addr { :city C } }`;
-the stored frame has only symbol keys and nested frames. This reuses the
-auto-vivify walk `!` performs (`frame_walk` in `WALK_VIVIFY` mode): the
-literal applies walk-and-set per pair. Shared prefixes merge —
-`{ /addr/city C /addr/zip Z }` builds `{ :addr { :city C :zip Z } }`.
-Applies to `{ }` and `>frame` alike.
-
-Because a path key expands to a nested pattern frame at construction time,
-the open-records `unify` (below) matches deep values with no path-specific
-machinery: `person { /addr/city C } unify` binds `C` to the deep value.
-
 ### Time / dates
 
 Unix timestamps as `T_FLOAT` (seconds since epoch, fractional allowed). No
