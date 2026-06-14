@@ -70,13 +70,13 @@ typedef union {
 } Val;
 
 #define NAN_BOX_PREFIX 0x7FF8000000000000ULL
-#define NAN_BOX_MASK 0xFFFF000000000000ULL
+#define NAN_BOX_MASK 0x7FF8000000000000ULL
 #define VAL_TAG_SHIFT 44
-#define VAL_TAG_MASK 0x000F000000000000ULL
+#define VAL_TAG_MASK 0x0007F00000000000ULL
 #define VAL_DATA_MASK 0x00000FFFFFFFFFFFULL
 
 #define VAL_IS_FLOAT(v) (((v).bits & NAN_BOX_MASK) != NAN_BOX_PREFIX)
-#define VAL_TAG(v) (VAL_IS_FLOAT(v) ? T_FLOAT : (Tag)(((v).bits >> VAL_TAG_SHIFT) & 0xF))
+#define VAL_TAG(v) (VAL_IS_FLOAT(v) ? T_FLOAT : (Tag)(((v).bits >> VAL_TAG_SHIFT) & (VAL_TAG_MASK >> VAL_TAG_SHIFT)))
 #define VAL_NUMBER(v) ((v).number)
 #define VAL_DATA(v) ((int64_t)(VAL_IS_FLOAT(v) ? (v).bits : ((v).bits & VAL_DATA_MASK)))
 

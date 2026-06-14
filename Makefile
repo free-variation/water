@@ -12,6 +12,16 @@ PCRE2_LIB    = $(PCRE2_DIR)/libpcre2-8.a
 PCRE2_CFLAGS = -O2 -DHAVE_CONFIG_H -DPCRE2_CODE_UNIT_WIDTH=8 -DPCRE2_STATIC -I$(PCRE2_SRC)
 PCRE2_OBJS   = $(patsubst %.c,%.o,$(wildcard $(PCRE2_SRC)/pcre2_*.c))
 
+# Vendored SQLite (see external/sqlite/PROVENANCE; refresh with tools/vendor-sqlite.sh).
+# Not yet linked into the binary -- wired in with the T_DB integration. THREADSAFE=2
+# (not 0): each thread uses its own connection per PLAN.md's HTTP worker pool and
+# fork-join models; 0 would drop SQLite's internal-global mutexing and corrupt them.
+SQLITE_DIR    = external/sqlite
+SQLITE_CFLAGS = -O2 -DSQLITE_THREADSAFE=2 -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 \
+                -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 -DSQLITE_LIKE_DOESNT_MATCH_BLOBS \
+                -DSQLITE_MAX_EXPR_DEPTH=0 -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE \
+                -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_USE_ALLOCA
+
 logicforth: $(SRCS) $(HDRS) $(PCRE2_LIB)
 	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -o logicforth $(SRCS) $(PCRE2_LIB) $(LDLIBS)
 
