@@ -12,10 +12,11 @@ make test      # runs the golden-output test suite
 ./logicforth   # REPL
 ```
 
-Self-contained: the only external library, PCRE2 (the regex engine), is vendored
-under `external/pcre2` and built from source into the binary, so `make` needs
-nothing but a C compiler. Refresh the vendored copy with `make vendor-pcre2`
-(see `external/pcre2/PROVENANCE`).
+Self-contained: its vendored dependencies — PCRE2 (the regex engine) and isocline
+(REPL line editing) — live under `external/` and are built from source into the
+binary, so `make` needs nothing but a C compiler. Refresh them with
+`make vendor-pcre2` and `sh tools/vendor-isocline.sh` (see each directory's
+`PROVENANCE`).
 
 ## A taste
 
@@ -123,7 +124,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 
 ### I/O and persistence
 
-- **Stdin REPL**, rlwrap-friendly, with a `count|top` prompt showing stack depth and the top value — green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
+- **Interactive REPL** with built-in line editing, persistent history (`.logicforth_history`), and Tab completion — word names from the live dictionary, filenames inside string literals — via the vendored isocline. A `count|top` prompt shows stack depth and the top value, green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
 - **`load`** runs a source file as if typed.
 - **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).

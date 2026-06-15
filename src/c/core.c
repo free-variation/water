@@ -1,5 +1,6 @@
 #include "logicforth.h"
 #include "lib_embed.h"
+#include "isocline.h"
 
 int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_objects < interp->max_objects) {
@@ -3193,6 +3194,26 @@ int interp_bootstrap(Interpreter *interp) {
 	return 0;
 }
 
+static Interpreter *repl_interp;
+
+static void repl_complete_word(ic_completion_env_t *cenv, const char *word) {
+	Vocabulary *vocab = repl_interp->vocab;
+	size_t word_len = strlen(word);
+	for (int cfa = vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(vocab, cfa)) {
+		if (WORD_IS_INTERNAL(vocab, cfa))
+			continue;
+		const char *name = &vocab->name_pool[WORD_NAME(vocab, cfa)];
+		if (strncmp(name, word, word_len) == 0)
+			if (!ic_add_completion(cenv, name))
+				return;
+	}
+}
+
+static void repl_completer(ic_completion_env_t *cenv, const char *prefix) {
+	ic_complete_word(cenv, prefix, repl_complete_word, &ic_char_is_nonwhite);
+	ic_complete_filename(cenv, prefix, '/', NULL, NULL);
+}
+
 int main(int argc, char **argv) {
 	int interactive = isatty(fileno(stdin));
 	long max_objects_arg = 0;
@@ -3228,15 +3249,35 @@ int main(int argc, char **argv) {
 	if (interp_bootstrap(interp))
 		return 1;
 
-	if (interactive)
+	if (interactive) {
 		printf("logicforth %s\n", VERSION);
+		ic_set_history(".logicforth_history", -1);
+		repl_interp = interp;
+		ic_set_default_completer(repl_completer, NULL);
+	}
 	char line[1024];
 
-	while (fgets(line, sizeof(line), stdin)) {
-		int line_len = (int)strlen(line);
-		if (interp->input_buffer_len + line_len < INPUT_BUFFER_SIZE - 1) {
-			memcpy(interp->input_buffer + interp->input_buffer_len, line, (size_t)line_len + 1);
-			interp->input_buffer_len += line_len;
+	for (;;) {
+		if (interactive) {
+			char *entered = ic_readline("");
+			if (!entered)
+				break;
+			int entered_len = (int)strlen(entered);
+			if (interp->input_buffer_len + entered_len + 1 < INPUT_BUFFER_SIZE - 1) {
+				memcpy(interp->input_buffer + interp->input_buffer_len, entered, (size_t)entered_len);
+				interp->input_buffer_len += entered_len;
+				interp->input_buffer[interp->input_buffer_len++] = '\n';
+				interp->input_buffer[interp->input_buffer_len] = '\0';
+			}
+			ic_free(entered);
+		} else {
+			if (!fgets(line, sizeof(line), stdin))
+				break;
+			int line_len = (int)strlen(line);
+			if (interp->input_buffer_len + line_len < INPUT_BUFFER_SIZE - 1) {
+				memcpy(interp->input_buffer + interp->input_buffer_len, line, (size_t)line_len + 1);
+				interp->input_buffer_len += line_len;
+			}
 		}
 
 		interp->error_flag = 0;

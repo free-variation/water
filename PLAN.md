@@ -307,27 +307,16 @@ lines of C; `serve`, router, and response builders ~60 lines of `lib.l4`.
 
 ## REPL line editing
 
-Interactive line editing, history, and completion for the REPL, from vendored
-**isocline** (MIT). Source under `external/isocline`, refreshed by
-`tools/vendor-isocline.sh` with a pinned `PROVENANCE`, compiled once to a cached
-object and linked like PCRE2 and SQLite.
+The interactive REPL is driven by vendored **isocline** (MIT, single-source build
+under `external/isocline`, refreshed by `tools/vendor-isocline.sh`): persistent
+history (`.logicforth_history`), emacs/vi editing with reverse-search, dictionary
+word completion, and filename completion inside string literals. Batch mode
+(`-b`) reads stdin raw and is unaffected. Remaining:
 
-Behavior:
-
-- Persistent history in `.logicforth_history`, loaded at startup and appended per
-  entry.
-- Emacs and vi key bindings, incremental reverse-search.
-- Multiline entry: a line that leaves a delimiter open (`(`, `[`, `{`, `[:`, or an
-  unclosed `:` definition) continues on the next line.
-- Tab completion against the live dictionary — the completion callback enumerates
-  defined words, the same source as `words`.
-- Filename completion via isocline's `ic_complete_filename`, in contexts where a
-  path is expected (the argument to `load`, `read-file`, `write-file`, `db-open`,
-  or inside a string literal); dictionary completion applies elsewhere.
-- Inline hints and syntax coloring via isocline's highlight callback.
-
-Scope: the interactive REPL only. Batch mode (`-b`) reads stdin raw and is
-unaffected.
+- **Inline hints and syntax highlighting** via isocline's highlight callback.
+- **Native multiline editing** — continuation on an open delimiter works today
+  through the reader's need-more accumulation; isocline's in-place multiline
+  editor is not yet wired.
 
 ---
 
