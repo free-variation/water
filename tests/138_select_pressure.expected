@@ -1,0 +1,79 @@
+[ "Acme" ] 
+[ :alice ] 
+[ 40 ] 
+[ ] 
+2 
+[ :alice :carol ] 
+2 
+[ 40 30 50 25 ] 
+[ :admin :dev :admin :dev ] 
+[ :NYC :LA :NYC :SF ] 
+[ :alice :carol ] 
+[ 10001 90001 10002 94101 ] 
+[ ] 
+2 
+[ :NYC :LA :NYC :SF ] 
+33 
+4 
+0 
+2 
+2 
+2 
+1 
+2 
+2 
+[ 40 50 ] 
+[ :NYC :NYC ] 
+[ :admin :admin ] 
+2 
+2 
+0 
+1 
+1 
+0 
+0 
+[ 40 50 ] 
+2 
+error: select: structure too deeply nested (cycle?)
+error: path literal /company/depts/*[x: unterminated [
+error: path predicate: empty key
+error: path predicate [age…]: empty value
+error: path literal // has no segments
+[ [ :company :name ] ] 
+[ [ :company :depts :eng :head ]
+  [ :company :depts :sales :head ] ] 
+[ [ :company :depts :eng :people :alice :addr :city ]
+  [ :company :depts :eng :people :bob :addr :city ]
+  [ :company :depts :sales :people :carol :addr :city ]
+  [ :company :depts :sales :people :dave :addr :city ] ] 
+[ [ :company :depts :eng :people :alice :addr :city ]
+  [ :company :depts :eng :people :bob :addr :city ]
+  [ :company :depts :sales :people :carol :addr :city ]
+  [ :company :depts :sales :people :dave :addr :city ] ] 
+[ [ :company :depts :eng :people :alice ]
+  [ :company :depts :sales :people :carol ] ] 
+[ [ :company :depts :eng :people :alice :age ]
+  [ :company :depts :sales :people :carol :age ] ] 
+4 
+[ ] 
+33 
+40 
+error: select: structure too deeply nested (cycle?)
+error: select-keys: expected an array; got a float
+error: select-keys: expected a frame; got a float
+error: @: path has a wildcard or descendant; use select-keys/select-values
+error: @: path has a wildcard or descendant; use select-keys/select-values
+error: @: path elements must be symbols; got an array
+error: !: path has a wildcard or descendant; use select-keys/select-values
+error: delete-at: path has a wildcard or descendant; use select-keys/select-values
+error: update-at: path has a wildcard or descendant; use select-keys/select-values
+1 
+0 
+1 
+0 
+1 
+1 
+1 
+0 
+1 
+error: select: structure too deeply nested (cycle?)

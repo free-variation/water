@@ -58,7 +58,7 @@
     },
     "logic": {
       "name": "keyword.other.logic.logicforth",
-      "match": "(?<=^|\\s)(?:lvar|unify|~|deref|\\$|amb|fail)(?=\\s|$)"
+      "match": "(?<=^|\\s)(?:lvar|unify|~|deref|\\$|amb|fail|_)(?=\\s|$)"
     },
     "constants": {
       "name": "constant.language.logicforth",
@@ -66,11 +66,11 @@
     },
     "operators": {
       "name": "keyword.operator.logicforth",
-      "match": "(?<=^|\\s)(?:\\+!|-!|\\*!|/!|\\+\\+|--|f\\+\\+|f--|f1\\+|f1-|f\\+|f-|f\\*|f/|f\\^|1\\+|1-|0=|\\+|-|\\*|/|%|\\^|=|!i|!|@i,j|@i|@j|@|>r|>side|side>|2dup|\\.s|\\.a|\\.)(?=\\s|$)"
+      "match": "(?<=^|\\s)(?:\\|>|\\+!|-!|\\*!|/!|\\+\\+|--|f\\+\\+|f--|f1\\+|f1-|f\\+|f-|f\\*|f/|f\\^|1\\+|1-|0=|\\+|-|\\*|/|%|\\^|=|!i|!|@i,j|@i|@j|@|>r|>side|side>|2dup|\\.s|\\.a|\\.)(?=\\s|$)"
     },
     "builtins": {
       "name": "support.function.logicforth",
-      "match": "(?<=^|\\s)(?:abs|acos|and|append-file|array>frame|array-of|array|asin|atan|bye|catch|clear|close|column-maxes|column-means|column-mins|column-sums|concat|copy|cos|cr|delete-at|depth|dgemm-nn|dgemm-nt|dgemm-tn|dgemm-tt|diagonal-matrix|diagonal|difference|dim|drop|dup|emit|env!|env|exp|fabs|facos|fasin|fatan|fcos|fexp|filter|flatten|fln|flog|fmod|fnegate|format|frame>json|frame>array|frame|fround-down|fround-up|fround|fsin|fsq|fsqrt|ftanh|ftan|ftruncate|gc|gt|has\\?|help|identity-matrix|intersection|join|json>frame|keys|last|ln|load-image|load|log|lt|man|mapn|map|match-all|match|matrix-range|matrix|max|mean|member\\?|merge|min|mod|negate|nip|not|now|num-elements|or|over|parallel-run|pi|quotient|range|read-err|read-file|read-out|read|reduce|reload|replace|reset|reshape|resume|reverse-slice!|reverse|roll|rot|round-down|round-up|round|row-maxes|row-means|row-mins|row-sums|running\\?|run|save-image|save|see-compiled|see|set|sin|size|skip|sleep|slice!|split|sqrt|sq|start-process|stop|string>symbol|substring|sum|swap|take|tanh|tan|throw|to-slice!|transpose|truncate|try-catch|union|update-at|values|wait|words|write-file|write-in|write|shift-with|shift|vfabs|vfcos|vfexp|vflog|vfneg|vfsin|vfsqrt|vfsq|vftanh|vftan|vf\\*|vf\\+|vf-|vf/|vvf\\*\\+|vvf\\*-|vvf\\*|vvf\\+|vvf-|vvf/|0-matrix)(?=\\s|$)"
+      "match": "(?<=^|\\s)(?:abs|acos|alloc-stats|and|append-file|array>frame|array>cons|array>set|array-of|array|asin|atan|bye|catch|clear|close|column-maxes|column-means|column-mins|column-sums|concat|cons>array|cons|copy|cos|cr|delete-at|depth|dgemm-nn|dgemm-nt|dgemm-tn|dgemm-tt|diagonal-matrix|diagonal|difference|dim|drop|dup|emit|env!|env|exp|fabs|facos|fasin|fatan|fcos|fexp|filter|flatten|fln|flog|fmod|fnegate|format|frame>json|frame>array|frame|fround-down|fround-up|fround|fsin|fsq|fsqrt|ftanh|ftan|ftruncate|gc|gt|group-by|has\\?|head-tail|help|identity-matrix|intersection|join|json>frame|keys|last|ln|load-image|load|log|lt|man|mapn|map|match-all|matches\\?|match|matrix-range|matrix|max|mean|member\\?|merge|min|mod|negate|nip|not|now|num-elements|or|over|parallel-run|pi|quotient|range|read-err|read-file|read-out|read|reduce|reify|reload|replace|reset|reshape|resume|reverse-slice!|reverse|roll|rot|round-down|round-up|round|row-maxes|row-means|row-mins|row-sums|running\\?|run|save-image|save|see-compiled|see|select-keys|select-values|set-add!|set-remove!|set|sin|size|skip|sleep|slice!|split|sqrt|sq|start-process|stop|string>symbol|substring|symbol\\?|sum|swap|take|tanh|tan|throw|to-slice!|transpose|truncate|try-catch|union|update-at|values|wait|words|write-file|write-in|write|shift-with|shift|vfabs|vfcos|vfexp|vflog|vfneg|vfsin|vfsqrt|vfsq|vftanh|vftan|vf\\*|vf\\+|vf-|vf/|vvf\\*\\+|vvf\\*-|vvf\\*|vvf\\+|vvf-|vvf/|0-matrix)(?=\\s|$)"
     },
     "symbol": {
       "name": "constant.other.symbol.logicforth",
@@ -86,7 +86,7 @@
     },
     "delimiters": {
       "name": "punctuation.section.logicforth",
-      "match": "[\\[\\]{}<>]"
+      "match": "\\[\\(|\\)\\]|[\\[\\]{}<>]"
     }
   }
 }

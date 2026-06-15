@@ -12,7 +12,7 @@ syn iskeyword @,48-57,_,192-255,33,35-39,42-47,58-64,94,126
 " --- Comments -------------------------------------------------------------
 " `\ …` to end of line (the \ must be its own token), and ( … ) stack comments.
 syn match   logicforthComment "\%(^\|\s\)\zs\\\%(\s.*\)\=$" contains=@Spell
-syn region  logicforthComment start="(\s" end=")" contains=@Spell
+syn region  logicforthComment start="\[\@<!(\s" end=")" contains=@Spell
 
 " --- Strings --------------------------------------------------------------
 " Raw strings; "" is the one escape (a literal ").
@@ -41,16 +41,18 @@ syn keyword logicforthRepeat begin until again while repeat times i-times
 syn keyword logicforthKeyword exit execute
 
 " --- Logic ----------------------------------------------------------------
-syn keyword logicforthLogic lvar unify ~ deref $ amb fail
+syn keyword logicforthLogic lvar unify ~ deref $ amb fail _
 
 syn keyword logicforthBoolean null
 
 " --- Structural delimiters ------------------------------------------------
 syn match   logicforthDelimiter "[][{}<>]"
+syn match   logicforthDelimiter "\[("
+syn match   logicforthDelimiter ")\]"
 syn match   logicforthDelimiter "\s\zs|\ze\s"
 
 " --- Built-in words -------------------------------------------------------
-syn keyword logicforthBuiltin ! !i % * *! + +! ++ - -! -- . .a .s / /! 0= 1+ 1-
+syn keyword logicforthBuiltin ! !i % * *! + +! ++ - -! -- . .a .s / /! 0= 1+ 1- |>
 syn keyword logicforthBuiltin = >r >side side> @ @i @i,j @j ^ 2dup nip
 syn keyword logicforthBuiltin dup drop swap over rot depth roll clear
 syn keyword logicforthBuiltin and or not 0= lt gt
@@ -59,10 +61,11 @@ syn keyword logicforthBuiltin sin cos tan tanh asin acos atan round truncate rou
 syn keyword logicforthBuiltin f* f*+ f*- f+ f++ f- f-- f/ f1+ f1- f^ fabs facos fasin fatan
 syn keyword logicforthBuiltin fcos fexp fln flog fmod fnegate fround fround-down fround-up
 syn keyword logicforthBuiltin fsin fsq fsqrt ftan ftanh ftruncate
-syn keyword logicforthBuiltin set array array-of range concat reverse reverse-slice! take skip last
-syn keyword logicforthBuiltin destruct destruct-to slice! to-slice! member? size union intersection difference
+syn keyword logicforthBuiltin set array array-of range concat reverse reverse-slice! take skip last set-add! set-remove!
+syn keyword logicforthBuiltin destruct destruct-to slice! to-slice! member? size union intersection difference group-by symbol? matches?
+syn keyword logicforthBuiltin cons cons>array head-tail
 syn keyword logicforthBuiltin map mapn filter reduce
-syn keyword logicforthBuiltin frame array>frame frame>array keys values has? merge delete-at update-at copy
+syn keyword logicforthBuiltin frame array>frame array>cons array>set frame>array keys values has? merge delete-at update-at select-values select-keys copy reify
 syn keyword logicforthBuiltin json>frame frame>json
 syn keyword logicforthBuiltin matrix 0-matrix diagonal-matrix identity-matrix matrix-range reshape
 syn keyword logicforthBuiltin dim flatten transpose diagonal num-elements
@@ -77,7 +80,7 @@ syn keyword logicforthBuiltin load reload save save-image load-image
 syn keyword logicforthBuiltin read-file write-file append-file env env!
 syn keyword logicforthBuiltin start-process read write close wait stop running? run parallel-run
 syn keyword logicforthBuiltin read-out read-err write-in
-syn keyword logicforthBuiltin words see see-compiled man help gc bye
+syn keyword logicforthBuiltin words see see-compiled man help gc bye alloc-stats
 syn keyword logicforthBuiltin vf* vf+ vf- vf/ vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh
 syn keyword logicforthBuiltin vvf* vvf*+ vvf*- vvf+ vvf- vvf/
 

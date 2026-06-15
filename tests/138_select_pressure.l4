@@ -1,0 +1,143 @@
+\ Pressure test for select-values: axes (* // ), predicates
+\ ([k] [k=v] [.=v] [k<v] [k>v] [a/b=v]), combinations, composition, cycle, errors.
+
+variable org
+{
+  :company {
+    :name "Acme"
+    :depts {
+      :eng {
+        :head :alice
+        :people {
+          :alice { :role :admin :age 40 :addr { :city :NYC :zip 10001 } }
+          :bob   { :role :dev   :age 30 :addr { :city :LA  :zip 90001 } }
+        }
+      }
+      :sales {
+        :head :carol
+        :people {
+          :carol { :role :admin :age 50 :addr { :city :NYC :zip 10002 } }
+          :dave  { :role :dev   :age 25 :addr { :city :SF  :zip 94101 } }
+        }
+      }
+    }
+  }
+} to org
+
+\ --- plain paths ---
+org /company/name select-values . cr
+org /company/depts/eng/head select-values . cr
+org /company/depts/eng/people/alice/age select-values . cr
+org /nope select-values . cr
+
+\ --- wildcard * ---
+org /company/depts/* select-values size . cr
+org /company/depts/*/head select-values . cr
+org /company/depts/eng/people/* select-values size . cr
+
+\ --- descendant // ---
+org //age select-values . cr
+org //role select-values . cr
+org //city select-values . cr
+org //head select-values . cr
+org //zip select-values . cr
+org //nonesuch select-values . cr
+
+\ --- // with following key, nested // ---
+org //people select-values size . cr
+org //addr//city select-values . cr
+
+\ --- //* everything (count of nodes below root) ---
+org //* select-values size . cr
+
+\ --- existence predicate ---
+org //people/*[role] select-values size . cr
+org //people/*[nickname] select-values size . cr
+
+\ --- equality (symbol, bareword, numeric) ---
+org //people/*[role=admin] select-values size . cr
+org //people/*[role=:admin] select-values size . cr
+org //people/*[role=dev] select-values size . cr
+org //people/*[age=40] select-values size . cr
+
+\ --- ordered comparison ---
+org //people/*[age>35] select-values size . cr
+org //people/*[age<35] select-values size . cr
+
+\ --- self predicate on leaves ---
+org //age[.>30] select-values . cr
+org //city[.=:NYC] select-values . cr
+org //role[.=admin] select-values . cr
+
+\ --- sub-path key predicate ---
+org //people/*[addr/city=:NYC] select-values size . cr
+org //people/*[addr/zip>50000] select-values size . cr
+org //people/*[addr/country] select-values size . cr
+
+\ --- chained predicates on one step ---
+org //people/*[role=admin][age>45] select-values size . cr
+
+\ --- predicate at the context node (root filter) ---
+{ :ok 1 } /[ok=1] select-values size . cr
+{ :ok 1 } /[ok=2] select-values size . cr
+
+\ --- no match through predicate ---
+org //people/*[role=ghost] select-values size . cr
+
+\ --- composition with the functional layer ---
+org //age select-values [: 35 gt :] filter . cr
+org //people/*[role=admin] select-values size . cr
+
+\ --- cycle guard ---
+{ } dup :self swap ! //x select-values . cr
+
+\ --- errors ---
+org /company/depts/*[x select-values . cr
+org /company/depts/*[=5] select-values . cr
+org /company/depts/*[age=] select-values . cr
+// select-values . cr
+
+\ --- select-keys: full root-to-match paths over the same fixture ---
+org /company/name select-keys . cr
+org /company/depts/*/head select-keys . cr
+org //city select-keys . cr
+org //addr//city select-keys . cr
+org //people/*[role=admin] select-keys . cr
+org //age[.>35] select-keys . cr
+org //people/*[role] select-keys size . cr
+org /nope select-keys . cr
+org //* select-keys size . cr
+
+\ round-trip: a returned path feeds @ back to its value
+org dup //people/alice/age select-keys 0 @i @ . cr
+
+\ cycle guard in keys mode
+{ } dup :self swap ! //x select-keys . cr
+
+\ argument type errors
+org 5 select-keys . cr
+5 /a select-keys . cr
+
+\ --- locator words reject search paths (wildcard, descendant, predicate) ---
+org /company/depts/* @ . cr
+org //city @ . cr
+org /company/depts[head] @ . cr
+org /company/depts/* 0 ! . cr
+org /company/depts/* delete-at . cr
+org /company/depts/* [: 1 + :] update-at . cr
+
+\ --- has? accepts a search path: true when any node matches, else false ---
+org //city has? . cr
+org //nonesuch has? . cr
+org //people/*[role=admin] has? . cr
+org //people/*[role=ghost] has? . cr
+org /company/depts/* has? . cr
+
+\ has? plain symbol and plain locator path unchanged
+org :company has? . cr
+org /company/depts/eng/head has? . cr
+org /company/depts/eng/missing has? . cr
+
+\ has? early-exits before a cycle when a match exists; errors when none does
+{ :x 1 } dup :self swap ! //x has? . cr
+{ } dup :self swap ! //x has? . cr

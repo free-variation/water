@@ -336,7 +336,7 @@ Cons cells in a dense, GC'd table — the linked, recursively-decomposable count
 
 ## Frames
 
-Symbol-keyed sorted maps; binary-search lookup. A path is an array of symbols; the literal `/a/b/c` is a compile-time constant array and allocates nothing at run time. `d` = path depth, `n` = frame size.
+Symbol-keyed sorted maps; binary-search lookup. A **path** is an array of steps; a plain *locator* is all symbols, and the literal `/a/b/c` is a compile-time constant array that allocates nothing at run time. A path may instead be a **search path** matching a set of nodes (see Path queries below). The single-target words (`@`, `!`, `delete-at`, `update-at`) require a locator and reject a search path, pointing the caller at `select-values`/`select-keys`; `has?` accepts either. `d` = path depth, `n` = frame size.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -344,16 +344,33 @@ Symbol-keyed sorted maps; binary-search lookup. A path is an array of symbols; t
 | `frame` | `( keys values -- fr )` | Build from parallel key and value arrays of equal length | 2 + n log n | `1o` + reallocs | O(n log n) |
 | `array>frame` | `( arr -- fr )` | Build from an even-length alternating-kv array; a path key (`/a/b/c`) vivifies nested frames | 1 + n log n | `1o` + reallocs | O(n log n) |
 | `frame>array` | `( fr -- arr )` | Flatten to a key-sorted alternating-kv array; inverse of `array>frame` | 1 + n | `1o` | O(n) |
-| `@` | `( fr sym/path -- val )` | Get by key or path; errors if absent | 3 + d log n | none | O(d log n) |
-| `!` | `( fr sym/path val -- fr )` | Set by key or path, vivifying intermediates; mutates fr | d log n | realloc on growth; `1o` per vivified frame | O(d log n) amortized |
-| `has?` | `( fr sym/path -- bool )` | Existence test for a frame key or path, no error on miss; on a string `( s pat -- bool )`, true if regex `pat` matches anywhere | 3 + d log n | none | O(d log n) |
-| `delete-at` | `( fr sym/path -- fr )` | Remove a key (errors if absent); mutates fr | n | none | O(n) |
-| `update-at` | `( fr sym/path xt -- fr )` | Apply xt to the value at the key, store the result back | d log n + xt | none | O(d log n + xt) |
+| `@` | `( fr sym/path -- val )` | Get by key or path; errors if absent or if the path is a search path | 3 + d log n | none | O(d log n) |
+| `!` | `( fr sym/path val -- fr )` | Set by key or path, vivifying intermediates; mutates fr; errors on a search path | d log n | realloc on growth; `1o` per vivified frame | O(d log n) amortized |
+| `has?` | `( fr sym/path -- bool )` | Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string `( s pat -- bool )`, true if regex `pat` matches anywhere | 3 + d log n | none | O(d log n) |
+| `delete-at` | `( fr sym/path -- fr )` | Remove a key (errors if absent or on a search path); mutates fr | n | none | O(n) |
+| `update-at` | `( fr sym/path xt -- fr )` | Apply xt to the value at the key, store the result back; errors on a search path | d log n + xt | none | O(d log n + xt) |
 | `keys` | `( fr -- arr )` | Keys (symbols) in sorted order | 1 + n | `1a(n)` | O(n) |
 | `values` | `( fr -- arr )` | Values in key order | 1 + n | `1a(n)` | O(n) |
 | `merge` | `( fr₁ fr₂ -- fr )` | New frame with all keys; fr₂ wins collisions | (m+n) log(m+n) | `1o` + reallocs | O((m+n) log(m+n)) |
 | `copy` | `( a -- a' )` | Deep copy of any value, `copy_term`-style: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations, pairs; identity for scalars. Defined generally, not frame-specific. | tree size | one object per node | O(tree size) |
 | `reify` | `( a -- a' )` | Like `copy`, but each unbound var becomes a canonical inert symbol `:_0`, `:_1`, … numbered by first appearance — a ground, storable, comparable snapshot. | tree size | one object per node | O(tree size) |
+
+### Path queries
+
+A search path generalizes a locator with three step kinds, matching a set of nodes instead of one. Descent is through nested frames only; an array, set, or scalar is a leaf, and `//` is depth-capped against cycles.
+
+- `*` — any one child at this level.
+- `//` — descendant-or-self: any depth at or below the current node.
+- `[…]` — a predicate filtering the current node: `[k]` (key `k` exists), `[k=v]`, `[k<v]`, `[k>v]` (compare key `k`'s value to `v`), `[.=v]`/`[.<v]`/`[.>v]` (compare the node itself, via `.`), or `[a/b op v]` (a sub-path subject). Several predicates on one step chain: `[role=admin][age>45]`.
+
+So `/users/*/name` is the `:name` of every child of `:users`, `/root//city` is every `:city` at any depth, and `/people/*[age>30]` filters by predicate. `s` = nodes visited.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `select-values` | `( fr path -- arr )` | Every matched value, in document (pre-order) order, duplicates kept; no path built per match | s | `1a` + reallocs | O(s) |
+| `select-keys` | `( fr path -- arr )` | The full root-to-match path (a symbol array) for every match, document order; each round-trips through `@` | s | `1a` + `1a` per match | O(s + total path length) |
+
+`select-values` is the cheaper word (it captures the node directly, no per-match path array); `array>set` the result when distinct values are wanted, or `array>cons` to feed matches to `choose` as backtracking choice points.
 
 ---
 

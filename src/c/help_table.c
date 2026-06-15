@@ -4,7 +4,7 @@
 #include "logicforth.h"
 
 const HelpEntry help_entries[] = {
-	{ "!", "( fr sym/path val -- fr )", "Set by key or path, vivifying intermediates; mutates fr", "d log n", "realloc on growth; 1o per vivified frame", "O(d log n) amortized" },
+	{ "!", "( fr sym/path val -- fr )", "Set by key or path, vivifying intermediates; mutates fr; errors on a search path", "d log n", "realloc on growth; 1o per vivified frame", "O(d log n) amortized" },
 	{ "!i", "( arr i val -- arr )", "Store val at index i in place; leaves arr on the stack", "4", "none", "O(1)" },
 	{ "$", "( v -- val )", "lib.l4: deref (inlined)", "d", "none", "O(d)" },
 	{ "%", "( a b -- remainder quotient )", "floats only; truncating division: pushes a − trunc(a/b)·b then trunc(a/b); errors on zero", "4", "none", "O(1)" },
@@ -34,7 +34,7 @@ const HelpEntry help_entries[] = {
 	{ ">r", "( a -- ) → return stack", "Move top to return stack", "2", "none", "O(1)" },
 	{ ">side", "( a -- )", "Push to side stack", "2", "none", "O(1)" },
 	{ "?if", "( flag -- flag )", "Like if, but peeks the flag instead of consuming it — the flag stays on the stack in both branches", NULL, NULL, NULL },
-	{ "@", "( fr sym/path -- val )", "Get by key or path; errors if absent", "3 + d log n", "none", "O(d log n)" },
+	{ "@", "( fr sym/path -- val )", "Get by key or path; errors if absent or if the path is a search path", "3 + d log n", "none", "O(d log n)" },
 	{ "@i", "( arr i -- val )", "Array element; on a matrix returns row i as a 1×c matrix", "3 (array)", "matrix 1m(1×c)", "O(1) array; O(c) matrix" },
 	{ "@i,j", "( m i j -- f )", "Single element as a float", "4", "none", "O(1)" },
 	{ "@j", "( m j -- col )", "Column j as an r×1 matrix (copy)", "2 + r", "1m(r×1)", "O(r)" },
@@ -72,7 +72,7 @@ const HelpEntry help_entries[] = {
 	{ "cos", "( a -- cos a )", "cosine (radians)", "2", "matrix 1m(r×c)", "same" },
 	{ "count-matches", "( rel pattern -- n )", "How many rows match; for a covering query this is the bucket's size with no scan, otherwise query size", "—", "(covering: none)", "O(candidates)" },
 	{ "cr", "( -- )", "Print a newline", "1", "none", "O(1)" },
-	{ "delete-at", "( fr sym/path -- fr )", "Remove a key (errors if absent); mutates fr", "n", "none", "O(n)" },
+	{ "delete-at", "( fr sym/path -- fr )", "Remove a key (errors if absent or on a search path); mutates fr", "n", "none", "O(n)" },
 	{ "depth", "( -- n )", "Push current depth", "1", "none", "O(1)" },
 	{ "deref", "( v -- val )", "Follow a logic var's binding chain to the first non-variable value (v itself if unbound). Shallow — a returned structure still has bound vars inside; for a fully resolved snapshot use reify or copy", "d", "none", "O(d)" },
 	{ "destruct", "( arr/set/fr -- v… )", "Spread elements onto the stack; a frame spreads alternating sym/value", "1 + n", "none", "O(n)" },
@@ -135,7 +135,7 @@ const HelpEntry help_entries[] = {
 	{ "gc", "( -- )", "Force a mark-sweep now", "walks stacks + dict + roots, frees unmarked", "none", "O(objects + dict)" },
 	{ "group-by", "( array col -- frame )", "Group an array of frames by their symbol-valued col into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted", "n log n", "frame + sets", "O(n log n)" },
 	{ "gt", "( a b -- bool )", "greater-than", "3 (float)", "none", "same" },
-	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)" },
+	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)" },
 	{ "head-tail", "( pair -- head tail )", "Split a pair — head under, tail on top; no auto-deref; errors on a non-pair", "1", "none", "O(1)" },
 	{ "help", "( \"name\" -- )", "lib.l4: parse the next word and print its man frame (lookup man .)", "dict scan + log n", "1o + strings + print", "O(|dict|)" },
 	{ "i-times", "( xt n -- )", "Run xt n times, pushing index 0..n-1 first", "2 + n·(1+xt)", "none", "O(n·xt)" },
@@ -215,6 +215,8 @@ const HelpEntry help_entries[] = {
 	{ "save-image", "( s -- )", "Binary snapshot of full state (dict, objects, stacks, continuations)", "serialize all", "file I/O", "O(objects + dict)" },
 	{ "see", "( xt -- )", "Print a word's source (: name … ;), or variable/symbol/primitive form", "dict scan", "none", "O(|dict|)" },
 	{ "see-compiled", "( xt -- )", "Disassemble a colon definition's compiled cells", "body scan", "none", "O(body)" },
+	{ "select-keys", "( fr path -- arr )", "The full root-to-match path (a symbol array) for every match, document order; each round-trips through @", "s", "1a + 1a per match", "O(s + total path length)" },
+	{ "select-values", "( fr path -- arr )", "Every matched value, in document (pre-order) order, duplicates kept; no path built per match", "s", "1a + reallocs", "O(s)" },
 	{ "set", "( v₀ … vₙ₋₁ n -- set )", "Gather the top n values into a new set (the set analog of array)", "2 + n log n", "1o + reallocs", "O(n log n)" },
 	{ "set-add!", "( set v -- set )", "Insert v in sorted position if absent (dedups); leaves set on the stack", "log n + n", "reallocs", "O(n)" },
 	{ "set-remove!", "( set v -- set )", "Remove v if present (no-op if absent); leaves set on the stack", "log n + n", "none", "O(n)" },
@@ -253,7 +255,7 @@ const HelpEntry help_entries[] = {
 	{ "unify", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A _ on either side matches anything and binds nothing. On a mismatch, fails.", "n", "none", "O(n)" },
 	{ "union", "( s₁ s₂ -- s₃ )", "Union into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)" },
 	{ "until", "( flag -- )", "Branch back to begin if flag is falsy", NULL, NULL, NULL },
-	{ "update-at", "( fr sym/path xt -- fr )", "Apply xt to the value at the key, store the result back", "d log n + xt", "none", "O(d log n + xt)" },
+	{ "update-at", "( fr sym/path xt -- fr )", "Apply xt to the value at the key, store the result back; errors on a search path", "d log n + xt", "none", "O(d log n + xt)" },
 	{ "values", "( fr -- arr )", "Values in key order", "1 + n", "1a(n)", "O(n)" },
 	{ "variable", "—", "Read the following name; declare a global variable initialized to 0.0", NULL, NULL, NULL },
 	{ "vf*", "vf* a", "Multiply the stack top by variable a, in place", NULL, NULL, NULL },
@@ -285,4 +287,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 279;
+const int help_entry_count = 281;

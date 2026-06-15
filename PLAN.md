@@ -81,6 +81,95 @@ and sljit for the JIT).
 
 ## Core language additions
 
+### Path queries — wildcards, descendants, predicates
+
+Paths generalize from exact locators to patterns that match a *set* of nodes. Two
+axis tokens and an inline predicate grammar turn `/a/b/c` into an XPath-like query
+language over the nested-frame tree. Descent is through nested frames only; an
+array, set, or scalar is a leaf.
+
+**Axes and tests:**
+
+- `name` — the child under key `:name`.
+- `*` — any one child at this level.
+- `//` — descendant-or-self: match at any depth at or below the current node.
+
+So `/users/*/name` is the `:name` of every child of `:users`; `/root//city` is
+every `:city` at any depth.
+
+**Predicates** filter the current node set in place, written `[…]` after a step:
+
+- `[k]` — node has a child `:k`.
+- `[k=v]` — node's child `:k` equals `v`.
+- `[.=v]` — the node's own value equals `v` (for matched leaves).
+- `[k>v]` / `[k<v]` — ordered comparison.
+- `[a/b=v]` — a sub-path test.
+
+`v` is a `:symbol`, a number, or a quoteless string.
+
+**Surface:** two words, by what you need from each match.
+
+- `frame pat select-keys ( fr pat -- arr )` — every match's *location*: the full
+  symbol-array path from the root to the match, in document (DFS pre-order) order.
+  Each path round-trips through `@`, and locates the match for a future wildcard
+  mutation — the "where" to `select-values`'s "what". A pattern with no wildcard
+  still works, yielding a one-element array.
+- `frame pat select-values ( fr pat -- arr )` — just the matched values, as an
+  array, in document (DFS pre-order) order with duplicates kept. Skips path
+  construction (no per-match path array), so it's the cheaper word; `array>set`
+  the result when distinct values are wanted.
+- The single-location words — `@`, `!`, `delete-at`, `update-at` — keep their
+  one-target contract and reject a search path (wildcard, descendant, or predicate)
+  with an error pointing the caller at `select-keys` / `select-values`.
+- `has?` is the exception: a search path is a well-formed yes/no question ("does any
+  node match?"), so it accepts one and returns a boolean, short-circuiting at the
+  first match. A plain symbol or locator path still takes the direct lookup.
+
+Refinement on the result is `filter` / array indexing — neither needs
+query-language support. To fetch the value at a returned key, feed the path back
+through `@`.
+
+```
+people /residents//addr[city=:NYC] select-keys   \ [ [..addr] … ] — paths to NYC addrs
+nums   /*[.>0] select-values                      \ the positive values, in order
+```
+
+**Nondeterminism.** Both words are deterministic — they return the whole result.
+To walk matches as choice points, convert to a cons list and hand it to `choose`:
+`pat select-values array>cons choose` yields one per backtrack through `amb`.
+
+**Representation.** A path is an element array: a literal key step is a symbol, the
+`*` and `//` axes are the interned symbols `*` and `//`, and a predicate step is a
+sub-array. The slash-literal reader
+parses `name`, `*`, `//`, and a trailing `[…]` into this form. The same array can
+be built programmatically, so a value containing spaces is written as an explicit
+element array rather than a slash-literal.
+
+**Engine.** A frontier-folding walk extending `frame_walk`: carry the set of
+current nodes and fold each step over it — `name` descends, `*` expands to every
+child, `//` expands to self-plus-descendants, a predicate filters. Matches collect
+into a gc-rooted result array in pre-order — the full root-to-match path for
+`select-keys`, the matched value itself for `select-values` (append-only, no dedup
+or sort). Both share one walk parameterized by mode; `select-keys` allocates a
+symbol-array path per match while `select-values` captures the resident node
+directly, which is its reason to exist. Inline predicates evaluate in C against
+each frontier node: existence, `=`, `<`, and `>`, against a key, the self `.`, or a
+sub-path subject.
+
+Quotation predicates — an arbitrary `[: … :]` evaluated per node — are planned;
+the predicate set above is the current scope.
+
+Performance notes: `//` is inherently O(subtree) (every descendant is visited, no
+pruning). Frames are reference values and can form cycles or DAGs, so `//` carries
+a depth cap (as `copy` and `print` already do) for termination. The dominant
+`select-keys` cost is building one full path array per match; `select-values`
+skips that, which is its reason to exist.
+
+**Not included initially:** wildcard mutation (`*`/`//` in `!` / `delete-at` /
+`update-at`; `select-keys`/`select-values` are read-only); quotation predicates
+inside the slash-literal;
+axes beyond child/descendant.
+
 ### Time / dates
 
 Unix timestamps as `T_FLOAT` (seconds since epoch, fractional allowed). No

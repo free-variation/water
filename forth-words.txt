@@ -209,6 +209,8 @@ save
 save-image
 see
 see-compiled
+select-keys
+select-values
 set
 set-add!
 set-remove!

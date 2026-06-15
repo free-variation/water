@@ -1308,6 +1308,91 @@ static void compile_or_push(Interpreter *interp, Val value) {
 	interp->fuse_prev2_var = 0;
 }
 
+static void path_append(Interpreter *interp, int handle, Val element) {
+	Object *path = interp->objects[handle];
+	GROW_IF_FULL(path->len, path->capacity, path->items);
+	path->items[path->len++] = element;
+}
+
+static int parse_path_predicate(Interpreter *interp, char *text) {
+	char *op = strpbrk(text, "=<>");
+	int op_code = PRED_EQ;
+	char *value = NULL;
+	if (op) {
+		op_code = (*op == '<') ? PRED_LT : (*op == '>') ? PRED_GT : PRED_EQ;
+		*op = '\0';
+		value = op + 1;
+	}
+	if (text[0] == '\0') {
+		fail(interp, "path predicate: empty key");
+		return -1;
+	}
+	Val key_val;
+	int key_rooted = 0;
+	if (strchr(text, '/')) {
+		int subpath = object_new_array(interp, 0);
+		if (interp->error_flag)
+			return -1;
+		gc_root_push(interp, make_array(subpath));
+		key_rooted = 1;
+		for (char *q = text; *q; ) {
+			char *seg = q;
+			while (*q && *q != '/')
+				q++;
+			char saved = *q;
+			*q = '\0';
+			if (seg[0] != '\0')
+				path_append(interp, subpath, make_symbol(intern_symbol(interp, seg)));
+			*q = saved;
+			if (*q == '/')
+				q++;
+		}
+		key_val = make_array(subpath);
+	} else {
+		key_val = make_symbol(intern_symbol(interp, text));
+	}
+
+	int handle;
+	if (!op) {
+		handle = object_new_array(interp, 2);
+		if (interp->error_flag) {
+			if (key_rooted) gc_root_pop(interp);
+			return -1;
+		}
+		Object *predicate = interp->objects[handle];
+		predicate->items[0] = make_float(PRED_EXISTS);
+		predicate->items[1] = key_val;
+		if (key_rooted) gc_root_pop(interp);
+		return handle;
+	}
+
+	if (value[0] == '\0') {
+		fail(interp, "path predicate [%s…]: empty value", text);
+		if (key_rooted) gc_root_pop(interp);
+		return -1;
+	}
+	Val compare;
+	double number;
+	if (value[0] == ':')
+		compare = make_symbol(intern_symbol(interp, value + 1));
+	else if (parse_float(value, &number))
+		compare = make_float(number);
+	else
+		compare = make_symbol(intern_symbol(interp, value));
+
+	handle = object_new_array(interp, 3);
+	if (interp->error_flag) {
+		if (key_rooted) gc_root_pop(interp);
+		return -1;
+	}
+	Object *predicate = interp->objects[handle];
+	predicate->items[0] = make_float(op_code);
+	predicate->items[1] = key_val;
+	predicate->items[2] = compare;
+	if (key_rooted) gc_root_pop(interp);
+	return handle;
+}
+
 int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out) {
 	for (int scope = interp->n_local_scopes - 1; scope >= 0; scope--) {
 		int slice_start = interp->local_scope_starts[scope];
@@ -1431,40 +1516,55 @@ void run_outer(Interpreter *interp) {
 			strncpy(path, tok, sizeof(path) - 1);
 			path[sizeof(path) - 1] = '\0';
 
-			int count = 0;
-			for (char *p = path; *p; ) {
-				while (*p == '/')
-					p++;
-				if (!*p)
-					break;
-				count++;
-				while (*p && *p != '/')
-					p++;
-			}
-			if (count == 0) {
-				fail(interp, "path literal %s has no segments", tok);
-				return;
-			}
-
-			int handle = object_new_array(interp, count);
+			int handle = object_new_array(interp, 0);
 			if (interp->error_flag)
 				return;
-			Object *path_array = interp->objects[handle];
+			gc_root_push(interp, make_array(handle));
 
-			int idx = 0;
 			for (char *p = path; *p; ) {
-				while (*p == '/')
+				int run = 0;
+				while (*p == '/') {
 					p++;
+					run++;
+				}
 				if (!*p)
 					break;
+				if (run >= 2)
+					path_append(interp, handle, make_symbol(interp->vocab->descendant_symbol));
+
 				char *segment = p;
-				while (*p && *p != '/')
+				while (*p && *p != '/' && *p != '[')
 					p++;
-				if (*p) {
+				if (p > segment) {
+					char saved = *p;
 					*p = '\0';
-					p++;
+					path_append(interp, handle, make_symbol(intern_symbol(interp, segment)));
+					*p = saved;
 				}
-				path_array->items[idx++] = make_symbol(intern_symbol(interp, segment));
+
+				while (*p == '[') {
+					char *predicate_text = ++p;
+					while (*p && *p != ']')
+						p++;
+					if (*p != ']') {
+						fail(interp, "path literal %s: unterminated [", tok);
+						gc_root_pop(interp);
+						return;
+					}
+					*p++ = '\0';
+					int predicate_handle = parse_path_predicate(interp, predicate_text);
+					if (interp->error_flag) {
+						gc_root_pop(interp);
+						return;
+					}
+					path_append(interp, handle, make_array(predicate_handle));
+				}
+			}
+
+			gc_root_pop(interp);
+			if (interp->objects[handle]->len == 0) {
+				fail(interp, "path literal %s has no segments", tok);
+				return;
 			}
 
 			compile_or_push(interp, make_array(handle));
@@ -1952,13 +2052,18 @@ void gc(Interpreter *interp) {
 		int cfa = sorted_cfas[i];
 		int body_start = cfa + 1;
 		int body_end = (i + 1 < num_cfas) ? sorted_cfas[i + 1] - 4 : interp->vocab->here;
+		
 		cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
+
 		if (handler == docol) {
 			mark_body(interp, body_start, body_end);
-		} else if (handler == dovar && body_start < body_end) {
-			Val value;
-			value.bits = (uint64_t)interp->vocab->dict[body_start];
-			mark_value(interp, value);
+		} else {
+			if (handler == dovar && body_start < body_end) {
+				Val value;
+				value.bits = (uint64_t)interp->vocab->dict[body_start];
+				mark_value(interp, value);
+			}
+			mark_body(interp, body_start + 1, body_end);
 		}
 
 	}
@@ -2757,6 +2862,10 @@ Interpreter *interp_new(void) {
 
 	interp->vocab->false_symbol = intern_symbol(interp, "0");
 	interp->vocab->true_symbol = intern_symbol(interp, "1");
+	interp->vocab->wildcard_symbol = intern_symbol(interp, "*");
+	interp->vocab->descendant_symbol = intern_symbol(interp, "//");
+	interp->vocab->self_symbol = intern_symbol(interp, ".");
+
 	return interp;
 }
 
@@ -2892,6 +3001,8 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "array-of", p_array_of, 0);
 	define_primitive(interp, "array>frame", p_array_to_frame, 0);
 	define_primitive(interp, "frame>array", p_frame_to_array, 0);
+	define_primitive(interp, "select-values", p_select_values, 0);
+	define_primitive(interp, "select-keys", p_select_keys, 0);
 	define_primitive(interp, "frame", p_frame, 0);
 	define_primitive(interp, "json>frame", p_json_to_frame, 0);
 	define_primitive(interp, "frame>json", p_frame_to_json, 0);

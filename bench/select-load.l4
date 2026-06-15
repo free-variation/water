@@ -1,0 +1,53 @@
+\ select-load — profiling load for select-values over a large frame.
+\
+\ Loads bench/big.json (~53 MB) once into a frame, then runs path queries in
+\ tight timed loops so the engine can be profiled (perf / Instruments).
+\
+\ Knobs:
+\   HOT  — iterations of the cheap-query loop (4 queries each). The default runs
+\          ~1 billion queries. Each select-values allocates a result set, so at
+\          this scale GC fires repeatedly and re-marks the resident json graph;
+\          lower HOT to isolate the walk/dispatch from collection cost.
+\   WIDE — iterations of the 12k-child wildcard + predicate loop: set build and
+\          predicate evaluation over a wide frame.
+\   DEEP — iterations of the descendant loop over the 800-level chain: deep
+\          recursion in select_descendants.
+
+variable org
+variable HOT   variable WIDE   variable DEEP
+250000000 to HOT
+3000 to WIDE
+3000 to DEEP
+
+"bench/big.json" read-file json>frame to org
+
+\ sanity — confirm the fixture loaded and queries resolve
+org /meta/generator select-values . cr
+org /wide_object/key_06000 select-values . cr
+org /deep//tag select-values size . cr
+
+\ hot: single-key lookup, short plain path, small wildcard — profiles walk/dispatch
+now
+[:
+  org /wide_object/key_06000 select-values drop
+  org /meta/generator        select-values drop
+  org /meta/*                select-values drop
+  org /wide_object/key_11999 select-values drop
+:] HOT times
+now swap -  HOT 4 *  "{0} hot queries in {1} s" format . cr
+
+\ wide: 12k-child wildcard and a self-predicate over it — set build + predicate
+now
+[:
+  org /wide_object/*          select-values drop
+  org /wide_object/*[.>6000]  select-values drop
+:] WIDE times
+now swap -  WIDE 2 *  "{0} wide queries in {1} s" format . cr
+
+\ deep: descendant-or-self over the 800-level chain — deep recursion
+now
+[:
+  org /deep//tag   select-values drop
+  org /deep//depth select-values drop
+:] DEEP times
+now swap -  DEEP 2 *  "{0} deep queries in {1} s" format . cr

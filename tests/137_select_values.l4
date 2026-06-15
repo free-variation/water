@@ -1,0 +1,8 @@
+{ :a { :x 1 :y 2 } } /a/* select-values . cr
+{ :a { :x 1 } :b { :x 2 } } /*/x select-values . cr
+{ :a 1 } /a select-values . cr
+{ :a 1 } /z select-values . cr
+{ :a { :b { :city 1 } } :x { :city 2 } } //city select-values . cr
+{ :a { :city 1 } } /a//city select-values . cr
+{ :a { :x 1 } :b { :x 2 :y 3 } } //* select-values . cr
+{ } dup :self swap ! //x select-values . cr

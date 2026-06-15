@@ -44,6 +44,8 @@ typedef int64_t cell;
 #define PAIR_TABLE_DEPTH (1 << 20)
 #define COPY_SPINE_MAX (1 << 24)
 #define REGEX_CACHE_SIZE (1 << 10)
+#define JSON_MAX_DEPTH (1 << 10)
+#define SELECT_MAX_DEPTH JSON_MAX_DEPTH
 
 typedef enum {
 	T_NONE = 0,
@@ -171,6 +173,13 @@ typedef struct {
 	int count, cap;
 } VarMap;
 
+typedef enum {
+	PRED_EXISTS = 0,
+	PRED_EQ,
+	PRED_LT,
+	PRED_GT
+} PredicateOp;
+
 #define MAT(m, i, j) ((m)->matrix.elements[(i) * (m)->matrix.columns + (j)])
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
@@ -201,6 +210,7 @@ typedef struct Vocabulary {
 	int local_finc_0depth_cfa, local_fdec_0depth_cfa, finc_cfa, fdec_cfa;
 	int qzbranch_cfa;
 	int false_symbol, true_symbol;
+	int wildcard_symbol, descendant_symbol, self_symbol;
 
 	int init_here, init_latest_cfa, init_names_here;
 	int init_source_here, init_symbol_pool_here;
@@ -266,6 +276,7 @@ typedef struct Interpreter {
 		int in_use;
 	} regex_cache[REGEX_CACHE_SIZE];
 	int regex_cache_next;
+
 
 	char *loaded_files[MAX_LOADED_FILES];
 	int n_loaded_files, load_depth;
@@ -782,6 +793,8 @@ void frame_put(Object *frame, cell key, Val value);
 int frame_delete(Object *frame, cell key);
 void p_array_to_frame(Interpreter *interp);
 void p_frame_to_array(Interpreter *interp);
+void p_select_values(Interpreter *interp);
+void p_select_keys(Interpreter *interp);
 void p_json_to_frame(Interpreter *interp);
 void p_frame_to_json(Interpreter *interp);
 void p_transpose(Interpreter *interp);
@@ -885,13 +898,21 @@ Val frame_walk(Interpreter *interp, Val node, Object *path,
 		if (present && (mode != WALK_VIVIFY || VAL_TAG(frame->frame.values[at]) == T_FRAME)) {
 			node = frame->frame.values[at];
 		} else if (mode == WALK_VIVIFY) {
+			if (key == (cell)interp->vocab->wildcard_symbol || key == (cell)interp->vocab->descendant_symbol) {
+				fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
+				return node;
+			}
 			int child = object_new_frame(interp);
 			frame_put(interp->objects[VAL_DATA(node)], key, make_frame(child));
 			node = make_frame(child);
 		} else {
 			if (found) *found = 0;
-			if (mode != WALK_PROBE)
-				fail(interp, "%s: no key :%s", op, &interp->vocab->symbol_pool[key]);
+			if (mode != WALK_PROBE) {
+				if (key == (cell)interp->vocab->wildcard_symbol || key == (cell)interp->vocab->descendant_symbol)
+					fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
+				else
+					fail(interp, "%s: no key :%s", op, &interp->vocab->symbol_pool[key]);
+			}
 			return node;
 		}
 	}

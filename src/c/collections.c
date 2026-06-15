@@ -635,12 +635,46 @@ void p_array_to_frame(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
+static Object *frame_path_resolve(Interpreter *interp, Val path_val, const char *op,
+		int allow_search, int *is_search) {
+	if (is_search)
+		*is_search = 0;
 	if (VAL_TAG(path_val) != T_ARRAY) {
 		fail(interp, "%s: expected a path (array of symbols); got %s", op, tag_name(VAL_TAG(path_val)));
 		return NULL;
 	}
 
+	Object *path = interp->objects[VAL_DATA(path_val)];
+	for (int i = 0; i < path->len; i++) {
+		Val step = path->items[i];
+		int search_step = VAL_TAG(step) == T_ARRAY;
+		if (!search_step) {
+			if (VAL_TAG(step) != T_SYMBOL) {
+				fail(interp, "%s: path elements must be symbols; got %s", op, tag_name(VAL_TAG(step)));
+				return NULL;
+			}
+			cell key = VAL_DATA(step);
+			search_step = key == (cell)interp->vocab->wildcard_symbol
+					|| key == (cell)interp->vocab->descendant_symbol;
+		}
+		if (search_step) {
+			if (!allow_search) {
+				fail(interp, "%s: path has a wildcard, descendant, or predicate; use select-keys/select-values", op);
+				return NULL;
+			}
+			if (is_search)
+				*is_search = 1;
+			return path;
+		}
+	}
+	return path;
+}
+
+static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
+	if (VAL_TAG(path_val) != T_ARRAY) {
+		fail(interp, "%s: expected a path (array of symbols); got %s", op, tag_name(VAL_TAG(path_val)));
+		return NULL;
+	}
 	Object *path = interp->objects[VAL_DATA(path_val)];
 	for (int i = 0; i < path->len; i++) {
 		if (VAL_TAG(path->items[i]) != T_SYMBOL) {
@@ -649,6 +683,14 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 		}
 	}
 	return path;
+}
+
+static int leaf_is_axis(Interpreter *interp, cell leaf, const char *op) {
+	if (leaf == (cell)interp->vocab->wildcard_symbol || leaf == (cell)interp->vocab->descendant_symbol) {
+		fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
+		return 1;
+	}
+	return 0;
 }
 
 static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val value, const char *op) {
@@ -744,6 +786,7 @@ void p_frame_set(Interpreter *interp) {
 			interp->dsp -= 2;
 			}, {
 			REQUIRE_NONEMPTY_PATH(path, "!");
+			if (leaf_is_axis(interp, VAL_DATA(path->items[path->len - 1]), "!")) return;
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_VIVIFY, NULL, "!");
 			if (interp->error_flag) return;
 			frame_put(interp->objects[VAL_DATA(parent)], VAL_DATA(path->items[path->len - 1]), value);
@@ -766,6 +809,7 @@ void p_frame_delete_at(Interpreter *interp) {
 			interp->dsp--;
 			}, {
 			REQUIRE_NONEMPTY_PATH(path, "delete-at");
+			if (leaf_is_axis(interp, VAL_DATA(path->items[path->len - 1]), "delete-at")) return;
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_ERROR, NULL, "delete-at");
 			if (interp->error_flag) return;
 			cell leaf = VAL_DATA(path->items[path->len - 1]);
@@ -819,6 +863,162 @@ void p_frame_to_array(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
+static int predicate_holds(Interpreter *interp, Val tree_node, Object *pred) {
+	int op = (int)VAL_NUMBER(pred->items[0]);
+	Val key = pred->items[1];
+	Val subject = make_tagged(T_NONE, 0);
+	int present = 0;
+	
+	if (VAL_TAG(key) == T_ARRAY) {
+		Object *subpath = interp->objects[VAL_DATA(key)];
+		subject = frame_walk(interp, tree_node, subpath, subpath->len, WALK_PROBE, &present, "select-values");
+	} else if (VAL_DATA(key) == (cell)interp->vocab->self_symbol) {
+		subject = tree_node;
+		present = 1;
+	} else if (VAL_TAG(tree_node) == T_FRAME) {
+		Object *frame = interp->objects[VAL_DATA(tree_node)];
+		FRAME_LOOKUP(frame, VAL_DATA(key), at, found);
+		if (found) {
+			subject = frame->frame.values[at];
+			present = 1;
+		}
+	}
+
+	if (op == PRED_EXISTS)
+		return present;
+	if (!present)
+		return 0;
+
+	if (op == PRED_EQ)
+		return val_cmp(interp, subject, pred->items[2]) == 0;
+	if (op == PRED_LT)
+		return val_cmp(interp, subject, pred->items[2]) < 0;
+	if (op == PRED_GT)
+		return val_cmp(interp, subject, pred->items[2]) > 0;
+
+	return 0;
+}
+
+typedef enum { SELECT_VALUES, SELECT_KEYS, SELECT_EXISTS } SelectMode;
+
+static void select_descendants(Interpreter *interp, Val tree_node, Object *path, int depth,
+		cell *trail, int trail_len, int matches, SelectMode mode, int *found);
+
+static void select_walk(Interpreter *interp, Val tree_node, Object *path, int depth,
+		cell *trail, int trail_len, int matches, SelectMode mode, int *found) {
+	if (mode == SELECT_EXISTS && *found)
+		return;
+	if (depth == path->len) {
+		if (mode == SELECT_EXISTS) {
+			*found = 1;
+			return;
+		}
+		Val captured;
+		if (mode == SELECT_KEYS) {
+			int path_handle = object_new_array(interp, trail_len);
+			if (interp->error_flag)
+				return;
+			Object *captured_path = interp->objects[path_handle];
+			for (int i = 0; i < trail_len; i++)
+				captured_path->items[i] = make_symbol((int)trail[i]);
+			captured = make_array(path_handle);
+		} else {
+			captured = tree_node;
+		}
+		Object *matches_array = interp->objects[matches];
+		GROW_IF_FULL(matches_array->len, matches_array->capacity, matches_array->items);
+		matches_array->items[matches_array->len++] = captured;
+		return;
+	}
+
+	Val step = path->items[depth];
+	if (VAL_TAG(step) == T_ARRAY) {
+		if (predicate_holds(interp, tree_node, interp->objects[VAL_DATA(step)]))
+			select_walk(interp, tree_node, path, depth + 1, trail, trail_len, matches, mode, found);
+		return;
+	}
+
+	if (VAL_TAG(tree_node) != T_FRAME)
+		return;
+	if (trail_len >= SELECT_MAX_DEPTH) {
+		fail(interp, "select: structure too deeply nested (cycle?)");
+		return;
+	}
+
+	Object *frame = interp->objects[VAL_DATA(tree_node)];
+	cell key = VAL_DATA(step);
+	if (key == (cell)interp->vocab->wildcard_symbol) {
+		for (int i = 0; i < frame->len; i++) {
+			trail[trail_len] = frame->frame.keys[i];
+			select_walk(interp, frame->frame.values[i], path, depth + 1, trail, trail_len + 1, matches, mode, found);
+			if (mode == SELECT_EXISTS && *found)
+				return;
+		}
+	} else if (key == (cell)interp->vocab->descendant_symbol) {
+		select_descendants(interp, tree_node, path, depth + 1, trail, trail_len, matches, mode, found);
+	} else {
+		FRAME_LOOKUP(frame, key, at, present);
+		if (present) {
+			trail[trail_len] = key;
+			select_walk(interp, frame->frame.values[at], path, depth + 1, trail, trail_len + 1, matches, mode, found);
+		}
+	}
+}
+
+static void do_select(Interpreter *interp, SelectMode mode, const char *op) {
+	PEEK_TYPE_AT(path_val, 0, op, T_ARRAY);
+	PEEK_TYPE_AT(frame_val, 1, op, T_FRAME);
+	Object *path = interp->objects[VAL_DATA(path_val)];
+
+	int matches = object_new_array(interp, 8);
+	if (interp->error_flag)
+		return;
+	interp->objects[matches]->len = 0;
+	gc_root_push(interp, make_array(matches));
+
+	cell trail[SELECT_MAX_DEPTH];
+	select_walk(interp, frame_val, path, 0, trail, 0, matches, mode, NULL);
+	gc_root_pop(interp);
+	if (interp->error_flag)
+		return;
+
+	interp->dsp -= 2;
+	push(interp, make_array(matches));
+}
+
+void p_select_values(Interpreter *interp) {
+	do_select(interp, SELECT_VALUES, "select-values");
+	DISPATCH(interp);
+}
+
+void p_select_keys(Interpreter *interp) {
+	do_select(interp, SELECT_KEYS, "select-keys");
+	DISPATCH(interp);
+}
+
+static void select_descendants(Interpreter *interp, Val tree_node, Object *path, int depth,
+		cell *trail, int trail_len, int matches, SelectMode mode, int *found) {
+	select_walk(interp, tree_node, path, depth, trail, trail_len, matches, mode, found);
+	if (mode == SELECT_EXISTS && *found)
+		return;
+	if (VAL_TAG(tree_node) != T_FRAME)
+		return;
+	if (trail_len >= SELECT_MAX_DEPTH) {
+		fail(interp, "select: structure too deeply nested (cycle?)");
+		return;
+	}
+
+	Object *frame = interp->objects[VAL_DATA(tree_node)];
+	for (int i = 0; i < frame->len; i++) {
+		trail[trail_len] = frame->frame.keys[i];
+		select_descendants(interp, frame->frame.values[i], path, depth, trail, trail_len + 1, matches, mode, found);
+		if (mode == SELECT_EXISTS && *found)
+			return;
+	}
+}
+
+
 
 void p_merge(Interpreter *interp) {
 	PEEK_TYPE_AT(right, 0, "merge", T_FRAME);
@@ -879,18 +1079,37 @@ void p_has(Interpreter *interp) {
 	PEEK_AT(key_or_path, 0, "has?");
 	Object *frame = interp->objects[VAL_DATA(frame_val)];
 
-	DISPATCH_SYMBOL_OR_PATH(key_or_path, "has?", {
-			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
-			(void)at;
-			interp->dsp -= 2;
-			push(interp, make_bool(present));
-			}, {
-			REQUIRE_NONEMPTY_PATH(path, "has?");
-			int found;
-			frame_walk(interp, frame_val, path, path->len, WALK_PROBE, &found, "has?");
-			interp->dsp -= 2;
-			push(interp, make_bool(found));
-			});
+	if (VAL_TAG(key_or_path) == T_SYMBOL) {
+		FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
+		(void)at;
+		interp->dsp -= 2;
+		push(interp, make_bool(present));
+		DISPATCH(interp);
+	}
+
+	if (VAL_TAG(key_or_path) != T_ARRAY) {
+		fail(interp, "has?: expected a symbol or path (array of symbols); got %s", tag_name(VAL_TAG(key_or_path)));
+		return;
+	}
+
+	int is_search;
+	Object *path = frame_path_resolve(interp, key_or_path, "has?", 1, &is_search);
+	if (!path)
+		return;
+	REQUIRE_NONEMPTY_PATH(path, "has?");
+
+	int found;
+	if (is_search) {
+		found = 0;
+		cell trail[SELECT_MAX_DEPTH];
+		select_walk(interp, frame_val, path, 0, trail, 0, -1, SELECT_EXISTS, &found);
+		if (interp->error_flag)
+			return;
+	} else {
+		frame_walk(interp, frame_val, path, path->len, WALK_PROBE, &found, "has?");
+	}
+	interp->dsp -= 2;
+	push(interp, make_bool(found));
 
 	DISPATCH(interp);
 }
@@ -917,6 +1136,7 @@ void p_update_at(Interpreter *interp) {
 			interp->dsp -= 2;
 			}, {
 			REQUIRE_NONEMPTY_PATH(path, "update-at");
+			if (leaf_is_axis(interp, VAL_DATA(path->items[path->len - 1]), "update-at")) return;
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_ERROR, NULL, "update-at");
 			if (interp->error_flag) return;
 			if (VAL_TAG(parent) != T_FRAME) {
@@ -1201,7 +1421,6 @@ typedef struct {
 	int scratch_capacity;
 } JSONParser;
 
-#define JSON_MAX_DEPTH 1024
 
 static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *destination);
 
