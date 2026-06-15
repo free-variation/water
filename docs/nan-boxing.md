@@ -28,7 +28,7 @@ typedef struct {
 } Val;
 ```
 
-Tags are small integers; the tag field is 4 bits, so there can be up to 16 of them. The payload is a 64-bit field that's either the bit pattern of a double (when the tag is `T_FLOAT`) or a 32-bit handle/index/cfa (for everything else).
+Tags are small integers; the tag field is 7 bits, so there can be up to 128 of them. The payload is a 64-bit field that's either the bit pattern of a double (when the tag is `T_FLOAT`) or a 32-bit handle/index/cfa (for everything else).
 
 With 8-byte alignment for the 64-bit data field, that struct comes out to 16 bytes per Val: 4 tag bytes, 4 bytes of padding, 8 payload bytes.
 
@@ -80,9 +80,9 @@ But software almost never produces or uses more than one NaN. Operations like `0
 
 That's the loophole NaN-boxing exploits. We pick one NaN pattern as "this is really a float NaN" and reinterpret all the others as tagged non-float values.
 
-By convention, a *quiet NaN* (the standard kind, produced by `0.0/0.0`) has the top mantissa bit set. So any bit pattern starting with `0x7FF8` in the top 16 bits is a quiet NaN as far as floating-point hardware is concerned. That gives us 2^48 distinct patterns we can claim.
+By convention, a *quiet NaN* (the standard kind, produced by `0.0/0.0`) has the top mantissa bit set. So any bit pattern whose exponent bits are all ones with the top mantissa bit set — the 12-bit signature `0x7FF8` fills in bits 62..51 — is a quiet NaN as far as floating-point hardware is concerned. logicforth keys on exactly that signature, which leaves the low 51 bits (plus the unused sign bit) free to claim.
 
-Within those 48 bits we have plenty of room for a tag and a payload.
+Within those bits we have plenty of room for a tag and a payload.
 
 ---
 
@@ -91,20 +91,21 @@ Within those 48 bits we have plenty of room for a tag and a payload.
 logicforth uses this layout for boxed (non-float) values:
 
 ```
-bits 63..48: 0x7FF8 (the quiet-NaN prefix — 16 bits)
-bits 47..44: tag (4 bits, up to 16 tags)
+bit  63:     unused (sign) — free, not part of the box check
+bits 62..51: 0x7FF8 quiet-NaN signature (exponent all ones + top mantissa bit)
+bits 50..44: tag (7 bits, up to 128 tags)
 bits 43..0:  payload (44 bits, holding the int64_t value)
 ```
 
-If the top 16 bits are *anything other than* `0x7FF8`, the value is a regular double — exponent is some other value, or sign+exponent fit a finite number — and the entire 64-bit pattern is interpreted as a double.
+If the signature bits (62..51) are *anything other than* the quiet-NaN pattern, the value is a regular double — exponent is some other value, or it's a finite number — and the entire 64-bit pattern is interpreted as a double.
 
 The constants in `logicforth.h`:
 
 ```c
 #define NAN_BOX_PREFIX 0x7FF8000000000000ULL
-#define NAN_BOX_MASK   0xFFFF000000000000ULL
+#define NAN_BOX_MASK   0x7FF8000000000000ULL
 #define VAL_TAG_SHIFT  44
-#define VAL_TAG_MASK   0x000F000000000000ULL
+#define VAL_TAG_MASK   0x0007F00000000000ULL
 #define VAL_DATA_MASK  0x00000FFFFFFFFFFFULL
 ```
 
@@ -123,12 +124,12 @@ The four accessor macros do the inspection:
 
 ```c
 #define VAL_IS_FLOAT(v) (((v).bits & NAN_BOX_MASK) != NAN_BOX_PREFIX)
-#define VAL_TAG(v)      (VAL_IS_FLOAT(v) ? T_FLOAT : (Tag)(((v).bits >> VAL_TAG_SHIFT) & 0xF))
+#define VAL_TAG(v)      (VAL_IS_FLOAT(v) ? T_FLOAT : (Tag)(((v).bits >> VAL_TAG_SHIFT) & (VAL_TAG_MASK >> VAL_TAG_SHIFT)))
 #define VAL_NUMBER(v)   ((v).number)
 #define VAL_DATA(v)     ((int64_t)(VAL_IS_FLOAT(v) ? (v).bits : ((v).bits & VAL_DATA_MASK)))
 ```
 
-`VAL_IS_FLOAT` is the gatekeeper: one mask, one compare. If the top 16 bits don't match the prefix, it's a float; otherwise it's boxed.
+`VAL_IS_FLOAT` is the gatekeeper: one mask, one compare. If the signature bits don't match the prefix, it's a float; otherwise it's boxed.
 
 `VAL_TAG` returns `T_FLOAT` for floats and decodes the embedded tag for boxed values.
 
@@ -156,7 +157,7 @@ static inline Val make_tagged(Tag tag, int64_t data) {
 }
 ```
 
-For non-float tags, we OR together the prefix, the tag (shifted into bits 44-47), and the payload (masked to 44 bits). For T_FLOAT, the "data" is already the bit pattern of a double — just copy it across.
+For non-float tags, we OR together the prefix, the tag (shifted into bits 44-50), and the payload (masked to 44 bits). For T_FLOAT, the "data" is already the bit pattern of a double — just copy it across.
 
 The typed wrappers are one-liners:
 

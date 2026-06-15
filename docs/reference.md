@@ -23,8 +23,9 @@ time.
 slot with no tag check; a non-float operand yields a garbage float silently.
 All `f`-prefixed words and all superwords are unsafe.
 
-Allocation note: an object slot is a pointer bump into a 2M-entry table; when
-the table fills, a mark-sweep GC runs and the allocation retries. There is no
+Allocation note: an object slot is a pointer bump into the object table, which
+grows on demand (doubling) up to a 64M-entry ceiling; when the ceiling is
+reached, a mark-sweep GC runs and the allocation retries. There is no
 incremental collection.
 
 ---
@@ -633,7 +634,7 @@ Boolean convention: `1.0` true, `0.0` false.
 
 ## Object allocation
 
-Most heap values use one slot in the 4M-entry `objects[]` table (pointer-bump, GC on exhaustion) plus a `calloc`'d `Object` struct plus one payload allocation. Two types are exceptions: **pairs** live in a separate dense, GC'd table (`{head, tail}` inline, no payload), and **logic vars** on a bump-allocated stack reclaimed by truncation on backtrack.
+Most heap values use one slot in the `objects[]` table (pointer-bump, grown on demand to a 64M-entry ceiling, GC on exhaustion) plus a `calloc`'d `Object` struct plus one payload allocation. Two types are exceptions: **pairs** live in a separate dense, GC'd table (`{head, tail}` inline, no payload), and **logic vars** on a bump-allocated stack reclaimed by truncation on backtrack.
 
 | Type | Payload |
 |------|---------|

@@ -319,9 +319,20 @@ each handler ends by tail-calling the next, through the `DISPATCH` macro:
     if ((interp)->unwinding || (interp)->error_flag) \
         return; \
     __attribute__((musttail)) \
-    return ((cfa_handler)(interp)->vocab->dict[(interp)->ip++])(interp); \
+    return ((cfa_handler)(interp)->dict[(interp)->ip++])(interp); \
 } while (0)
 ```
+
+`interp->dict` is a cached copy of `interp->vocab->dict` held directly on the
+`Interpreter`. The dictionary lives in the `Vocabulary`, so the "natural" read
+is `interp->vocab->dict[ip]` — two dependent loads (`interp` → `vocab` →
+`dict`) before the index. Caching the base on the interpreter cuts that to one,
+which matters because this load happens on *every* dispatch. The cache is kept
+in sync trivially: `vocab->dict` is (re)allocated in exactly two places —
+`interp_new` and `dict_ensure` — and each assigns `interp->dict = vocab->dict`
+right after. The hot reads below (`docol`, `dovar`, `dosym`, `run_inner`,
+`execute_cfa`, the operand fetches) all go through `interp->dict`; the snippets
+in this document write `vocab->dict` for clarity, since the two always alias.
 
 `__attribute__((musttail))` forces the compiler to emit a jump rather than a
 call+return: the next handler reuses the current stack frame. A run of

@@ -35,20 +35,23 @@ The cost is some runtime overhead (the collector has to scan periodically) and s
 
 ## Part 2: The heap in logicforth
 
-Before we can talk about GC, we need to understand what's being collected. In logicforth, the answer is: anything stored in the `Object *objects[MAX_OBJECTS]` array.
+Before we can talk about GC, we need to understand what's being collected. In logicforth, the answer is: anything stored in the `Object **objects` registry.
 
 The interpreter holds this array as a member of `Interpreter`:
 
 ```c
 typedef struct Interpreter {
     ...
-    Object *objects[MAX_OBJECTS];   // the object registry
+    Object **objects;               // the object registry (grown on demand)
     int n_objects;                  // highest slot used so far + 1
+    int objects_cap;                // current allocated length of objects[]
     ...
 } Interpreter;
 ```
 
-Each slot is either `NULL` (free) or a pointer to a heap-allocated `Object`. An `Object` is a tagged variant — it can be a string, a set, an array, a matrix, or a continuation:
+`objects` is allocated small and doubled on demand up to a `max_objects`
+ceiling (Part 9), so a fresh interpreter costs a few MB rather than reserving
+the whole ceiling up front. Each slot is either `NULL` (free) or a pointer to a heap-allocated `Object`. An `Object` is a tagged variant — it can be a string, a set, an array, a matrix, or a continuation:
 
 ```c
 typedef enum {
@@ -180,7 +183,7 @@ Look at the "scan roots" code in `gc()`:
 
 ```c
 void gc(Interpreter *interp) {
-    memset(interp->object_mark, 0, sizeof(interp->object_mark));
+    memset(interp->object_mark, 0, (size_t)interp->n_objects);
     memset(interp->pair_mark, 0, sizeof(unsigned char) * (size_t)interp->n_pairs);
     interp->pair_free_count = 0;
 
@@ -227,7 +230,7 @@ void mark_value(Interpreter *interp, Val value) {
     }
 
     int handle = (int)VAL_DATA(value);
-    if (handle < 0 || handle >= MAX_OBJECTS || !interp->objects[handle] || interp->object_mark[handle]) return;
+    if (handle < 0 || handle >= interp->objects_cap || !interp->objects[handle] || interp->object_mark[handle]) return;
 
     interp->object_mark[handle] = 1;
     Object *obj = interp->objects[handle];
@@ -513,7 +516,7 @@ program runs
    │     │     ├─ execute user xt
    │     │     │     │
    │     │     │     └─ user xt allocates lots of objects
-   │     │     │        objects[] fills up
+   │     │     │        objects[] hits the max_objects ceiling
    │     │     │        ⇒ gc fires
    │     │     │           ─ marks data stack
    │     │     │           ─ marks return stack
@@ -579,7 +582,12 @@ In logicforth, GC is lazy. It fires in exactly one place: when `object_alloc_slo
 
 ```c
 int object_alloc_slot(Interpreter *interp) {
-    if (interp->n_objects < MAX_OBJECTS) {
+    if (interp->n_objects < interp->max_objects) {
+        if (interp->n_objects == interp->objects_cap) {   // table full — grow it first
+            int new_cap = interp->objects_cap * 2;
+            if (new_cap > interp->max_objects) new_cap = interp->max_objects;
+            GROW_OBJECT_TABLE(interp, new_cap);           // realloc objects/mark/free_slots
+        }
         return interp->n_objects++;                       // common path: next slot
     }
     if (interp->n_free_slots > 0) {
@@ -588,7 +596,7 @@ int object_alloc_slot(Interpreter *interp) {
     if (interp->gc_disabled) {
         return -1;                                        // collection suppressed
     }
-    gc(interp);                                           // full table — must collect
+    gc(interp);                                           // ceiling hit — must collect
     if (interp->n_free_slots > 0) {
         return interp->free_slots[--interp->n_free_slots]; // gc refilled the free list
     }
@@ -598,13 +606,13 @@ int object_alloc_slot(Interpreter *interp) {
 
 Four cases:
 
-1. **Common path.** `n_objects < MAX_OBJECTS`: hand out the next never-used slot, bump `n_objects`. O(1).
+1. **Common path.** `n_objects < max_objects`: hand out the next never-used slot and bump `n_objects` — first doubling the three parallel tables (`objects`, `object_mark`, `free_slots`, via the `GROW_OBJECT_TABLE` macro) if `n_objects` has reached the current `objects_cap`. Amortized O(1). `max_objects` is the logical ceiling (`MAX_OBJECTS` by default, lowered by `--max-objects`); `objects_cap` is the physical length, which only ever doubles up to that ceiling.
 
-2. **High water hit, but freed slots exist.** Pop one off `free_slots`. Still O(1) — the sweep already built this list.
+2. **Ceiling hit, but freed slots exist.** Pop one off `free_slots`. Still O(1) — the sweep already built this list.
 
 3. **No free slots, and GC is allowed.** Run a collection, which sweeps dead objects and refills `free_slots`. Pop from it.
 
-4. **GC disabled, or still nothing after collecting.** Return `-1`; the caller turns that into an "object registry full" error. The program is holding `MAX_OBJECTS` live references at once.
+4. **GC disabled, or still nothing after collecting.** Return `-1`; the caller turns that into an "object registry full" error. The program is holding `max_objects` live references at once.
 
 The `gc_disabled` flag exists for deep copy and reify. Those routines build a new structure piece by piece, and the intermediate handles aren't reachable from any root until the copy is finished — a collection partway through would free them. So `copy_or_reify` collects up front if the heap is nearly full, sets `gc_disabled` for the duration of the copy, and accepts that an allocation may fail (returning `-1`) rather than risk a mid-copy sweep.
 
@@ -619,7 +627,7 @@ A more aggressive collector would run periodically: every N allocations, every M
 - **Allocation-count-based**: a counter, fire every N. Reasonable.
 - **On-demand (logicforth's choice)**: zero overhead when not collecting; one large pause when it does.
 
-For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it can take a while — but at the scale of `MAX_OBJECTS`, "a while" is still well under a millisecond on modern hardware.
+For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it can take a while — but at the scale of `max_objects`, "a while" is still well under a millisecond on modern hardware.
 
 ---
 

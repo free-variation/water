@@ -4,8 +4,15 @@
 
 int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_objects < interp->max_objects) {
+		if (interp->n_objects == interp->objects_cap) {
+			int new_cap = interp->objects_cap * 2;
+			if (new_cap > interp->max_objects)
+				new_cap = interp->max_objects;
+			GROW_OBJECT_TABLE(interp, new_cap);
+		}
 		return interp->n_objects++;
 	}
+
 	if (interp->n_free_slots > 0) {
 		return interp->free_slots[--interp->n_free_slots];
 	}
@@ -18,6 +25,7 @@ int object_alloc_slot(Interpreter *interp) {
 	if (interp->n_free_slots > 0) {
 		return interp->free_slots[--interp->n_free_slots];
 	}
+
 	return -1;
 }
 
@@ -664,16 +672,16 @@ const char *name_of(Interpreter *interp, int cfa) {
 
 static inline __attribute__((always_inline)) void push_variable(Interpreter *interp, int var_cfa) {
 	Val value;
-	value.bits = (uint64_t)interp->vocab->dict[var_cfa + 1];
+	value.bits = (uint64_t)interp->dict[var_cfa + 1];
 	push(interp, value);
 };
 
 static inline __attribute__((always_inline)) void push_symbol(Interpreter *interp, int sym_cfa) {
-	push(interp, make_symbol((int)interp->vocab->dict[sym_cfa + 1]));
+	push(interp, make_symbol((int)interp->dict[sym_cfa + 1]));
 }
 
 void docol(Interpreter *interp) {
-	int target_cfa = (int)interp->vocab->dict[interp->ip++];
+	int target_cfa = (int)interp->dict[interp->ip++];
 	rpush(interp, make_addr(interp->ip));
 	interp->ip = target_cfa + 1;
 
@@ -681,14 +689,14 @@ void docol(Interpreter *interp) {
 }
 
 void dosym(Interpreter *interp) {
-	int sym_cfa = (int)interp->vocab->dict[interp->ip++];
+	int sym_cfa = (int)interp->dict[interp->ip++];
 	push_symbol(interp, sym_cfa);
 
 	DISPATCH(interp);
 }
 
 void dovar(Interpreter *interp) {
-	int var_cfa = (int)interp->vocab->dict[interp->ip++];
+	int var_cfa = (int)interp->dict[interp->ip++];
 	push_variable(interp, var_cfa);
 
 	DISPATCH(interp);
@@ -715,13 +723,13 @@ void run_inner(Interpreter *interp) {
 			continue;
 		}
 
-		cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
+		cfa_handler handler = (cfa_handler)interp->dict[interp->ip++];
 		handler(interp);
 	}
 }
 
 void execute_cfa(Interpreter *interp, int cfa) {
-	cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
+	cfa_handler handler = (cfa_handler)interp->dict[cfa];
 
 	if (handler == dovar) {
 		push_variable(interp, cfa);
@@ -879,6 +887,8 @@ void dict_ensure(Interpreter *interp, int extra) {
 	vocab->dict = realloc(vocab->dict, (size_t)new_capacity * sizeof(cell));
 	memset(vocab->dict + vocab->dict_cap, 0, (size_t)(new_capacity - vocab->dict_cap) * sizeof(cell));
 	vocab->dict_cap = new_capacity;
+
+	interp->dict = vocab->dict;
 }
 
 int create_header(Interpreter *interp, const char *name, int flags) {
@@ -1718,7 +1728,7 @@ void mark_value(Interpreter *interp, Val value) {
 	}
 
 	int handle = (int)VAL_DATA(value);
-	if (handle < 0 || handle >= MAX_OBJECTS || !interp->objects[handle] || interp->object_mark[handle])
+	if (handle < 0 || handle >= interp->objects_cap || !interp->objects[handle] || interp->object_mark[handle])
 		return;
 
 	interp->object_mark[handle] = 1;
@@ -2659,6 +2669,9 @@ void p_load_image(Interpreter *interp) {
 	interp->vocab->symbol_pool_here = interp->vocab->init_symbol_pool_here + user_symbolpool_bytes;
 	rebuild_symbol_hash(interp);
 
+	while (interp->objects_cap < saved_n_objects)
+		GROW_OBJECT_TABLE(interp, interp->objects_cap * 2);
+
 	for (int slot = 0; slot < saved_n_objects; slot++) {
 		uint8_t presence;
 		if (!r_u8(file, &presence)) {
@@ -2850,11 +2863,17 @@ Interpreter *interp_new(void) {
 	Interpreter *interp = calloc(1, sizeof(Interpreter));
 	interp->vocab = calloc(1, sizeof(Vocabulary));
 	interp->vocab->dict = calloc(VOCABULARY_INIT_SIZE, sizeof(cell));
+	interp->dict = interp->vocab->dict;
 	interp->vocab->dict_cap = VOCABULARY_INIT_SIZE;
 	interp->vocab->here = DICT_RESERVED;
 	interp->vocab->source_here = 1;
 	interp->next_mark_id = 1;
+
 	interp->max_objects = MAX_OBJECTS;
+	interp->objects_cap = OBJECTS_INIT_CAP;
+	interp->objects = calloc((size_t)interp->objects_cap, sizeof(Object *));
+	interp->object_mark = calloc((size_t)interp->objects_cap, sizeof(unsigned char));
+	interp->free_slots = malloc(sizeof(int) * (size_t)interp->objects_cap);
 
 	interp->bind_trail = malloc(sizeof(int) * BIND_TRAIL_DEPTH);
 	interp->bind_trail_cap = BIND_TRAIL_DEPTH;

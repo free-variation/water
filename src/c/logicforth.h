@@ -24,6 +24,7 @@ typedef int64_t cell;
 #define DATA_STACK_DEPTH (1 << 16)
 #define RETURN_STACK_DEPTH (1 << 16)
 #define MAX_OBJECTS (1 << 26)
+#define OBJECTS_INIT_CAP (1 << 16)
 #define INPUT_BUFFER_SIZE (1 << 20)
 #define SOURCE_POOL (1 << 22)
 #define SYMBOL_POOL (1 << 22)
@@ -190,6 +191,16 @@ typedef enum {
 	} \
 } while (0)
 
+#define GROW_OBJECT_TABLE(interp, new_cap) do { \
+	int grow_old = (interp)->objects_cap; \
+	int grow_new = (new_cap); \
+	(interp)->objects = realloc((interp)->objects, sizeof(Object *) * (size_t)grow_new); \
+	(interp)->object_mark = realloc((interp)->object_mark, sizeof(unsigned char) * (size_t)grow_new); \
+	(interp)->free_slots = realloc((interp)->free_slots, sizeof(int) * (size_t)grow_new); \
+	memset((interp)->objects + grow_old, 0, sizeof(Object *) * (size_t)(grow_new - grow_old)); \
+	(interp)->objects_cap = grow_new; \
+} while (0)
+
 typedef struct Vocabulary {
 	cell *dict;
 	int dict_cap;
@@ -221,6 +232,7 @@ typedef struct Vocabulary {
 
 typedef struct Interpreter {
 	Vocabulary *vocab;
+	cell *dict;
 
 	Val data_stack[DATA_STACK_DEPTH];
 	int dsp;
@@ -253,11 +265,12 @@ typedef struct Interpreter {
 	int local_scope_dict_starts[MAX_LOCAL_SCOPES];
 	int n_local_scopes;
 
-	Object *objects[MAX_OBJECTS];
+	Object **objects;
 	int n_objects;
 	int max_objects;
-	unsigned char object_mark[MAX_OBJECTS];
-	int free_slots[MAX_OBJECTS];
+	int objects_cap;
+	unsigned char *object_mark;
+	int *free_slots;
 	int n_free_slots;
 
 	Pair *pairs;
@@ -296,7 +309,7 @@ typedef void (*cfa_handler)(Interpreter *interp);
 	if ((interp)->unwinding || (interp)->error_flag) \
 		return; \
 	__attribute__((musttail)) \
-	return ((cfa_handler)(interp)->vocab->dict[(interp)->ip++])(interp); \
+	return ((cfa_handler)(interp)->dict[(interp)->ip++])(interp); \
 } while (0)
 
 typedef double (*scalar_operator)(double, double);
