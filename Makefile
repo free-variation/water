@@ -23,8 +23,14 @@ SQLITE_CFLAGS = -O2 -DSQLITE_THREADSAFE=2 -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTA
                 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_USE_ALLOCA
 SQLITE_OBJ    = $(SQLITE_DIR)/sqlite3.o
 
-logicforth: $(SRCS) $(HDRS) $(PCRE2_LIB) $(SQLITE_OBJ)
-	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -I$(SQLITE_DIR) -o logicforth $(SRCS) $(PCRE2_LIB) $(SQLITE_OBJ) $(LDLIBS)
+# Vendored isocline (see external/isocline/PROVENANCE; refresh with tools/vendor-isocline.sh).
+# Compiles as a single source unit (src/isocline.c) per its readme.md.
+ISOCLINE_DIR    = external/isocline
+ISOCLINE_CFLAGS = -O2 -I$(ISOCLINE_DIR)/include
+ISOCLINE_OBJ    = $(ISOCLINE_DIR)/isocline.o
+
+logicforth: $(SRCS) $(HDRS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
+	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -I$(SQLITE_DIR) -I$(ISOCLINE_DIR)/include -o logicforth $(SRCS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LDLIBS)
 
 $(PCRE2_LIB): $(PCRE2_OBJS)
 	ar rcs $@ $(PCRE2_OBJS)
@@ -34,6 +40,9 @@ $(PCRE2_SRC)/%.o: $(PCRE2_SRC)/%.c
 
 $(SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
 	$(CC) $(SQLITE_CFLAGS) -c $< -o $@
+
+$(ISOCLINE_OBJ): $(ISOCLINE_DIR)/src/isocline.c
+	$(CC) $(ISOCLINE_CFLAGS) -c $< -o $@
 
 src/c/help_table.c: docs/reference.md tools/gen-help.py
 	python3 tools/gen-help.py
@@ -51,6 +60,6 @@ bench:
 	@sh bench/run-benchmarks.sh
 
 clean:
-	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ)
+	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
 
 .PHONY: clean test bench vendor-pcre2
