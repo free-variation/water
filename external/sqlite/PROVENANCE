@@ -1,0 +1,9 @@
+SQLite vendored source (amalgamation).
+
+upstream:  https://sqlite.org/2026/sqlite-amalgamation-3530200.zip
+version:   3.53.2
+sha256:    8a310d0a16c7a90cacd4c884e70faa51c902afed2a89f63aaa0126ab83558a32
+
+Compile flags live in the Makefile (SQLITE_CFLAGS). SQLite is in the public
+domain. Produced by tools/vendor-sqlite.sh; do not edit these files by hand,
+re-run the script to update.
