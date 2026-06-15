@@ -539,6 +539,8 @@ Immediate compiler words usable only inside a definition. They detect a precedin
 
 These are normally produced by the compiler's auto-fuser rather than typed by hand; `see-compiled` reveals them.
 
+The auto-fuser also collapses a comparison immediately before a branch — `= if`, `gt while`, `0= until` — into a single compare-and-branch instruction (shown by `see-compiled` as `(=0branch)`, `(gt0branch)`, and the like). These are internal and never typed; the source stays the plain comparison followed by the control word.
+
 ---
 
 ## REPL and introspection

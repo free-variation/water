@@ -70,105 +70,24 @@ operation is byte-indexed (exact for ASCII). When done:
 Not covered: normalization (NFC vs NFD stay distinct), grapheme clusters,
 locale case-folding outside ASCII.
 
-### Vendor PCRE2
-
-The build links Homebrew's `libpcre2-8.a` through a hardcoded path. Restore
-self-containment by vendoring the PCRE2 sources (amalgamation-style: ~40
-`.c` files plus a generated `config.h` / `pcre2.h` / `pcre2_chartables.c`,
-and sljit for the JIT).
-
 ---
 
 ## Core language additions
 
-### Path queries — wildcards, descendants, predicates
+### Path queries — follow-ups
 
-Paths generalize from exact locators to patterns that match a *set* of nodes. Two
-axis tokens and an inline predicate grammar turn `/a/b/c` into an XPath-like query
-language over the nested-frame tree. Descent is through nested frames only; an
-array, set, or scalar is a leaf.
+The read-side query layer is implemented (see `docs/reference.md`): the `*` and `//`
+axes and `[…]` predicates in path literals, `select-values` / `select-keys`, and
+search-path rejection on `@` / `!` / `delete-at` / `update-at` (with `has?`
+accepting a search path). Remaining:
 
-**Axes and tests:**
-
-- `name` — the child under key `:name`.
-- `*` — any one child at this level.
-- `//` — descendant-or-self: match at any depth at or below the current node.
-
-So `/users/*/name` is the `:name` of every child of `:users`; `/root//city` is
-every `:city` at any depth.
-
-**Predicates** filter the current node set in place, written `[…]` after a step:
-
-- `[k]` — node has a child `:k`.
-- `[k=v]` — node's child `:k` equals `v`.
-- `[.=v]` — the node's own value equals `v` (for matched leaves).
-- `[k>v]` / `[k<v]` — ordered comparison.
-- `[a/b=v]` — a sub-path test.
-
-`v` is a `:symbol`, a number, or a quoteless string.
-
-**Surface:** two words, by what you need from each match.
-
-- `frame pat select-keys ( fr pat -- arr )` — every match's *location*: the full
-  symbol-array path from the root to the match, in document (DFS pre-order) order.
-  Each path round-trips through `@`, and locates the match for a future wildcard
-  mutation — the "where" to `select-values`'s "what". A pattern with no wildcard
-  still works, yielding a one-element array.
-- `frame pat select-values ( fr pat -- arr )` — just the matched values, as an
-  array, in document (DFS pre-order) order with duplicates kept. Skips path
-  construction (no per-match path array), so it's the cheaper word; `array>set`
-  the result when distinct values are wanted.
-- The single-location words — `@`, `!`, `delete-at`, `update-at` — keep their
-  one-target contract and reject a search path (wildcard, descendant, or predicate)
-  with an error pointing the caller at `select-keys` / `select-values`.
-- `has?` is the exception: a search path is a well-formed yes/no question ("does any
-  node match?"), so it accepts one and returns a boolean, short-circuiting at the
-  first match. A plain symbol or locator path still takes the direct lookup.
-
-Refinement on the result is `filter` / array indexing — neither needs
-query-language support. To fetch the value at a returned key, feed the path back
-through `@`.
-
-```
-people /residents//addr[city=:NYC] select-keys   \ [ [..addr] … ] — paths to NYC addrs
-nums   /*[.>0] select-values                      \ the positive values, in order
-```
-
-**Nondeterminism.** Both words are deterministic — they return the whole result.
-To walk matches as choice points, convert to a cons list and hand it to `choose`:
-`pat select-values array>cons choose` yields one per backtrack through `amb`.
-
-**Representation.** A path is an element array: a literal key step is a symbol, the
-`*` and `//` axes are the interned symbols `*` and `//`, and a predicate step is a
-sub-array. The slash-literal reader
-parses `name`, `*`, `//`, and a trailing `[…]` into this form. The same array can
-be built programmatically, so a value containing spaces is written as an explicit
-element array rather than a slash-literal.
-
-**Engine.** A frontier-folding walk extending `frame_walk`: carry the set of
-current nodes and fold each step over it — `name` descends, `*` expands to every
-child, `//` expands to self-plus-descendants, a predicate filters. Matches collect
-into a gc-rooted result array in pre-order — the full root-to-match path for
-`select-keys`, the matched value itself for `select-values` (append-only, no dedup
-or sort). Both share one walk parameterized by mode; `select-keys` allocates a
-symbol-array path per match while `select-values` captures the resident node
-directly, which is its reason to exist. Inline predicates evaluate in C against
-each frontier node: existence, `=`, `<`, and `>`, against a key, the self `.`, or a
-sub-path subject.
-
-Quotation predicates — an arbitrary `[: … :]` evaluated per node — are planned;
-the predicate set above is the current scope.
-
-Performance notes: `//` is inherently O(subtree) (every descendant is visited, no
-pruning). Frames are reference values and can form cycles or DAGs, so `//` carries
-a depth cap (as `copy` and `print` already do) for termination. The dominant
-`select-keys` cost is building one full path array per match; `select-values`
-skips that, which is its reason to exist.
-
-**Not included initially:** wildcard mutation (`*`/`//` in `!` / `delete-at` /
-`update-at`; `select-keys`/`select-values` are read-only); quotation predicates
-inside the slash-literal;
-axes beyond child/descendant.
+- **Wildcard mutation** — `*` / `//` in `!` / `delete-at` / `update-at` for
+  broadcast writes. The single-location words reject a search path today; that is
+  the syntax this claims.
+- **Quotation predicates** — an arbitrary `[: … :]` evaluated per node, built as an
+  explicit element array. The fixed predicate set (existence, `=`, `<`, `>`, the
+  self `.`, a sub-path subject) is the current scope.
+- **Axes beyond child and descendant.**
 
 ### Time / dates
 
@@ -219,18 +138,6 @@ clears it and returns the `error_message` as a string with the failure
 flag, exactly as a `throw` would. Uncaught errors still surface at the REPL.
 ~10 lines: a check in the `catch` path that converts a set `error_flag`
 into the same `(exc 1)` result a `throw` produces.
-
-### File I/O — whole-file, no handles
-
-- `read-file ( path -- string )` — read an entire file as one string
-  (byte-safe; errors if missing).
-- `write-file ( string path -- )` — create or truncate, then write.
-- `append-file ( string path -- )` — open in append mode, write, close.
-
-No file-handle type and no open / close / seek. The only fd-shaped things
-in the language are the pipe and socket streams from `start-process` /
-`serve` (`T_STREAM`). For line-oriented access, pipe through a command:
-`[ "cat" path ] start-process read-out "\n" split`. ~15 lines of C each.
 
 ### Format specs
 
@@ -395,6 +302,32 @@ at a reverse proxy. `:name` captures cover routing.
 
 **Cost:** sockets + picohttpparser wrapper + request/response framing ~150
 lines of C; `serve`, router, and response builders ~60 lines of `lib.l4`.
+
+---
+
+## REPL line editing
+
+Interactive line editing, history, and completion for the REPL, from vendored
+**isocline** (MIT). Source under `external/isocline`, refreshed by
+`tools/vendor-isocline.sh` with a pinned `PROVENANCE`, compiled once to a cached
+object and linked like PCRE2 and SQLite.
+
+Behavior:
+
+- Persistent history in `.logicforth_history`, loaded at startup and appended per
+  entry.
+- Emacs and vi key bindings, incremental reverse-search.
+- Multiline entry: a line that leaves a delimiter open (`(`, `[`, `{`, `[:`, or an
+  unclosed `:` definition) continues on the next line.
+- Tab completion against the live dictionary — the completion callback enumerates
+  defined words, the same source as `words`.
+- Filename completion via isocline's `ic_complete_filename`, in contexts where a
+  path is expected (the argument to `load`, `read-file`, `write-file`, `db-open`,
+  or inside a string literal); dictionary completion applies elsewhere.
+- Inline hints and syntax coloring via isocline's highlight callback.
+
+Scope: the interactive REPL only. Batch mode (`-b`) reads stdin raw and is
+unaffected.
 
 ---
 

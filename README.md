@@ -35,6 +35,9 @@ nothing but a C compiler. Refresh the vendored copy with `make vendor-pcre2`
 \ Frames — symbol-keyed nested maps
 { :a 1 :b { :c 2 } } /b/c @ .           \ 2
 
+\ Path queries — * (any child), // (any depth), [pred] filters
+{ :a { :n 1 } :b { :n 2 } } /*/n select-values .   \ [ 1 2 ]
+
 \ JSON: parse to frames/arrays, serialize back
 "[1, 2, 3]" json>frame frame>json .     \ [1, 2, 3]
 
@@ -63,9 +66,9 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 ### Core language
 
-- **Tagged Vals** — floats, strings, symbols, sets, arrays, frames, matrices, execution tokens, dictionary addresses, continuations, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
+- **Tagged Vals** — floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, execution tokens, dictionary addresses, continuations, logic variables, process streams, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
 - **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code — no separate bytecode.
-- **Compile-time instruction fusion (superwords)** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), and `f*+` / `f*-` are fused multiply-add/subtract.
+- **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `gt while`, `0= until`) fuses into a single compare-and-branch op.
 - **Per-interpreter state** — all mutable state lives in an `Interpreter`, which owns its `Vocabulary` (a growable dictionary plus name/source/symbol pools). Multiple independent instances can coexist in one process; the engine is embeddable.
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
 - **Colon definitions** — `: name body ;`. The body is captured as source text for `see` and the text-form `save`.
@@ -98,12 +101,13 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 ### Frames
 
-Symbol-keyed nested maps — the associative type, and the compound term the planned logic layer builds on. The three bracket families are distinct: `[ ]` arrays, `{ }` frames, `< >` sets.
+Symbol-keyed nested maps — the associative type, and the compound term the logic layer builds on. The three bracket families are distinct: `[ ]` arrays, `{ }` frames, `< >` sets.
 
 - **Literals** — `{ :a 1 :b 2 }`; values may be any Val, including nested frames, arrays, and sets.
 - **Builders** — `frame` ( keys values -- frame ) from two parallel collections, `array>frame` ( kv-array -- frame ) from an alternating key/value array, and `frame>array` ( frame -- kv-array ) the inverse, flattening to a key-sorted alternating array.
-- **Path literals** — `/a/b/c` is a symbol array `[ :a :b :c ]`, built once at compile time, used to address into the tree — and usable as a key when constructing a frame (`{ /a/b/c v }` / `array>frame`), where it vivifies nested frames.
-- **Access** — `@` ( frame key/path -- value ) get, `!` ( frame key/path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, `merge` combine two frames (right wins), plus `keys` / `values` / `size`. Each accessor takes a single `:symbol` key or a `/a/b/c` path.
+- **Path literals** — `/a/b/c` is a symbol array `[ :a :b :c ]`, built once at compile time, used to address into the tree — and usable as a key when constructing a frame (`{ /a/b/c v }` / `array>frame`), where it vivifies nested frames. A path may also be a *search* pattern: `*` matches any child at that level, `//` matches at any depth (descendant-or-self), and `[…]` filters by predicate (`[city=:NYC]`, `[age>30]`, `[.>0]` on the node itself, `[addr/zip]` on a sub-path).
+- **Access** — `@` ( frame key/path -- value ) get, `!` ( frame key/path value -- frame ) set with auto-vivified intermediates, `has?` existence test, `delete-at` remove, `update-at` apply a quotation to a leaf, `merge` combine two frames (right wins), plus `keys` / `values` / `size`. The single-location words (`@`, `!`, `delete-at`, `update-at`) take a `:symbol` key or a plain `/a/b/c` locator and reject a search pattern; `has?` accepts either, answering whether any node matches.
+- **Path queries** — `select-values` ( frame pattern -- array ) returns every value matched by a `*`/`//`/predicate search pattern, in document order; `select-keys` returns the full root-to-match path for each match (each round-trips back through `@`). Convert the result with `array>set` for distinct values or `array>cons` to feed matches to `choose`.
 - **Representation** — sorted parallel key/value arrays with binary-search lookup; mutable in place, reference semantics. Structurally comparable, so frames work as set members and round-trip through their `{ }` literal.
 
 ### Strings and regex
