@@ -905,6 +905,7 @@ int define_primitive(Interpreter *interp, const char *name, cfa_handler handler,
 void emit(Interpreter *interp, cell value) {
 	dict_ensure(interp, 1);
 	interp->vocab->dict[interp->vocab->here++] = value;
+	interp->fuse_prev_cmp = 0;
 }
 
 void emit_call(Interpreter *interp, int target_cfa) {
@@ -1494,11 +1495,15 @@ void run_outer(Interpreter *interp) {
 					emit_call(interp, (cell)cf);
 					interp->fuse_prev_var = 0;
 					interp->fuse_prev2_var = 0;
+					if (cf == interp->vocab->eq_cfa || cf == interp->vocab->lt_cfa
+							|| cf == interp->vocab->gt_cfa || cf == interp->vocab->zeq_cfa)
+						interp->fuse_prev_cmp = cf;
 				}
 			} else {
 				execute_cfa(interp, cf);
 				interp->fuse_prev_var = 0;
 				interp->fuse_prev2_var = 0;
+				interp->fuse_prev_cmp = 0;
 			}
 			continue;
 		}
@@ -1935,6 +1940,10 @@ static int op_cell_count(Vocabulary *vocab, cell *dict, int cursor) {
 	    || handler == vocab->dict[vocab->branch_cfa]
 	    || handler == vocab->dict[vocab->zbranch_cfa]
 	    || handler == vocab->dict[vocab->qzbranch_cfa]
+	    || handler == vocab->dict[vocab->eq_zbranch_cfa]
+	    || handler == vocab->dict[vocab->lt_zbranch_cfa]
+	    || handler == vocab->dict[vocab->gt_zbranch_cfa]
+	    || handler == vocab->dict[vocab->zeq_zbranch_cfa]
 	    || handler == vocab->dict[vocab->to_var_cfa]
 	    || handler == vocab->dict[vocab->enter_locals_cfa]
 	    || handler == vocab->dict[vocab->enter_locals_to_cfa]
@@ -2922,10 +2931,10 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "rot", p_rot, 0);
 	define_primitive(interp, "depth", p_depth, 0);
 	define_primitive(interp, "roll", p_roll, 0);
-	define_primitive(interp, "=", p_eq, 0);
-	define_primitive(interp, "lt", p_lt, 0);
-	define_primitive(interp, "gt", p_gt, 0);
-	define_primitive(interp, "0=", p_zeq, 0);
+	interp->vocab->eq_cfa = define_primitive(interp, "=", p_eq, 0);
+	interp->vocab->lt_cfa = define_primitive(interp, "lt", p_lt, 0);
+	interp->vocab->gt_cfa = define_primitive(interp, "gt", p_gt, 0);
+	interp->vocab->zeq_cfa = define_primitive(interp, "0=", p_zeq, 0);
 	define_primitive(interp, "and", p_and, 0);
 	define_primitive(interp, "or", p_or, 0);
 	define_primitive(interp, "not", p_not, 0);
@@ -3041,6 +3050,10 @@ int interp_bootstrap(Interpreter *interp) {
 	interp->vocab->branch_cfa = define_primitive(interp, "(branch)", p_branch, 4);
 	interp->vocab->zbranch_cfa = define_primitive(interp, "(0branch)", p_0branch, 4);
 	interp->vocab->qzbranch_cfa = define_primitive(interp, "(?0branch)", p_qzbranch, 4);
+	interp->vocab->eq_zbranch_cfa = define_primitive(interp, "(=0branch)", p_eq_zbranch, 4);
+	interp->vocab->lt_zbranch_cfa = define_primitive(interp, "(lt0branch)", p_lt_zbranch, 4);
+	interp->vocab->gt_zbranch_cfa = define_primitive(interp, "(gt0branch)", p_gt_zbranch, 4);
+	interp->vocab->zeq_zbranch_cfa = define_primitive(interp, "(0=0branch)", p_zeq_zbranch, 4);
 	interp->vocab->dostr_cfa = define_primitive(interp, "(dostr)", p_dostr, 4);
 	interp->vocab->stop_cfa = define_primitive(interp, "(stop)", p_stop, 4);
 	interp->vocab->to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 4);
