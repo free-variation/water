@@ -13,7 +13,7 @@ PCRE2_CFLAGS = -O2 -DHAVE_CONFIG_H -DPCRE2_CODE_UNIT_WIDTH=8 -DPCRE2_STATIC -I$(
 PCRE2_OBJS   = $(patsubst %.c,%.o,$(wildcard $(PCRE2_SRC)/pcre2_*.c))
 
 # Vendored SQLite (see external/sqlite/PROVENANCE; refresh with tools/vendor-sqlite.sh).
-# Not yet linked into the binary -- wired in with the T_DB integration. THREADSAFE=2
+# Compiled once to a cached object and linked into the binary. THREADSAFE=2
 # (not 0): each thread uses its own connection per PLAN.md's HTTP worker pool and
 # fork-join models; 0 would drop SQLite's internal-global mutexing and corrupt them.
 SQLITE_DIR    = external/sqlite
@@ -21,15 +21,19 @@ SQLITE_CFLAGS = -O2 -DSQLITE_THREADSAFE=2 -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTA
                 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 -DSQLITE_LIKE_DOESNT_MATCH_BLOBS \
                 -DSQLITE_MAX_EXPR_DEPTH=0 -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE \
                 -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_USE_ALLOCA
+SQLITE_OBJ    = $(SQLITE_DIR)/sqlite3.o
 
-logicforth: $(SRCS) $(HDRS) $(PCRE2_LIB)
-	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -o logicforth $(SRCS) $(PCRE2_LIB) $(LDLIBS)
+logicforth: $(SRCS) $(HDRS) $(PCRE2_LIB) $(SQLITE_OBJ)
+	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -I$(SQLITE_DIR) -o logicforth $(SRCS) $(PCRE2_LIB) $(SQLITE_OBJ) $(LDLIBS)
 
 $(PCRE2_LIB): $(PCRE2_OBJS)
 	ar rcs $@ $(PCRE2_OBJS)
 
 $(PCRE2_SRC)/%.o: $(PCRE2_SRC)/%.c
 	$(CC) $(PCRE2_CFLAGS) -c $< -o $@
+
+$(SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
+	$(CC) $(SQLITE_CFLAGS) -c $< -o $@
 
 src/c/help_table.c: docs/reference.md tools/gen-help.py
 	python3 tools/gen-help.py
@@ -47,6 +51,6 @@ bench:
 	@sh bench/run-benchmarks.sh
 
 clean:
-	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB)
+	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ)
 
 .PHONY: clean test bench vendor-pcre2
