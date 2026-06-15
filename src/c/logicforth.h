@@ -209,6 +209,8 @@ typedef struct Vocabulary {
 	int local_incr_0depth_cfa, local_decr_0depth_cfa, inc_cfa, dec_cfa;
 	int local_finc_0depth_cfa, local_fdec_0depth_cfa, finc_cfa, fdec_cfa;
 	int qzbranch_cfa;
+	int eq_cfa, lt_cfa, gt_cfa, zeq_cfa;
+	int eq_zbranch_cfa, lt_zbranch_cfa, gt_zbranch_cfa, zeq_zbranch_cfa;
 	int false_symbol, true_symbol;
 	int wildcard_symbol, descendant_symbol, self_symbol;
 
@@ -241,6 +243,7 @@ typedef struct Interpreter {
 	int input_buffer_len, input_buffer_pos, need_more;
 	int compiling_src_start;
 	int fuse_prev_var, fuse_prev2_var;
+	int fuse_prev_cmp;
 
 	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
 	int local_names_pool_here;
@@ -561,6 +564,10 @@ void p_literal(Interpreter *interp);
 void p_branch(Interpreter *interp);
 void p_0branch(Interpreter *interp);
 void p_qzbranch(Interpreter *interp);
+void p_eq_zbranch(Interpreter *interp);
+void p_lt_zbranch(Interpreter *interp);
+void p_gt_zbranch(Interpreter *interp);
+void p_zeq_zbranch(Interpreter *interp);
 void p_dostr(Interpreter *interp);
 void p_enter_locals(Interpreter *interp);
 void p_enter_locals_to(Interpreter *interp);

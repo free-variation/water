@@ -319,6 +319,33 @@ void p_zeq(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+#define COMPARISON_ZBRANCH(name, op) \
+	void name(Interpreter *interp) { \
+		cell branch_distance = interp->vocab->dict[interp->ip++]; \
+		POP(right); \
+		POP(left); \
+		int is_true = (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) \
+			? (VAL_NUMBER(left) op VAL_NUMBER(right)) \
+			: (val_cmp(interp, left, right) op 0); \
+		if (!is_true) \
+			interp->ip += branch_distance -1; \
+		DISPATCH(interp); \
+	}
+
+COMPARISON_ZBRANCH(p_eq_zbranch, ==);
+COMPARISON_ZBRANCH(p_lt_zbranch, <);
+COMPARISON_ZBRANCH(p_gt_zbranch, >);
+
+void p_zeq_zbranch(Interpreter *interp) {
+	cell branch_distance = interp->vocab->dict[interp->ip++];
+	POP(operand);
+
+	if (truthy(operand))
+		interp->ip += branch_distance - 1;
+
+	DISPATCH(interp);
+}
+
 void p_and(Interpreter *interp) {
 	POP(right);
 	POP(left);
@@ -818,8 +845,29 @@ void p_semicolon(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static int try_fuse_cmp_branch(Interpreter *interp) {
+	int fused_cfa;
+
+	if (interp->fuse_prev_cmp == interp->vocab->eq_cfa)
+		fused_cfa = interp->vocab->eq_zbranch_cfa;
+	else if (interp->fuse_prev_cmp == interp->vocab->lt_cfa)
+		fused_cfa = interp->vocab->lt_zbranch_cfa;
+	else if (interp->fuse_prev_cmp == interp->vocab->gt_cfa)
+		fused_cfa = interp->vocab->gt_zbranch_cfa;
+	else if (interp->fuse_prev_cmp == interp->vocab->zeq_cfa)
+		fused_cfa = interp->vocab->zeq_zbranch_cfa;
+	else
+		return 0;
+
+	interp->vocab->here--;
+	emit_call(interp, fused_cfa);
+	return 1;
+}
+
+
 void p_if(Interpreter *interp) {
-	emit_call(interp, interp->vocab->zbranch_cfa);
+	if (!try_fuse_cmp_branch(interp))
+		emit_call(interp, interp->vocab->zbranch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
 
@@ -862,7 +910,8 @@ void p_begin(Interpreter *interp) {
 void p_until(Interpreter *interp) {
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
-	emit_call(interp, interp->vocab->zbranch_cfa);
+	if (!try_fuse_cmp_branch(interp))
+		emit_call(interp, interp->vocab->zbranch_cfa);
 	emit(interp, back - interp->vocab->here);
 
 	DISPATCH(interp);
@@ -878,7 +927,8 @@ void p_again(Interpreter *interp) {
 }
 
 void p_while(Interpreter *interp) {
-	emit_call(interp, interp->vocab->zbranch_cfa);
+	if (!try_fuse_cmp_branch(interp))
+		emit_call(interp, interp->vocab->zbranch_cfa);
 	push(interp, make_float((double)interp->vocab->here));
 	emit(interp, 0);
 
