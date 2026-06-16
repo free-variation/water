@@ -37,6 +37,7 @@ typedef int64_t cell;
 #define MAX_LOCAL_NAMES (1 << 8)
 #define MAX_LOCAL_SCOPES (1 << 6)
 #define MAX_HANDLERS (1 << 10)
+#define MAX_DATABASES (1 << 8)
 #define TRAMPOLINE_SLOT 0
 #define DICT_RESERVED 3
 #define PROMPT_EXCEPTION 0
@@ -64,7 +65,8 @@ typedef enum {
 	T_MARK,
 	T_STREAM,
 	T_LOGIC_VAR,
-	T_UNBOUND
+	T_UNBOUND,
+	T_DB
 } Tag;
 
 typedef union {
@@ -114,10 +116,12 @@ static inline Val make_matrix(int handle) { return make_tagged(T_MATRIX, handle)
 static inline Val make_xt(int cfa) { return make_tagged(T_XT, cfa); }
 static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_index); }
 static inline Val make_stream(int file_descriptor) {return make_tagged(T_STREAM, file_descriptor); }
+static inline Val make_db(int handle) { return make_tagged(T_DB, handle); }
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_logic_var(int handle) { return make_tagged(T_LOGIC_VAR, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
 static inline Val make_bool(int is_true) { return make_float(is_true ? 1.0 : 0.0); }
+
 
 static inline int truthy(Val value) {
 	if (VAL_TAG(value) == T_FLOAT)
@@ -293,6 +297,9 @@ typedef struct Interpreter {
 	} regex_cache[REGEX_CACHE_SIZE];
 	int regex_cache_next;
 
+	void *databases[MAX_DATABASES];
+	int n_databases;
+
 
 	char *loaded_files[MAX_LOADED_FILES];
 	int n_loaded_files, load_depth;
@@ -409,6 +416,15 @@ static inline Val rpop(Interpreter *interp) {
 	if (interp->error_flag) return; \
 	if (VAL_TAG(name##_val) != T_STRING) { \
 		fail(interp, "%s: expected a string; got %s", (op), tag_name(VAL_TAG(name##_val))); \
+		return; \
+	} \
+	Object *name = interp->objects[VAL_DATA(name##_val)]
+
+#define POP_ARRAY(name, op) \
+	Val name##_val = pop(interp); \
+	if (interp->error_flag) return; \
+	if (VAL_TAG(name##_val) != T_ARRAY) { \
+		fail(interp, "%s: expected an array; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
 	Object *name = interp->objects[VAL_DATA(name##_val)]
@@ -873,6 +889,10 @@ void p_start_process(Interpreter *interp);
 void p_write(Interpreter *interp);
 void p_read(Interpreter *interp);
 void p_close(Interpreter *interp);
+void p_db_open(Interpreter *interp);
+void p_db_close(Interpreter *interp);
+void p_db_exec(Interpreter *interp);
+void p_db_query(Interpreter *interp);
 void p_wait(Interpreter *interp);
 void p_stop_process(Interpreter *interp);
 void p_running(Interpreter *interp);

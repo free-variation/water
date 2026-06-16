@@ -1,0 +1,35 @@
+\ SQLite load test — stresses logicforth's result materialization and index
+\ construction, NOT sqlite. A recursive CTE generates the rows, so sqlite does
+\ negligible work; the load is db-query building N row frames (+ a string per
+\ cat cell) into a growable array, and create-index symbolizing those cells and
+\ bulk-loading 1M frames (array>set + group-by) while the symbol pool grows.
+\
+\ Run:  ./logicforth -b < bench/sqlite-load.l4
+\ The default 64M object ceiling is never hit (≈2M live objects), so the build
+\ just grows the table. To force GC *during* the build — exercising the gc_root
+\ discipline around the :rows array and the in-flight row — lower the ceiling
+\ near the live set:
+\   ./logicforth -b --max-objects 4000000 < bench/sqlite-load.l4
+
+variable D   variable R   variable N   variable t
+1000000 to N
+
+":memory:" db-open to D
+
+\ --- db-query: materialize N rows from a cheap recursive CTE ---
+now to t
+D N "WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n < {0}) SELECT n AS id, 'cat' || (n % 50) AS cat FROM seq" format [ ] db-query to R
+"db-query:     " . now t - . "s" . cr
+R :rows @ size                                  "  rows materialized = {0}  (want 1000000)" format . cr
+R :rows @ 0 [: |> a row | a row :id @ + :] reduce  "  sum of ids       = {0}  (want 500000500000)" format . cr
+
+\ --- create-index: symbolize :cat and build the index over N rows ---
+now to t
+R [ :cat ] create-index to R
+"create-index: " . now t - . "s" . cr
+R :index @ :cat @ keys size                     "  distinct cats    = {0}  (want 50)" format . cr
+R :index @ :cat @ values 0 [: |> a s | a s size + :] reduce  "  total indexed    = {0}  (want 1000000)" format . cr
+R { :cat :cat7 } query size                     "  cat7 bucket      = {0}  (want 20000)" format . cr
+
+D db-close
+bye

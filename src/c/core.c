@@ -437,6 +437,7 @@ void print_val(Interpreter *interp, Val value) {
 		case T_XT: printf("<xt %lld>", (long long)VAL_DATA(value)); break;
 		case T_ADDR: printf("<addr %lld>", (long long)VAL_DATA(value)); break;
 		case T_STREAM: printf("<stream %lld>", (long long)VAL_DATA(value)); break;
+		case T_DB: printf("<database %lld>", (long long)VAL_DATA(value)); break;
 		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
 		case T_MATRIX: {
 						   Object *matrix = interp->objects[VAL_DATA(value)];
@@ -958,6 +959,7 @@ const char *tag_name(Tag t) {
 		case T_CONT:   return "a continuation";
 		case T_MARK:   return "a mark";
 		case T_LOGIC_VAR: return "a logic variable";
+		case T_DB: return "a database";
 		default:       return "an unknown value";
 	}
 }
@@ -3181,6 +3183,10 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "write", p_write, 0);
 	define_primitive(interp, "read", p_read, 0);
 	define_primitive(interp, "close", p_close, 0);
+	define_primitive(interp, "db-open", p_db_open, 0);
+	define_primitive(interp, "db-close", p_db_close, 0);
+	define_primitive(interp, "db-exec", p_db_exec, 0);
+	define_primitive(interp, "db-query", p_db_query, 0);
 	define_primitive(interp, "wait", p_wait, 0);
 	define_primitive(interp, "stop", p_stop_process, 0);
 	define_primitive(interp, "running?", p_running, 0);

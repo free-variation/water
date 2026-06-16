@@ -66,6 +66,11 @@ copy
 cos
 count-matches
 cr
+create-index
+db-close
+db-exec
+db-open
+db-query
 delete-at
 depth
 deref
@@ -144,6 +149,7 @@ keys
 last
 ln
 load
+load-bag
 load-image
 log
 lookup

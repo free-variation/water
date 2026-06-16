@@ -1168,23 +1168,8 @@ static Val frame_field(Interpreter *interp, Val frame_val, cell col) {
 	return present ? frame->frame.values[at] : make_tagged(T_NONE, 0);
 }
 
-typedef struct {
-	Interpreter *interp;
-	cell col;
-} GroupContext;
-
-static int group_cmp(void *context, const void *left, const void *right) {
-	GroupContext *group = context;
-	Val left_row = *(const Val *)left;
-	Val right_row = *(const Val *)right;
-	int by_field = val_cmp(group->interp,
-			frame_field(group->interp, left_row, group->col),
-			frame_field(group->interp, right_row, group->col));
-
-	if (by_field)
-		return by_field;
-
-	return val_cmp(group->interp, left_row, right_row);
+static int row_cmp(void *interp, const void *left, const void *right) {
+	return val_cmp((Interpreter *)interp, *(const Val *)left, *(const Val *)right);
 }
 
 void p_group_by(Interpreter *interp) {
@@ -1205,42 +1190,43 @@ void p_group_by(Interpreter *interp) {
 	if (interp->error_flag)
 		return;
 
-	if (row_count > 0) {
-		Val *sorted = malloc(sizeof(Val) * (size_t)row_count);
-		memcpy(sorted, interp->objects[VAL_DATA(rows_val)]->items, sizeof(Val) * (size_t)row_count);
-		GroupContext context = { interp, col };
-		qsort_r(sorted, (size_t)row_count, sizeof(Val), &context, group_cmp);
+	/* One pass: drop each row into a growable bag keyed by its column value. */
+	for (int i = 0; i < row_count; i++) {
+		Val row = interp->objects[VAL_DATA(rows_val)]->items[i];
+		cell key = VAL_DATA(frame_field(interp, row, col));
 
-		int run_start = 0;
-		while (run_start < row_count) {
-			Val value = frame_field(interp, sorted[run_start], col);
-			int run_end = run_start + 1;
-			while (run_end < row_count
-					&& val_cmp(interp, frame_field(interp, sorted[run_end], col), value) == 0)
-				run_end++;
-
-			int bucket = object_new_set(interp);
+		Object *frame = interp->objects[frame_handle];
+		FRAME_LOOKUP(frame, key, at, present);
+		int bag;
+		if (present) {
+			bag = (int)VAL_DATA(frame->frame.values[at]);
+		} else {
+			bag = object_new_array(interp, 0);
 			if (interp->error_flag) {
-				free(sorted);
 				gc_root_pop(interp);
 				return;
 			}
-			Object *bucket_set = interp->objects[bucket];
-			int run_length = run_end - run_start;
-			if (run_length > bucket_set->capacity) {
-				bucket_set->items = realloc(bucket_set->items, sizeof(Val) * (size_t)run_length);
-				bucket_set->capacity = run_length;
-			}
-			int unique = 0;
-			for (int source = run_start; source < run_end; source++)
-				if (unique == 0 || val_cmp(interp, bucket_set->items[unique - 1], sorted[source]) != 0)
-					bucket_set->items[unique++] = sorted[source];
-			bucket_set->len = unique;
-
-			frame_put(interp->objects[frame_handle], VAL_DATA(value), make_set(bucket));
-			run_start = run_end;
+			frame_put(interp->objects[frame_handle], key, make_array(bag));
 		}
-		free(sorted);
+
+		Object *bag_obj = interp->objects[bag];
+		GROW_IF_FULL(bag_obj->len, bag_obj->capacity, bag_obj->items);
+		bag_obj->items[bag_obj->len++] = row;
+	}
+
+	/* Sort+dedup each bag in place, then turn it into a set (storage reused). */
+	Object *result = interp->objects[frame_handle];
+	for (int i = 0; i < result->len; i++) {
+		int bag = (int)VAL_DATA(result->frame.values[i]);
+		Object *bag_obj = interp->objects[bag];
+		qsort_r(bag_obj->items, (size_t)bag_obj->len, sizeof(Val), interp, row_cmp);
+		int unique = 0;
+		for (int source = 0; source < bag_obj->len; source++)
+			if (unique == 0 || val_cmp(interp, bag_obj->items[unique - 1], bag_obj->items[source]) != 0)
+				bag_obj->items[unique++] = bag_obj->items[source];
+		bag_obj->len = unique;
+		bag_obj->kind = OBJECT_SET;
+		result->frame.values[i] = make_set(bag);
 	}
 
 	Val grouped = interp->gc_roots[interp->n_gc_roots - 1];
