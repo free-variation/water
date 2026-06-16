@@ -505,9 +505,11 @@ Rows live in a set, so an identical row asserted twice dedups to one (a relation
 | `query` | `( rel pattern -- [rows] )` | Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans. When every constraint is a ground indexed column the narrowed bucket *is* the answer, so the per-row `matches?` is skipped (covering query) | candidates·n | `1a` + set ops | O(candidates·n) |
 | `count-matches` | `( rel pattern -- n )` | How many rows match; for a covering query this is the bucket's `size` with no scan, otherwise `query size` | — | (covering: none) | O(candidates) |
 | `inner-join` | `( driver probed col -- [rows] )` | Inner join: each `driver` row merged (`probed` columns win collisions) with each `probed` row sharing `col`'s value; `probed` must index `col` | — | `1a` | O(driver·log probed) |
-| `bulk-load` | `( rel rows-array -- rel )` | Load all rows at once: builds `:rows` and each column's index in one sorted pass each, instead of row-by-row | — | sets + frame | O(n log n) |
+| `bulk-load` | `( rel rows-array -- rel )` | Load all rows at once: builds `:rows` (a deduped set) and each declared column's index, instead of row-by-row | — | sets + frame | O(n log n) |
+| `load-bag` | `( rel rows-array -- rel )` | Like `bulk-load`, but `:rows` stays a **bag** (the array, duplicates kept) rather than a deduped set; only `:index` is built | n | frame + sets | O(n) |
+| `create-index` | `( rel cols -- rel )` | Index a relation on the symbol columns `cols`: intern each indexed column's value to a symbol (so it keys the bucket and matches a `{ :col :val }` pattern), then `load-bag` into a `cols`-indexed relation. Other columns keep their type; `:rows` stays a bag. The explicit bridge from a `db-query` result to an indexed relation | n | frame + sets | O(n) |
 
-These are lib.l4 over the C primitives `matches?`, `symbol?`, `set-add!`, `set-remove!`, `array>set`, and `group-by`. Building a relation with one `assert` per row is super-linear (each insert shifts the sorted `:rows` set, and per-value frames grow the same way); `bulk-load` avoids both by sorting once — `array>set` for `:rows` and `group-by` per indexed column — so a bulk load is O(n log n) at any index cardinality. Candidate narrowing drives from the smallest matching bucket.
+These are lib.l4 over the C primitives `matches?`, `symbol?`, `set-add!`, `set-remove!`, `array>set`, and `group-by`. Building a relation with one `assert` per row is super-linear (each insert shifts the sorted `:rows` set, and per-value frames grow the same way); `bulk-load` avoids that with `array>set` for `:rows` (one sort) and a one-pass `group-by` per indexed column (which buckets by the interned symbol value, then sorts each small bucket — no global sort). `load-bag` and `create-index` skip the `:rows` dedup entirely, keeping a bag; `create-index` also interns the indexed columns to symbols. Candidate narrowing drives from the smallest matching bucket.
 
 ---
 
@@ -607,6 +609,21 @@ Line access is `read "\n" split`.
 
 ---
 
+## SQLite
+
+Embedded relational storage via the vendored SQLite amalgamation, built into the binary. A database is a `T_DB` value — an inline handle into a per-interpreter registry of open connections, like a stream. `db-exec` and `db-query` take a `params` array bound positionally to the statement's `?` placeholders (`[ ]` for none): a float binds as a double, a string or symbol as text, `null` as NULL, anything else errors — so string parameters need no hand-escaping. A `db-query` result is a fact-database relation (see Fact database), so it drops straight into `query` / `inner-join` and is indexed with `create-index`. `n` = rows returned, `c` = columns.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `db-open` | `( path -- db )` | Open (creating if absent) the database file at `path` and push a handle; `":memory:"` is a private in-memory database. Errors if it can't be opened | open | 1 connection (not GC'd) | O(1)+ |
+| `db-close` | `( db -- )` | Close the connection and free its registry slot. Idempotent — closing an already-closed handle is a no-op. A handle that is dropped without closing leaks the connection until process exit | 1 syscall | none | O(1) |
+| `db-exec` | `( db statement params -- n )` | Bind `params` to the statement's `?` placeholders and run it with no result set (INSERT / UPDATE / DELETE / CREATE / …); return the affected-row count as a float (0 for DDL). One statement per call. On a bad statement, errors with SQLite's message | per statement | none | O(statement) |
+| `db-query` | `( db query params -- rel )` | Bind `params` to the query's `?` placeholders and run it; return an index-less relation `{ :rows <array of row frames> :index { } }`. Each row is a frame keyed by column-name symbols, with INTEGER/REAL → float, TEXT → string, NULL → `null`, BLOB → string of raw bytes. `:rows` is a **bag** — duplicates kept, in result order. On a bad query, errors with SQLite's message | n·c | `1o` relation + `1a(n)` + `1o`/row + a string per text/blob cell | O(n·c) |
+
+Using a closed handle errors (`database is closed`). Do selection, projection, and joins in the SQL itself; logicforth materializes the result. Indexing a result is a separate, explicit step — `create-index` (see Fact database) — because it interns the indexed columns to symbols, which only makes sense for low-cardinality categorical columns you choose.
+
+---
+
 ## Type tags
 
 | Tag | Description |
@@ -622,6 +639,7 @@ Line access is `read "\n" split`.
 | `T_XT` | execution token (dict index); first-class callable |
 | `T_ADDR` | dict index; used internally for return-stack frames |
 | `T_STREAM` | OS file descriptor (pipe or socket end); an inline `int`, like `T_ADDR` |
+| `T_DB` | inline handle into the per-interpreter registry of open SQLite connections; not GC'd (closed with `db-close`) |
 | `T_CONT` | heap object; a captured return-stack slice plus a resume IP |
 | `T_MARK` | ephemeral sentinel from `<`, `[`, `{`, `reset`; not user-visible |
 | `T_LOGIC_VAR` | index into the logic-var stack; unbound, or bound to a Val (resolve with `deref`) |

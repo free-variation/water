@@ -166,58 +166,6 @@ To settle at implementation: representation of Vals with no clean TSV form
 
 ---
 
-## SQLite integration
-
-Embedded relational storage, built into the binary via the amalgamation
-(`sqlite3.c` + `sqlite3.h` — one extra source file, public-domain). A small
-Forth-side API opens databases, runs queries, and materializes results as
-nested arrays or as matrices.
-
-Three storage roles, one tool each: SQLite is the durable bulk store that
-survives restarts and coordinates across processes (WAL); the fact database
-is in-memory relations queried by unification, loaded from SQLite into a
-working set; frames are the in-flight object shape and JSON wire mapping.
-
-A query result is represented the same way as a fact-database relation: a set
-of rows, each row a frame keyed by column name. So a SQLite table and a
-fact-database relation are one structure, and a result set drops straight into
-`query`/`assert` without reshaping.
-
-**API:**
-
-- `"path.db" db-open` — open (create if needed), push a database handle.
-- `db-handle db-close` — close the handle. Idempotent.
-- `db-handle "SELECT ..." sql` — run, return a set of row frames (each
-  keyed by column name). INTEGER / REAL → `T_FLOAT`, TEXT → `T_STRING`, NULL →
-  sentinel, BLOB → `T_STRING` of raw bytes.
-- `db-handle "SELECT ..." sql-matrix` — materialize directly into a
-  `T_MATRIX`; errors if any cell isn't numeric.
-- `db-handle "INSERT/UPDATE/DELETE ..." exec` — run a statement with no
-  result set; return the affected row count as a float.
-
-**Query construction:** build queries with `"...{0}..."` interpolation; no
-separate bindings mechanism.
-
-```
-42 "SELECT * FROM users WHERE id = {0}" sql
-```
-
-String parameters are unescaped concatenation, so callers escape strings
-before interpolating or use numeric values; a `sql-quote` helper for
-quoted SQL literals can come later.
-
-**Type:** new tag `T_DB` carrying the database handle, so `val_cmp` /
-`print_val` and type errors stay specific.
-
-**Storage:** a `databases[]` registry of `sqlite3 *` indexed by handle;
-closed databases free the slot. A dropped handle leaks the connection until
-process exit.
-
-Not included initially: language-level prepared-statement caching, cursor
-streaming, async, schema-introspection words (`db-tables`, `db-columns`).
-
----
-
 ## HTTP server
 
 A `serve` word that stands up an HTTP/1.1 API server from a route table,

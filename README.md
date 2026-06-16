@@ -140,6 +140,16 @@ Drive external programs over pipes (`fork`/`execvp`/`pipe`/`waitpid`; binary-saf
 - `lib.l4` conveniences: **`run`** (split a command line and start it), **`read-out`** / **`read-err`** / **`write-in`**.
 - **`commands width parallel-run`** — run a batch of argv arrays concurrently, at most `width` at a time, collecting `{ :out :err :status }` per command in input order (refills a slot as each child finishes). Process-level parallelism — e.g. firing off many `curl` requests at once.
 
+### SQLite
+
+Embedded relational storage via the vendored SQLite amalgamation — built into the binary, no external dependency. A database is a `T_DB` handle.
+
+- **`db-open`** / **`db-close`** — open (creating if absent, or `":memory:"` for an in-memory DB) and push a handle; close frees the connection and is idempotent.
+- **`db-exec`** — `( db statement params -- n )` — run an INSERT/UPDATE/DELETE/CREATE with `params` bound to its `?` placeholders; returns the affected-row count (0 for DDL).
+- **`db-query`** — `( db query params -- rel )` — run a query; returns a fact-database relation `{ :rows <bag of row frames> :index { } }`, each row keyed by column-name symbols (INTEGER/REAL → float, TEXT → string, NULL → `null`, BLOB → raw bytes). Duplicates are kept, in result order; the result drops straight into `query` / `inner-join`.
+- **Bound parameters** — `params` is an array bound positionally to the `?` placeholders (`[ ]` for none); floats, strings, symbols, and `null` bind, so string values need no hand-escaping.
+- **`create-index`** — `( rel cols -- rel )`, `lib.l4` — index a query result on `cols`, interning those columns to symbols so the fact-db index and `query` can use them.
+
 ### Delimited continuations
 
 A four-primitive substrate the rest of the control story is built on. See `docs/continuations.md` for the full treatment.
@@ -201,7 +211,6 @@ Tracked in `PLAN.md`, with design notes for each.
 ### External I/O
 
 - **TSV file I/O** — the sole tabular format; other formats convert outside logicforth.
-- **SQLite integration** — embedded relational storage via the vendored amalgamation. Queries return sets of column-keyed row frames — the same shape as a fact-database relation — or matrices when all columns are numeric.
 
 ### Language ergonomics
 

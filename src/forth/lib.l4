@@ -245,4 +245,16 @@ inline
 	|> rel rows-array |
 	rel :rows rows-array array>set !
 	dup :index @ keys [: |> col | rel :index @ col  rows-array col group-by  ! :] map drop ;
-	
+
+( rel rows-array -- rel ) \ like bulk-load, but :rows stays a bag (array); only the index is built
+: load-bag
+	|> rel rows-array |
+	rel :rows rows-array !
+	dup :index @ keys [: |> col | rel :index @ col  rows-array col group-by  ! :] map drop ;
+
+( rel cols -- rel ) \ index rel on cols: intern each indexed column's value to a symbol, then build the index
+: create-index
+	|> rel cols |
+	rel :rows @
+	[: |> row | cols row [: |> acc col | acc col [: string>symbol :] update-at :] reduce :] map
+	cols relation swap load-bag ;

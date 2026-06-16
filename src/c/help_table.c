@@ -56,7 +56,7 @@ const HelpEntry help_entries[] = {
 	{ "assert", "( rel row -- rel )", "Add row to :rows and to each indexed column's bucket; identical row is a no-op. Mutates rel in place, returns it", "k + n", "reallocs", "O(n)" },
 	{ "atan", "( a -- atan a )", "inverse tangent", "2", "matrix 1m(r×c)", "same" },
 	{ "begin", "—", "Mark a loop top", NULL, NULL, NULL },
-	{ "bulk-load", "( rel rows-array -- rel )", "Load all rows at once: builds :rows and each column's index in one sorted pass each, instead of row-by-row", "—", "sets + frame", "O(n log n)" },
+	{ "bulk-load", "( rel rows-array -- rel )", "Load all rows at once: builds :rows (a deduped set) and each declared column's index, instead of row-by-row", "—", "sets + frame", "O(n log n)" },
 	{ "bye", "( -- )", "exit(0)", "—", "—", "—" },
 	{ "catch", "( xt -- result 0 | exc 1 )", "lib.l4: reset execute 0", "—", "cont if thrown", "O(xt)" },
 	{ "clear", "( … -- )", "Reset data stack depth to 0", "1", "none", "O(1)" },
@@ -72,6 +72,11 @@ const HelpEntry help_entries[] = {
 	{ "cos", "( a -- cos a )", "cosine (radians)", "2", "matrix 1m(r×c)", "same" },
 	{ "count-matches", "( rel pattern -- n )", "How many rows match; for a covering query this is the bucket's size with no scan, otherwise query size", "—", "(covering: none)", "O(candidates)" },
 	{ "cr", "( -- )", "Print a newline", "1", "none", "O(1)" },
+	{ "create-index", "( rel cols -- rel )", "Index a relation on the symbol columns cols: intern each indexed column's value to a symbol (so it keys the bucket and matches a { :col :val } pattern), then load-bag into a cols-indexed relation. Other columns keep their type; :rows stays a bag. The explicit bridge from a db-query result to an indexed relation", "n", "frame + sets", "O(n)" },
+	{ "db-close", "( db -- )", "Close the connection and free its registry slot. Idempotent — closing an already-closed handle is a no-op. A handle that is dropped without closing leaks the connection until process exit", "1 syscall", "none", "O(1)" },
+	{ "db-exec", "( db statement params -- n )", "Bind params to the statement's ? placeholders and run it with no result set (INSERT / UPDATE / DELETE / CREATE / …); return the affected-row count as a float (0 for DDL). One statement per call. On a bad statement, errors with SQLite's message", "per statement", "none", "O(statement)" },
+	{ "db-open", "( path -- db )", "Open (creating if absent) the database file at path and push a handle; \":memory:\" is a private in-memory database. Errors if it can't be opened", "open", "1 connection (not GC'd)", "O(1)+" },
+	{ "db-query", "( db query params -- rel )", "Bind params to the query's ? placeholders and run it; return an index-less relation { :rows <array of row frames> :index { } }. Each row is a frame keyed by column-name symbols, with INTEGER/REAL → float, TEXT → string, NULL → null, BLOB → string of raw bytes. :rows is a **bag** — duplicates kept, in result order. On a bad query, errors with SQLite's message", "n·c", "1o relation + 1a(n) + 1o/row + a string per text/blob cell", "O(n·c)" },
 	{ "delete-at", "( fr sym/path -- fr )", "Remove a key (errors if absent or on a search path); mutates fr", "n", "none", "O(n)" },
 	{ "depth", "( -- n )", "Push current depth", "1", "none", "O(1)" },
 	{ "deref", "( v -- val )", "Follow a logic var's binding chain to the first non-variable value (v itself if unbound). Shallow — a returned structure still has bound vars inside; for a fully resolved snapshot use reify or copy", "d", "none", "O(d)" },
@@ -150,6 +155,7 @@ const HelpEntry help_entries[] = {
 	{ "last", "( arr n -- arr )", "lib.l4: swap reverse swap take reverse", "3n", "3×1a(n)", "O(n)" },
 	{ "ln", "( a -- ln a )", "log — natural log", "2", "matrix 1m(r×c)", "same" },
 	{ "load", "( s -- )", "Run a source file as if typed; record it for reload", "file read + run", "input buffer", "O(file)" },
+	{ "load-bag", "( rel rows-array -- rel )", "Like bulk-load, but :rows stays a **bag** (the array, duplicates kept) rather than a deduped set; only :index is built", "n", "frame + sets", "O(n)" },
 	{ "load-image", "( s -- )", "Restore a binary snapshot, replacing current state", "deserialize all", "reallocates all objects", "O(objects)" },
 	{ "log", "( a -- log₁₀ a )", "log10", "2", "matrix 1m(r×c)", "same" },
 	{ "lookup", "( \"name\" -- xt )", "Parse the following word at run time and push its xt — the non-immediate counterpart of '", NULL, NULL, NULL },
@@ -287,4 +293,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 281;
+const int help_entry_count = 287;

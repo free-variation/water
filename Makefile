@@ -2,7 +2,7 @@ CC     = clang
 CFLAGS = -O3 -march=native -Wall -Wextra
 LDLIBS = -lm
 
-SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c
+SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c
 HDRS = src/c/logicforth.h src/c/lib_embed.h
 
 # Vendored PCRE2 (see external/pcre2/PROVENANCE; refresh with tools/vendor-pcre2.sh).
