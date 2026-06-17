@@ -44,6 +44,7 @@ const HelpEntry help_entries[] = {
 	{ "abs", "( a -- |a| )", "fabs", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
 	{ "acos", "( a -- acos a )", "inverse cosine", "2", "matrix 1m(r×c)", "same" },
 	{ "again", "—", "Unconditional branch back to begin", NULL, NULL, NULL },
+	{ "alloc-stats", "( -- )", "Print and reset the allocation counters since the last call (lvars=… arrays=…)", "2", "none", "O(1)" },
 	{ "amb", "( xt1 xt2 -- … )", "Run xt1; if it fails (a unify mismatch or fail), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds.", "xt1", "none", "O(xt1 + xt2)" },
 	{ "and", "( a b -- bool )", "logical and of truthiness", "3", "none", "O(1)" },
 	{ "append-file", "( s path -- )", "Open in append mode, write the string's bytes", "file write", "none", "O(|s|)" },
@@ -184,7 +185,7 @@ const HelpEntry help_entries[] = {
 	{ "or", "( a b -- bool )", "logical or of truthiness", "3", "none", "O(1)" },
 	{ "over", "( a b -- a b a )", "Copy second over top", "5", "none", "O(1)" },
 	{ "parallel-run", "( commands width -- results )", "lib.l4: run each argv array in commands as a subprocess, at most width at once; collect { :out :err :status } per command in input order, refilling a slot as each child finishes", "fork per command + poll", "1a + per-child frames/streams", "O(critical path)" },
-	{ "pi", "( -- f )", "lib.l4: π (3.141592653589793) as a float", "1", "none", "O(1)" },
+	{ "pi", "( -- f )", "lib.l4: variable initialized to π (3.141592653589793); invoking it pushes the stored float", "1", "none", "O(1)" },
 	{ "query", "( rel pattern -- [rows] )", "Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans. When every constraint is a ground indexed column the narrowed bucket *is* the answer, so the per-row matches? is skipped (covering query)", "candidates·n", "1a + set ops", "O(candidates·n)" },
 	{ "quotient", "( a b -- quotient )", "lib.l4: % swap drop; toward zero", "9", "none", "O(1)" },
 	{ "r>", "return stack → ( -- a )", "Move return-stack top to data stack", "2", "none", "O(1)" },
@@ -215,7 +216,7 @@ const HelpEntry help_entries[] = {
 	{ "row-means", "( m -- m' )", "lib.l4: row-sums then scalar ÷", "r×c", "2×1m(r×1)", "O(r×c)" },
 	{ "row-mins", "( m -- m' )", "r×1 of per-row minima", "1 + r×c", "1m(r×1)", "O(r×c)" },
 	{ "row-sums", "( m -- m' )", "r×1 of per-row sums", "1 + r×c", "1m(r×1)", "O(r×c)" },
-	{ "run", "( s -- proc )", "lib.l4: split a command string on spaces and start-process it (s \" \" split start-process)", "split + fork", "1a + 1o frame + 3 streams", "O(|s| + argc)" },
+	{ "run", "( s -- proc )", "lib.l4: split a command string on runs of spaces and start-process it (\" +\" split start-process)", "split + fork", "1a + 1o frame + 3 streams", "O(|s| + argc)" },
 	{ "running?", "( pid -- bool )", "Non-blocking liveness via waitid+WNOHANG+WNOWAIT; true while running, false once exited. Non-reaping, so a later wait still returns the status", "1 syscall", "none", "O(1)" },
 	{ "save", "( s -- )", "Write all user words as re-loadable .l4 source", "dict scan + write", "file I/O", "O(|user dict|)" },
 	{ "save-image", "( s -- )", "Binary snapshot of full state (dict, objects, stacks, continuations)", "serialize all", "file I/O", "O(objects + dict)" },
@@ -293,4 +294,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 287;
+const int help_entry_count = 288;

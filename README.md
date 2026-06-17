@@ -12,11 +12,11 @@ make test      # runs the golden-output test suite
 ./logicforth   # REPL
 ```
 
-Self-contained: its vendored dependencies — PCRE2 (the regex engine) and isocline
-(REPL line editing) — live under `external/` and are built from source into the
-binary, so `make` needs nothing but a C compiler. Refresh them with
-`make vendor-pcre2` and `sh tools/vendor-isocline.sh` (see each directory's
-`PROVENANCE`).
+Self-contained: its vendored dependencies — PCRE2 (regex), isocline (REPL line
+editing), and SQLite (embedded SQL) — live under `external/` and are built from
+source into the binary, so `make` needs nothing but a C compiler. Refresh them
+with `make vendor-pcre2`, `sh tools/vendor-isocline.sh`, and
+`sh tools/vendor-sqlite.sh` (see each directory's `PROVENANCE`).
 
 ## A taste
 
@@ -70,7 +70,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 - **Tagged Vals** — floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, execution tokens, dictionary addresses, continuations, logic variables, process streams, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
 - **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code — no separate bytecode.
 - **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `gt while`, `0= until`) fuses into a single compare-and-branch op.
-- **Per-interpreter state** — all mutable state lives in an `Interpreter`, which owns its `Vocabulary` (a growable dictionary plus name/source/symbol pools). Multiple independent instances can coexist in one process; the engine is embeddable.
+- **Program and execution state separated** — the dictionary, symbol pool, and object heap live in global structures (`Vocabulary`, `Compiler`, `Arena`) that are read-only during a run; the per-run mutable state — the three stacks, instruction pointer, locals, and GC roots — lives in an `Interpreter`, so one program can be shared across multiple execution contexts.
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
 - **Colon definitions** — `: name body ;`. The body is captured as source text for `see` and the text-form `save`.
 - **Anonymous quotations** — `[: ... :]` pushes a fresh xt. Works at top level and inside colon defs.
@@ -194,47 +194,14 @@ Unification and committed choice, on the trail and the continuation machinery:
 - **`man`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes). **`help name`** prints it for the named word.
 - **`words`**, **`forget`**, **`bye`**, **`gc`**, **`clear`**, **`.s`**, **`.a`** — interpreter utilities.
 
-## What's planned
+## Planned work
 
-Tracked in `PLAN.md`, with design notes for each.
-
-### Data types
-
-- **Time / dates** — strftime/strptime formatting and parsing (`time-format`, `time-parse`) over the `now` float timestamps that already exist.
-- **Random numbers** — xoshiro256++ PRNG: `random-float`, `random-int`, `seed!`, `shuffle`.
-
-### Strings
-
-- **`lib.l4` wrappers** over the regex layer — `split`, `index-of`, `starts-with`, `ends-with`, `trim`, `lines`.
-- **UTF-8 / codepoint indexing** — string ops are byte-indexed today; codepoint-indexed at the user level is planned.
-
-### External I/O
-
-- **TSV file I/O** — the sole tabular format; other formats convert outside logicforth.
-
-### Language ergonomics
-
-- **Sort** — `sort`, `sort-with`, `sort-by`.
-- **stdin / env** — `stdin`/`stdout`/`stderr` as streams (read/written with the subprocess `read`/`write`), environment variable access.
-- **Functional primitives** — `range` remains in C; `find`, `any?`, `all?`, `flat-map`, `sort-by` in `lib.l4`. (`map`/`mapn`/`filter`/`reduce`/`take`/`reverse`/`concat` done in C; `skip`/`last` in `lib.l4`.)
-
-### Concurrency
-
-Built in stages on the per-interpreter foundation already in place:
-
-- **Cooperative green threads** — `spawn`, `yield`, `run-scheduler` on top of continuations. Cheap interleaving for I/O-bound work, no parallelism.
-- **OS-thread parallelism + mailboxes** — Erlang-style isolated interpreters communicating via per-thread mailboxes. Real multi-core parallelism, no shared mutable state.
-
-### Matrix follow-ups
-
-- **Slicing**, **`hstack`**/`vstack`, **norms**, **element-wise comparison**.
-- **SVD** — one-sided Jacobi.
-- **Optional BLAS/LAPACK build** — swap the hand-rolled kernels for BLAS/LAPACK behind a build switch; default stays zero-dependency.
+Roadmap and design notes live in `PLAN.md`.
 
 ## Project layout
 
 ```
-src/c/logicforth.h     — types, Interpreter/Vocabulary structs, prototypes
+src/c/logicforth.h     — types, global program structs (Vocabulary/Arena/Compiler), per-run Interpreter, prototypes
 src/c/core.c           — engine: interpreter, dictionary, GC, printing, image, REPL
 src/c/words.c          — arithmetic, stack, I/O, control flow, defining words, continuations
 src/c/collections.c    — sets, arrays, and frames
@@ -242,6 +209,9 @@ src/c/matrix.c         — matrix words and numeric kernels
 src/c/functional.c     — higher-order operations (map, mapn, …)
 src/c/superwords.c     — compile-time instruction fusion (superwords)
 src/c/strings.c        — string and PCRE2 regex operations
+src/c/logic.c          — logic variables, unification, amb, fact database
+src/c/database.c       — SQLite integration
+src/c/help_table.c     — generated help/man text (from docs/reference.md)
 src/forth/lib.l4       — standard library (auto-loaded at startup)
 tests/                 — golden-output test files
 docs/                  — design documents
