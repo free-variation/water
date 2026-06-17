@@ -2,7 +2,7 @@
 
 
 void set_add(Interpreter *interp, int set_handle, Val value) {
-	Object *set = interp->objects[set_handle];
+	Object *set = OBJECT_AT(set_handle);
 
 
 	LOWER_BOUND(set->len, mid, val_cmp(interp, set->items[mid], value) < 0, low);
@@ -19,14 +19,14 @@ void set_add(Interpreter *interp, int set_handle, Val value) {
 }
 
 int set_member(Interpreter *interp, int set_handle, Val value) {
-	Object *set = interp->objects[set_handle];
+	Object *set = OBJECT_AT(set_handle);
 
 	LOWER_BOUND(set->len, mid, val_cmp(interp, set->items[mid], value) < 0, low);
 	return low < set->len && val_cmp(interp, set->items[low], value) == 0;
 }
 
 void set_remove(Interpreter *interp, int set_handle, Val value) {
-	Object *set = interp->objects[set_handle];
+	Object *set = OBJECT_AT(set_handle);
 
 	LOWER_BOUND(set->len, mid, val_cmp(interp, set->items[mid], value) < 0, low);
 	if (low < set->len && val_cmp(interp, set->items[low], value) == 0) {
@@ -40,9 +40,9 @@ int set_union(Interpreter *interp, int handle_a, int handle_b) {
 	int union_handle = object_new_set(interp);
 	if (interp->error_flag) return -1;
 
-	Object *union_set = interp->objects[union_handle];
-	Object *set_a = interp->objects[handle_a];
-	Object *set_b = interp->objects[handle_b];
+	Object *union_set = OBJECT_AT(union_handle);
+	Object *set_a = OBJECT_AT(handle_a);
+	Object *set_b = OBJECT_AT(handle_b);
 
 	int i = 0, j = 0;
 	while (i < set_a->len || j < set_b->len) {
@@ -74,9 +74,9 @@ int set_intersect(Interpreter *interp, int handle_a, int handle_b) {
 	int intersection_handle = object_new_set(interp);
 	if (interp->error_flag) return -1;
 
-	Object *intersection_set = interp->objects[intersection_handle];
-	Object *set_a = interp->objects[handle_a];
-	Object *set_b = interp->objects[handle_b];
+	Object *intersection_set = OBJECT_AT(intersection_handle);
+	Object *set_a = OBJECT_AT(handle_a);
+	Object *set_b = OBJECT_AT(handle_b);
 
 	int i = 0, j = 0;
 	while (i < set_a->len && j < set_b->len) {
@@ -100,9 +100,9 @@ int set_difference(Interpreter *interp, int handle_a, int handle_b) {
 	int difference_handle = object_new_set(interp);
 	if (interp->error_flag) return -1;
 
-	Object *difference_set = interp->objects[difference_handle];
-	Object *set_a = interp->objects[handle_a];
-	Object *set_b = interp->objects[handle_b];
+	Object *difference_set = OBJECT_AT(difference_handle);
+	Object *set_a = OBJECT_AT(handle_a);
+	Object *set_b = OBJECT_AT(handle_b);
 
 	int i = 0, j = 0;
 	while (i < set_a->len) {
@@ -285,7 +285,7 @@ void p_array_to_cons(Interpreter *interp) {
 		fail(interp, "array>cons: expected an array; got %s", tag_name(VAL_TAG(array_val)));
 		return;
 	}
-	Object *array = interp->objects[VAL_DATA(array_val)];
+	Object *array = OBJECT_AT(VAL_DATA(array_val));
 	int n = array->len;
 
 	Val result;
@@ -332,7 +332,7 @@ void p_cons_to_array(Interpreter *interp) {
 	int handle = object_new_array(interp, count);
 	if (interp->error_flag)
 		return;
-	Object *array = interp->objects[handle];
+	Object *array = OBJECT_AT(handle);
 
 	int i = 0;
 	cur = deref(interp, list_val);
@@ -353,14 +353,14 @@ static int val_cmp_qsort(void *interp, const void *left, const void *right) {
 
 void p_array_to_set (Interpreter *interp) {
 	PEEK_TYPE_AT(array_val, 0, "array>set", T_ARRAY);
-	Object *array = interp->objects[VAL_DATA(array_val)];
+	Object *array = OBJECT_AT(VAL_DATA(array_val));
 
 	int set_handle = object_new_set(interp);
 	if (interp->error_flag) return;
-	Object *set = interp->objects[set_handle];
+	Object *set = OBJECT_AT(set_handle);
 
 	if (array->len > set->capacity) {
-		set->items = realloc(set->items, sizeof(Val) * (size_t)array->len);
+		set->items = arena_realloc(set->items, sizeof(Val) * (size_t)array->len);
 		set->capacity = array->len;
 	}
 	memcpy(set->items, array->items, sizeof(Val) * (size_t)array->len);
@@ -386,7 +386,7 @@ void p_size(Interpreter *interp) {
 			VAL_TAG(collection) == T_ARRAY ||
 			VAL_TAG(collection) == T_STRING ||
 			VAL_TAG(collection) == T_FRAME)
-		push(interp, make_float((double)interp->objects[VAL_DATA(collection)]->len));
+		push(interp, make_float((double)OBJECT_AT(VAL_DATA(collection))->len));
 	else fail(interp, "size: expected a set, array, string, or frame; got %s", tag_name(VAL_TAG(collection)));
 
 	DISPATCH(interp);
@@ -475,7 +475,7 @@ void p_take(Interpreter *interp) {
 	if (n_items < 0) n_items = 0;
 
 	PEEK_SEQUENCE_AT(source_val, 0, "take");
-	Object *source = interp->objects[VAL_DATA(source_val)];
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	if (n_items > source->len) n_items = source->len;
 
 	NEW_ARRAY(result_handle, result, n_items);
@@ -490,7 +490,7 @@ void p_take(Interpreter *interp) {
 
 void p_reverse(Interpreter *interp) {
 	PEEK_SEQUENCE_AT(source_val, 0, "reverse");
-	Object *source = interp->objects[VAL_DATA(source_val)];
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	NEW_ARRAY(result_handle, result, source->len);
 
@@ -506,7 +506,7 @@ void p_reverse_slice(Interpreter *interp) {
 	POP_INT(n, "reverse-slice!", "count");
 	POP_INT(offset, "reverse-slice!", "offset");
 	PEEK_TYPE_AT(target_val, 0, "reverse-slice!", T_ARRAY);
-	Object *target = interp->objects[VAL_DATA(target_val)];
+	Object *target = OBJECT_AT(VAL_DATA(target_val));
 
 	if (n < 0) {
 		fail(interp, "reverse-slice!: count must be non-negative; got %d", n);
@@ -536,8 +536,8 @@ void p_concat(Interpreter *interp) {
 
 	PEEK_SEQUENCE_AT(b_val, 0, "concat");
 	PEEK_SEQUENCE_AT(a_val, 1, "concat");
-	Object *b = interp->objects[VAL_DATA(b_val)];
-	Object *a = interp->objects[VAL_DATA(a_val)];
+	Object *b = OBJECT_AT(VAL_DATA(b_val));
+	Object *a = OBJECT_AT(VAL_DATA(a_val));
 
 	NEW_ARRAY(result_handle, result, a->len + b->len);
 
@@ -573,8 +573,8 @@ void frame_reserve(Object *frame, int needed) {
 		return;
 	while (frame->capacity < needed)
 		frame->capacity *= 2;
-	frame->frame.keys = realloc(frame->frame.keys, sizeof(cell) * (size_t)frame->capacity);
-	frame->frame.values = realloc(frame->frame.values, sizeof(Val) * (size_t)frame->capacity);
+	frame->frame.keys = arena_realloc(frame->frame.keys, sizeof(cell) * (size_t)frame->capacity);
+	frame->frame.values = arena_realloc(frame->frame.values, sizeof(Val) * (size_t)frame->capacity);
 }
 
 void frame_put(Object *frame, cell key, Val value) {
@@ -609,7 +609,7 @@ void p_array_to_frame(Interpreter *interp) {
 		fail(interp, "array>frame: expected an array; got %s", tag_name(VAL_TAG(source_val)));
 		return;
 	}
-	Object *source = interp->objects[VAL_DATA(source_val)];
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	if (source->len % 2 != 0) {
 		fail(interp, "array>frame: array needs an even number of kv pairs");
 		return;
@@ -644,7 +644,7 @@ static Object *frame_path_resolve(Interpreter *interp, Val path_val, const char 
 		return NULL;
 	}
 
-	Object *path = interp->objects[VAL_DATA(path_val)];
+	Object *path = OBJECT_AT(VAL_DATA(path_val));
 	for (int i = 0; i < path->len; i++) {
 		Val step = path->items[i];
 		int search_step = VAL_TAG(step) == T_ARRAY;
@@ -654,8 +654,8 @@ static Object *frame_path_resolve(Interpreter *interp, Val path_val, const char 
 				return NULL;
 			}
 			cell key = VAL_DATA(step);
-			search_step = key == (cell)interp->vocab->wildcard_symbol
-					|| key == (cell)interp->vocab->descendant_symbol;
+			search_step = key == (cell)vocab.wildcard_symbol
+					|| key == (cell)vocab.descendant_symbol;
 		}
 		if (search_step) {
 			if (!allow_search) {
@@ -675,7 +675,7 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 		fail(interp, "%s: expected a path (array of symbols); got %s", op, tag_name(VAL_TAG(path_val)));
 		return NULL;
 	}
-	Object *path = interp->objects[VAL_DATA(path_val)];
+	Object *path = OBJECT_AT(VAL_DATA(path_val));
 	for (int i = 0; i < path->len; i++) {
 		if (VAL_TAG(path->items[i]) != T_SYMBOL) {
 			fail(interp, "%s: path elements must be symbols; got %s", op, tag_name(VAL_TAG(path->items[i])));
@@ -686,7 +686,7 @@ static Object *frame_path(Interpreter *interp, Val path_val, const char *op) {
 }
 
 static int leaf_is_axis(Interpreter *interp, cell leaf, const char *op) {
-	if (leaf == (cell)interp->vocab->wildcard_symbol || leaf == (cell)interp->vocab->descendant_symbol) {
+	if (leaf == (cell)vocab.wildcard_symbol || leaf == (cell)vocab.descendant_symbol) {
 		fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
 		return 1;
 	}
@@ -695,7 +695,7 @@ static int leaf_is_axis(Interpreter *interp, cell leaf, const char *op) {
 
 static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val value, const char *op) {
 	if (VAL_TAG(key) == T_SYMBOL) {
-		frame_put(interp->objects[frame_handle], VAL_DATA(key), value);
+		frame_put(OBJECT_AT(frame_handle), VAL_DATA(key), value);
 		return;
 	}
 
@@ -712,7 +712,7 @@ static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val v
 		Val parent = frame_walk(interp, make_frame(frame_handle), path, path->len - 1, WALK_VIVIFY, NULL, op);
 		if (interp->error_flag) return;
 
-		frame_put(interp->objects[VAL_DATA(parent)], VAL_DATA(path->items[path->len - 1]), value);
+		frame_put(OBJECT_AT(VAL_DATA(parent)), VAL_DATA(path->items[path->len - 1]), value);
 		return;
 	}
 
@@ -754,12 +754,12 @@ static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val v
 void p_frame_get(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 1, "@", T_FRAME);
 	PEEK_AT(key_or_path, 0, "@");
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "@", {
 			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
 			if (!present) {
-			fail(interp, "@: no key :%s", &interp->vocab->symbol_pool[VAL_DATA(key_or_path)]);
+			fail(interp, "@: no key :%s", &vocab.symbol_pool[VAL_DATA(key_or_path)]);
 			return;
 			}
 			Val result = frame->frame.values[at];
@@ -779,7 +779,7 @@ void p_frame_set(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 2, "!", T_FRAME);
 	PEEK_AT(key_or_path, 1, "!");
 	PEEK_AT(value, 0, "!");
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "!", {
 			frame_put(frame, VAL_DATA(key_or_path), value);
@@ -789,7 +789,7 @@ void p_frame_set(Interpreter *interp) {
 			if (leaf_is_axis(interp, VAL_DATA(path->items[path->len - 1]), "!")) return;
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_VIVIFY, NULL, "!");
 			if (interp->error_flag) return;
-			frame_put(interp->objects[VAL_DATA(parent)], VAL_DATA(path->items[path->len - 1]), value);
+			frame_put(OBJECT_AT(VAL_DATA(parent)), VAL_DATA(path->items[path->len - 1]), value);
 			interp->dsp -= 2;
 			});
 
@@ -799,11 +799,11 @@ void p_frame_set(Interpreter *interp) {
 void p_frame_delete_at(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 1, "delete-at", T_FRAME);
 	PEEK_AT(key_or_path, 0, "delete-at");
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "delete-at", {
 			if (!frame_delete(frame, VAL_DATA(key_or_path))) {
-			fail(interp, "delete-at: no key :%s", &interp->vocab->symbol_pool[VAL_DATA(key_or_path)]);
+			fail(interp, "delete-at: no key :%s", &vocab.symbol_pool[VAL_DATA(key_or_path)]);
 			return;
 			}
 			interp->dsp--;
@@ -813,8 +813,8 @@ void p_frame_delete_at(Interpreter *interp) {
 			Val parent = frame_walk(interp, frame_val, path, path->len - 1, WALK_ERROR, NULL, "delete-at");
 			if (interp->error_flag) return;
 			cell leaf = VAL_DATA(path->items[path->len - 1]);
-			if (VAL_TAG(parent) != T_FRAME || !frame_delete(interp->objects[VAL_DATA(parent)], leaf)) {
-			fail(interp, "delete-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
+			if (VAL_TAG(parent) != T_FRAME || !frame_delete(OBJECT_AT(VAL_DATA(parent)), leaf)) {
+			fail(interp, "delete-at: no key :%s", &vocab.symbol_pool[leaf]);
 			return;
 			}
 			interp->dsp--;
@@ -825,7 +825,7 @@ void p_frame_delete_at(Interpreter *interp) {
 
 void p_frame_keys(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 0, "keys", T_FRAME);
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 	NEW_ARRAY(result_handle, result, frame->len);
 
 	for (int i = 0; i < frame->len; i++)
@@ -838,7 +838,7 @@ void p_frame_keys(Interpreter *interp) {
 
 void p_frame_values(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 0, "values", T_FRAME);
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 	NEW_ARRAY(result_handle, result, frame->len);
 
 	for (int i = 0; i < frame->len; i++)
@@ -851,7 +851,7 @@ void p_frame_values(Interpreter *interp) {
 
 void p_frame_to_array(Interpreter *interp) {
 	PEEK_TYPE_AT(frame_val, 0, "frame>array", T_FRAME);
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 	NEW_ARRAY(result_handle, result, frame->len * 2);
 
 	for (int i = 0; i < frame->len; i++) {
@@ -871,13 +871,13 @@ static int predicate_holds(Interpreter *interp, Val tree_node, Object *pred) {
 	int present = 0;
 	
 	if (VAL_TAG(key) == T_ARRAY) {
-		Object *subpath = interp->objects[VAL_DATA(key)];
+		Object *subpath = OBJECT_AT(VAL_DATA(key));
 		subject = frame_walk(interp, tree_node, subpath, subpath->len, WALK_PROBE, &present, "select-values");
-	} else if (VAL_DATA(key) == (cell)interp->vocab->self_symbol) {
+	} else if (VAL_DATA(key) == (cell)vocab.self_symbol) {
 		subject = tree_node;
 		present = 1;
 	} else if (VAL_TAG(tree_node) == T_FRAME) {
-		Object *frame = interp->objects[VAL_DATA(tree_node)];
+		Object *frame = OBJECT_AT(VAL_DATA(tree_node));
 		FRAME_LOOKUP(frame, VAL_DATA(key), at, found);
 		if (found) {
 			subject = frame->frame.values[at];
@@ -919,14 +919,14 @@ static void select_walk(Interpreter *interp, Val tree_node, Object *path, int de
 			int path_handle = object_new_array(interp, trail_len);
 			if (interp->error_flag)
 				return;
-			Object *captured_path = interp->objects[path_handle];
+			Object *captured_path = OBJECT_AT(path_handle);
 			for (int i = 0; i < trail_len; i++)
 				captured_path->items[i] = make_symbol((int)trail[i]);
 			captured = make_array(path_handle);
 		} else {
 			captured = tree_node;
 		}
-		Object *matches_array = interp->objects[matches];
+		Object *matches_array = OBJECT_AT(matches);
 		GROW_IF_FULL(matches_array->len, matches_array->capacity, matches_array->items);
 		matches_array->items[matches_array->len++] = captured;
 		return;
@@ -934,7 +934,7 @@ static void select_walk(Interpreter *interp, Val tree_node, Object *path, int de
 
 	Val step = path->items[depth];
 	if (VAL_TAG(step) == T_ARRAY) {
-		if (predicate_holds(interp, tree_node, interp->objects[VAL_DATA(step)]))
+		if (predicate_holds(interp, tree_node, OBJECT_AT(VAL_DATA(step))))
 			select_walk(interp, tree_node, path, depth + 1, trail, trail_len, matches, mode, found);
 		return;
 	}
@@ -946,16 +946,16 @@ static void select_walk(Interpreter *interp, Val tree_node, Object *path, int de
 		return;
 	}
 
-	Object *frame = interp->objects[VAL_DATA(tree_node)];
+	Object *frame = OBJECT_AT(VAL_DATA(tree_node));
 	cell key = VAL_DATA(step);
-	if (key == (cell)interp->vocab->wildcard_symbol) {
+	if (key == (cell)vocab.wildcard_symbol) {
 		for (int i = 0; i < frame->len; i++) {
 			trail[trail_len] = frame->frame.keys[i];
 			select_walk(interp, frame->frame.values[i], path, depth + 1, trail, trail_len + 1, matches, mode, found);
 			if (mode == SELECT_EXISTS && *found)
 				return;
 		}
-	} else if (key == (cell)interp->vocab->descendant_symbol) {
+	} else if (key == (cell)vocab.descendant_symbol) {
 		select_descendants(interp, tree_node, path, depth + 1, trail, trail_len, matches, mode, found);
 	} else {
 		FRAME_LOOKUP(frame, key, at, present);
@@ -969,12 +969,12 @@ static void select_walk(Interpreter *interp, Val tree_node, Object *path, int de
 static void do_select(Interpreter *interp, SelectMode mode, const char *op) {
 	PEEK_TYPE_AT(path_val, 0, op, T_ARRAY);
 	PEEK_TYPE_AT(frame_val, 1, op, T_FRAME);
-	Object *path = interp->objects[VAL_DATA(path_val)];
+	Object *path = OBJECT_AT(VAL_DATA(path_val));
 
 	int matches = object_new_array(interp, 8);
 	if (interp->error_flag)
 		return;
-	interp->objects[matches]->len = 0;
+	OBJECT_AT(matches)->len = 0;
 	gc_root_push(interp, make_array(matches));
 
 	cell trail[SELECT_MAX_DEPTH];
@@ -1009,7 +1009,7 @@ static void select_descendants(Interpreter *interp, Val tree_node, Object *path,
 		return;
 	}
 
-	Object *frame = interp->objects[VAL_DATA(tree_node)];
+	Object *frame = OBJECT_AT(VAL_DATA(tree_node));
 	for (int i = 0; i < frame->len; i++) {
 		trail[trail_len] = frame->frame.keys[i];
 		select_descendants(interp, frame->frame.values[i], path, depth, trail, trail_len + 1, matches, mode, found);
@@ -1023,8 +1023,8 @@ static void select_descendants(Interpreter *interp, Val tree_node, Object *path,
 void p_merge(Interpreter *interp) {
 	PEEK_TYPE_AT(right, 0, "merge", T_FRAME);
 	PEEK_TYPE_AT(left, 1, "merge", T_FRAME);
-	Object *right_frame = interp->objects[VAL_DATA(right)];
-	Object *left_frame = interp->objects[VAL_DATA(left)];
+	Object *right_frame = OBJECT_AT(VAL_DATA(right));
+	Object *left_frame = OBJECT_AT(VAL_DATA(left));
 
 	NEW_FRAME(result_handle, result);
 	for (int i = 0; i < left_frame->len; i++)
@@ -1041,8 +1041,8 @@ void p_merge(Interpreter *interp) {
 void p_frame(Interpreter *interp) {
 	PEEK_TYPE_AT(values_val, 0, "frame", T_ARRAY);
 	PEEK_SEQUENCE_AT(keys_val, 1, "frame");
-	Object *values = interp->objects[VAL_DATA(values_val)];
-	Object *keys = interp->objects[VAL_DATA(keys_val)];
+	Object *values = OBJECT_AT(VAL_DATA(values_val));
+	Object *keys = OBJECT_AT(VAL_DATA(keys_val));
 	if (keys->len != values->len) {
 		fail(interp, "frame: keys and values must be the same length (%d vs %d)", keys->len, values->len);
 		return;
@@ -1077,7 +1077,7 @@ void p_has(Interpreter *interp) {
 
 	PEEK_TYPE_AT(frame_val, 1, "has?", T_FRAME);
 	PEEK_AT(key_or_path, 0, "has?");
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	if (VAL_TAG(key_or_path) == T_SYMBOL) {
 		FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
@@ -1122,12 +1122,12 @@ void p_update_at(Interpreter *interp) {
 		fail(interp, "update-at: xt required on stack; got %s", tag_name(VAL_TAG(xt)));
 		return;
 	}
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "update-at", {
 			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
 			if (!present) {
-			fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[VAL_DATA(key_or_path)]);
+			fail(interp, "update-at: no key :%s", &vocab.symbol_pool[VAL_DATA(key_or_path)]);
 			return;
 			}
 			push(interp, frame->frame.values[at]);
@@ -1143,11 +1143,11 @@ void p_update_at(Interpreter *interp) {
 			fail(interp, "update-at: parent is not a frame; got %s", tag_name(VAL_TAG(parent)));
 			return;
 			}
-			Object *parent_obj = interp->objects[VAL_DATA(parent)];
+			Object *parent_obj = OBJECT_AT(VAL_DATA(parent));
 			cell leaf = VAL_DATA(path->items[path->len - 1]);
 			FRAME_LOOKUP(parent_obj, leaf, at, present);
 			if (!present) {
-				fail(interp, "update-at: no key :%s", &interp->vocab->symbol_pool[leaf]);
+				fail(interp, "update-at: no key :%s", &vocab.symbol_pool[leaf]);
 				return;
 			}
 			push(interp, parent_obj->frame.values[at]);
@@ -1159,11 +1159,11 @@ void p_update_at(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-static Val frame_field(Interpreter *interp, Val frame_val, cell col) {
+static Val frame_field(Val frame_val, cell col) {
 	if (VAL_TAG(frame_val) != T_FRAME)
 		return make_tagged(T_NONE, 0);
 
-	Object *frame = interp->objects[VAL_DATA(frame_val)];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 	FRAME_LOOKUP(frame, col, at, present);
 	return present ? frame->frame.values[at] : make_tagged(T_NONE, 0);
 }
@@ -1181,7 +1181,7 @@ void p_group_by(Interpreter *interp) {
 	cell col = VAL_DATA(col_val);
 
 	PEEK_TYPE_AT(rows_val, 0, "group-by", T_ARRAY);
-	int row_count = interp->objects[VAL_DATA(rows_val)]->len;
+	int row_count = OBJECT_AT(VAL_DATA(rows_val))->len;
 
 	int frame_handle = object_new_frame(interp);
 	if (interp->error_flag)
@@ -1192,10 +1192,10 @@ void p_group_by(Interpreter *interp) {
 
 	/* One pass: drop each row into a growable bag keyed by its column value. */
 	for (int i = 0; i < row_count; i++) {
-		Val row = interp->objects[VAL_DATA(rows_val)]->items[i];
-		cell key = VAL_DATA(frame_field(interp, row, col));
+		Val row = OBJECT_AT(VAL_DATA(rows_val))->items[i];
+		cell key = VAL_DATA(frame_field(row, col));
 
-		Object *frame = interp->objects[frame_handle];
+		Object *frame = OBJECT_AT(frame_handle);
 		FRAME_LOOKUP(frame, key, at, present);
 		int bag;
 		if (present) {
@@ -1206,19 +1206,19 @@ void p_group_by(Interpreter *interp) {
 				gc_root_pop(interp);
 				return;
 			}
-			frame_put(interp->objects[frame_handle], key, make_array(bag));
+			frame_put(OBJECT_AT(frame_handle), key, make_array(bag));
 		}
 
-		Object *bag_obj = interp->objects[bag];
+		Object *bag_obj = OBJECT_AT(bag);
 		GROW_IF_FULL(bag_obj->len, bag_obj->capacity, bag_obj->items);
 		bag_obj->items[bag_obj->len++] = row;
 	}
 
 	/* Sort+dedup each bag in place, then turn it into a set (storage reused). */
-	Object *result = interp->objects[frame_handle];
+	Object *result = OBJECT_AT(frame_handle);
 	for (int i = 0; i < result->len; i++) {
 		int bag = (int)VAL_DATA(result->frame.values[i]);
-		Object *bag_obj = interp->objects[bag];
+		Object *bag_obj = OBJECT_AT(bag);
 		qsort_r(bag_obj->items, (size_t)bag_obj->len, sizeof(Val), interp, row_cmp);
 		int unique = 0;
 		for (int source = 0; source < bag_obj->len; source++)
@@ -1238,7 +1238,7 @@ void p_group_by(Interpreter *interp) {
 
 void p_destruct(Interpreter *interp) {
 	PEEK_COLLECTION_AT(source_val, 0, "destruct");
-	Object *source = interp->objects[VAL_DATA(source_val)];
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	interp->dsp--;
 
 	for (int i = 0; i < source->len; i++) {
@@ -1266,8 +1266,8 @@ void p_destruct_to(Interpreter *interp) {
 		return;
 	}
 
-	Object *source = interp->objects[VAL_DATA(source_val)];
-	Object *target = interp->objects[VAL_DATA(target_val)];
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+	Object *target = OBJECT_AT(VAL_DATA(target_val));
 	if (source->len != target->len) {
 		fail(interp, "destruct-to: length mismatch (source %d, target %d)", source->len, target->len);
 		return;
@@ -1280,8 +1280,8 @@ void p_destruct_to(Interpreter *interp) {
 		if (VAL_TAG(item) == T_XT) {
 			var_cfa = (int)VAL_DATA(item);
 		} else if (VAL_TAG(item) == T_SYMBOL) {
-			const char *name = &interp->vocab->symbol_pool[VAL_DATA(item)];
-			var_cfa = find(interp, name);
+			const char *name = &vocab.symbol_pool[VAL_DATA(item)];
+			var_cfa = find(name);
 			if (!var_cfa)
 				var_cfa = create_variable(interp, name);
 
@@ -1292,12 +1292,12 @@ void p_destruct_to(Interpreter *interp) {
 			return;
 		}
 
-		if ((cfa_handler)interp->vocab->dict[var_cfa] != dovar) {
+		if ((cfa_handler)vocab.dict[var_cfa] != dovar) {
 			fail(interp, "destruct-to: target at index %d is not a variable", i);
 			return;
 		}
 
-		interp->vocab->dict[var_cfa + 1] = (cell)source->items[i].bits;
+		vocab.dict[var_cfa + 1] = (cell)source->items[i].bits;
 	}
 
 	DISPATCH(interp);
@@ -1315,8 +1315,8 @@ void p_slice_store(Interpreter *interp) {
 	POP_INT(tstart, "slice!", "target-start");
 	PEEK_TYPE_AT(target_val, 0, "slice!", T_ARRAY);
 
-	Object *target = interp->objects[VAL_DATA(target_val)];
-	Object *src    = interp->objects[VAL_DATA(src_val)];
+	Object *target = OBJECT_AT(VAL_DATA(target_val));
+	Object *src    = OBJECT_AT(VAL_DATA(src_val));
 
 	if (slen < 0) {
 		fail(interp, "slice!: length must be non-negative; got %d", slen);
@@ -1374,7 +1374,7 @@ void p_to_slice(Interpreter *interp) {
 	POP_INT(n, "to-slice!", "count");
 	POP_INT(offset, "to-slice!", "offset");
 	PEEK_TYPE_AT(target_val, 0, "to-slice!", T_ARRAY);
-	Object *target = interp->objects[VAL_DATA(target_val)];
+	Object *target = OBJECT_AT(VAL_DATA(target_val));
 
 	if (n < 0) {
 		fail(interp, "to-slice!: count must be non-negative; got %d", n);
@@ -1521,7 +1521,7 @@ static void json_parse_string(Interpreter *interp, JSONParser *parser, Val *dest
 	int handle = object_new_string_uninit(interp, (int)(closing - content));
 	if (interp->error_flag) return;
 
-	Object *string = interp->objects[handle];
+	Object *string = OBJECT_AT(handle);
 	int length = json_decode_string(interp, content, closing, string->bytes);
 	if (length < 0) return;
 	string->len = length;
@@ -1551,17 +1551,17 @@ static void json_parse_array(Interpreter *interp, JSONParser *parser, Val *desti
 	}
 
 	for (;;) {
-		Object *array = interp->objects[handle];
+		Object *array = OBJECT_AT(handle);
 		if (array->len == array->capacity) {
 			int capacity = array->capacity < 4 ? 4 : array->capacity * 2;
-			array->items = realloc(array->items, sizeof(Val) * (size_t)capacity);
+			array->items = arena_realloc(array->items, sizeof(Val) * (size_t)capacity);
 			array->capacity = capacity;
 		}
 
 		array->items[array->len] = make_tagged(T_NONE, 0);
 		array->len++;
 		
-		json_parse_value(interp, parser, &interp->objects[handle]->items[array->len - 1]);
+		json_parse_value(interp, parser, &OBJECT_AT(handle)->items[array->len - 1]);
 		if (interp->error_flag) return;
 
 		json_skip_whitespace(parser);
@@ -1639,14 +1639,14 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 		}
 		parser->cursor++;
 
-		Object *frame = interp->objects[handle];
+		Object *frame = OBJECT_AT(handle);
 		frame_reserve(frame, frame->len + 1);
 
 		frame->frame.keys[frame->len] = key_symbol;
 		frame->frame.values[frame->len] = make_tagged(T_NONE, 0);
 		frame->len++;
 		
-		json_parse_value(interp, parser, &interp->objects[handle]->frame.values[frame->len - 1]);
+		json_parse_value(interp, parser, &OBJECT_AT(handle)->frame.values[frame->len - 1]);
 		if (interp->error_flag) return;
 
 		json_skip_whitespace(parser);
@@ -1666,7 +1666,7 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 		return;
 	}
 
-	Object *frame = interp->objects[handle];
+	Object *frame = OBJECT_AT(handle);
 	cell *keys = frame->frame.keys;
 	Val *values = frame->frame.values;
 	
@@ -1719,7 +1719,7 @@ static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *desti
 		case 't':
 			if (parser->end - parser->cursor >= 4 && memcmp(parser->cursor, "true", 4) == 0) {
 				parser->cursor += 4;
-				*destination = make_symbol(interp->vocab->true_symbol);
+				*destination = make_symbol(vocab.true_symbol);
 				return;
 			}
 			fail(interp, "json>frame: invalid literal");
@@ -1727,7 +1727,7 @@ static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *desti
 		case 'f':
 			if (parser->end - parser->cursor >= 5 && memcmp(parser->cursor, "false", 5) == 0) {
 				parser->cursor += 5;
-				*destination = make_symbol(interp->vocab->false_symbol);
+				*destination = make_symbol(vocab.false_symbol);
 				return;
 			}
 			fail(interp, "json>frame: invalid literal");
@@ -1871,20 +1871,20 @@ static void json_write_value(Interpreter *interp, JSONWriter *writer, Val value,
 			json_write_number(writer, VAL_NUMBER(value));
 			return;
 		case T_SYMBOL:
-			if ((int)VAL_DATA(value) == interp->vocab->true_symbol)
+			if ((int)VAL_DATA(value) == vocab.true_symbol)
 				json_write_bytes(writer, "true", 4);
-			else if ((int)VAL_DATA(value) == interp->vocab->false_symbol)
+			else if ((int)VAL_DATA(value) == vocab.false_symbol)
 				json_write_bytes(writer, "false", 5);
 			else
 				fail(interp, "frame>json: cannot serialize a non-boolean symbol");
 			return;
 		case T_STRING: {
-			Object *string = interp->objects[VAL_DATA(value)];
+			Object *string = OBJECT_AT(VAL_DATA(value));
 			json_write_string(writer, string->bytes, string->len);
 			return;
 		}
 		case T_ARRAY: {
-			Object *array = interp->objects[VAL_DATA(value)];
+			Object *array = OBJECT_AT(VAL_DATA(value));
 			json_write_byte(writer, '[');
 			for (int i = 0; i < array->len; i++) {
 				if (i > 0) json_write_bytes(writer, ", ", 2);
@@ -1894,11 +1894,11 @@ static void json_write_value(Interpreter *interp, JSONWriter *writer, Val value,
 			return;
 		}
 		case T_FRAME: {
-			Object *frame = interp->objects[VAL_DATA(value)];
+			Object *frame = OBJECT_AT(VAL_DATA(value));
 			json_write_byte(writer, '{');
 			for (int i = 0; i < frame->len; i++) {
 				if (i > 0) json_write_bytes(writer, ", ", 2);
-				const char *key = &interp->vocab->symbol_pool[frame->frame.keys[i]];
+				const char *key = &vocab.symbol_pool[frame->frame.keys[i]];
 				json_write_string(writer, key, (int)strlen(key));
 				json_write_bytes(writer, ": ", 2);
 				json_write_value(interp, writer, frame->frame.values[i], depth + 1);

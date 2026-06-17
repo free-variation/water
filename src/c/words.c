@@ -4,8 +4,8 @@ static void enter_compile_scope(Interpreter *interp);
 static void leave_compile_scope(Interpreter *interp);
 
 int string_concat(Interpreter *interp, int left_handle, int right_handle) {
-	Object *left = interp->objects[left_handle];
-	Object *right = interp->objects[right_handle];
+	Object *left = OBJECT_AT(left_handle);
+	Object *right = OBJECT_AT(right_handle);
 	int combined_length = left->len + right->len;
 
 	char *buffer = malloc((size_t)combined_length + 1);
@@ -20,10 +20,10 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 #define BROADCAST_SCALAR_OP_MATRIX(op) \
 	do { \
 		double scalar = VAL_NUMBER(left); \
-		Object *matrix_source = interp->objects[VAL_DATA(right)]; \
+		Object *matrix_source = OBJECT_AT(VAL_DATA(right)); \
 		int target_handle = object_new_matrix(interp, matrix_source->matrix.rows, matrix_source->matrix.columns); \
 		if (interp->error_flag) return; \
-		Object *target = interp->objects[target_handle]; \
+		Object *target = OBJECT_AT(target_handle); \
 		size_t num_elements = (size_t)matrix_source->matrix.rows * (size_t)matrix_source->matrix.columns; \
 		const double * restrict source_elements = matrix_source->matrix.elements; \
 		double * restrict target_elements = target->matrix.elements; \
@@ -36,10 +36,10 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 #define BROADCAST_MATRIX_OP_SCALAR(op) \
 	do { \
 		double scalar = VAL_NUMBER(right); \
-		Object *matrix_source = interp->objects[VAL_DATA(left)]; \
+		Object *matrix_source = OBJECT_AT(VAL_DATA(left)); \
 		int target_handle = object_new_matrix(interp, matrix_source->matrix.rows, matrix_source->matrix.columns); \
 		if (interp->error_flag) return; \
-		Object *target = interp->objects[target_handle]; \
+		Object *target = OBJECT_AT(target_handle); \
 		size_t num_elements = (size_t)matrix_source->matrix.rows * (size_t)matrix_source->matrix.columns; \
 		const double * restrict source_elements = matrix_source->matrix.elements; \
 		double * restrict target_elements = target->matrix.elements; \
@@ -83,7 +83,7 @@ void p_add(Interpreter *interp) {
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
 		BROADCAST_MATRIX_OP_SCALAR(+);
 	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY)
-		execute_cfa(interp, find(interp, "concat"));
+		execute_cfa(interp, find("concat"));
 	else
 		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
@@ -166,7 +166,7 @@ void p_div(Interpreter *interp) {
 		interp->dsp--;
 	}
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
-		Object *divisor = interp->objects[VAL_DATA(right)];
+		Object *divisor = OBJECT_AT(VAL_DATA(right));
 		int n = divisor->matrix.rows * divisor->matrix.columns;
 		for (int i = 0; i < n; i++) {
 			if (divisor->matrix.elements[i] == 0.0) {
@@ -200,8 +200,8 @@ void p_div(Interpreter *interp) {
 		POP(right); \
 		POP(left); \
 		if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) { \
-			Object *left_matrix = interp->objects[VAL_DATA(left)]; \
-			Object *right_matrix = interp->objects[VAL_DATA(right)]; \
+			Object *left_matrix = OBJECT_AT(VAL_DATA(left)); \
+			Object *right_matrix = OBJECT_AT(VAL_DATA(right)); \
 			if (left_matrix->matrix.rows != right_matrix->matrix.rows || left_matrix->matrix.columns != right_matrix->matrix.columns) { \
 				fail(interp, word ": matrix shapes differ (%dx%d vs %dx%d)", left_matrix->matrix.rows, left_matrix->matrix.columns, right_matrix->matrix.rows, right_matrix->matrix.columns); \
 				return; \
@@ -214,7 +214,7 @@ void p_div(Interpreter *interp) {
 			push(interp, left); \
 		} else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT) { \
 			double scalar = VAL_NUMBER(right); \
-			Object *matrix = interp->objects[VAL_DATA(left)]; \
+			Object *matrix = OBJECT_AT(VAL_DATA(left)); \
 			size_t num_elements = (size_t)matrix->matrix.rows * (size_t)matrix->matrix.columns; \
 			double * restrict elements = matrix->matrix.elements; \
 			for (size_t i = 0; i < num_elements; i++) \
@@ -222,7 +222,7 @@ void p_div(Interpreter *interp) {
 			push(interp, left); \
 		} else if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX) { \
 			double scalar = VAL_NUMBER(left); \
-			Object *matrix = interp->objects[VAL_DATA(right)]; \
+			Object *matrix = OBJECT_AT(VAL_DATA(right)); \
 			size_t num_elements = (size_t)matrix->matrix.rows * (size_t)matrix->matrix.columns; \
 			double * restrict elements = matrix->matrix.elements; \
 			for (size_t i = 0; i < num_elements; i++) \
@@ -321,7 +321,7 @@ void p_zeq(Interpreter *interp) {
 
 #define COMPARISON_ZBRANCH(name, op) \
 	void name(Interpreter *interp) { \
-		cell branch_distance = interp->vocab->dict[interp->ip++]; \
+		cell branch_distance = vocab.dict[interp->ip++]; \
 		POP(right); \
 		POP(left); \
 		int is_true = (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) \
@@ -337,7 +337,7 @@ COMPARISON_ZBRANCH(p_lt_zbranch, <);
 COMPARISON_ZBRANCH(p_gt_zbranch, >);
 
 void p_zeq_zbranch(Interpreter *interp) {
-	cell branch_distance = interp->vocab->dict[interp->ip++];
+	cell branch_distance = vocab.dict[interp->ip++];
 	POP(operand);
 
 	if (truthy(operand))
@@ -450,9 +450,9 @@ void p_roll(Interpreter *interp) {
 void p_dot(Interpreter *interp) {
 	POP(value);
 	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(interp->objects[VAL_DATA(value)]);
+		print_matrix_grid(OBJECT_AT(VAL_DATA(value)));
 	} else if (VAL_TAG(value) == T_FRAME) {
-		print_frame_pretty(interp, interp->objects[VAL_DATA(value)], 0);
+		print_frame_pretty(interp, OBJECT_AT(VAL_DATA(value)), 0);
 		putchar('\n');
 	} else if (VAL_TAG(value) == T_ARRAY) {
 		pretty_print_array(interp, value);
@@ -470,7 +470,7 @@ void p_dot_all(Interpreter *interp) {
 	print_truncate = 0;
 	POP(value);
 	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(interp->objects[VAL_DATA(value)]);
+		print_matrix_grid(OBJECT_AT(VAL_DATA(value)));
 	} else {
 		print_val(interp, value);
 		putchar(' ');
@@ -638,7 +638,7 @@ int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index
 	if (interp->error_flag)
 		return -1;
 
-	interp->objects[slot]->continuation.local_base_offset =
+	OBJECT_AT(slot)->continuation.local_base_offset =
 		interp->local_base - (mark_index + 1);
 
 	*out_mark_index = mark_index;
@@ -698,7 +698,7 @@ void p_resume(Interpreter *interp) {
 		return;
 	}
 
-	Object *continuation = interp->objects[VAL_DATA(continuation_val)];
+	Object *continuation = OBJECT_AT(VAL_DATA(continuation_val));
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
 	int saved_local_base = interp->local_base;
@@ -728,10 +728,10 @@ void p_resume(Interpreter *interp) {
 
 void p_words(Interpreter *interp) {
 	int printed_count = 0;
-	for (int cfa = interp->vocab->latest_cfa; cfa != 0; cfa = (int)WORD_LINK(interp->vocab, cfa)) {
-		if (WORD_IS_INTERNAL(interp->vocab, cfa))
+	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
+		if (WORD_IS_INTERNAL(cfa))
 			continue;
-		fputs(&interp->vocab->name_pool[WORD_NAME(interp->vocab, cfa)], stdout);
+		fputs(&vocab.name_pool[WORD_NAME(cfa)], stdout);
 		putchar(' ');
 		if (++printed_count % 8 == 0)
 			putchar('\n');
@@ -746,23 +746,23 @@ void p_words(Interpreter *interp) {
 void p_see(Interpreter *interp) {
 	POP_XT(target_cfa, "see");
 
-	const char *name = name_of(interp, target_cfa);
+	const char *name = name_of(target_cfa);
 
-	cfa_handler handler = (cfa_handler)interp->vocab->dict[target_cfa];
+	cfa_handler handler = (cfa_handler)vocab.dict[target_cfa];
 	if (handler == docol) {
 		if (!name) {
 
 			printf("[: ... :]  \\ anonymous, no source\n");
 		} else {
-			int src_idx = (int)WORD_SOURCE(interp->vocab, target_cfa);
+			int src_idx = (int)WORD_SOURCE(target_cfa);
 			if (src_idx > 0)
-				printf(": %s%s;\n", name, &interp->vocab->source_pool[src_idx]);
+				printf(": %s%s;\n", name, &vocab.source_pool[src_idx]);
 			else
 				printf(": %s ... ;  \\ no source captured\n", name);
 		}
 	} else if (handler == dovar) {
 		Val value;
-		value.bits = (uint64_t)interp->vocab->dict[target_cfa + 1];
+		value.bits = (uint64_t)vocab.dict[target_cfa + 1];
 		printf("variable %s  \\ current value: ", name ? name : "?");
 		print_val(interp, value);
 		putchar('\n');
@@ -781,13 +781,13 @@ static void help_put(Interpreter *interp, int frame_handle, const char *key, con
 	if (interp->error_flag) {
 		return;
 	}
-	frame_put(interp->objects[frame_handle], intern_symbol(interp, key), make_string(string_handle));
+	frame_put(OBJECT_AT(frame_handle), intern_symbol(interp, key), make_string(string_handle));
 }
 
 void p_man(Interpreter *interp) {
 	POP_XT(target_cfa, "man");
 
-	const char *name = name_of(interp, target_cfa);
+	const char *name = name_of(target_cfa);
 	const HelpEntry *entry = NULL;
 	if (name) {
 		LOWER_BOUND(help_entry_count, mid, strcmp(help_entries[mid].name, name) < 0, at);
@@ -821,26 +821,26 @@ void p_man(Interpreter *interp) {
 
 void p_semicolon(Interpreter *interp) {
 	leave_compile_scope(interp);
-	emit_call(interp, interp->vocab->exit_cfa);
-	if (interp->compiling_src_start > 0 && interp->vocab->latest_cfa != 0) {
-		int src_end = interp->input_buffer_pos - 1;
-		int src_len = src_end - interp->compiling_src_start;
+	emit_call(interp, vocab.exit_cfa);
+	if (compiler.compiling_src_start > 0 && vocab.latest_cfa != 0) {
+		int src_end = compiler.input_buffer_pos - 1;
+		int src_len = src_end - compiler.compiling_src_start;
 		if (src_len < 0)
 			src_len = 0;
-		if (interp->vocab->source_here + src_len + 1 > SOURCE_POOL) {
+		if (vocab.source_here + src_len + 1 > SOURCE_POOL) {
 			fail(interp, "source pool full (max %d bytes); definition source too large to store", SOURCE_POOL);
 		} else {
-			int source_offset = interp->vocab->source_here;
-			memcpy(&interp->vocab->source_pool[interp->vocab->source_here],
-					&interp->input_buffer[interp->compiling_src_start],
+			int source_offset = vocab.source_here;
+			memcpy(&vocab.source_pool[vocab.source_here],
+					&compiler.input_buffer[compiler.compiling_src_start],
 					(size_t)src_len);
-			interp->vocab->source_pool[interp->vocab->source_here + src_len] = 0;
-			interp->vocab->source_here += src_len + 1;
-			WORD_SOURCE(interp->vocab, interp->vocab->latest_cfa) = source_offset;
+			vocab.source_pool[vocab.source_here + src_len] = 0;
+			vocab.source_here += src_len + 1;
+			WORD_SOURCE(vocab.latest_cfa) = source_offset;
 		}
 	}
-	interp->compiling = 0;
-	interp->compiling_src_start = 0;
+	compiler.compiling = 0;
+	compiler.compiling_src_start = 0;
 
 	DISPATCH(interp);
 }
@@ -848,18 +848,18 @@ void p_semicolon(Interpreter *interp) {
 static int try_fuse_cmp_branch(Interpreter *interp) {
 	int fused_cfa;
 
-	if (interp->fuse_prev_cmp == interp->vocab->eq_cfa)
-		fused_cfa = interp->vocab->eq_zbranch_cfa;
-	else if (interp->fuse_prev_cmp == interp->vocab->lt_cfa)
-		fused_cfa = interp->vocab->lt_zbranch_cfa;
-	else if (interp->fuse_prev_cmp == interp->vocab->gt_cfa)
-		fused_cfa = interp->vocab->gt_zbranch_cfa;
-	else if (interp->fuse_prev_cmp == interp->vocab->zeq_cfa)
-		fused_cfa = interp->vocab->zeq_zbranch_cfa;
+	if (compiler.fuse_prev_cmp == vocab.eq_cfa)
+		fused_cfa = vocab.eq_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.lt_cfa)
+		fused_cfa = vocab.lt_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.gt_cfa)
+		fused_cfa = vocab.gt_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.zeq_cfa)
+		fused_cfa = vocab.zeq_zbranch_cfa;
 	else
 		return 0;
 
-	interp->vocab->here--;
+	vocab.here--;
 	emit_call(interp, fused_cfa);
 	return 1;
 }
@@ -867,16 +867,16 @@ static int try_fuse_cmp_branch(Interpreter *interp) {
 
 void p_if(Interpreter *interp) {
 	if (!try_fuse_cmp_branch(interp))
-		emit_call(interp, interp->vocab->zbranch_cfa);
-	push(interp, make_float((double)interp->vocab->here));
+		emit_call(interp, vocab.zbranch_cfa);
+	push(interp, make_float((double)vocab.here));
 	emit(interp, 0);
 
 	DISPATCH(interp);
 }
 
 void p_qif(Interpreter *interp) {
-	emit_call(interp, interp->vocab->qzbranch_cfa);
-	push(interp, make_float((double)interp->vocab->here));
+	emit_call(interp, vocab.qzbranch_cfa);
+	push(interp, make_float((double)vocab.here));
 	emit(interp, 0);
 
 	DISPATCH(interp);
@@ -885,7 +885,7 @@ void p_qif(Interpreter *interp) {
 void p_then(Interpreter *interp) {
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
-	interp->vocab->dict[slot] = (interp->vocab->here - slot);
+	vocab.dict[slot] = (vocab.here - slot);
 
 	DISPATCH(interp);
 }
@@ -893,16 +893,16 @@ void p_then(Interpreter *interp) {
 void p_else(Interpreter *interp) {
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
-	emit_call(interp, interp->vocab->branch_cfa);
-	push(interp, make_float((double)interp->vocab->here));
+	emit_call(interp, vocab.branch_cfa);
+	push(interp, make_float((double)vocab.here));
 	emit(interp, 0);
-	interp->vocab->dict[slot] = (interp->vocab->here - slot);
+	vocab.dict[slot] = (vocab.here - slot);
 
 	DISPATCH(interp);
 }
 
 void p_begin(Interpreter *interp) {
-	push(interp, make_float((double)interp->vocab->here));
+	push(interp, make_float((double)vocab.here));
 
 	DISPATCH(interp);
 }
@@ -911,8 +911,8 @@ void p_until(Interpreter *interp) {
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
 	if (!try_fuse_cmp_branch(interp))
-		emit_call(interp, interp->vocab->zbranch_cfa);
-	emit(interp, back - interp->vocab->here);
+		emit_call(interp, vocab.zbranch_cfa);
+	emit(interp, back - vocab.here);
 
 	DISPATCH(interp);
 }
@@ -920,16 +920,16 @@ void p_until(Interpreter *interp) {
 void p_again(Interpreter *interp) {
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
-	emit_call(interp, interp->vocab->branch_cfa);
-	emit(interp, back - interp->vocab->here);
+	emit_call(interp, vocab.branch_cfa);
+	emit(interp, back - vocab.here);
 
 	DISPATCH(interp);
 }
 
 void p_while(Interpreter *interp) {
 	if (!try_fuse_cmp_branch(interp))
-		emit_call(interp, interp->vocab->zbranch_cfa);
-	push(interp, make_float((double)interp->vocab->here));
+		emit_call(interp, vocab.zbranch_cfa);
+	push(interp, make_float((double)vocab.here));
 	emit(interp, 0);
 
 	DISPATCH(interp);
@@ -940,24 +940,24 @@ void p_repeat(Interpreter *interp) {
 	POP(back_val);
 	int exit_slot = (int)VAL_NUMBER(exit_slot_val);
 	int back = (int)VAL_NUMBER(back_val);
-	emit_call(interp, interp->vocab->branch_cfa);
-	emit(interp, back - interp->vocab->here);
-	interp->vocab->dict[exit_slot] = (interp->vocab->here - exit_slot);
+	emit_call(interp, vocab.branch_cfa);
+	emit(interp, back - vocab.here);
+	vocab.dict[exit_slot] = (vocab.here - exit_slot);
 
 	DISPATCH(interp);
 }
 
 void p_qcolon(Interpreter *interp) {
 	int branch_slot = -1;
-	if (interp->compiling) {
-		emit_call(interp, interp->vocab->branch_cfa);
-		branch_slot = interp->vocab->here;
+	if (compiler.compiling) {
+		emit_call(interp, vocab.branch_cfa);
+		branch_slot = vocab.here;
 		emit(interp, 0);
 	}
-	int anon_cfa = interp->vocab->here;
+	int anon_cfa = vocab.here;
 	emit(interp, (cell)&docol);
 	enter_compile_scope(interp);
-	interp->compiling = 1;
+	compiler.compiling = 1;
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
 
@@ -966,16 +966,16 @@ void p_qcolon(Interpreter *interp) {
 
 void p_qsemi(Interpreter *interp) {
 	leave_compile_scope(interp);
-	emit_call(interp, interp->vocab->exit_cfa);
+	emit_call(interp, vocab.exit_cfa);
 	POP(branch_slot_val);
 	POP(anon_cfa_val);
 	int branch_slot = (int)VAL_NUMBER(branch_slot_val);
 	int anon_cfa = (int)VAL_NUMBER(anon_cfa_val);
 	if (branch_slot < 0) {
-		interp->compiling = 0;
+		compiler.compiling = 0;
 		push(interp, make_xt(anon_cfa));
 	} else {
-		interp->vocab->dict[branch_slot] = (interp->vocab->here - branch_slot);
+		vocab.dict[branch_slot] = (vocab.here - branch_slot);
 		emit_val_literal(interp, make_xt(anon_cfa));
 	}
 
@@ -983,13 +983,13 @@ void p_qsemi(Interpreter *interp) {
 }
 
 static int parse_word_cfa(Interpreter *interp, const char *op) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	
 	if (!token) {
 		fail(interp, "%s : expected a word name", op);
 		return 0;
 	}
-	int target_cfa = find(interp, token);
+	int target_cfa = find(token);
 	if (!target_cfa) {
 		fail(interp, "%s : unknown word: %s", op, token);
 		return 0;
@@ -1005,7 +1005,7 @@ void p_tick(Interpreter *interp) {
 		return;
 
 	Val value = make_xt(target_cfa);
-	if (interp->compiling)
+	if (compiler.compiling)
 		emit_val_literal(interp, value);
 	else
 		push(interp, value);
@@ -1023,41 +1023,41 @@ void p_lookup(Interpreter *interp) {
 	DISPATCH(interp);
 }
 static void enter_compile_scope(Interpreter *interp) {
-	if (interp->n_local_scopes >= MAX_LOCAL_SCOPES) {
+	if (compiler.n_local_scopes >= MAX_LOCAL_SCOPES) {
 		fail(interp, "compile: locals nesting deeper than %d", MAX_LOCAL_SCOPES);
 		return;
 	}
 
-	interp->local_scope_starts[interp->n_local_scopes] = interp->n_local_names;
-	interp->local_scope_dict_starts[interp->n_local_scopes] = interp->vocab->here;
-	interp->n_local_scopes++;
+	compiler.local_scope_starts[compiler.n_local_scopes] = compiler.n_local_names;
+	compiler.local_scope_dict_starts[compiler.n_local_scopes] = vocab.here;
+	compiler.n_local_scopes++;
 }
 
 static void leave_compile_scope(Interpreter *interp) {
-	if (interp->n_local_scopes <= 0)
+	if (compiler.n_local_scopes <= 0)
 		return;
 
-	interp->n_local_scopes--;
-	int saved_n_names = interp->local_scope_starts[interp->n_local_scopes];
-	int n_locals_in_scope = interp->n_local_names - saved_n_names;
+	compiler.n_local_scopes--;
+	int saved_n_names = compiler.local_scope_starts[compiler.n_local_scopes];
+	int n_locals_in_scope = compiler.n_local_names - saved_n_names;
 
 	if (n_locals_in_scope > 0) {
-		emit_call(interp, interp->vocab->leave_locals_cfa);
+		emit_call(interp, vocab.leave_locals_cfa);
 		emit(interp, (cell)n_locals_in_scope);
 	}
 
 	if (saved_n_names == 0) {
-		interp->local_names_pool_here = 0;
+		compiler.local_names_pool_here = 0;
 	} else {
-		int last_offset = interp->local_name_offsets[saved_n_names - 1];
-		interp->local_names_pool_here = last_offset +
-			(int)strlen(&interp->local_names_pool[last_offset]) + 1;
+		int last_offset = compiler.local_name_offsets[saved_n_names - 1];
+		compiler.local_names_pool_here = last_offset +
+			(int)strlen(&compiler.local_names_pool[last_offset]) + 1;
 	}
-	interp->n_local_names = saved_n_names;
+	compiler.n_local_names = saved_n_names;
 }
 
 void p_colon(Interpreter *interp) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	if (!token) {
 		fail(interp, ": expected a name for the new definition");
 		return;
@@ -1066,9 +1066,9 @@ void p_colon(Interpreter *interp) {
 	create_header(interp, token, 0);
 	emit(interp, (cell)&docol);
 	enter_compile_scope(interp);
-	interp->compiling = 1;
+	compiler.compiling = 1;
 
-	interp->compiling_src_start = interp->input_buffer_pos;
+	compiler.compiling_src_start = compiler.input_buffer_pos;
 
 	DISPATCH(interp);
 }
@@ -1078,12 +1078,12 @@ int create_variable(Interpreter *interp, const char *name) {
 	emit(interp, (cell)&dovar);
 	emit(interp, (cell)make_float(0.0).bits);
 
-	return interp->vocab->latest_cfa;
+	return vocab.latest_cfa;
 }
 
 
 void p_variable(Interpreter *interp) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	if (!token) {
 		fail(interp, "variable: expected a name");
 		return;
@@ -1095,23 +1095,23 @@ void p_variable(Interpreter *interp) {
 }
 
 static void compile_locals_decl(Interpreter *interp, const char *opener, int force_all_receive) {
-	if (!interp->compiling || interp->n_local_scopes <= 0) {
+	if (!compiler.compiling || compiler.n_local_scopes <= 0) {
 		fail(interp, "%s: only valid inside a colon definition or quotation", opener);
 		return;
 	}
 
-	int scope_idx = interp->n_local_scopes - 1;
-	if (interp->vocab->here != interp->local_scope_dict_starts[scope_idx]) {
+	int scope_idx = compiler.n_local_scopes - 1;
+	if (vocab.here != compiler.local_scope_dict_starts[scope_idx]) {
 		fail(interp, "%s: locals must be declared at the head of the body", opener);
 		return;
 	}
 
-	int scope_start = interp->local_scope_starts[scope_idx];
+	int scope_start = compiler.local_scope_starts[scope_idx];
 	int receive_slots[MAX_LOCAL_NAMES];
 	int n_received = 0;
 
 	while (1) {
-		char *token = next_token(interp);
+		char *token = next_token();
 		if (!token) {
 			fail(interp, "%s: unterminated locals declaration (no closing |)", opener);
 			return;
@@ -1125,36 +1125,36 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 			token++;
 		}
 
-		for (int i = scope_start; i < interp->n_local_names; i++) {
-			if (strcmp(token, &interp->local_names_pool[interp->local_name_offsets[i]]) == 0) {
+		for (int i = scope_start; i < compiler.n_local_names; i++) {
+			if (strcmp(token, &compiler.local_names_pool[compiler.local_name_offsets[i]]) == 0) {
 				fail(interp, "%s: local '%s' declared twice", opener, token);
 				return;
 			}
 		}
 
 		int name_len = (int)strlen(token);
-		if (interp->local_names_pool_here + name_len + 1 > LOCAL_NAMES_POOL_SIZE) {
+		if (compiler.local_names_pool_here + name_len + 1 > LOCAL_NAMES_POOL_SIZE) {
 			fail(interp, "%s: local names pool full", opener);
 			return;
 		}
-		if (interp->n_local_names >= MAX_LOCAL_NAMES) {
+		if (compiler.n_local_names >= MAX_LOCAL_NAMES) {
 			fail(interp, "%s: too many local names (max %d)", opener, MAX_LOCAL_NAMES);
 			return;
 		}
 
-		int slot = interp->n_local_names - scope_start;
+		int slot = compiler.n_local_names - scope_start;
 
-		int offset = interp->local_names_pool_here;
-		memcpy(&interp->local_names_pool[offset], token, (size_t)name_len);
-		interp->local_names_pool[offset + name_len] = 0;
-		interp->local_names_pool_here += name_len + 1;
-		interp->local_name_offsets[interp->n_local_names++] = offset;
+		int offset = compiler.local_names_pool_here;
+		memcpy(&compiler.local_names_pool[offset], token, (size_t)name_len);
+		compiler.local_names_pool[offset + name_len] = 0;
+		compiler.local_names_pool_here += name_len + 1;
+		compiler.local_name_offsets[compiler.n_local_names++] = offset;
 
 		if (has_receive_marker)
 			receive_slots[n_received++] = slot;
 	}
 
-	int n_declared = interp->n_local_names - scope_start;
+	int n_declared = compiler.n_local_names - scope_start;
 	if (n_declared == 0)
 		return;
 
@@ -1164,22 +1164,22 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 	}
 
 	if (force_all_receive || n_received == n_declared) {
-		emit_call(interp, interp->vocab->enter_locals_to_cfa);
+		emit_call(interp, vocab.enter_locals_to_cfa);
 		emit(interp, (cell)n_declared);
 	} else if (n_received == 0) {
-		emit_call(interp, interp->vocab->enter_locals_cfa);
+		emit_call(interp, vocab.enter_locals_cfa);
 		emit(interp, (cell)n_declared);
 	} else {
-		emit_call(interp, interp->vocab->enter_locals_mixed_cfa);
+		emit_call(interp, vocab.enter_locals_mixed_cfa);
 		emit(interp, (cell)n_declared);
 		emit(interp, (cell)n_received);
 		for (int i = 0; i < n_received; i++)
 			emit(interp, (cell)receive_slots[i]);
 	}
 
-	int lvar_cfa = find(interp, "lvar");
-	for (int i = scope_start; i < interp->n_local_names; i++) {
-		const char *name = &interp->local_names_pool[interp->local_name_offsets[i]];
+	int lvar_cfa = find("lvar");
+	for (int i = scope_start; i < compiler.n_local_names; i++) {
+		const char *name = &compiler.local_names_pool[compiler.local_name_offsets[i]];
 		if (name[0] < 'A' || name[0] > 'Z')
 			continue;
 		int slot = i - scope_start;
@@ -1192,7 +1192,7 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 		if (received)
 			continue;
 		emit_call(interp, lvar_cfa);
-		emit_call(interp, interp->vocab->local_store_0depth_cfa);
+		emit_call(interp, vocab.local_store_0depth_cfa);
 		emit(interp, (cell)slot);
 	}
 }
@@ -1210,30 +1210,30 @@ void p_bar_to(Interpreter *interp) {
 }
 
 void p_to_var(Interpreter *interp) {
-	int var_cfa = (int)interp->vocab->dict[interp->ip++];
+	int var_cfa = (int)vocab.dict[interp->ip++];
 	POP(value);
-	interp->vocab->dict[var_cfa + 1] = (cell)value.bits;
+	vocab.dict[var_cfa + 1] = (cell)value.bits;
 
 	DISPATCH(interp);
 }
 
 void p_to(Interpreter *interp) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	if (!token) {
 		fail(interp, "to: expected a name"); 
 		return;
 	}
 
-	if (interp->compiling) {
+	if (compiler.compiling) {
 		int local_depth, local_slot_idx;
-		if (find_local(interp, token, &local_depth, &local_slot_idx)) {
+		if (find_local(token, &local_depth, &local_slot_idx)) {
 			if (try_fuse_local_acc(interp, local_depth, local_slot_idx))
 				return;
 			if (local_depth == 0) {
-				emit_call(interp, interp->vocab->local_store_0depth_cfa);
+				emit_call(interp, vocab.local_store_0depth_cfa);
 				emit(interp, (cell)local_slot_idx);
 			} else {
-				emit_call(interp, interp->vocab->local_store_cfa);
+				emit_call(interp, vocab.local_store_cfa);
 				emit(interp, (cell)local_depth);
 				emit(interp, (cell)local_slot_idx);
 			}
@@ -1241,29 +1241,29 @@ void p_to(Interpreter *interp) {
 		}
 	}
 
-	int target_cfa = find(interp, token);
+	int target_cfa = find(token);
 	if (!target_cfa) {
-		if (interp->compiling) {
+		if (compiler.compiling) {
 			fail(interp, "to: unknown variable: %s; declare it with variable", token); 
 		return; 
 		}
 		target_cfa = create_variable(interp, token);
 	}
 
-	cfa_handler h = (cfa_handler)interp->vocab->dict[target_cfa];
+	cfa_handler h = (cfa_handler)vocab.dict[target_cfa];
 	if (h != dovar) {
 		fail(interp, "to: %s is not a variable", token); 
 		return; 
 	}
 
-	if (interp->compiling) {
+	if (compiler.compiling) {
 		if (!superword_try_fuse_store(interp, target_cfa)) {
-			emit_call(interp, interp->vocab->to_var_cfa);
+			emit_call(interp, vocab.to_var_cfa);
 			emit(interp, (cell)target_cfa);
 		}
 	} else {
 		POP(value);
-		interp->vocab->dict[target_cfa + 1] = (cell)value.bits;
+		vocab.dict[target_cfa + 1] = (cell)value.bits;
 	}
 
 	DISPATCH(interp);
@@ -1271,17 +1271,17 @@ void p_to(Interpreter *interp) {
 
 static void compile_local_unary(Interpreter *interp, const char *op,
                                 int depth0_cfa, int fallback_cfa) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	if (!token) {
 		fail(interp, "%s: expected a local name", op);
 		return;
 	}
-	if (!interp->compiling) {
+	if (!compiler.compiling) {
 		fail(interp, "%s: only valid inside a colon definition", op);
 		return;
 	}
 	int depth, slot;
-	if (!find_local(interp, token, &depth, &slot)) {
+	if (!find_local(token, &depth, &slot)) {
 		fail(interp, "%s: %s is not a local", op, token);
 		return;
 	}
@@ -1289,11 +1289,11 @@ static void compile_local_unary(Interpreter *interp, const char *op,
 		emit_call(interp, depth0_cfa);
 		emit(interp, (cell)slot);
 	} else {
-		emit_call(interp, interp->vocab->local_fetch_cfa);
+		emit_call(interp, vocab.local_fetch_cfa);
 		emit(interp, (cell)depth);
 		emit(interp, (cell)slot);
 		emit_call(interp, fallback_cfa);
-		emit_call(interp, interp->vocab->local_store_cfa);
+		emit_call(interp, vocab.local_store_cfa);
 		emit(interp, (cell)depth);
 		emit(interp, (cell)slot);
 	}
@@ -1301,50 +1301,50 @@ static void compile_local_unary(Interpreter *interp, const char *op,
 
 void p_increment(Interpreter *interp) {
 	compile_local_unary(interp, "++",
-	                    interp->vocab->local_incr_0depth_cfa,
-	                    interp->vocab->inc_cfa);
+	                    vocab.local_incr_0depth_cfa,
+	                    vocab.inc_cfa);
 
 	DISPATCH(interp);
 }
 
 void p_decrement(Interpreter *interp) {
 	compile_local_unary(interp, "--",
-	                    interp->vocab->local_decr_0depth_cfa,
-	                    interp->vocab->dec_cfa);
+	                    vocab.local_decr_0depth_cfa,
+	                    vocab.dec_cfa);
 
 	DISPATCH(interp);
 }
 
 void p_f_increment(Interpreter *interp) {
 	compile_local_unary(interp, "f++",
-	                    interp->vocab->local_finc_0depth_cfa,
-	                    interp->vocab->finc_cfa);
+	                    vocab.local_finc_0depth_cfa,
+	                    vocab.finc_cfa);
 
 	DISPATCH(interp);
 }
 
 void p_f_decrement(Interpreter *interp) {
 	compile_local_unary(interp, "f--",
-	                    interp->vocab->local_fdec_0depth_cfa,
-	                    interp->vocab->fdec_cfa);
+	                    vocab.local_fdec_0depth_cfa,
+	                    vocab.fdec_cfa);
 
 	DISPATCH(interp);
 }
 
 void p_inline(Interpreter *interp) {
-	int latest = interp->vocab->latest_cfa;
+	int latest = vocab.latest_cfa;
 	if (!latest) {
 		fail(interp, "inline: no recent definition");
 		return;
 	}
 
-	WORD_FLAGS(interp->vocab, latest) |= 2;
+	WORD_FLAGS(latest) |= 2;
 
 	DISPATCH(interp);
 }
 
 void p_symbol(Interpreter *interp) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	if (!token) {
 		fail(interp, "symbol: expected a name");
 		return;
@@ -1368,57 +1368,57 @@ void p_string_to_symbol(Interpreter *interp) {
 }
 
 void p_forget(Interpreter *interp) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	if (!token) {
 		fail(interp, "forget: expected a name");
 		return;
 	}
-	int target_cfa = find(interp, token);
+	int target_cfa = find(token);
 	if (!target_cfa) {
 		fail(interp, "forget: unknown word: %s", token);
 		return;
 	}
-	interp->vocab->here = target_cfa - 4;
-	interp->vocab->names_here = (int)WORD_NAME(interp->vocab, target_cfa);
-	interp->vocab->latest_cfa = (int)WORD_LINK(interp->vocab, target_cfa);
+	vocab.here = target_cfa - 4;
+	vocab.names_here = (int)WORD_NAME(target_cfa);
+	vocab.latest_cfa = (int)WORD_LINK(target_cfa);
 
 	int max_src_end = 1;
-	for (int surviving_cfa = interp->vocab->latest_cfa; surviving_cfa != 0; surviving_cfa = (int)WORD_LINK(interp->vocab, surviving_cfa)) {
-		int src_offset = (int)WORD_SOURCE(interp->vocab, surviving_cfa);
+	for (int surviving_cfa = vocab.latest_cfa; surviving_cfa != 0; surviving_cfa = (int)WORD_LINK(surviving_cfa)) {
+		int src_offset = (int)WORD_SOURCE(surviving_cfa);
 		if (src_offset > 0) {
-			int src_end = src_offset + (int)strlen(&interp->vocab->source_pool[src_offset]) + 1;
+			int src_end = src_offset + (int)strlen(&vocab.source_pool[src_offset]) + 1;
 			if (src_end > max_src_end)
 				max_src_end = src_end;
 		}
 	}
-	interp->vocab->source_here = max_src_end;
+	vocab.source_here = max_src_end;
 
 	DISPATCH(interp);
 }
 
-int read_string_literal(Interpreter *interp) {
-	int cursor = interp->input_buffer_pos + 1;
+int read_string_literal(void) {
+	int cursor = compiler.input_buffer_pos + 1;
 	int length = 0;
-	while (cursor < interp->input_buffer_len) {
-		char c = interp->input_buffer[cursor];
+	while (cursor < compiler.input_buffer_len) {
+		char c = compiler.input_buffer[cursor];
 		if (c == '"') {
-			if (cursor + 1 >= interp->input_buffer_len) {
-				interp->need_more = 1;
+			if (cursor + 1 >= compiler.input_buffer_len) {
+				compiler.need_more = 1;
 				return -1;
 			}
-			if (interp->input_buffer[cursor + 1] == '"') {
-				interp->token_buffer[length++] = '"';
+			if (compiler.input_buffer[cursor + 1] == '"') {
+				compiler.token_buffer[length++] = '"';
 				cursor += 2;
 				continue;
 			}
-			interp->token_buffer[length] = 0;
-			interp->input_buffer_pos = cursor + 1;
+			compiler.token_buffer[length] = 0;
+			compiler.input_buffer_pos = cursor + 1;
 			return length;
 		}
-		interp->token_buffer[length++] = c;
+		compiler.token_buffer[length++] = c;
 		cursor++;
 	}
-	interp->need_more = 1;
+	compiler.need_more = 1;
 	return -1;
 }
 
@@ -1433,7 +1433,7 @@ static void interp_append(char **buffer, int *capacity, int *length, const char 
 	*length += n;
 }
 
-static void interp_render_val(Interpreter *interp, Val value, char **out_buffer, int *capacity, int *out_length) {
+static void interp_render_val(Val value, char **out_buffer, int *capacity, int *out_length) {
 	switch (VAL_TAG(value)) {
 		case T_FLOAT: {
 			char rendered[64];
@@ -1447,12 +1447,12 @@ static void interp_render_val(Interpreter *interp, Val value, char **out_buffer,
 			break;
 		}
 		case T_SYMBOL: {
-			const char *name = &interp->vocab->symbol_pool[VAL_DATA(value)];
+			const char *name = &vocab.symbol_pool[VAL_DATA(value)];
 			interp_append(out_buffer, capacity, out_length, name, (int)strlen(name));
 			break;
 		}
 		case T_STRING: {
-			Object *string_obj = interp->objects[VAL_DATA(value)];
+			Object *string_obj = OBJECT_AT(VAL_DATA(value));
 			interp_append(out_buffer, capacity, out_length, string_obj->bytes, string_obj->len);
 			break;
 		}
@@ -1463,7 +1463,7 @@ static void interp_render_val(Interpreter *interp, Val value, char **out_buffer,
 }
 
 int interpolate(Interpreter *interp, int template_handle) {
-	Object *template = interp->objects[template_handle];
+	Object *template = OBJECT_AT(template_handle);
 	int capacity = template->len + 64;
 	char *out_buffer = malloc((size_t)capacity);
 	int out_length = 0;
@@ -1494,7 +1494,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 					}
 				if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
 					refs[ref_count++] = digit_value;
-				interp_render_val(interp, interp->data_stack[stack_index], &out_buffer, &capacity, &out_length);
+				interp_render_val(interp->data_stack[stack_index], &out_buffer, &capacity, &out_length);
 				cursor = scan + 1;
 				continue;
 			}
@@ -1555,12 +1555,12 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 	if (VAL_TAG(operand) == T_FLOAT) {
 		push(interp, make_float(function(VAL_NUMBER(operand))));
 	} else if (VAL_TAG(operand) == T_MATRIX) {
-		Object *source = interp->objects[VAL_DATA(operand)];
+		Object *source = OBJECT_AT(VAL_DATA(operand));
 		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
 		if (interp->error_flag)
 			return;
 
-		Object *target = interp->objects[target_handle];
+		Object *target = OBJECT_AT(target_handle);
 		int num_elements = source->matrix.rows * source->matrix.columns;
 		for (int i = 0; i < num_elements; i++)
 			target->matrix.elements[i] = function(source->matrix.elements[i]);
@@ -1606,8 +1606,8 @@ void binary_op(Interpreter *interp, Val left, Val right, scalar_operator functio
 	}
 
 	if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
-		Object *a = interp->objects[VAL_DATA(left)];
-		Object *b = interp->objects[VAL_DATA(right)];
+		Object *a = OBJECT_AT(VAL_DATA(left));
+		Object *b = OBJECT_AT(VAL_DATA(right));
 		if (a->matrix.rows != b->matrix.rows || a->matrix.columns != b->matrix.columns) {
 			fail(interp, "%s: matrix shapes differ (%dx%d vs %dx%d)", name,
 			     a->matrix.rows, a->matrix.columns, b->matrix.rows, b->matrix.columns);
@@ -1615,7 +1615,7 @@ void binary_op(Interpreter *interp, Val left, Val right, scalar_operator functio
 		}
 		int target_handle = object_new_matrix(interp, a->matrix.rows, a->matrix.columns);
 		if (interp->error_flag) return;
-		Object *target = interp->objects[target_handle];
+		Object *target = OBJECT_AT(target_handle);
 		int num_elements = a->matrix.rows * a->matrix.columns;
 		for (int i = 0; i < num_elements; i++)
 			target->matrix.elements[i] = function(a->matrix.elements[i], b->matrix.elements[i]);
@@ -1625,10 +1625,10 @@ void binary_op(Interpreter *interp, Val left, Val right, scalar_operator functio
 
 	if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT) {
 		double scalar = VAL_NUMBER(right);
-		Object *source = interp->objects[VAL_DATA(left)];
+		Object *source = OBJECT_AT(VAL_DATA(left));
 		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
 		if (interp->error_flag) return;
-		Object *target = interp->objects[target_handle];
+		Object *target = OBJECT_AT(target_handle);
 		int num_elements = source->matrix.rows * source->matrix.columns;
 		for (int i = 0; i < num_elements; i++)
 			target->matrix.elements[i] = function(source->matrix.elements[i], scalar);
@@ -1638,10 +1638,10 @@ void binary_op(Interpreter *interp, Val left, Val right, scalar_operator functio
 
 	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_MATRIX) {
 		double scalar = VAL_NUMBER(left);
-		Object *source = interp->objects[VAL_DATA(right)];
+		Object *source = OBJECT_AT(VAL_DATA(right));
 		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
 		if (interp->error_flag) return;
-		Object *target = interp->objects[target_handle];
+		Object *target = OBJECT_AT(target_handle);
 		int num_elements = source->matrix.rows * source->matrix.columns;
 		for (int i = 0; i < num_elements; i++)
 			target->matrix.elements[i] = function(scalar, source->matrix.elements[i]);
@@ -1803,7 +1803,7 @@ void p_read_file(Interpreter *interp) {
 		return;
 	}
 
-	Object *string = interp->objects[handle];
+	Object *string = OBJECT_AT(handle);
 	size_t got = fread(string->bytes, 1, (size_t)size, file);
 	fclose(file);
 
@@ -1845,7 +1845,7 @@ void p_append_file(Interpreter *interp) {
 
 void p_start_process(Interpreter *interp) {
 	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
-	Object *argv_array = interp->objects[VAL_DATA(argv_val)];
+	Object *argv_array = OBJECT_AT(VAL_DATA(argv_val));
 	int argc = argv_array->len;
 	if (argc < 1) {
 		fail(interp, "start-process: argv needs at least the program name");
@@ -1860,7 +1860,7 @@ void p_start_process(Interpreter *interp) {
 					i, tag_name(VAL_TAG(argv_array->items[i])));
 			return;
 		}
-		argv[i] = interp->objects[VAL_DATA(argv_array->items[i])]->bytes;
+		argv[i] = OBJECT_AT(VAL_DATA(argv_array->items[i]))->bytes;
 	}
 	argv[argc] = NULL;
 
@@ -1918,7 +1918,7 @@ void p_write(Interpreter *interp) {
 	}
 	PEEK_TYPE_AT(string_val, 1, "write", T_STRING);
 	int file_descriptor = (int)VAL_DATA(stream_val);
-	Object *string = interp->objects[VAL_DATA(string_val)];
+	Object *string = OBJECT_AT(VAL_DATA(string_val));
 
 	int total_written = 0;
 	while (total_written < string->len) {

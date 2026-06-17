@@ -23,13 +23,13 @@
 	X(fms, c.number - a->number * b.number, p_fmul_sub, "vvf*-")
 
 static int next_var_slot(Interpreter *interp, const char *op) {
-	char *token = next_token(interp);
+	char *token = next_token();
 	if (!token) {
 		fail(interp, "%s: expected a variable name", op);
 		return -1;
 	}
-	int var_cfa = find(interp, token);
-	if (!var_cfa || (cfa_handler)interp->vocab->dict[var_cfa] != dovar) {
+	int var_cfa = find(token);
+	if (!var_cfa || (cfa_handler)vocab.dict[var_cfa] != dovar) {
 		fail(interp, "%s: %s is not a variable", op, token);
 		return -1;
 	}
@@ -37,7 +37,7 @@ static int next_var_slot(Interpreter *interp, const char *op) {
 }
 
 static void compile_two_var_op(Interpreter *interp, int runtime_cfa, const char *op) {
-	if (!interp->compiling) {
+	if (!compiler.compiling) {
 		fail(interp, "%s: only valid while compiling", op);
 		return;
 	}
@@ -55,7 +55,7 @@ static void compile_two_var_op(Interpreter *interp, int runtime_cfa, const char 
 }
 
 static void compile_one_var_op(Interpreter *interp, int runtime_cfa, const char *op) {
-	if (!interp->compiling) {
+	if (!compiler.compiling) {
 		fail(interp, "%s: only valid while compiling", op);
 		return;
 	}
@@ -98,11 +98,11 @@ static void p_fmul_sub(Interpreter *interp) {
 #define GEN_VV(suffix, op, base) \
 	static int vv_##suffix##_cfa; \
 	static void p_vv_##suffix(Interpreter *interp) { \
-		cell s1 = interp->vocab->dict[interp->ip++]; \
-		cell s2 = interp->vocab->dict[interp->ip++]; \
+		cell s1 = vocab.dict[interp->ip++]; \
+		cell s2 = vocab.dict[interp->ip++]; \
 		Val a, b; \
-		a.bits = (uint64_t)interp->vocab->dict[s1]; \
-		b.bits = (uint64_t)interp->vocab->dict[s2]; \
+		a.bits = (uint64_t)vocab.dict[s1]; \
+		b.bits = (uint64_t)vocab.dict[s2]; \
 		push(interp, make_float(a.number op b.number)); \
 		DISPATCH(interp); \
 	} \
@@ -114,13 +114,13 @@ FLOAT_BINOPS(GEN_VV)
 #define GEN_VV_STORE(suffix, op, base) \
 	static int vv_##suffix##_store_cfa; \
 	static void p_vv_##suffix##_store(Interpreter *interp) { \
-		cell s1 = interp->vocab->dict[interp->ip++]; \
-		cell s2 = interp->vocab->dict[interp->ip++]; \
-		cell dst = interp->vocab->dict[interp->ip++]; \
+		cell s1 = vocab.dict[interp->ip++]; \
+		cell s2 = vocab.dict[interp->ip++]; \
+		cell dst = vocab.dict[interp->ip++]; \
 		Val a, b; \
-		a.bits = (uint64_t)interp->vocab->dict[s1]; \
-		b.bits = (uint64_t)interp->vocab->dict[s2]; \
-		interp->vocab->dict[dst] = (cell)make_float(a.number op b.number).bits; \
+		a.bits = (uint64_t)vocab.dict[s1]; \
+		b.bits = (uint64_t)vocab.dict[s2]; \
+		vocab.dict[dst] = (cell)make_float(a.number op b.number).bits; \
 		DISPATCH(interp); \
 	}
 FLOAT_BINOPS(GEN_VV_STORE)
@@ -128,13 +128,13 @@ FLOAT_BINOPS(GEN_VV_STORE)
 #define GEN_VF(suffix, op, base) \
 	static int vf_##suffix##_cfa; \
 	static void p_vf_##suffix(Interpreter *interp) { \
-		cell s = interp->vocab->dict[interp->ip++]; \
+		cell s = vocab.dict[interp->ip++]; \
 		if (interp->dsp < 1) { \
 			fail(interp, "vf" #op ": data stack underflow"); \
 			return; \
 		} \
 		Val x; \
-		x.bits = (uint64_t)interp->vocab->dict[s]; \
+		x.bits = (uint64_t)vocab.dict[s]; \
 		Val *a = &interp->data_stack[interp->dsp - 1]; \
 		a->number = a->number op x.number; \
 		DISPATCH(interp); \
@@ -147,9 +147,9 @@ FLOAT_BINOPS(GEN_VF)
 #define GEN_VFN(suffix, expr, base) \
 	static int vfn_##suffix##_cfa; \
 	static void p_vfn_##suffix(Interpreter *interp) { \
-		cell s = interp->vocab->dict[interp->ip++]; \
+		cell s = vocab.dict[interp->ip++]; \
 		Val cell_v; \
-		cell_v.bits = (uint64_t)interp->vocab->dict[s]; \
+		cell_v.bits = (uint64_t)vocab.dict[s]; \
 		double v = cell_v.number; \
 		push(interp, make_float(expr)); \
 		DISPATCH(interp); \
@@ -162,15 +162,15 @@ FLOAT_UNARY_FNS(GEN_VFN)
 #define GEN_FUSED(suffix, expr, base, name) \
 	static int vv_##suffix##_cfa; \
 	static void p_vv_##suffix(Interpreter *interp) { \
-		cell s1 = interp->vocab->dict[interp->ip++]; \
-		cell s2 = interp->vocab->dict[interp->ip++]; \
+		cell s1 = vocab.dict[interp->ip++]; \
+		cell s2 = vocab.dict[interp->ip++]; \
 		if (interp->dsp < 1) { \
 			fail(interp, name ": data stack underflow"); \
 			return; \
 		} \
 		Val b, c; \
-		b.bits = (uint64_t)interp->vocab->dict[s1]; \
-		c.bits = (uint64_t)interp->vocab->dict[s2]; \
+		b.bits = (uint64_t)vocab.dict[s1]; \
+		c.bits = (uint64_t)vocab.dict[s2]; \
 		Val *a = &interp->data_stack[interp->dsp - 1]; \
 		a->number = expr; \
 		DISPATCH(interp); \
@@ -183,18 +183,18 @@ FLOAT_FUSED(GEN_FUSED)
 #define GEN_FUSED_STORE(suffix, expr, base, name) \
 	static int vv_##suffix##_store_cfa; \
 	static void p_vv_##suffix##_store(Interpreter *interp) { \
-		cell s1 = interp->vocab->dict[interp->ip++]; \
-		cell s2 = interp->vocab->dict[interp->ip++]; \
-		cell dst = interp->vocab->dict[interp->ip++]; \
+		cell s1 = vocab.dict[interp->ip++]; \
+		cell s2 = vocab.dict[interp->ip++]; \
+		cell dst = vocab.dict[interp->ip++]; \
 		if (interp->dsp < 1) { \
 			fail(interp, name "!: data stack underflow"); \
 			return; \
 		} \
 		Val b, c; \
-		b.bits = (uint64_t)interp->vocab->dict[s1]; \
-		c.bits = (uint64_t)interp->vocab->dict[s2]; \
+		b.bits = (uint64_t)vocab.dict[s1]; \
+		c.bits = (uint64_t)vocab.dict[s2]; \
 		Val *a = &interp->data_stack[--interp->dsp]; \
-		interp->vocab->dict[dst] = (cell)make_float(expr).bits; \
+		vocab.dict[dst] = (cell)make_float(expr).bits; \
 		DISPATCH(interp); \
 	}
 FLOAT_FUSED(GEN_FUSED_STORE)
@@ -202,16 +202,16 @@ FLOAT_FUSED(GEN_FUSED_STORE)
 #define GEN_VF_STORE(suffix, op, base) \
 	static int vf_##suffix##_store_cfa; \
 	static void p_vf_##suffix##_store(Interpreter *interp) { \
-		cell s = interp->vocab->dict[interp->ip++]; \
-		cell dst = interp->vocab->dict[interp->ip++]; \
+		cell s = vocab.dict[interp->ip++]; \
+		cell dst = vocab.dict[interp->ip++]; \
 		if (interp->dsp < 1) { \
 			fail(interp, "vf" #op "!: data stack underflow"); \
 			return; \
 		} \
 		Val x; \
-		x.bits = (uint64_t)interp->vocab->dict[s]; \
+		x.bits = (uint64_t)vocab.dict[s]; \
 		double a = interp->data_stack[--interp->dsp].number; \
-		interp->vocab->dict[dst] = (cell)make_float(a op x.number).bits; \
+		vocab.dict[dst] = (cell)make_float(a op x.number).bits; \
 		DISPATCH(interp); \
 	}
 FLOAT_BINOPS(GEN_VF_STORE)
@@ -219,32 +219,32 @@ FLOAT_BINOPS(GEN_VF_STORE)
 #define GEN_VFN_STORE(suffix, expr, base) \
 	static int vfn_##suffix##_store_cfa; \
 	static void p_vfn_##suffix##_store(Interpreter *interp) { \
-		cell s = interp->vocab->dict[interp->ip++]; \
-		cell dst = interp->vocab->dict[interp->ip++]; \
+		cell s = vocab.dict[interp->ip++]; \
+		cell dst = vocab.dict[interp->ip++]; \
 		Val cell_v; \
-		cell_v.bits = (uint64_t)interp->vocab->dict[s]; \
+		cell_v.bits = (uint64_t)vocab.dict[s]; \
 		double v = cell_v.number; \
-		interp->vocab->dict[dst] = (cell)make_float(expr).bits; \
+		vocab.dict[dst] = (cell)make_float(expr).bits; \
 		DISPATCH(interp); \
 	}
 FLOAT_UNARY_FNS(GEN_VFN_STORE)
 
 static int emit_fused_two_var(Interpreter *interp, int runtime_cfa, int slot_a, int slot_b) {
-	interp->vocab->here -= 4;
+	vocab.here -= 4;
 	emit_call(interp, runtime_cfa);
 	emit(interp, (cell)slot_a);
 	emit(interp, (cell)slot_b);
-	interp->fuse_prev_var = 0;
-	interp->fuse_prev2_var = 0;
+	compiler.fuse_prev_var = 0;
+	compiler.fuse_prev2_var = 0;
 	return 1;
 }
 
 static int emit_fused_one_var(Interpreter *interp, int runtime_cfa, int slot) {
-	interp->vocab->here -= 2;
+	vocab.here -= 2;
 	emit_call(interp, runtime_cfa);
 	emit(interp, (cell)slot);
-	interp->fuse_prev_var = 0;
-	interp->fuse_prev2_var = 0;
+	compiler.fuse_prev_var = 0;
+	compiler.fuse_prev2_var = 0;
 	return 1;
 }
 
@@ -270,9 +270,9 @@ int superword_cell_count(cell handler) {
 }
 
 int superword_try_fuse(Interpreter *interp, int op_cfa) {
-	cfa_handler op_h = (cfa_handler)interp->vocab->dict[op_cfa];
-	int prev1 = interp->fuse_prev_var;
-	int prev2 = interp->fuse_prev2_var;
+	cfa_handler op_h = (cfa_handler)vocab.dict[op_cfa];
+	int prev1 = compiler.fuse_prev_var;
+	int prev2 = compiler.fuse_prev2_var;
 
 #define FUSE_BIN(suffix, op, base) \
 	if (op_h == base) { \
@@ -300,10 +300,10 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 }
 
 int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
-	if (!interp->compiling)
+	if (!compiler.compiling)
 		return 0;
-	cell *dict = interp->vocab->dict;
-	int here = interp->vocab->here;
+	cell *dict = vocab.dict;
+	int here = vocab.here;
 	int dst = dst_cfa + 1;
 
 	if (here >= 3) {
@@ -315,7 +315,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 		if (store_cfa >= 0) {
 			cell s1 = dict[here - 2];
 			cell s2 = dict[here - 1];
-			interp->vocab->here -= 3;
+			vocab.here -= 3;
 			emit_call(interp, store_cfa);
 			emit(interp, s1);
 			emit(interp, s2);
@@ -333,7 +333,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 		FLOAT_UNARY_FNS(MATCH2_VFN)
 		if (store_cfa >= 0) {
 			cell s = dict[here - 1];
-			interp->vocab->here -= 2;
+			vocab.here -= 2;
 			emit_call(interp, store_cfa);
 			emit(interp, s);
 			emit(interp, (cell)dst);

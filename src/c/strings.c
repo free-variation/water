@@ -46,7 +46,7 @@ static int group_count(pcre2_code *compiled) {
 static int capture_array(Interpreter *interp, Object *subject, const int *offsets, int num_groups) {
 	int handle = object_new_array(interp, num_groups);
 	if (interp->error_flag) return -1;
-	Object *match = interp->objects[handle];
+	Object *match = OBJECT_AT(handle);
 	memset(match->items, 0, sizeof(Val) * (size_t)num_groups);
 	gc_root_push(interp, make_array(handle));
 	for (int i = 0; i < num_groups; i++) {
@@ -312,7 +312,7 @@ void p_substring(Interpreter *interp) {
 void p_join(Interpreter *interp) {
 	PEEK_STRING_AT(separator, 0, "join");
 	PEEK_TYPE_AT(array_val, 1, "join", T_ARRAY);
-	Object *array = interp->objects[VAL_DATA(array_val)];
+	Object *array = OBJECT_AT(VAL_DATA(array_val));
 
 	int total = 0;
 	for (int i = 0; i < array->len; i++) {
@@ -320,21 +320,21 @@ void p_join(Interpreter *interp) {
 			fail(interp, "join: element %d is %s, expected a string", i, tag_name(VAL_TAG(array->items[i])));
 			return;
 		}
-		total += interp->objects[VAL_DATA(array->items[i])]->len;
+		total += OBJECT_AT(VAL_DATA(array->items[i]))->len;
 	}
 	if (array->len > 0)
 		total += separator->len * (array->len - 1);
 
 	int handle = object_new_string_uninit(interp, total);
 	if (interp->error_flag) return;
-	Object *result = interp->objects[handle];
+	Object *result = OBJECT_AT(handle);
 	int offset = 0;
 	for (int i = 0; i < array->len; i++) {
 		if (i > 0) {
 			memcpy(result->bytes + offset, separator->bytes, (size_t)separator->len);
 			offset += separator->len;
 		}
-		Object *piece = interp->objects[VAL_DATA(array->items[i])];
+		Object *piece = OBJECT_AT(VAL_DATA(array->items[i]));
 		memcpy(result->bytes + offset, piece->bytes, (size_t)piece->len);
 		offset += piece->len;
 	}

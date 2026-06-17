@@ -70,12 +70,12 @@ static int db_bind(Interpreter *interp, sqlite3_stmt *statement, Object *params,
 				sqlite3_bind_null(statement, i + 1);
 				break;
 			case T_STRING: {
-							   Object *text = interp->objects[VAL_DATA(value)];
+							   Object *text = OBJECT_AT(VAL_DATA(value));
 							   sqlite3_bind_text(statement, i + 1, text->bytes, text->len, SQLITE_TRANSIENT);
 							   break;
 						   }
 			case T_SYMBOL:
-						   sqlite3_bind_text(statement, i + 1, &interp->vocab->symbol_pool[VAL_DATA(value)], -1, SQLITE_TRANSIENT);
+						   sqlite3_bind_text(statement, i + 1, &vocab.symbol_pool[VAL_DATA(value)], -1, SQLITE_TRANSIENT);
 						   break;
 			default:
 						   fail(interp, "%s: cannot bind %s as a parameter", op, tag_name(VAL_TAG(value)));
@@ -143,7 +143,7 @@ static int db_build_row(Interpreter *interp, sqlite3_stmt *statement, const cell
 
 	for (int j = 0; j < columns && !interp->error_flag; j++) {
 		Val value = db_column_value(interp, statement, j);
-		frame_put(interp->objects[row_handle], keys[j], value);
+		frame_put(OBJECT_AT(row_handle), keys[j], value);
 	}
 
 	gc_root_pop(interp);
@@ -184,7 +184,7 @@ void p_db_query(Interpreter *interp) {
 	gc_root_push(interp, make_array(rows_handle));
 
 	int status;
-	Object *rows = interp->objects[rows_handle];
+	Object *rows = OBJECT_AT(rows_handle);
 	while ((status = sqlite3_step(statement)) == SQLITE_ROW) {
 		int row_handle = db_build_row(interp, statement, keys, n_columns);
 		if (interp->error_flag)
@@ -216,7 +216,7 @@ void p_db_query(Interpreter *interp) {
 		return;
 	}
 
-	Object *relation = interp->objects[relation_handle];
+	Object *relation = OBJECT_AT(relation_handle);
 	frame_put(relation, intern_symbol(interp, "rows"), make_array(rows_handle));
 	frame_put(relation, intern_symbol(interp, "index"), make_frame(index_handle));
 
