@@ -117,7 +117,7 @@ static void arena_free_object(Object *obj) {
 }
 ```
 
-The payloads divide by allocator. String `bytes`, set/array `items`, and frame `keys`+`values` come from the arena's size-class allocator (`arena_malloc`/`arena_free`). Matrix `elements` and continuation `return_slice` use real `calloc`/`free`. The sweep has to free each piece with the matching allocator.
+The payloads divide by allocator. String `bytes`, set/array `items`, and frame `keys`+`values` come from the arena's size-class allocator (`arena_malloc`/`arena_free`). Matrix `elements` and continuation `return_slice` use real `calloc`/`free`. The sweep has to free each piece with the matching allocator. The arena allocator itself — its reserved bump region, size classes, and free lists — is described in `docs/arena.md`.
 
 User code never sees an `Object*` directly. It sees a *handle* — the index into `objects[]`. Handles are wrapped in `Val`s, the interpreter's universal tagged-value type:
 
