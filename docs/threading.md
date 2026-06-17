@@ -156,15 +156,19 @@ this document:
 
 ## Part 5: A word's anatomy
 
-The dictionary is one large `cell[]` array, where `cell` is `int64_t`:
+The dictionary is one large `cell[]` array, where `cell` is `int64_t`. It's a
+fixed-size inline array on a single file-scope global `Vocabulary vocab`, not a
+heap pointer — never reallocated, just bump-allocated into and bounds-checked:
 
 ```c
 typedef struct Vocabulary {
-    cell *dict;        // the dictionary: one giant int64 array
+    cell dict[VOCABULARY_INIT_SIZE];   // the dictionary: one giant int64 array
     int here;          // bump-allocator high-water mark: next free cell
     int latest_cfa;    // head of the dictionary chain
     /* ... pools for names, source, symbols ... */
 } Vocabulary;
+
+extern Vocabulary vocab;
 ```
 
 Each word occupies a run of cells:
@@ -184,10 +188,10 @@ the word's *handler* — a C function pointer. The body follows. The
 `WORD_*` macros read the header relative to the CFA:
 
 ```c
-#define WORD_LINK(v, cfa)   ((v)->dict[(cfa) - 4])
-#define WORD_FLAGS(v, cfa)  ((v)->dict[(cfa) - 3])
-#define WORD_NAME(v, cfa)   ((v)->dict[(cfa) - 2])
-#define WORD_SOURCE(v, cfa) ((v)->dict[(cfa) - 1])
+#define WORD_LINK(cfa)   (vocab.dict[(cfa) - 4])
+#define WORD_FLAGS(cfa)  (vocab.dict[(cfa) - 3])
+#define WORD_NAME(cfa)   (vocab.dict[(cfa) - 2])
+#define WORD_SOURCE(cfa) (vocab.dict[(cfa) - 1])
 ```
 
 LINK chains each word to the previous one, so the whole dictionary is a
@@ -251,7 +255,7 @@ right shape:
 
 ```c
 void emit_call(Interpreter *interp, int target_cfa) {
-    cfa_handler handler = (cfa_handler)interp->vocab->dict[target_cfa];
+    cfa_handler handler = (cfa_handler)vocab.dict[target_cfa];
     emit(interp, (cell)handler);                       // handler pointer
     if (handler == docol || handler == dovar || handler == dosym)
         emit(interp, (cell)target_cfa);                // target CFA as operand
@@ -269,13 +273,13 @@ literal:
 
 ```c
 void emit_val_literal(Interpreter *interp, Val value) {
-    emit_call(interp, interp->vocab->literal_cfa);     // emits the (literal) handler pointer
+    emit_call(interp, vocab.literal_cfa);              // emits the (literal) handler pointer
     emit(interp, (cell)value.bits);                    // the packed Val
 }
 
 void p_literal(Interpreter *interp) {
     Val value;
-    value.bits = (uint64_t)interp->vocab->dict[interp->ip++];   // read operand, advance
+    value.bits = (uint64_t)vocab.dict[interp->ip++];   // read operand, advance
     push(interp, value);
     DISPATCH(interp);
 }
@@ -319,20 +323,17 @@ each handler ends by tail-calling the next, through the `DISPATCH` macro:
     if ((interp)->unwinding || (interp)->error_flag) \
         return; \
     __attribute__((musttail)) \
-    return ((cfa_handler)(interp)->dict[(interp)->ip++])(interp); \
+    return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \
 } while (0)
 ```
 
-`interp->dict` is a cached copy of `interp->vocab->dict` held directly on the
-`Interpreter`. The dictionary lives in the `Vocabulary`, so the "natural" read
-is `interp->vocab->dict[ip]` — two dependent loads (`interp` → `vocab` →
-`dict`) before the index. Caching the base on the interpreter cuts that to one,
-which matters because this load happens on *every* dispatch. The cache is kept
-in sync trivially: `vocab->dict` is (re)allocated in exactly two places —
-`interp_new` and `dict_ensure` — and each assigns `interp->dict = vocab->dict`
-right after. The hot reads below (`docol`, `dovar`, `dosym`, `run_inner`,
-`execute_cfa`, the operand fetches) all go through `interp->dict`; the snippets
-in this document write `vocab->dict` for clarity, since the two always alias.
+`vocab` is a single file-scope global, so the dispatch read is `vocab.dict[ip]`:
+one address computation off a known global base, then the index. There's no
+`interp → vocab → dict` pointer chase, because the dictionary isn't reached
+through the `Interpreter` at all — it's its own global. That matters because
+this load happens on *every* dispatch. The hot reads below (`docol`, `dovar`,
+`dosym`, `run_inner`, `execute_cfa`, the operand fetches) all index `vocab.dict`
+directly.
 
 `__attribute__((musttail))` forces the compiler to emit a jump rather than a
 call+return: the next handler reuses the current stack frame. A run of
@@ -358,7 +359,7 @@ void run_inner(Interpreter *interp) {
                there, or stop if we've unwound past where we started */
             ...
         }
-        cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
+        cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
         handler(interp);
     }
 }
@@ -376,23 +377,21 @@ advance past it, and do their work:
 
 ```c
 void docol(Interpreter *interp) {
-    int target_cfa = (int)interp->vocab->dict[interp->ip++];   // operand
-    rpush(interp, make_addr(interp->ip));                      // return address
-    interp->ip = target_cfa + 1;                               // jump to body
+    int target_cfa = (int)vocab.dict[interp->ip++];    // operand
+    rpush(interp, make_addr(interp->ip));              // return address
+    interp->ip = target_cfa + 1;                       // jump to body
     DISPATCH(interp);
 }
 
 void dovar(Interpreter *interp) {
-    int var_cfa = (int)interp->vocab->dict[interp->ip++];
-    Val value;
-    value.bits = (uint64_t)interp->vocab->dict[var_cfa + 1];   // the variable's packed Val
-    push(interp, value);
+    int var_cfa = (int)vocab.dict[interp->ip++];
+    push_variable(interp, var_cfa);                    // pushes vocab.dict[var_cfa + 1] as a Val
     DISPATCH(interp);
 }
 
 void dosym(Interpreter *interp) {
-    int sym_cfa = (int)interp->vocab->dict[interp->ip++];
-    push(interp, make_symbol((int)interp->vocab->dict[sym_cfa + 1]));
+    int sym_cfa = (int)vocab.dict[interp->ip++];
+    push_symbol(interp, sym_cfa);                      // pushes the symbol at vocab.dict[sym_cfa + 1]
     DISPATCH(interp);
 }
 ```
@@ -439,7 +438,7 @@ symbols are handled inline, since they only push a value:
 
 ```c
 void execute_cfa(Interpreter *interp, int cfa) {
-    cfa_handler handler = (cfa_handler)interp->vocab->dict[cfa];
+    cfa_handler handler = (cfa_handler)vocab.dict[cfa];
     if (handler == dovar) { push_variable(interp, cfa); return; }
     if (handler == dosym) { push_symbol(interp, cfa);   return; }
     /* docol and primitives go through the trampoline below */
@@ -458,15 +457,15 @@ held back from word storage). `execute_cfa` writes the call into those cells,
 points `ip` at them, runs `run_inner` once, and restores the saved state:
 
 ```c
-cell stop_handler = interp->vocab->dict[interp->vocab->stop_cfa];
+cell stop_handler = vocab.dict[vocab.stop_cfa];
 if (handler == docol) {
-    dict[TRAMPOLINE_SLOT]     = (cell)docol;          // dispatch docol
-    dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;            //   with this target
-    dict[TRAMPOLINE_SLOT + 2] = stop_handler;         // exit returns here → stop
+    vocab.dict[TRAMPOLINE_SLOT]     = (cell)docol;          // dispatch docol
+    vocab.dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;            //   with this target
+    vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;         // exit returns here → stop
 } else {
-    dict[TRAMPOLINE_SLOT]     = (cell)handler;        // dispatch the primitive
-    dict[TRAMPOLINE_SLOT + 1] = stop_handler;         // its DISPATCH lands here → stop
-    dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+    vocab.dict[TRAMPOLINE_SLOT]     = (cell)handler;        // dispatch the primitive
+    vocab.dict[TRAMPOLINE_SLOT + 1] = stop_handler;         // its DISPATCH lands here → stop
+    vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;
 }
 interp->ip = TRAMPOLINE_SLOT;
 interp->running = 1;
@@ -512,12 +511,13 @@ those addresses would be garbage. So the image translates them.
 ### The handler registry
 
 Every handler that can appear in a body is a known, finite quantity. Each is
-created through `define_primitive` (which appends it to a `handler_registry`
-array), plus `docol`, `dovar`, and `dosym`, which are registered explicitly.
-A handler's *id* is its index in that array — stable across runs because the
-bootstrap that builds the registry is deterministic. `handler_to_id` maps a
-pointer to its id (a scan, used only while saving); the reverse is an array
-index.
+created through `define_primitive`, which appends it to the registry held on the
+global `Compiler compiler` (the `compiler.handler_registry[]` array, counted by
+`compiler.n_handlers`), plus `docol`, `dovar`, and `dosym`, which are appended
+explicitly during bootstrap. A handler's *id* is its index in that array —
+stable across runs because the bootstrap that builds the registry is
+deterministic. `handler_to_id` maps a pointer to its id (a scan, used only while
+saving); the reverse is an array index.
 
 ### Translating bodies
 

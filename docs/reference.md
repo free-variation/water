@@ -64,7 +64,7 @@ float fast path first; the heavy cases are captured by the O column.
 | `1+` | `( a -- a+1 )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
 | `1-` | `( a -- a-1 )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
 | `sq` | `( a -- a² )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
-| `pi` | `( -- f )` | lib.l4: π (3.141592653589793) as a float | 1 | none | O(1) |
+| `pi` | `( -- f )` | lib.l4: `variable` initialized to π (3.141592653589793); invoking it pushes the stored float | 1 | none | O(1) |
 
 ### In-place matrix arithmetic
 
@@ -171,7 +171,7 @@ Result is `1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural
 
 ## Side stack
 
-A third stack (depth 256) for stashing values out of the way; used by `try-catch` to hold the handler.
+A third stack (depth 1024) for stashing values out of the way; used by `try-catch` to hold the handler.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -258,7 +258,7 @@ String literals `"…"` are **raw**: bytes between the quotes are copied verbati
 
 ## String operations
 
-Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is compiled once and cached (64-slot round-robin), so reusing a pattern costs only the match. Patterns are PCRE syntax in raw `"…"` literals — PCRE itself interprets `\n`, `\t`, `\d`, `\x22`, and the rest. Matching is multiline: `^` and `$` bind to line boundaries. Captures come back as strings; an optional group that didn't participate is `0.0`. Booleans are `1.0`/`0.0`. Indices are byte offsets (no UTF-8 codepoint model yet). In the cost columns `n` is the subject length.
+Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is compiled once and cached (1024-slot round-robin), so reusing a pattern costs only the match. Patterns are PCRE syntax in raw `"…"` literals — PCRE itself interprets `\n`, `\t`, `\d`, `\x22`, and the rest. Matching is multiline: `^` and `$` bind to line boundaries. Captures come back as strings; an optional group that didn't participate is `0.0`. Booleans are `1.0`/`0.0`. Indices are byte offsets (no UTF-8 codepoint model yet). In the cost columns `n` is the subject length.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -556,6 +556,7 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 | `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
 | `help` | `( "name" -- )` | lib.l4: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |
+| `alloc-stats` | `( -- )` | Print and reset the allocation counters since the last call (`lvars=… arrays=…`) | 2 | none | O(1) |
 | `bye` | `( -- )` | `exit(0)` | — | — | — |
 | `now` | `( -- f )` | `CLOCK_MONOTONIC` seconds as a float | 1 | none | O(1) |
 | `sleep` | `( seconds -- )` | Block for the given float seconds (sub-second supported); `nanosleep` | blocks | none | O(1) |
@@ -599,7 +600,7 @@ A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process 
 | `wait` | `( pid -- status )` | Block until the child exits; return its exit code, or `128 + signo` if it was killed by a signal | blocks | none | O(1) |
 | `stop` | `( pid -- status )` | `SIGKILL` the child then reap it (137 = 128+9, or its code if it had already exited) | 2 syscalls | none | O(1) |
 | `running?` | `( pid -- bool )` | Non-blocking liveness via `waitid`+`WNOHANG`+`WNOWAIT`; true while running, false once exited. Non-reaping, so a later `wait` still returns the status | 1 syscall | none | O(1) |
-| `run` | `( s -- proc )` | lib.l4: split a command string on spaces and `start-process` it (`s " " split start-process`) | split + fork | `1a` + `1o` frame + 3 streams | O(\|s\| + argc) |
+| `run` | `( s -- proc )` | lib.l4: split a command string on runs of spaces and `start-process` it (`" +" split start-process`) | split + fork | `1a` + `1o` frame + 3 streams | O(\|s\| + argc) |
 | `write-in` | `( s proc -- )` | lib.l4: write the string to the child's `:in` stream | write syscalls | none | O(\|s\|) |
 | `read-out` | `( proc -- s )` | lib.l4: read the child's `:out` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
 | `read-err` | `( proc -- s )` | lib.l4: read the child's `:err` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |

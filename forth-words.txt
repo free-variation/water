@@ -38,6 +38,7 @@ _
 abs
 acos
 again
+alloc-stats
 amb
 and
 append-file

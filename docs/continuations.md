@@ -7,7 +7,7 @@ This document is a primer on delimited continuations and how logicforth implemen
 - How four primitives (`reset`, `shift`, `shift-with`, `resume`) work mechanically
 - How exceptions, coroutines, generators, restarts, backtracking, green threads, async I/O, and cooperative schedulers all fall out of those four primitives as small library words
 
-The implementation lives in a single C file. The library words are in `src/forth/lib.l4`. Tests demonstrating each pattern are in `tests/45_continuations.l4`, `tests/47_exceptions.l4`, and `tests/48_interactions.l4` — once you understand the model, those are worth reading alongside this document.
+The implementation is spread across a few C files. The continuation primitives (`push_prompt`, `p_reset`, `find_prompt`, `capture_continuation`, `p_shift`, `p_shift_with`, `p_resume`, plus the backtracking `backtrack` and `p_fail`) live in `src/c/words.c`; the inner loop and trampoline (`run_inner`, `execute_cfa`, `p_exit`, `object_new_continuation`) are in `src/c/core.c`; and `p_amb` is in `src/c/logic.c`. The library words are in `src/forth/lib.l4`. Tests demonstrating each pattern are in `tests/45_continuations.l4`, `tests/47_exceptions.l4`, and `tests/48_interactions.l4` — once you understand the model, those are worth reading alongside this document.
 
 The document moves in roughly three arcs. Parts 1–4 motivate continuations and lay out the runtime substrate. Parts 5–9 cover the four primitives and the unwinding mechanism that makes exception-style flow work. Parts 10–17 build the major patterns (exceptions, coroutines, generators, restarts, backtracking, green threads, async I/O) on top of those primitives, with full traces and stack diagrams. Parts 18–20 collect reference material: a primitive table, the C-side surface area, and pointers into the source.
 
@@ -176,7 +176,7 @@ Forth's execution model is built around an *inner interpreter* — a small loop 
 
 ```c
 while (interp->running && !interp->error_flag) {
-    cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
+    cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
     handler(interp);            /* the handler tail-calls the next */
 }
 ```
@@ -303,7 +303,9 @@ static int find_prompt(Interpreter *interp, int kind) {
         mark_index--;                       /* skip frames and other-kind marks */
     }
     if (mark_index < 0) {
-        fail(interp, "shift/shift-with: no enclosing reset on the return stack");
+        fail(interp, kind == PROMPT_CHOICE
+                ? "no enclosing amb to backtrack to"
+                : "shift/shift-with: no enclosing reset on the return stack");
         return -1;
     }
     return mark_index;
@@ -319,7 +321,7 @@ int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index
                                        return_len, resume_ip);
     if (interp->error_flag) return -1;
 
-    interp->objects[slot]->continuation.local_base_offset =
+    OBJECT_AT(slot)->continuation.local_base_offset =
         interp->local_base - (mark_index + 1);
     *out_mark_index = mark_index;
     return slot;
@@ -459,7 +461,7 @@ void p_resume(Interpreter *interp) {
         fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(continuation_val)));
         return;
     }
-    Object *continuation = interp->objects[VAL_DATA(continuation_val)];
+    Object *continuation = OBJECT_AT(VAL_DATA(continuation_val));
 
     int saved_ip = interp->ip;
     int saved_running = interp->running;
@@ -468,7 +470,7 @@ void p_resume(Interpreter *interp) {
     /* Trampoline-stop frame so the slice's EXIT chain terminates here. */
     rpush(interp, make_addr(TRAMPOLINE_SLOT + 2));
 
-    /* Fresh MARK delimits the resumed slice. */
+    /* Plain id-0 MARK delimits the resumed slice. */
     rpush(interp, make_mark());
 
     /* Splice the captured frames on top, re-anchoring the locals frame. */
@@ -494,7 +496,7 @@ The steps:
 1. **Pop k** from the data stack.
 2. **Save** the current `ip` and `running` flag so we can restore them after the slice finishes.
 3. **Push a trampoline-stop frame** onto the return stack. This is the saved-ip that the slice's eventual EXIT chain will land at, ending the slice's execution cleanly.
-4. **Push a fresh MARK** above the trampoline-stop frame. This delimits the resumed slice — any `shift` fired inside the slice will target *this* mark, not whatever outer reset might still be active.
+4. **Push a fresh MARK** above the trampoline-stop frame. This delimits the resumed slice — any `shift` fired inside the slice will target *this* mark, not whatever outer reset might still be active. Note this mark is a plain delimiter: `make_mark()` is `make_tagged(T_MARK, 0)`, so its id is 0 and its kind bit is exception — it is not an addressable prompt with a fresh `next_mark_id` the way `reset` (Part 5) allocates one. A `shift` in the slice finds it by kind, not by id.
 5. **Splice the captured frames** above the new mark. The slice's saved-ip's are now on the return stack, ready to be popped by EXITs as the slice unwinds.
 6. **Set `ip`** to the slice's resume point — the dict offset of the cell right after the original `shift`.
 7. **Run the inner interpreter** in this resumed context.
@@ -662,7 +664,7 @@ void run_inner(Interpreter *interp) {
         }
 
         /* Normal dispatch — the handler tail-calls onward via DISPATCH */
-        cfa_handler handler = (cfa_handler)interp->vocab->dict[interp->ip++];
+        cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
         handler(interp);
     }
 }
@@ -1585,17 +1587,17 @@ The mark id counter (`next_mark_id`) is global and monotonic. If you serialize a
 
 ## Part 20: Where to look
 
-If you want to dig into the C code:
+If you want to dig into the C code, the continuation primitives are in **`src/c/words.c`**, the inner loop and trampoline are in **`src/c/core.c`**, and `p_amb` is in **`src/c/logic.c`**:
 
-- **`p_reset`** — the simplest primitive.
-- **`capture_continuation`** — shared helper for shift and shift-with.
-- **`p_shift`** — calls the helper, truncates the return stack including the mark.
-- **`p_shift_with`** — calls the helper, keeps the mark, runs the handler, sets unwinding.
-- **`p_resume`** — splices captured frames back onto the return stack, re-anchors the locals frame, runs the nested inner loop.
-- **`run_inner`** — the unwinding-aware loop. Look at the top-of-loop check.
-- **`p_amb` / `p_fail` / `backtrack`** — backtracking on the choice-kind prompt; `amb` snapshots and restores the data stack, unification trail, and logic-var stack across a `fail`.
-- **`push_prompt` / `find_prompt`** — push a kind-tagged MARK; scan for the nearest MARK of a given kind.
-- **`OBJECT_CONTINUATION`** — the union arm holding a captured slice (`return_slice`, `resume_ip`, `local_base_offset`).
+- **`p_reset`** (`words.c`) — the simplest primitive.
+- **`capture_continuation`** (`words.c`) — shared helper for shift and shift-with.
+- **`p_shift`** (`words.c`) — calls the helper, truncates the return stack including the mark.
+- **`p_shift_with`** (`words.c`) — calls the helper, keeps the mark, runs the handler, sets unwinding.
+- **`p_resume`** (`words.c`) — splices captured frames back onto the return stack, re-anchors the locals frame, runs the nested inner loop.
+- **`run_inner`** (`core.c`) — the unwinding-aware loop. Look at the top-of-loop check.
+- **`p_amb`** (`logic.c`) **/ `p_fail` / `backtrack`** (`words.c`) — backtracking on the choice-kind prompt; `amb` snapshots and restores the data stack, unification trail, and logic-var stack across a `fail`.
+- **`push_prompt` / `find_prompt`** (`words.c`) — push a kind-tagged MARK; scan for the nearest MARK of a given kind.
+- **`object_new_continuation`** (`core.c`) — allocates the `OBJECT_CONTINUATION` holding a captured slice (`return_slice`, `resume_ip`, `local_base_offset`).
 
 If you want to read the library code:
 

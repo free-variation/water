@@ -35,7 +35,8 @@ A logic variable is a `Val` like any other, tagged `T_LOGIC_VAR`. Its payload is
 
 ```c
 int object_new_logic_var(Interpreter *interp) {
-    GROW_IF_FULL(interp->lvar_top, interp->lvar_cap, interp->lvar_stack);
+    alloc_count_lvar++;
+    GROW_IF_FULL_SYS(interp->lvar_top, interp->lvar_cap, interp->lvar_stack);
     int id = interp->lvar_top++;
     interp->lvar_stack[id] = make_tagged(T_UNBOUND, 0);   // starts unbound
     return id;
@@ -130,8 +131,8 @@ The frame case is worth seeing, because the open-record semantics is what makes 
 
 ```c
 if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
-    Object *left = interp->objects[VAL_DATA(left_val)];
-    Object *right = interp->objects[VAL_DATA(right_val)];
+    Object *left = OBJECT_AT(VAL_DATA(left_val));
+    Object *right = OBJECT_AT(VAL_DATA(right_val));
     int i = 0, j = 0;
     while (i < left->len && j < right->len) {       // keys are sorted in each frame
         cell left_key = left->frame.keys[i];
@@ -193,7 +194,7 @@ That record is the **trail**: a stack of the variable handles that have been bou
 
 ```c
 static void bind_var(Interpreter *interp, int var_handle, Val value) {
-    GROW_IF_FULL(interp->bind_trail_top, interp->bind_trail_cap, interp->bind_trail);
+    GROW_IF_FULL_SYS(interp->bind_trail_top, interp->bind_trail_cap, interp->bind_trail);
     interp->lvar_stack[var_handle] = value;                 // record the binding
     interp->bind_trail[interp->bind_trail_top++] = var_handle;  // remember we did
 }
@@ -227,7 +228,7 @@ amb         ( branch1 branch2 -- )   \ try branch1; if it fails, try branch2
 fail        ( -- )                   \ abandon this branch; back up to the nearest choice
 ```
 
-`amb` is the disjunction of logic programming, and `fail` is the trigger that walks the search back to the most recent unexplored alternative. A multi-way choice is expressed as nested binary `amb` — `amb(a, amb(b, c))` chooses among three.
+`amb` is the disjunction of logic programming, and `fail` is the trigger that walks the search back to the most recent unexplored alternative. A multi-way choice is expressed as nested binary `amb` — `amb(a, amb(b, c))` chooses among three. `amb` *commits* to the first branch that succeeds: if `branch1` succeeds it never tries `branch2` — it just drops the choice point. The success-then-`fail` idiom below relies on this: a success isn't re-entered, so to keep searching you have to explicitly `fail` back out of it.
 
 ### A choice point is a snapshot
 
@@ -289,7 +290,7 @@ static Val varmap_lookup(Interpreter *interp, VarMap *map, int slot) {
 
     Val fresh;
     if (map->reify)
-        fresh = make_symbol(intern_symbol(interp, /* "_0", "_1", ... */));  // a printable name
+        fresh = make_symbol(intern_symbol(interp, /* stored as "_0", "_1"; prints as ":_0", ":_1" */));  // a printable name
     else
         fresh = make_logic_var(object_new_logic_var(interp));               // a brand-new variable
 
@@ -300,7 +301,7 @@ static Val varmap_lookup(Interpreter *interp, VarMap *map, int slot) {
 The map guarantees *consistency*: a variable that appears several times in a term is renamed to the same stand-in every time, so shared structure stays shared. The two modes are:
 
 - **`copy`** gives each distinct unbound variable a brand-new logic variable. The result is an independent term with the same shape and the same sharing — an *alpha-renaming*. Useful when you need a private instance of a term whose variables won't collide with anyone else's.
-- **`reify`** gives each distinct unbound variable a fresh *symbol* (`_0`, `_1`, …). The result is an ordinary ground value — printable, comparable, storable — that no longer references the substitution at all. This is how a solved query is turned into a returnable answer.
+- **`reify`** gives each distinct unbound variable a fresh *symbol* (interned as `_0`, `_1`, … and printed as `:_0`, `:_1`, … since symbols always display with a leading colon). The result is an ordinary ground value — printable, comparable, storable — that no longer references the substitution at all. This is how a solved query is turned into a returnable answer.
 
 Both deep-copy the surrounding structure (strings, arrays, sets, pairs, frames, matrices), dereferencing variables as they go, so a reified term reflects all the bindings in force at the moment of reification.
 
@@ -323,6 +324,8 @@ microKanren is the standard minimal logic language: four operators — `fresh` (
 The substantive difference is the last two rows. microKanren's substitution is *persistent*: extending it returns a new map and leaves the old one intact, so alternative branches simply hold different maps and need no undo. Its search is a *stream*: a goal yields a lazy sequence of substitutions, and disjunction interleaves sequences.
 
 logicforth instead keeps one *mutable* substitution and undoes it with the trail, and drives the search with delimited continuations rather than streams. The two designs compute the same answers. The mutable-plus-trail approach fits an imperative interpreter that already owns its call chain as data (the same property continuations.md relies on): a binding is a single array write, undoing a branch is a few trail-pops, and a choice point is a return-stack mark plus three saved integers. There is no transpilation to a stream combinator library; the relational operators *are* primitives over the interpreter's own state.
+
+Like most Prologs, logicforth omits the **occurs check**: `unify` binds a variable to a term without first checking whether the variable appears inside that term, so unifying a variable with a structure containing itself is allowed and creates a cyclic structure. The win is that binding stays a single array write; the cost is that a later `copy` or `reify` walking such a cycle would recur without end, which is why both guard the walk with `MAX_NESTING_DEPTH` (core.c) and bail out rather than loop.
 
 One feature logicforth adds beyond the textbook core is **open-record unification on frames** (Part 3): two frames unify on their shared keys and ignore the rest. Classical logic languages unify terms by fixed arity and position; the open-record rule makes a frame behave as a partial constraint, which is what lets the same unification engine serve as a relational query (Part 8).
 
@@ -350,7 +353,7 @@ The whole query mechanism rests on the open-record rule. Asking "which rows matc
 
 `matches?` is the relational *select* (keep the rows that fit the pattern) and *project* (the pattern names only the columns it cares about, and open-record unification ignores the rest) in a single operation. The surrounding machinery — `candidates` intersecting the smallest indexed buckets first, `covering?` recognizing when the indexes alone settle the answer — is ordinary optimization; the meaning of a query is the unification.
 
-Asserting a row adds it to `:rows` and to each indexed column's bucket; retracting removes it from both. Because rows and buckets are sets keyed by value, duplicate rows collapse, and a row is found by content rather than identity. None of this needs new primitives: it is logic variables, unification over frames, and the set and frame data structures, assembled in a library.
+Asserting a row adds it to `:rows` and to each indexed column's bucket. There are two removals: `retract-row` takes one exact row and removes it from both `:rows` and every indexed bucket, while the user-facing `retract` takes a pattern, runs `query` to find every row matching it, and `retract-row`s each one — so a single `retract` can remove many rows. Because rows and buckets are sets keyed by value, duplicate rows collapse, and a row is found by content rather than identity. None of this needs new primitives: it is logic variables, unification over frames, and the set and frame data structures, assembled in a library.
 
 ---
 

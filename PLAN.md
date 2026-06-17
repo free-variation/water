@@ -166,6 +166,52 @@ To settle at implementation: representation of Vals with no clean TSV form
 
 ---
 
+## FastCGI service
+
+Run logicforth as a long-lived FastCGI application behind an off-the-shelf web
+server (nginx, Caddy, lighttpd, Apache). The web server owns everything HTTP —
+TLS termination, HTTP/1.1–3, request parsing, static files, timeouts, rate
+limiting, access logs, load balancing — and forwards each request over a Unix or
+TCP socket as FastCGI records. logicforth never sees a raw HTTP byte: it decodes
+the records, runs a handler, writes the response. This is the web story instead
+of an in-process HTTP server — the language stays small (no HTTP stack, no TLS,
+no concurrency layer needed just to serve), and scaling, supervision, and crash
+isolation come from the deployment.
+
+**Instrumentation needed** — less than an in-process server, since the web server
+keeps the HTTP work:
+
+- `accept ( listen-stream -- conn-stream )` — accept a forwarded connection as a
+  `T_STREAM`. By convention the web server passes the listen socket on fd 0
+  (`FCGI_LISTENSOCK_FILENO`), so `bind`/`listen` may be unnecessary.
+- `read-n ( stream n -- s )` — read exactly `n` bytes. The current `read` slurps
+  to EOF, which never comes on a persistent FastCGI connection; records are
+  length-framed, so a bounded read is required.
+- A FastCGI record codec — decode `BEGIN_REQUEST` / `PARAMS` (the CGI environment
+  → a request frame) / `STDIN` (body → a string), and encode `STDOUT` +
+  `END_REQUEST`. The framing is simple: `lib.l4` over `read-n`/`write` plus byte
+  arithmetic, with maybe a tiny C helper for the 2/4-byte length fields.
+
+**Serve loop.** A plain sequential `accept → decode → handle → respond` loop in
+`lib.l4`, each handler wrapped in `try-catch` so a bad request can't kill the
+worker; per-request allocations are reclaimed by GC. No threads.
+
+**Scaling and robustness from the deployment, not the language.** Run N worker
+processes all accepting on the same socket (the kernel load-balances) under a
+process manager (e.g. systemd template units) that respawns on crash. One request
+per worker isolates failures; the web server retries elsewhere — the robustness
+the fork-per-connection idea was reaching for, provided by the OS.
+
+**SQLite.** Each worker opens its own connection; enable WAL once
+(`PRAGMA journal_mode=WAL`) plus a `busy_timeout`, so concurrent reads across
+workers don't block and writes serialize safely (single host).
+
+**Cost:** `accept` + `read-n` are small C; the FastCGI codec is `lib.l4` (plus an
+optional tiny C codec for the integer fields); the serve loop and response
+builders are `lib.l4`.
+
+---
+
 ## REPL line editing
 
 The interactive REPL is driven by vendored **isocline** (MIT, single-source build
@@ -201,59 +247,36 @@ into logicforth; struct-by-value arguments.
 
 ---
 
-## Cooperative green threads (single OS thread)
+## Coroutines, generators, lazy sequences
 
-Lightweight tasks within one OS thread, scheduled cooperatively on the
-continuation machinery. On their own they are coroutines: producer/consumer
-pipelines, suspendable simulations, anything that interleaves straight-line
-tasks without parallelism.
+Suspendable computations on the delimited-continuation machinery (`reset` /
+`shift` / `resume`, already built). A coroutine yields control and resumes where
+it left off; a generator is a coroutine that yields a stream of values pulled on
+demand. The aim is **lazy sequences** — produce values only as a consumer asks,
+so `map` / `filter` / `take` / `zip` compose over large or unbounded sequences
+without materializing the whole thing.
 
 **API:**
 
 ```
-xt spawn          ( -- )           \ schedule xt as a green task
-yield             ( -- )           \ pause this task; scheduler picks next
-run-scheduler     ( -- )           \ drive the queue until empty
+xt generator      ( -- gen )       \ a paused producer; resume to pull values
+gen next          ( gen -- value gen' | done )  \ pull one value, or signal exhaustion
+v yield           ( v -- )         \ inside a producer: emit v, then suspend
 ```
 
-**Implementation:**
+with lazy `map` / `filter` / `take` / `zip` as `lib.l4` wrappers that resume the
+source on demand, and `lazy>array` to force a finite prefix. Cooperative tasks
+are the same machinery used differently — `spawn` / `yield` / `run-scheduler`
+round-robin several coroutines for producer/consumer pipelines and suspendable
+simulations.
 
-- A scheduler queue: a per-process array of `T_CONT` Vals, each a paused
-  task.
-- `spawn` captures a continuation that runs the given xt and pushes it.
-- `yield` is `shift`: capture the current continuation, push it, resume the
-  next task.
-- `run-scheduler` dequeues, resumes, repeats until empty.
+**Implementation:** `yield` is `shift`; `next` re-enters the captured slice; a
+generator is a `T_CONT` plus an exhaustion sentinel; the scheduler is a queue of
+`T_CONT`s. ~50 lines of `lib.l4` on the existing primitives — no new C.
 
-**Cost:** ~50 lines on `reset` / `shift` / `resume`.
-
-Scheduling alone runs on one core and does not overlap blocking syscalls — a
-blocking `read` stalls every task. The I/O payoff arrives only with the
-non-blocking I/O layer below, which is built on top of this scheduler.
-
----
-
-## Non-blocking I/O
-
-Turns the green-thread scheduler into an async runtime: a task that would
-block on a socket yields instead, and the scheduler resumes it once the
-descriptor is ready.
-
-**Pieces:**
-
-- Non-blocking sockets and streams (`O_NONBLOCK`); `read` / `write` yield on
-  `EAGAIN` rather than blocking.
-- A readiness wait in the scheduler (`kqueue` on macOS, `epoll` on Linux):
-  when no task is runnable, wait on the descriptors that parked tasks are
-  blocked on, then wake the ready ones.
-
-This is what makes green threads worth having: a single-thread server
-multiplexing thousands of connections, written in straight-line blocking
-style with the suspension hidden underneath. It is a larger build than the
-scheduler itself.
-
-**Build order:** green threads first (the scheduler, on continuations), then
-non-blocking I/O on top.
+No async-I/O layer sits above this: under the FastCGI model the web server
+multiplexes connections, so coroutines here are for lazy data flow, not for
+overlapping blocking syscalls.
 
 ---
 

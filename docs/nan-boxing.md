@@ -80,7 +80,7 @@ But software almost never produces or uses more than one NaN. Operations like `0
 
 That's the loophole NaN-boxing exploits. We pick one NaN pattern as "this is really a float NaN" and reinterpret all the others as tagged non-float values.
 
-By convention, a *quiet NaN* (the standard kind, produced by `0.0/0.0`) has the top mantissa bit set. So any bit pattern whose exponent bits are all ones with the top mantissa bit set — the 12-bit signature `0x7FF8` fills in bits 62..51 — is a quiet NaN as far as floating-point hardware is concerned. logicforth keys on exactly that signature, which leaves the low 51 bits (plus the unused sign bit) free to claim.
+By convention, a *quiet NaN* (the standard kind, produced by `0.0/0.0`) has the top mantissa bit set. So any bit pattern whose exponent bits are all ones with the top mantissa bit set — the top 16 bits `0x7FF8`, which set bits 62..51 — is a quiet NaN as far as floating-point hardware is concerned. logicforth keys on exactly that signature, which leaves the low 51 bits (plus the unused sign bit) free to claim.
 
 Within those bits we have plenty of room for a tag and a payload.
 
@@ -212,7 +212,7 @@ The single-word Val shapes the surrounding code in a few places.
 - `p_to_var` (writes a variable's value)
 - `destruct-to` (bulk-writes multiple variables)
 - `p_to`'s interpret-mode branch (REPL `to var`)
-- `mark_body`'s `dovar` arm (GC walks variable cells)
+- the `gc()` dictionary scan's `dovar` case (GC walks variable cells)
 
 **Stack arrays.** The data stack, return stack, side stack, and frame value arrays are all `Val[]`, so each slot is 8 bytes rather than 16 — half the footprint, and the hot top-of-stack working set stays comfortably in cache.
 
@@ -255,7 +255,7 @@ The compact variable layout (one cell per variable's value) shows up in:
 - `push_variable` in `src/c/core.c` — reads the cell and casts it to `Val.bits`.
 - `p_to_var` and the interpret-mode branch of `p_to` in `src/c/words.c` — both write `v.bits` to the cell.
 - `destruct-to` in `src/c/collections.c` — bulk-writes Vals into variables.
-- `mark_body`'s `dovar` branch in `src/c/core.c` — reconstructs the Val from the single cell for GC marking.
+- the `gc()` dictionary scan in `src/c/core.c` — reconstructs the Val from a `dovar` word's single body cell for GC marking.
 
 For broader context:
 

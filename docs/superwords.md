@@ -43,8 +43,9 @@ n-body benchmark's inner loop, computing one coordinate difference:
 x1 x2 f- to dx
 ```
 
-Compiled naively, that is five dispatched ops: push the variable `x1`, push the
-variable `x2`, subtract, then store into `dx` (two cells). Four of the five do
+Compiled naively, that is four dispatched ops: push the variable `x1`, push the
+variable `x2`, subtract, then store into `dx` (the store is two cells but one
+dispatch). Three of the four do
 almost no arithmetic — they move a value or read a variable. Profiling that loop
 shows the variable pushes (`dovar`) and the stores dominating; the actual
 subtraction is a small slice.
@@ -82,7 +83,7 @@ A two-variable subtract, then, compiles to three cells:
 [ handler for (vvf-) ] [ x1's value slot ] [ x2's value slot ]
 ```
 
-One dispatch, two direct reads, one subtraction, one push — replacing the five
+One dispatch, two direct reads, one subtraction, one push — replacing the three
 ops of `x1 x2 f-`.
 
 ---
