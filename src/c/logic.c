@@ -20,7 +20,7 @@ Val deref(Interpreter *interp, Val value) {
 }
 
 static void bind_var(Interpreter *interp, int var_handle, Val value) {
-	GROW_IF_FULL(interp->bind_trail_top, interp->bind_trail_cap, interp->bind_trail);
+	GROW_IF_FULL_SYS(interp->bind_trail_top, interp->bind_trail_cap, interp->bind_trail);
 
 	interp->lvar_stack[var_handle] = value;
 	interp->bind_trail[interp->bind_trail_top++] = var_handle;
@@ -55,8 +55,8 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 		return 1;
 
 	if (VAL_TAG(left_val) == T_ARRAY && VAL_TAG(right_val) == T_ARRAY) {
-		Object *left = interp->objects[VAL_DATA(left_val)];
-		Object *right = interp->objects[VAL_DATA(right_val)];
+		Object *left = OBJECT_AT(VAL_DATA(left_val));
+		Object *right = OBJECT_AT(VAL_DATA(right_val));
 
 		if (left->len != right->len)
 			return 0;
@@ -79,8 +79,8 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 	}
 
 	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
-		Object *left = interp->objects[VAL_DATA(left_val)];
-		Object *right = interp->objects[VAL_DATA(right_val)];
+		Object *left = OBJECT_AT(VAL_DATA(left_val));
+		Object *right = OBJECT_AT(VAL_DATA(right_val));
 
 		int i = 0, j = 0;
 		while (i < left->len && j < right->len) {

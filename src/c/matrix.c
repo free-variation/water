@@ -2,8 +2,8 @@
 
 #define MATRIX_ELEMENTWISE_OP(name, opname, op) \
 	int name(Interpreter *interp, Val left_val, Val right_val) { \
-		Object *left = interp->objects[VAL_DATA(left_val)]; \
-		Object *right = interp->objects[VAL_DATA(right_val)]; \
+		Object *left = OBJECT_AT(VAL_DATA(left_val)); \
+		Object *right = OBJECT_AT(VAL_DATA(right_val)); \
 		if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) { \
 			fail(interp, opname ": matrix shapes differ (%dx%d vs %dx%d)", \
 					left->matrix.rows, left->matrix.columns, \
@@ -12,7 +12,7 @@
 		} \
 		int target_handle = object_new_matrix(interp, left->matrix.rows, left->matrix.columns); \
 		if (interp->error_flag) return -1; \
-		Object *target = interp->objects[target_handle]; \
+		Object *target = OBJECT_AT(target_handle); \
 		size_t n = (size_t)left->matrix.rows * (size_t)left->matrix.columns; \
 		const double * restrict l = left->matrix.elements; \
 		const double * restrict r = right->matrix.elements; \
@@ -32,7 +32,7 @@ void p_at_i(Interpreter *interp) {
 
 	POP(source_val);
 	if (VAL_TAG(source_val) == T_ARRAY) {
-		Object *array = interp->objects[VAL_DATA(source_val)];
+		Object *array = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= array->len) {
 			fail(interp, "@i: array index %d out of bounds (length %d)", index, array->len);
 			return;
@@ -40,7 +40,7 @@ void p_at_i(Interpreter *interp) {
 
 		push(interp, array->items[index]);
 	} else if (VAL_TAG(source_val) == T_MATRIX) {
-		Object *source = interp->objects[VAL_DATA(source_val)];
+		Object *source = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= source->matrix.rows) {
 			fail(interp, "@i: row index %d out of bounds (%d rows)", index, source->matrix.rows);
 			return;
@@ -69,7 +69,7 @@ void p_store_i(Interpreter *interp) {
 	int index = (int)VAL_NUMBER(index_val);
 	PEEK_AT(value, 0, "!i");
 
-	Object *array = interp->objects[VAL_DATA(array_val)];
+	Object *array = OBJECT_AT(VAL_DATA(array_val));
 	if (index < 0 || index >= array->len) {
 		fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
 		return;
@@ -124,9 +124,9 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 		double beta, int c_handle) {
 	int i, j, k, m, n, p;
 
-	Object *A = interp->objects[a_handle];
-	Object *B = interp->objects[b_handle];
-	Object *C = interp->objects[c_handle];
+	Object *A = OBJECT_AT(a_handle);
+	Object *B = OBJECT_AT(b_handle);
+	Object *C = OBJECT_AT(c_handle);
 
 	int op_a_rows = transpose_a ? A->matrix.columns : A->matrix.rows;
 	int op_a_cols = transpose_a ? A->matrix.rows : A->matrix.columns;
@@ -151,7 +151,7 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 
 	int matmult_handle = object_new_matrix(interp, m, n);
 	if (interp->error_flag) return -1;
-	Object *matmult = interp->objects[matmult_handle];
+	Object *matmult = OBJECT_AT(matmult_handle);
 
 	if (!transpose_a && !transpose_b) {
 		double * restrict out_elements = matmult->matrix.elements;
@@ -275,7 +275,7 @@ void p_dgemm_tt(Interpreter *interp) {
 		int cols = source->matrix.columns; \
 		int target_handle = object_new_matrix(interp, rows, 1); \
 		if (interp->error_flag) return -1; \
-		Object *target = interp->objects[target_handle]; \
+		Object *target = OBJECT_AT(target_handle); \
 		for (int i = 0; i < rows; i++) { \
 			const double * restrict row = &MAT(source, i, 0); \
 			double accumulator = init_value; \
@@ -292,7 +292,7 @@ void p_dgemm_tt(Interpreter *interp) {
 		int cols = source->matrix.columns; \
 		int target_handle = object_new_matrix(interp, 1, cols); \
 		if (interp->error_flag) return -1; \
-		Object *target = interp->objects[target_handle]; \
+		Object *target = OBJECT_AT(target_handle); \
 		double * restrict target_elements = target->matrix.elements; \
 		for (int j = 0; j < cols; j++) target_elements[j] = init_value; \
 		for (int i = 0; i < rows; i++) { \
@@ -363,7 +363,7 @@ void p_diagonal_matrix(Interpreter *interp) {
 		return;
 	}
 
-	Object *diag_matrix = interp->objects[diag_matrix_handle];
+	Object *diag_matrix = OBJECT_AT(diag_matrix_handle);
 	double diag_element = VAL_NUMBER(diag_val);
 	for (int i = 0; i < diag_matrix->matrix.rows; i++) {
 		MAT(diag_matrix, i, i) = diag_element;
@@ -439,7 +439,7 @@ void p_matrix(Interpreter *interp) {
 		interp->dsp -= 3;
 	} else if (VAL_TAG(below) == T_ARRAY) {
 		num_rows = (int)VAL_NUMBER(top);
-		Object *arr = interp->objects[VAL_DATA(below)];
+		Object *arr = OBJECT_AT(VAL_DATA(below));
 		if (num_rows <= 0 || arr->len % num_rows != 0) {
 			fail(interp, "matrix: %d elements does not divide evenly into %d rows", arr->len, num_rows);
 			return;
@@ -459,8 +459,8 @@ void p_matrix(Interpreter *interp) {
 	if (interp->error_flag) return;
 
 	POP(array_val);
-	Object *matrix = interp->objects[matrix_handle];
-	Object *input_array = interp->objects[VAL_DATA(array_val)];
+	Object *matrix = OBJECT_AT(matrix_handle);
+	Object *input_array = OBJECT_AT(VAL_DATA(array_val));
 	int num_elements = matrix->matrix.rows * matrix->matrix.columns;
 	if (input_array->len != num_elements) {
 		fail(interp, "matrix: array has %d elements but %dx%d needs %d",

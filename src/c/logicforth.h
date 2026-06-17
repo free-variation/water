@@ -16,6 +16,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <sys/wait.h>
+#include <sys/mman.h>
 
 typedef int64_t cell;
 
@@ -24,6 +25,9 @@ typedef int64_t cell;
 #define DATA_STACK_DEPTH (1 << 16)
 #define RETURN_STACK_DEPTH (1 << 16)
 #define MAX_OBJECTS (1 << 26)
+#define ARENA_RESERVE ((size_t)1 << 34)
+#define ARENA_ALIGNMENT 16
+#define ARENA_SIZE_CLASSES (2 << 5)
 #define OBJECTS_INIT_CAP (1 << 16)
 #define INPUT_BUFFER_SIZE (1 << 20)
 #define SOURCE_POOL (1 << 22)
@@ -48,6 +52,7 @@ typedef int64_t cell;
 #define REGEX_CACHE_SIZE (1 << 10)
 #define JSON_MAX_DEPTH (1 << 10)
 #define SELECT_MAX_DEPTH JSON_MAX_DEPTH
+
 
 typedef enum {
 	T_NONE = 0,
@@ -138,7 +143,7 @@ typedef enum {
 	OBJECT_CONTINUATION
 } ObjectKind;
 
-typedef struct {
+typedef struct Object {
 	ObjectKind kind;
 	int len, capacity;
 	union {
@@ -160,12 +165,32 @@ typedef struct {
 			int local_base_offset;
 		} continuation;
 	};
+
+	cell mark_epoch;
 } Object;
 
 typedef struct {
 	Val head;
 	Val tail;
 } Pair;
+
+typedef struct {
+	char *base;
+	size_t used;
+	size_t reserved;
+	void *size_class_free[ARENA_SIZE_CLASSES];
+	void *freed_object_structs;
+
+	Object **objects;
+	cell current_epoch;
+	int n_objects;
+	int max_objects;
+	int objects_cap;
+
+	int *free_slots;
+	int n_free_slots;
+} Arena;
+extern Arena arena;
 
 typedef struct {
 	int slot;
@@ -191,23 +216,31 @@ typedef enum {
 #define GROW_IF_FULL(count, cap, arr) do { \
 	if ((count) == (cap)) { \
 		(cap) = (cap) ? (cap) * 2 : 8; \
+		(arr) = arena_realloc((arr), sizeof(*(arr)) * (size_t)(cap)); \
+	} \
+} while (0)
+
+#define GROW_IF_FULL_SYS(count, cap, arr) do { \
+	if ((count) == (cap)) { \
+		(cap) = (cap) ? (cap) * 2 : 8; \
 		(arr) = realloc((arr), sizeof(*(arr)) * (size_t)(cap)); \
 	} \
 } while (0)
 
-#define GROW_OBJECT_TABLE(interp, new_cap) do { \
-	int grow_old = (interp)->objects_cap; \
+
+#define GROW_OBJECT_TABLE(new_cap) do { \
+	int grow_old = arena.objects_cap; \
 	int grow_new = (new_cap); \
-	(interp)->objects = realloc((interp)->objects, sizeof(Object *) * (size_t)grow_new); \
-	(interp)->object_mark = realloc((interp)->object_mark, sizeof(unsigned char) * (size_t)grow_new); \
-	(interp)->free_slots = realloc((interp)->free_slots, sizeof(int) * (size_t)grow_new); \
-	memset((interp)->objects + grow_old, 0, sizeof(Object *) * (size_t)(grow_new - grow_old)); \
-	(interp)->objects_cap = grow_new; \
+	arena.objects = realloc(arena.objects, sizeof(Object *) * (size_t)grow_new); \
+	arena.free_slots = realloc(arena.free_slots, sizeof(int) * (size_t)grow_new); \
+	memset(arena.objects + grow_old, 0, sizeof(Object *) * (size_t)(grow_new - grow_old)); \
+	arena.objects_cap = grow_new; \
 } while (0)
 
+#define OBJECT_AT(handle) (arena.objects[handle])
+
 typedef struct Vocabulary {
-	cell *dict;
-	int dict_cap;
+	cell dict[VOCABULARY_INIT_SIZE];
 	int here;
 	int latest_cfa;
 	char name_pool[NAME_POOL];
@@ -233,11 +266,9 @@ typedef struct Vocabulary {
 	int init_source_here, init_symbol_pool_here;
 	int lib_end_latest_cfa;
 } Vocabulary;
+extern Vocabulary vocab;
 
 typedef struct Interpreter {
-	Vocabulary *vocab;
-	cell *dict;
-
 	Val data_stack[DATA_STACK_DEPTH];
 	int dsp;
 	Val return_stack[RETURN_STACK_DEPTH];
@@ -252,30 +283,8 @@ typedef struct Interpreter {
 
 	int ip;
 	int running;
-	int compiling;
 	int error_flag;
 
-	char input_buffer[INPUT_BUFFER_SIZE];
-	int input_buffer_len, input_buffer_pos, need_more;
-	int compiling_src_start;
-	int fuse_prev_var, fuse_prev2_var;
-	int fuse_prev_cmp;
-
-	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
-	int local_names_pool_here;
-	int local_name_offsets[MAX_LOCAL_NAMES];
-	int n_local_names;
-	int local_scope_starts[MAX_LOCAL_SCOPES];
-	int local_scope_dict_starts[MAX_LOCAL_SCOPES];
-	int n_local_scopes;
-
-	Object **objects;
-	int n_objects;
-	int max_objects;
-	int objects_cap;
-	unsigned char *object_mark;
-	int *free_slots;
-	int n_free_slots;
 
 	Pair *pairs;
 	int n_pairs, pairs_cap;
@@ -287,9 +296,6 @@ typedef struct Interpreter {
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
 
-	void *handler_registry[MAX_HANDLERS];
-	int n_handlers;
-
 	struct {
 		char *pattern;
 		void *re;
@@ -300,15 +306,38 @@ typedef struct Interpreter {
 	void *databases[MAX_DATABASES];
 	int n_databases;
 
-
-	char *loaded_files[MAX_LOADED_FILES];
-	int n_loaded_files, load_depth;
-
 	int unwinding, unwind_target, next_mark_id;
 
 	char error_message[256];
-	char token_buffer[INPUT_BUFFER_SIZE];
 } Interpreter;
+
+typedef struct {
+	int compiling;
+
+	char input_buffer[INPUT_BUFFER_SIZE];
+	int input_buffer_len, input_buffer_pos, need_more;
+	int compiling_src_start;
+	
+	int fuse_prev_var, fuse_prev2_var;
+	int fuse_prev_cmp;
+	
+	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
+	
+	int local_names_pool_here;
+	int local_name_offsets[MAX_LOCAL_NAMES];
+	int n_local_names;
+	int local_scope_starts[MAX_LOCAL_SCOPES];
+	int local_scope_dict_starts[MAX_LOCAL_SCOPES];
+	int n_local_scopes;
+	void *handler_registry[MAX_HANDLERS];
+	int n_handlers;
+	char *loaded_files[MAX_LOADED_FILES];
+	int n_loaded_files, load_depth;
+	
+	char token_buffer[INPUT_BUFFER_SIZE];
+} Compiler;
+extern Compiler compiler;
+
 
 typedef void (*cfa_handler)(Interpreter *interp);
 
@@ -316,18 +345,18 @@ typedef void (*cfa_handler)(Interpreter *interp);
 	if ((interp)->unwinding || (interp)->error_flag) \
 		return; \
 	__attribute__((musttail)) \
-	return ((cfa_handler)(interp)->dict[(interp)->ip++])(interp); \
+	return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \
 } while (0)
 
 typedef double (*scalar_operator)(double, double);
 
-#define WORD_LINK(v, cfa) ((v)->dict[(cfa) - 4])
-#define WORD_FLAGS(v, cfa) ((v)->dict[(cfa) - 3])
-#define WORD_NAME(v, cfa) ((v)->dict[(cfa) - 2])
-#define WORD_SOURCE(v, cfa) ((v)->dict[(cfa) - 1])
-#define WORD_IS_IMMEDIATE(v, cfa) (WORD_FLAGS(v, cfa) & 1)
-#define WORD_IS_INLINE(v, cfa) (WORD_FLAGS(v, cfa) & 2)
-#define WORD_IS_INTERNAL(v, cfa) (WORD_FLAGS(v, cfa) & 4)
+#define WORD_LINK(cfa) (vocab.dict[(cfa) - 4])
+#define WORD_FLAGS(cfa) (vocab.dict[(cfa) - 3])
+#define WORD_NAME(cfa) (vocab.dict[(cfa) - 2])
+#define WORD_SOURCE(cfa) (vocab.dict[(cfa) - 1])
+#define WORD_IS_IMMEDIATE(cfa) (WORD_FLAGS(cfa) & 1)
+#define WORD_IS_INLINE(cfa) (WORD_FLAGS(cfa) & 2)
+#define WORD_IS_INTERNAL(cfa) (WORD_FLAGS(cfa) & 4)
 
 extern int print_truncate;
 void fail(Interpreter *interp, const char *fmt, ...);
@@ -409,7 +438,7 @@ static inline Val rpop(Interpreter *interp) {
 		fail(interp, "%s: expected a matrix; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	Object *name = interp->objects[VAL_DATA(name##_val)]
+	Object *name = OBJECT_AT(VAL_DATA(name##_val))
 
 #define POP_STRING(name, op) \
 	Val name##_val = pop(interp); \
@@ -418,7 +447,7 @@ static inline Val rpop(Interpreter *interp) {
 		fail(interp, "%s: expected a string; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	Object *name = interp->objects[VAL_DATA(name##_val)]
+	Object *name = OBJECT_AT(VAL_DATA(name##_val))
 
 #define POP_ARRAY(name, op) \
 	Val name##_val = pop(interp); \
@@ -427,7 +456,7 @@ static inline Val rpop(Interpreter *interp) {
 		fail(interp, "%s: expected an array; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	Object *name = interp->objects[VAL_DATA(name##_val)]
+	Object *name = OBJECT_AT(VAL_DATA(name##_val))
 
 #define POP_COLLECTION(name, op) \
 	Val name##_val = pop(interp); \
@@ -436,22 +465,22 @@ static inline Val rpop(Interpreter *interp) {
 		fail(interp, "%s: expected an array or set; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	Object *name = interp->objects[VAL_DATA(name##_val)]
+	Object *name = OBJECT_AT(VAL_DATA(name##_val))
 
 #define NEW_MATRIX(handle, obj, rows, cols) \
 	int handle = object_new_matrix(interp, (rows), (cols)); \
 	if (interp->error_flag) return; \
-	Object *obj = interp->objects[handle]
+	Object *obj = OBJECT_AT(handle)
 
 #define NEW_ARRAY(handle, obj, len) \
 	int handle = object_new_array(interp, (len)); \
 	if (interp->error_flag) return; \
-	Object *obj = interp->objects[handle]
+	Object *obj = OBJECT_AT(handle)
 
 #define NEW_FRAME(handle, obj) \
 	int handle = object_new_frame(interp); \
 	if (interp->error_flag) return; \
-	Object *obj = interp->objects[handle]
+	Object *obj = OBJECT_AT(handle)
 
 #define NEW_OBJECT(obj, kind) \
 	int slot; \
@@ -478,7 +507,7 @@ static inline Val rpop(Interpreter *interp) {
 
 #define PEEK_STRING_AT(name, depth, op) \
 	PEEK_TYPE_AT(name##_val, depth, op, T_STRING); \
-	Object *name = interp->objects[VAL_DATA(name##_val)]
+	Object *name = OBJECT_AT(VAL_DATA(name##_val))
 
 #define PEEK_SEQUENCE_AT(var, depth, op) \
 	PEEK_AT(var, depth, op); \
@@ -511,6 +540,9 @@ static inline void gc_root_pop(Interpreter *interp) {
 	}
 }
 int object_alloc_slot(Interpreter *interp);
+void *arena_malloc(size_t bytes);
+void *arena_realloc(void *payload, size_t bytes);
+void arena_free(void *payload);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
 int object_new_string_uninit(Interpreter *interp, int length);
 int object_new_set(Interpreter *interp);
@@ -538,8 +570,8 @@ void pretty_print_array(Interpreter *interp, Val value);
 void print_val_compact(Interpreter *interp, Val value);
 void print_frame_pretty(Interpreter *interp, Object *frame, int indent);
 void print_prompt_state(Interpreter *interp);
-int find(Interpreter *interp, const char *name);
-const char *name_of(Interpreter *interp, int cfa);
+int find(const char *name);
+const char *name_of(int cfa);
 void docol(Interpreter *interp);
 void dosym(Interpreter *interp);
 void dovar(Interpreter *interp);
@@ -616,7 +648,7 @@ void p_f_increment(Interpreter *interp);
 void p_f_decrement(Interpreter *interp);
 void p_inline(Interpreter *interp);
 void inline_word_body(Interpreter *interp, int target_cfa);
-int find_local(Interpreter *interp, const char *token, int *depth_out, int *slot_out);
+int find_local(const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
 int string_matches(Interpreter *interp, Object *subject, Object *pattern);
 void p_match(Interpreter *interp);
@@ -777,9 +809,9 @@ void p_bar_to(Interpreter *interp);
 void p_symbol(Interpreter *interp);
 void p_string_to_symbol(Interpreter *interp);
 void p_forget(Interpreter *interp);
-void inbuf_reset(Interpreter *interp);
-int read_string_literal(Interpreter *interp);
-char *next_token(Interpreter *interp);
+void inbuf_reset(void);
+int read_string_literal(void);
+char *next_token(void);
 int parse_float(const char *text, double *out);
 int interpolate(Interpreter *interp, int template_handle);
 void run_outer(Interpreter *interp);
@@ -843,7 +875,6 @@ void p_log(Interpreter *interp);
 void p_ln(Interpreter *interp);
 void p_power(Interpreter *interp);
 void p_divmod(Interpreter *interp);
-
 void p_fabs(Interpreter *interp);
 void p_fsqrt(Interpreter *interp);
 void p_fexp(Interpreter *interp);
@@ -933,25 +964,25 @@ Val frame_walk(Interpreter *interp, Val node, Object *path,
 		}
 
 		cell key = VAL_DATA(path->items[i]);
-		Object *frame = interp->objects[VAL_DATA(node)];
+		Object *frame = OBJECT_AT(VAL_DATA(node));
 		FRAME_LOOKUP(frame, key, at, present);
 		if (present && (mode != WALK_VIVIFY || VAL_TAG(frame->frame.values[at]) == T_FRAME)) {
 			node = frame->frame.values[at];
 		} else if (mode == WALK_VIVIFY) {
-			if (key == (cell)interp->vocab->wildcard_symbol || key == (cell)interp->vocab->descendant_symbol) {
+			if (key == (cell)vocab.wildcard_symbol || key == (cell)vocab.descendant_symbol) {
 				fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
 				return node;
 			}
 			int child = object_new_frame(interp);
-			frame_put(interp->objects[VAL_DATA(node)], key, make_frame(child));
+			frame_put(OBJECT_AT(VAL_DATA(node)), key, make_frame(child));
 			node = make_frame(child);
 		} else {
 			if (found) *found = 0;
 			if (mode != WALK_PROBE) {
-				if (key == (cell)interp->vocab->wildcard_symbol || key == (cell)interp->vocab->descendant_symbol)
+				if (key == (cell)vocab.wildcard_symbol || key == (cell)vocab.descendant_symbol)
 					fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
 				else
-					fail(interp, "%s: no key :%s", op, &interp->vocab->symbol_pool[key]);
+					fail(interp, "%s: no key :%s", op, &vocab.symbol_pool[key]);
 			}
 			return node;
 		}
