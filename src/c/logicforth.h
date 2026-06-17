@@ -17,6 +17,8 @@
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
+#include <stdatomic.h>
+#include <pthread.h>
 
 typedef int64_t cell;
 
@@ -29,6 +31,8 @@ typedef int64_t cell;
 #define ARENA_ALIGNMENT 16
 #define ARENA_SIZE_CLASSES (2 << 5)
 #define OBJECTS_INIT_CAP (1 << 16)
+#define SLAB_BYTES (1 << 16)
+#define SLOTS_PER_CLAIM (1 << 10)
 #define INPUT_BUFFER_SIZE (1 << 20)
 #define SOURCE_POOL (1 << 22)
 #define SYMBOL_POOL (1 << 22)
@@ -43,7 +47,7 @@ typedef int64_t cell;
 #define MAX_HANDLERS (1 << 10)
 #define MAX_DATABASES (1 << 8)
 #define TRAMPOLINE_SLOT 0
-#define DICT_RESERVED 3
+#define DICT_RESERVED (3 * (MAX_WORKER_THREADS + 1))
 #define PROMPT_EXCEPTION 0
 #define PROMPT_CHOICE 1
 #define LVAR_STACK_DEPTH (1 << 16)
@@ -52,7 +56,7 @@ typedef int64_t cell;
 #define REGEX_CACHE_SIZE (1 << 10)
 #define JSON_MAX_DEPTH (1 << 10)
 #define SELECT_MAX_DEPTH JSON_MAX_DEPTH
-
+#define MAX_WORKER_THREADS (1 << 6)
 
 typedef enum {
 	T_NONE = 0,
@@ -175,15 +179,25 @@ typedef struct {
 } Pair;
 
 typedef struct {
+	Pair *table;
+	_Atomic int n_pairs;
+	int pairs_cap;
+	unsigned char *mark;
+	int *free_list;
+	int free_count;
+} PairPool;
+extern PairPool pairs;
+
+typedef struct {
 	char *base;
-	size_t used;
+	_Atomic size_t used;
 	size_t reserved;
 	void *size_class_free[ARENA_SIZE_CLASSES];
 	void *freed_object_structs;
 
 	Object **objects;
 	cell current_epoch;
-	int n_objects;
+	_Atomic int n_objects;
 	int max_objects;
 	int objects_cap;
 
@@ -191,6 +205,13 @@ typedef struct {
 	int n_free_slots;
 } Arena;
 extern Arena arena;
+extern int in_parallel;
+
+typedef struct {
+	char *slab_next, *slab_end;
+	int slot_next, slot_end;
+	int pair_next, pair_end;
+} AllocContext;
 
 typedef struct {
 	int slot;
@@ -213,6 +234,12 @@ typedef enum {
 #define MAT(m, i, j) ((m)->matrix.elements[(i) * (m)->matrix.columns + (j)])
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
+#define CLAMP(value, lo, hi) do { \
+	if ((value) < (lo)) \
+		(value) = (lo); \
+	if ((value) > (hi)) \
+		(value) = (hi); \
+} while (0)
 #define GROW_IF_FULL(count, cap, arr) do { \
 	if ((count) == (cap)) { \
 		(cap) = (cap) ? (cap) * 2 : 8; \
@@ -249,7 +276,7 @@ typedef struct Vocabulary {
 	int source_here;
 	char symbol_pool[SYMBOL_POOL];
 	int symbol_pool_here;
-	int symbol_hash[SYMBOL_HASH_SIZE];
+	_Atomic int symbol_hash[SYMBOL_HASH_SIZE];
 
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
 	int enter_locals_cfa, enter_locals_to_cfa, enter_locals_mixed_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
@@ -282,15 +309,9 @@ typedef struct Interpreter {
 	int lvar_top, lvar_cap;
 
 	int ip;
+	int trampoline_base;
 	int running;
 	int error_flag;
-
-
-	Pair *pairs;
-	int n_pairs, pairs_cap;
-	unsigned char *pair_mark;
-	int *pair_free_list;
-	int pair_free_count;
 	int gc_disabled;
 
 	Val gc_roots[MAX_GC_ROOTS];
@@ -310,6 +331,14 @@ typedef struct Interpreter {
 
 	char error_message[256];
 } Interpreter;
+
+typedef struct {
+	int n_items;
+	int items_per_claim;
+	_Atomic int next_index;
+	void (*kernel)(int start_index, int end_index, void *context);
+	void *context;
+} ParallelTask;
 
 typedef struct {
 	int compiling;
@@ -488,8 +517,8 @@ static inline Val rpop(Interpreter *interp) {
 	if (!obj) return -1
 
 #define INIT_PAIR(slot) \
-	interp->pairs[slot].head = make_tagged(T_NONE, 0); \
-	interp->pairs[slot].tail = make_tagged(T_NONE, 0)
+	pairs.table[slot].head = make_tagged(T_NONE, 0); \
+	pairs.table[slot].tail = make_tagged(T_NONE, 0)
 
 #define PEEK_AT(var, depth, op) \
 	if (interp->dsp <= (depth)) { \
@@ -584,8 +613,6 @@ typedef struct {
 	cell saved_slot_0, saved_slot_1, saved_slot_2;
 	int fast;
 } CallContext;
-
-
 
 void call_open(Interpreter *interp, int cfa, CallContext *ctx);
 void call_invoke(Interpreter *interp);
@@ -778,8 +805,11 @@ void p_shift(Interpreter *interp);
 void p_shift_with(Interpreter *interp);
 void p_resume(Interpreter *interp);
 void p_map(Interpreter *interp);
+void parallel_for(int n_items, int n_threads, int items_per_claim,
+		void (*kernel)(int start_index, int end_index, void *context), void *context);
 void p_mapn(Interpreter *interp);
 void p_filter(Interpreter *interp);
+void p_pmap(Interpreter *interp);
 void p_reduce(Interpreter *interp);
 void p_times(Interpreter *interp);
 void p_i_times(Interpreter *interp);
@@ -927,8 +957,10 @@ void p_db_query(Interpreter *interp);
 void p_wait(Interpreter *interp);
 void p_stop_process(Interpreter *interp);
 void p_running(Interpreter *interp);
-Interpreter *interp_new(void);
-int interp_bootstrap(Interpreter *interp);
+void interp_init(Interpreter *interp);
+Interpreter *main_init(void);
+Interpreter *worker_init(int worker_index);
+int construct_vocabulary(Interpreter *interp);
 
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 

@@ -6,6 +6,13 @@
 Vocabulary vocab;
 Compiler compiler;
 Arena arena;
+PairPool pairs;
+
+int in_parallel;
+static _Thread_local AllocContext thread_alloc;
+static AllocContext main_alloc;
+static pthread_mutex_t intern_lock = PTHREAD_MUTEX_INITIALIZER;
+
 
 static void arena_init(void) {
 	arena.base = mmap(NULL, ARENA_RESERVE, PROT_READ | PROT_WRITE,
@@ -18,25 +25,41 @@ static void arena_init(void) {
 
 	arena.used = 0;
 	arena.reserved = ARENA_RESERVE;
+	main_alloc.slab_next = main_alloc.slab_end = arena.base;
 
-	arena.objects = NULL;
-	arena.objects_cap = 0;
-	arena.n_objects = 0;
-	arena.free_slots = NULL;
-	arena.n_free_slots = 0;
 	arena.max_objects = MAX_OBJECTS;
+	arena.objects_cap = OBJECTS_INIT_CAP;
+	arena.objects = calloc(arena.objects_cap, sizeof(Object *));
+	arena.n_objects = 0;
+	main_alloc.slot_next = arena.n_objects;
+	main_alloc.slot_end = arena.n_objects;
+	arena.free_slots = malloc(sizeof(int) * (size_t)arena.objects_cap);
+	arena.n_free_slots = 0;
+}
+
+static inline void *arena_bump(AllocContext *ctx, size_t advance_bytes) {
+	if ((size_t)(ctx->slab_end - ctx->slab_next) < advance_bytes) {
+		size_t slab_claim_bytes = advance_bytes > SLAB_BYTES ? advance_bytes : SLAB_BYTES;
+		size_t claimed = atomic_fetch_add(&arena.used, slab_claim_bytes);
+		if (claimed + slab_claim_bytes > arena.reserved) {
+			fprintf(stderr, "logicforth: arena exhausted\n");
+			exit(1);
+		}
+		ctx->slab_next = arena.base + claimed;
+		ctx->slab_end = ctx->slab_next + slab_claim_bytes;
+	}
+
+	void *allocation = ctx->slab_next;
+	ctx->slab_next += advance_bytes;
+
+	return allocation;
 }
 
 static inline void *arena_alloc(size_t bytes) {
 	size_t advance_bytes = (bytes + (ARENA_ALIGNMENT - 1)) & ~(size_t)(ARENA_ALIGNMENT - 1);
-	if (arena.used + advance_bytes > arena.reserved) {
-		fprintf(stderr, "logicforth: arena exhausted\n");
-		exit(1);
-	}
-	void *allocation = arena.base + arena.used;
-	arena.used += advance_bytes;
-
-	return allocation;
+	if (in_parallel)
+		return arena_bump(&thread_alloc, advance_bytes);
+	return arena_bump(&main_alloc, advance_bytes);
 }
 
 
@@ -117,14 +140,42 @@ static void arena_free_object(Object *obj) {
 }
 
 int object_alloc_slot(Interpreter *interp) {
+	if (in_parallel) {
+		if (thread_alloc.slot_next >= thread_alloc.slot_end) {
+			int claimed = atomic_fetch_add(&arena.n_objects, SLOTS_PER_CLAIM);
+			if (claimed + SLOTS_PER_CLAIM > arena.objects_cap) {
+				fail(interp, "object table full in parallel region");
+				return -1;
+			}
+
+			thread_alloc.slot_next = claimed;
+			thread_alloc.slot_end = claimed + SLOTS_PER_CLAIM;
+		}
+
+		return thread_alloc.slot_next++;
+	}
+
+	if (main_alloc.slot_next < main_alloc.slot_end)
+		return main_alloc.slot_next++;
+
 	if (arena.n_objects < arena.max_objects) {
-		if (arena.n_objects == arena.objects_cap) {
-			int new_cap = arena.objects_cap ? arena.objects_cap * 2 : 1024;
+		int claim = arena.max_objects - arena.n_objects;
+		if (claim > SLOTS_PER_CLAIM) 
+			claim = SLOTS_PER_CLAIM;
+		if (arena.n_objects + claim > arena.objects_cap) {
+			int new_cap = arena.objects_cap * 2;
+			if (new_cap < arena.n_objects + claim)
+				new_cap = arena.n_objects + claim;
 			if (new_cap > arena.max_objects)
 				new_cap = arena.max_objects;
 			GROW_OBJECT_TABLE(new_cap);
 		}
-		return arena.n_objects++;
+		
+		main_alloc.slot_next = arena.n_objects;
+		arena.n_objects += claim;
+		main_alloc.slot_end = arena.n_objects;
+
+		return main_alloc.slot_next++;
 	}
 
 	if (arena.n_free_slots > 0) {
@@ -203,29 +254,29 @@ int object_new_array(Interpreter *interp, int num_elements) {
 int object_new_pair(Interpreter *interp) {
 	int slot;
 
-	if (interp->pair_free_count > 0) {
-		slot = interp->pair_free_list[--interp->pair_free_count];
+	if (pairs.free_count > 0) {
+		slot = pairs.free_list[--pairs.free_count];
 		INIT_PAIR(slot);
 		return slot;
 	}
 
-	if (interp->n_pairs == interp->pairs_cap) {
+	if (pairs.n_pairs == pairs.pairs_cap) {
 		if (!interp->gc_disabled)
 			gc(interp);
-		if (interp->pair_free_count > 0) {
-			slot = interp->pair_free_list[--interp->pair_free_count];
+		if (pairs.free_count > 0) {
+			slot = pairs.free_list[--pairs.free_count];
 			INIT_PAIR(slot);
 			return slot;
 		}
 
-		int new_cap = interp->pairs_cap * 2;
-		interp->pairs = realloc(interp->pairs, sizeof(Pair) * (size_t)new_cap);
-		interp->pair_mark = realloc(interp->pair_mark, sizeof(unsigned char) * (size_t)new_cap);
-		interp->pair_free_list = realloc(interp->pair_free_list, sizeof(int) * (size_t)new_cap);
-		interp->pairs_cap = new_cap;
+		int new_cap = pairs.pairs_cap * 2;
+		pairs.table = realloc(pairs.table, sizeof(Pair) * (size_t)new_cap);
+		pairs.mark = realloc(pairs.mark, sizeof(unsigned char) * (size_t)new_cap);
+		pairs.free_list = realloc(pairs.free_list, sizeof(int) * (size_t)new_cap);
+		pairs.pairs_cap = new_cap;
 	}
 
-	slot = interp->n_pairs++;
+	slot = pairs.n_pairs++;
 	INIT_PAIR(slot);
 	return slot;
 }
@@ -235,6 +286,7 @@ int object_new_frame(Interpreter *interp) {
 	obj->capacity = FRAME_INITIAL_CAPACITY;
 	obj->frame.keys = arena_malloc(sizeof(cell) * (size_t)obj->capacity);
 	obj->frame.values = arena_malloc(sizeof(Val) * (size_t)obj->capacity);
+
 	return slot;
 }
 
@@ -242,9 +294,8 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 	NEW_OBJECT(obj, OBJECT_MATRIX);
 	obj->matrix.rows = num_rows;
 	obj->matrix.columns = num_columns;
-	/* Compute the element count in size_t so a large rows*columns can't
-	   overflow int before it reaches calloc. calloc already zero-fills. */
 	size_t num_elements = (size_t)num_rows * (size_t)num_columns;
+	
 	obj->matrix.elements = calloc(num_elements ? num_elements : 1, sizeof(double));
 	if (!obj->matrix.elements) {
 		arena_free_object(obj);
@@ -274,6 +325,45 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
 	return slot;
+}
+
+static void *worker_entry(void *parallel_task) {
+	ParallelTask *task = parallel_task;
+
+	for (;;) {
+			int start_index = atomic_fetch_add(&task->next_index, task->items_per_claim);
+			if (start_index >= task->n_items) 
+				break;
+			int end_index = MIN(start_index + task->items_per_claim, task->n_items);
+			task->kernel(start_index, end_index, task->context);
+	}
+
+	return NULL;
+}
+
+void parallel_for(int n_items, int n_threads, int items_per_claim,
+		void (*kernel)(int start_index, int end_index, void *context),
+		void *context) {
+	CLAMP(n_threads, 1, MAX_WORKER_THREADS);
+	if (n_threads > n_items)
+		n_threads = n_items > 0 ? n_items : 1;
+
+	ParallelTask task = {
+		.n_items = n_items,
+		.items_per_claim = items_per_claim,
+		.next_index = 0,
+		.kernel = kernel,
+		.context = context,
+	};
+
+	pthread_t threads[MAX_WORKER_THREADS];
+
+	for (int worker = 1; worker < n_threads; worker++)
+		pthread_create(&threads[worker], NULL, worker_entry, &task);
+	
+	worker_entry(&task);
+	for (int worker = 1; worker < n_threads; worker++)
+		pthread_join(threads[worker], NULL);
 }
 
 int val_cmp(Interpreter *interp, Val left, Val right) {
@@ -323,8 +413,8 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 									  return left_collection->len - right_collection->len;
 								  }
 		case T_PAIR: {
-			Pair *left_pair = &interp->pairs[VAL_DATA(left)];
-			Pair *right_pair = &interp->pairs[VAL_DATA(right)];
+			Pair *left_pair = &pairs.table[VAL_DATA(left)];
+			Pair *right_pair = &pairs.table[VAL_DATA(right)];
 			int head_cmp = val_cmp(interp, left_pair->head, right_pair->head);
 			if (head_cmp)
 				return head_cmp;
@@ -533,7 +623,7 @@ void print_val(Interpreter *interp, Val value) {
 				Val cur = value;
 				int count = 0;
 				while (VAL_TAG(cur) == T_PAIR && count < LIST_PRINT_MAX) {
-					Pair *pair = &interp->pairs[VAL_DATA(cur)];
+					Pair *pair = &pairs.table[VAL_DATA(cur)];
 					print_val(interp, pair->head);
 					putchar(' ');
 					cur = deref(interp, pair->tail);
@@ -860,30 +950,30 @@ void execute_cfa(Interpreter *interp, int cfa) {
 
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
-	cell saved_slot_0 = vocab.dict[TRAMPOLINE_SLOT];
-	cell saved_slot_1 = vocab.dict[TRAMPOLINE_SLOT + 1];
-	cell saved_slot_2 = vocab.dict[TRAMPOLINE_SLOT + 2];
+	cell saved_slot_0 = vocab.dict[interp->trampoline_base];
+	cell saved_slot_1 = vocab.dict[interp->trampoline_base + 1];
+	cell saved_slot_2 = vocab.dict[interp->trampoline_base + 2];
 	cell stop_handler = vocab.dict[vocab.stop_cfa];
 
 	if (handler == docol) {
-		vocab.dict[TRAMPOLINE_SLOT] = (cell)docol;
-		vocab.dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;
-		vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+		vocab.dict[interp->trampoline_base] = (cell)docol;
+		vocab.dict[interp->trampoline_base + 1] = (cell)cfa;
+		vocab.dict[interp->trampoline_base + 2] = stop_handler;
 	} else {
-		vocab.dict[TRAMPOLINE_SLOT] = (cell)handler;
-		vocab.dict[TRAMPOLINE_SLOT + 1] = stop_handler;
-		vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+		vocab.dict[interp->trampoline_base] = (cell)handler;
+		vocab.dict[interp->trampoline_base + 1] = stop_handler;
+		vocab.dict[interp->trampoline_base + 2] = stop_handler;
 	}
-	interp->ip = TRAMPOLINE_SLOT;
+	interp->ip = interp->trampoline_base;
 	interp->running = 1;
 
 	run_inner(interp);
 
 	interp->running = saved_running;
 	interp->ip = saved_ip;
-	vocab.dict[TRAMPOLINE_SLOT] = saved_slot_0;
-	vocab.dict[TRAMPOLINE_SLOT + 1] = saved_slot_1;
-	vocab.dict[TRAMPOLINE_SLOT + 2] = saved_slot_2;
+	vocab.dict[interp->trampoline_base] = saved_slot_0;
+	vocab.dict[interp->trampoline_base + 1] = saved_slot_1;
+	vocab.dict[interp->trampoline_base + 2] = saved_slot_2;
 }
 
 void call_open(Interpreter *interp, int cfa, CallContext *ctx) {
@@ -897,24 +987,24 @@ void call_open(Interpreter *interp, int cfa, CallContext *ctx) {
 	ctx->fast = 1;
 	ctx->saved_ip = interp->ip;
 	ctx->saved_running = interp->running;
-	ctx->saved_slot_0 = vocab.dict[TRAMPOLINE_SLOT];
-	ctx->saved_slot_1 = vocab.dict[TRAMPOLINE_SLOT + 1];
-	ctx->saved_slot_2 = vocab.dict[TRAMPOLINE_SLOT + 2];
+	ctx->saved_slot_0 = vocab.dict[interp->trampoline_base];
+	ctx->saved_slot_1 = vocab.dict[interp->trampoline_base + 1];
+	ctx->saved_slot_2 = vocab.dict[interp->trampoline_base + 2];
 
 	cell stop_handler = vocab.dict[vocab.stop_cfa];
 	if (handler == docol) {
-		vocab.dict[TRAMPOLINE_SLOT] = (cell)docol;
-		vocab.dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;
-		vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+		vocab.dict[interp->trampoline_base] = (cell)docol;
+		vocab.dict[interp->trampoline_base + 1] = (cell)cfa;
+		vocab.dict[interp->trampoline_base + 2] = stop_handler;
 	} else {
-		vocab.dict[TRAMPOLINE_SLOT] = (cell)handler;
-		vocab.dict[TRAMPOLINE_SLOT + 1] = stop_handler;
-		vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+		vocab.dict[interp->trampoline_base] = (cell)handler;
+		vocab.dict[interp->trampoline_base + 1] = stop_handler;
+		vocab.dict[interp->trampoline_base + 2] = stop_handler;
 	}
 }
 
 void call_invoke(Interpreter *interp) {
-	interp->ip = TRAMPOLINE_SLOT;
+	interp->ip = interp->trampoline_base;
 	interp->running = 1;
 	run_inner(interp);
 }
@@ -924,9 +1014,9 @@ void call_close(Interpreter *interp, CallContext *ctx) {
 		return;
 	interp->running = ctx->saved_running;
 	interp->ip = ctx->saved_ip;
-	vocab.dict[TRAMPOLINE_SLOT] = ctx->saved_slot_0;
-	vocab.dict[TRAMPOLINE_SLOT + 1] = ctx->saved_slot_1;
-	vocab.dict[TRAMPOLINE_SLOT + 2] = ctx->saved_slot_2;
+	vocab.dict[interp->trampoline_base] = ctx->saved_slot_0;
+	vocab.dict[interp->trampoline_base + 1] = ctx->saved_slot_1;
+	vocab.dict[interp->trampoline_base + 2] = ctx->saved_slot_2;
 }
 
 
@@ -964,30 +1054,54 @@ void rebuild_symbol_hash(void) {
 	}
 }
 
-int intern_symbol(Interpreter *interp, const char *name) {
+static int probe_symbol(const char *name, unsigned int *empty_slot) {
 	unsigned int index = symbol_hash_index(name);
-	int probe_count = 0;
-	while (vocab.symbol_hash[index] != 0) {
-		int offset = vocab.symbol_hash[index] - 1;
-		if (strcmp(&vocab.symbol_pool[offset], name) == 0)
-			return offset;
-		index = (index + 1) & (SYMBOL_HASH_SIZE - 1);
-		if (++probe_count == SYMBOL_HASH_SIZE) {
-			fail(interp, "symbol table full");
-			return 0;
+	
+	for (int probe = 0; probe < SYMBOL_HASH_SIZE; probe++) {
+		int slot = atomic_load_explicit(&vocab.symbol_hash[index], memory_order_acquire);
+		if (slot == 0) {
+			*empty_slot = index;
+			return -1;
 		}
+
+		if (strcmp(&vocab.symbol_pool[slot - 1], name) == 0)
+			return slot -1;
+
+		index = (index + 1) & (SYMBOL_HASH_SIZE - 1);
 	}
 
-	int length = (int)strlen(name) + 1;
-	if (vocab.symbol_pool_here + length > SYMBOL_POOL) {
-		fail(interp, "symbol pool full");
-		return 0;
+	return -2;
+}
+
+int intern_symbol(Interpreter *interp, const char *name) {
+	unsigned int index;
+	int symbol_offset = probe_symbol(name, &index);
+	if (symbol_offset >= 0)
+		return symbol_offset;
+
+	if (in_parallel)
+		pthread_mutex_lock(&intern_lock);
+
+	symbol_offset = probe_symbol(name, &index);
+	if (symbol_offset == -1) {
+		int name_bytes = (int)strlen(name) + 1;
+		if (vocab.symbol_pool_here + name_bytes > SYMBOL_POOL) {
+			fail(interp, "symbol pool full");
+			symbol_offset = 0;
+		} else {
+			symbol_offset = vocab.symbol_pool_here;
+			memcpy(&vocab.symbol_pool[symbol_offset], name, (size_t)name_bytes);
+			vocab.symbol_pool_here += name_bytes;
+			atomic_store_explicit(&vocab.symbol_hash[index], symbol_offset + 1, memory_order_release);
+		}
+	} else if (symbol_offset == -2) {
+		fail(interp, "symbol table full");
+		symbol_offset = 0;
 	}
-	int offset = vocab.symbol_pool_here;
-	memcpy(&vocab.symbol_pool[offset], name, (size_t)length);
-	vocab.symbol_pool_here += length;
-	vocab.symbol_hash[index] = offset + 1;
-	return offset;
+
+	if (in_parallel)
+		pthread_mutex_unlock(&intern_lock);
+	return symbol_offset;
 }
 
 void dict_ensure(Interpreter *interp, int extra) {
@@ -1827,11 +1941,11 @@ void mark_value(Interpreter *interp, Val value) {
 
 	if (VAL_TAG(value) == T_PAIR) {
 		int slot = (int)VAL_DATA(value);
-		if (interp->pair_mark[slot])
+		if (pairs.mark[slot])
 			return;
-		interp->pair_mark[slot] = 1;
-		mark_value(interp, interp->pairs[slot].head);
-		mark_value(interp, interp->pairs[slot].tail);
+		pairs.mark[slot] = 1;
+		mark_value(interp, pairs.table[slot].head);
+		mark_value(interp, pairs.table[slot].tail);
 		return;
 	}
 
@@ -1953,22 +2067,22 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 							 if (prev_slot < 0)
 								 *copy_val = make_pair(new_slot);
 							 else
-								 interp->pairs[prev_slot].tail = make_pair(new_slot);
+								 pairs.table[prev_slot].tail = make_pair(new_slot);
 
 							 Val head_copy;
-							 copy_value_inner(interp, map, interp->pairs[source_slot].head, &head_copy, depth + 1);
+							 copy_value_inner(interp, map, pairs.table[source_slot].head, &head_copy, depth + 1);
 							 if (interp->error_flag) return;
 
-							 interp->pairs[new_slot].head = head_copy;
+							 pairs.table[new_slot].head = head_copy;
 							 prev_slot = new_slot;
-							 current = deref(interp, interp->pairs[source_slot].tail);
+							 current = deref(interp, pairs.table[source_slot].tail);
 						 }
 
 						 Val tail_copy;
 						 copy_value_inner(interp, map, current, &tail_copy, depth + 1);
 						 if (interp->error_flag) return;
 
-						 interp->pairs[prev_slot].tail = tail_copy;
+						 pairs.table[prev_slot].tail = tail_copy;
 						 return;
 					 }
 		case T_FRAME: {
@@ -2146,8 +2260,8 @@ void gc(Interpreter *interp) {
 	int i;
 
 	arena.current_epoch++;
-	memset(interp->pair_mark, 0, sizeof(unsigned char) * (size_t)interp->n_pairs);
-	interp->pair_free_count = 0;
+	memset(pairs.mark, 0, sizeof(unsigned char) * (size_t)pairs.n_pairs);
+	pairs.free_count = 0;
 
 	for (i = 0; i < interp->dsp; i++)
 		mark_value(interp, interp->data_stack[i]);
@@ -2211,9 +2325,9 @@ void gc(Interpreter *interp) {
 		arena.free_slots[arena.n_free_slots++] = handle;
 	}
 
-	for (int slot = 0; slot < interp->n_pairs; slot++)
-		if (!interp->pair_mark[slot])
-			interp->pair_free_list[interp->pair_free_count++] = slot;
+	for (int slot = 0; slot < pairs.n_pairs; slot++)
+		if (!pairs.mark[slot])
+			pairs.free_list[pairs.free_count++] = slot;
 }
 
 static const char *handler_word_name(cell handler) {
@@ -2463,8 +2577,8 @@ void p_save_image(Interpreter *interp) {
 	w_i32(file, vocab.init_symbol_pool_here);
 
 	int init_here = vocab.init_here;
-	int *sorted_cfas = malloc(sizeof(int) * (size_t)(user_word_count > 0 ? user_word_count : 1));
-	cell *out = malloc(sizeof(cell) * (size_t)(user_dict_cells > 0 ? user_dict_cells : 1));
+	int *sorted_cfas = malloc(sizeof(int) * (size_t)MAX(user_word_count, 1));
+	cell *out = malloc(sizeof(cell) * (size_t)MAX(user_dict_cells, 1));
 	for (int i = 0; i < user_word_count; i++)
 		sorted_cfas[i] = collected[i];
 	sort_cfas_ascending(sorted_cfas, user_word_count);
@@ -2563,10 +2677,10 @@ void p_save_image(Interpreter *interp) {
 		}
 	}
 
-	w_i32(file, interp->n_pairs);
-	for (int i = 0; i < interp->n_pairs; i++) {
-		w_val(file, interp->pairs[i].head);
-		w_val(file, interp->pairs[i].tail);
+	w_i32(file, pairs.n_pairs);
+	for (int i = 0; i < pairs.n_pairs; i++) {
+		w_val(file, pairs.table[i].head);
+		w_val(file, pairs.table[i].tail);
 	}
 
 	w_i32(file, interp->lvar_top);
@@ -2602,17 +2716,20 @@ void forget_user(Interpreter *interp) {
 		}
 	}
 	arena.n_objects = 0;
+	main_alloc.slot_next = arena.n_objects;
+	main_alloc.slot_end = arena.n_objects;
 	arena.n_free_slots = 0;
 
-	free(interp->pairs);
-	free(interp->pair_mark);
-	free(interp->pair_free_list);
-	interp->pairs = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
-	interp->pairs_cap = PAIR_TABLE_DEPTH;
-	interp->n_pairs = 0;
-	interp->pair_mark = malloc(sizeof(unsigned char) * PAIR_TABLE_DEPTH);
-	interp->pair_free_list = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
-	interp->pair_free_count = 0;
+	free(pairs.table);
+	free(pairs.mark);
+	free(pairs.free_list);
+	pairs.table = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
+	pairs.pairs_cap = PAIR_TABLE_DEPTH;
+	pairs.n_pairs = 0;
+	main_alloc.pair_next = main_alloc.pair_end = pairs.n_pairs;
+	pairs.mark = malloc(sizeof(unsigned char) * PAIR_TABLE_DEPTH);
+	pairs.free_list = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
+	pairs.free_count = 0;
 
 	interp->dsp = 0;
 	interp->rsp = 0;
@@ -2851,7 +2968,7 @@ void p_load_image(Interpreter *interp) {
 									obj->matrix.rows = rows;
 									obj->matrix.columns = cols;
 									size_t n = (size_t)rows * (size_t)cols;
-									obj->matrix.elements = calloc(n > 0 ? n : 1, sizeof(double));
+									obj->matrix.elements = calloc(MAX(n, 1), sizeof(double));
 									if (n > 0 && fread(obj->matrix.elements, sizeof(double), n, file) != n) {
 										free(obj->matrix.elements);
 										fail(interp, "%s: truncated matrix data", filename);
@@ -2899,6 +3016,8 @@ void p_load_image(Interpreter *interp) {
 		}
 	}
 	arena.n_objects = saved_n_objects;
+	main_alloc.slot_next = arena.n_objects;
+	main_alloc.slot_end = arena.n_objects;
 	arena.n_free_slots = 0;
 
 	int32_t saved_n_pairs;
@@ -2906,20 +3025,21 @@ void p_load_image(Interpreter *interp) {
 		fail(interp, "%s: bad pair count", filename);
 		goto done;
 	}
-	while (interp->pairs_cap < saved_n_pairs) {
-		interp->pairs_cap *= 2;
-		interp->pairs = realloc(interp->pairs, sizeof(Pair) * (size_t)interp->pairs_cap);
-		interp->pair_mark = realloc(interp->pair_mark, sizeof(unsigned char) * (size_t)interp->pairs_cap);
-		interp->pair_free_list = realloc(interp->pair_free_list, sizeof(int) * (size_t)interp->pairs_cap);
+	while (pairs.pairs_cap < saved_n_pairs) {
+		pairs.pairs_cap *= 2;
+		pairs.table = realloc(pairs.table, sizeof(Pair) * (size_t)pairs.pairs_cap);
+		pairs.mark = realloc(pairs.mark, sizeof(unsigned char) * (size_t)pairs.pairs_cap);
+		pairs.free_list = realloc(pairs.free_list, sizeof(int) * (size_t)pairs.pairs_cap);
 	}
 	for (int i = 0; i < saved_n_pairs; i++) {
-		if (!r_val(file, &interp->pairs[i].head) || !r_val(file, &interp->pairs[i].tail)) {
+		if (!r_val(file, &pairs.table[i].head) || !r_val(file, &pairs.table[i].tail)) {
 			fail(interp, "%s: truncated pairs", filename);
 			goto done;
 		}
 	}
-	interp->n_pairs = saved_n_pairs;
-	interp->pair_free_count = 0;
+	pairs.n_pairs = saved_n_pairs;
+	main_alloc.pair_next = main_alloc.pair_end = pairs.n_pairs;
+	pairs.free_count = 0;
 
 	int32_t saved_lvar_top;
 	if (!r_i32(file, &saved_lvar_top) || saved_lvar_top < 0) {
@@ -2963,31 +3083,29 @@ done:
 }
 
 
-Interpreter *interp_new(void) {
-	Interpreter *interp = calloc(1, sizeof(Interpreter));
-	vocab.here = DICT_RESERVED;
-	vocab.source_here = 1;
+void interp_init(Interpreter *interp) {
 	interp->next_mark_id = 1;
-
-	arena.max_objects = MAX_OBJECTS;
-	arena.objects_cap = OBJECTS_INIT_CAP;
-	arena.free_slots = malloc(sizeof(int) * (size_t)arena.objects_cap);
-
-	arena_init();
-
 	interp->bind_trail = malloc(sizeof(int) * BIND_TRAIL_DEPTH);
 	interp->bind_trail_cap = BIND_TRAIL_DEPTH;
-
 	interp->lvar_stack = malloc(sizeof(Val) * LVAR_STACK_DEPTH);
 	interp->lvar_cap = LVAR_STACK_DEPTH;
-	interp->lvar_top = 0;
+}
 
-	interp->pairs = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
-	interp->pairs_cap = PAIR_TABLE_DEPTH;
-	interp->n_pairs = 0;
-	interp->pair_mark = malloc(sizeof(unsigned char) * PAIR_TABLE_DEPTH);
-	interp->pair_free_list = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
-	interp->pair_free_count = 0;
+Interpreter *main_init(void) {
+	Interpreter *interp = calloc(1, sizeof(Interpreter));
+	interp_init(interp);
+
+	arena_init();
+	vocab.here = DICT_RESERVED;
+	vocab.source_here = 1;
+
+	pairs.table = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
+	pairs.pairs_cap = PAIR_TABLE_DEPTH;
+	pairs.n_pairs = 0;
+	main_alloc.pair_next = main_alloc.pair_end = pairs.n_pairs;
+	pairs.mark = malloc(sizeof(unsigned char) * PAIR_TABLE_DEPTH);
+	pairs.free_list = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
+	pairs.free_count = 0;
 
 	vocab.false_symbol = intern_symbol(interp, "0");
 	vocab.true_symbol = intern_symbol(interp, "1");
@@ -2998,7 +3116,17 @@ Interpreter *interp_new(void) {
 	return interp;
 }
 
-int interp_bootstrap(Interpreter *interp) {
+Interpreter *worker_init(int worker_index) {
+	Interpreter *interp = calloc(1, sizeof(Interpreter));
+	interp_init(interp);
+
+	interp->trampoline_base = 3 * worker_index;
+	interp->gc_disabled = 1;
+
+	return interp;
+}
+
+int construct_vocabulary(Interpreter *interp) {
 	compiler.handler_registry[compiler.n_handlers++] = (void *)docol;
 	compiler.handler_registry[compiler.n_handlers++] = (void *)dovar;
 	compiler.handler_registry[compiler.n_handlers++] = (void *)dosym;
@@ -3159,6 +3287,7 @@ int interp_bootstrap(Interpreter *interp) {
 	define_primitive(interp, "reduce", p_reduce, 0);
 	define_primitive(interp, "times", p_times, 0);
 	define_primitive(interp, "i-times", p_i_times, 0);
+	define_primitive(interp, "pmap-ext", p_pmap, 0);
 
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
@@ -3361,14 +3490,13 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	Interpreter *interp = interp_new();
+	Interpreter *interp = main_init();
 	if (max_objects_arg > 0) {
-		if (max_objects_arg > MAX_OBJECTS)
-			max_objects_arg = MAX_OBJECTS;
+		max_objects_arg = MIN(max_objects_arg, MAX_OBJECTS);
 		arena.max_objects = (int)max_objects_arg;
 	}
 	signal(SIGPIPE, SIG_IGN);
-	if (interp_bootstrap(interp))
+	if (construct_vocabulary(interp))
 		return 1;
 
 	if (interactive) {

@@ -70,8 +70,8 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 	}
 
 	if (VAL_TAG(left_val) == T_PAIR && VAL_TAG(right_val) == T_PAIR) {
-		Pair *left = &interp->pairs[VAL_DATA(left_val)];
-		Pair *right = &interp->pairs[VAL_DATA(right_val)];
+		Pair *left = &pairs.table[VAL_DATA(left_val)];
+		Pair *right = &pairs.table[VAL_DATA(right_val)];
 
 		if (!unify(interp, left->head, right->head))
 			return 0;

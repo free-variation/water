@@ -703,7 +703,7 @@ void p_resume(Interpreter *interp) {
 	int saved_running = interp->running;
 	int saved_local_base = interp->local_base;
 
-	rpush(interp, make_addr(TRAMPOLINE_SLOT + 2));
+	rpush(interp, make_addr(interp->trampoline_base + 2));
 
 	rpush(interp, make_mark());
 
@@ -825,8 +825,7 @@ void p_semicolon(Interpreter *interp) {
 	if (compiler.compiling_src_start > 0 && vocab.latest_cfa != 0) {
 		int src_end = compiler.input_buffer_pos - 1;
 		int src_len = src_end - compiler.compiling_src_start;
-		if (src_len < 0)
-			src_len = 0;
+		src_len = MAX(src_len, 0);
 		if (vocab.source_here + src_len + 1 > SOURCE_POOL) {
 			fail(interp, "source pool full (max %d bytes); definition source too large to store", SOURCE_POOL);
 		} else {
@@ -1387,8 +1386,7 @@ void p_forget(Interpreter *interp) {
 		int src_offset = (int)WORD_SOURCE(surviving_cfa);
 		if (src_offset > 0) {
 			int src_end = src_offset + (int)strlen(&vocab.source_pool[src_offset]) + 1;
-			if (src_end > max_src_end)
-				max_src_end = src_end;
+			max_src_end = MAX(max_src_end, src_end);
 		}
 	}
 	vocab.source_here = max_src_end;

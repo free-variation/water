@@ -1,5 +1,9 @@
 #include "logicforth.h"
 
+static Interpreter *worker_pool[MAX_WORKER_THREADS];
+static _Atomic int worker_claim;
+static _Thread_local Interpreter *worker_interp;
+
 void p_map(Interpreter *interp) {
 	POP_XT(xt, "map");
 	PEEK_SEQUENCE_AT(source_val, 0, "map");
@@ -197,3 +201,66 @@ void p_reduce(Interpreter *interp) {
 
 COUNTED_LOOP(p_times,   "times",   (void)i)
 COUNTED_LOOP(p_i_times, "i-times", push(interp, make_float((double)i)))
+
+static Interpreter *claim_worker(void) {
+	int pool_index = atomic_fetch_add(&worker_claim, 1);
+
+	if (!worker_pool[pool_index])
+		worker_pool[pool_index] = worker_init(pool_index + 1);
+
+	return worker_pool[pool_index];
+}
+
+typedef struct {
+	int function;
+	Object *domain;
+	Object *image;
+} PmapContext;
+
+static void pmap_kernel(int start_index, int end_index, void *context) {
+	PmapContext *mapping = context;
+
+	if (!worker_interp) 
+		worker_interp = claim_worker();
+	
+	for (int i = start_index; i < end_index; i++) {
+		push(worker_interp, mapping->domain->items[i]);
+		execute_cfa(worker_interp, mapping->function);
+		mapping->image->items[i] = pop(worker_interp);
+	}
+}
+
+void p_pmap(Interpreter *interp) {
+	POP_XT(function, "pmap-ext");
+	POP_INT(items_per_claim, "pmap-ext", "items per claim");
+	POP_INT(worker_count, "pmap", "worker count");
+	PEEK_SEQUENCE_AT(domain_val, 0, "pmap-ext");
+
+	Object *domain = OBJECT_AT(VAL_DATA(domain_val));
+	int domain_index = interp->dsp - 1;
+
+	NEW_ARRAY(image_handle, image, domain->len);
+	memset(image->items, 0, sizeof(Val) * (size_t)MAX(domain->len, 1));
+	gc_root_push(interp, make_array(image_handle));
+
+	int object_headroom = arena.n_objects + domain->len + worker_count * SLOTS_PER_CLAIM;
+	object_headroom = MIN(object_headroom, arena.max_objects);
+	if (object_headroom > arena.objects_cap)
+		GROW_OBJECT_TABLE(object_headroom);
+
+	worker_claim = 0;
+	worker_interp = NULL;
+	in_parallel = 1;
+
+	PmapContext mapping = { .function = function, .domain = domain, .image = image };
+	parallel_for(domain->len, worker_count, items_per_claim, pmap_kernel, &mapping);
+
+	in_parallel = 0;
+	gc_root_pop(interp);
+
+	interp->dsp = domain_index;
+	push(interp, make_array(image_handle));
+
+	DISPATCH(interp);
+}
+

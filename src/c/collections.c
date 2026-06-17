@@ -217,8 +217,8 @@ void p_list_close(Interpreter *interp) {
 			int slot = object_new_pair(interp);
 			if (interp->error_flag)
 				return;
-			interp->pairs[slot].head = interp->data_stack[mark_index + i];
-			interp->pairs[slot].tail = interp->data_stack[mark_index - 1];
+			pairs.table[slot].head = interp->data_stack[mark_index + i];
+			pairs.table[slot].tail = interp->data_stack[mark_index - 1];
 			interp->data_stack[mark_index - 1] = make_pair(slot);
 		}
 	}
@@ -256,8 +256,8 @@ void p_cons(Interpreter *interp) {
 	if (interp->error_flag) return;
 
 	int first = interp->dsp - 2;
-	interp->pairs[slot].head = interp->data_stack[first];
-	interp->pairs[slot].tail = interp->data_stack[first + 1];
+	pairs.table[slot].head = interp->data_stack[first];
+	pairs.table[slot].tail = interp->data_stack[first + 1];
 	interp->dsp = first;
 
 	push(interp, make_pair(slot));
@@ -271,8 +271,8 @@ void p_head_tail(Interpreter *interp) {
 		fail(interp, "head-tail: expected a pair; got %s", tag_name(VAL_TAG(pair_val)));
 		return;
 	}
-	Val head = interp->pairs[VAL_DATA(pair_val)].head;
-	Val tail = interp->pairs[VAL_DATA(pair_val)].tail;
+	Val head = pairs.table[VAL_DATA(pair_val)].head;
+	Val tail = pairs.table[VAL_DATA(pair_val)].tail;
 	push(interp, head);
 	push(interp, tail);
 
@@ -302,8 +302,8 @@ void p_array_to_cons(Interpreter *interp) {
 				gc_root_pop(interp);
 				return;
 			}
-			interp->pairs[slot].head = array->items[i];
-			interp->pairs[slot].tail = interp->gc_roots[interp->n_gc_roots - 1];
+			pairs.table[slot].head = array->items[i];
+			pairs.table[slot].tail = interp->gc_roots[interp->n_gc_roots - 1];
 			interp->gc_roots[interp->n_gc_roots - 1] = make_pair(slot);
 		}
 		result = interp->gc_roots[interp->n_gc_roots - 1];
@@ -326,7 +326,7 @@ void p_cons_to_array(Interpreter *interp) {
 			return;
 		}
 		count++;
-		cur = deref(interp, interp->pairs[VAL_DATA(cur)].tail);
+		cur = deref(interp, pairs.table[VAL_DATA(cur)].tail);
 	}
 
 	int handle = object_new_array(interp, count);
@@ -337,8 +337,8 @@ void p_cons_to_array(Interpreter *interp) {
 	int i = 0;
 	cur = deref(interp, list_val);
 	while (VAL_TAG(cur) == T_PAIR) {
-		array->items[i++] = deref(interp, interp->pairs[VAL_DATA(cur)].head);
-		cur = deref(interp, interp->pairs[VAL_DATA(cur)].tail);
+		array->items[i++] = deref(interp, pairs.table[VAL_DATA(cur)].head);
+		cur = deref(interp, pairs.table[VAL_DATA(cur)].tail);
 	}
 	array->items[i] = deref(interp, cur);
 
@@ -1333,8 +1333,8 @@ void p_slice_store(Interpreter *interp) {
 
 	int s_first = sstart;
 	int s_last  = sstart + (slen - 1) * sstep;
-	int s_min = s_first < s_last ? s_first : s_last;
-	int s_max = s_first > s_last ? s_first : s_last;
+	int s_min = MIN(s_first, s_last);
+	int s_max = MAX(s_first, s_last);
 	if (s_min < 0 || s_max >= src->len) {
 		fail(interp, "slice!: source indices [%d..%d] out of bounds for length %d",
 		     s_min, s_max, src->len);
