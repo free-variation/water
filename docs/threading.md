@@ -418,8 +418,8 @@ Two effects, beyond direct threading's one-read-per-op:
   across handlers.
 
 The cost is a per-op branch on the unwinding/error flags (a predicted,
-almost-always-not-taken test) and a compiler requirement: `musttail` needs a
-recent clang or gcc.
+almost-always-not-taken test) and a compiler requirement: `musttail` requires a
+compiler that supports it (clang or gcc).
 
 A computed-goto interpreter (`goto *dict[ip++]` at the end of each handler)
 gets the same per-site prediction benefit, but requires every handler to
@@ -451,31 +451,37 @@ primitive can't be called bare either, because its closing `DISPATCH` would
 tail-jump to whatever cell `ip` happens to point at. Both need a defined
 "next cell" that stops the chain.
 
-The mechanism is a tiny *trampoline*: a fixed run of cells reserved at the
-bottom of the dictionary (`TRAMPOLINE_SLOT` is 0; `DICT_RESERVED` cells are
-held back from word storage). `execute_cfa` writes the call into those cells,
-points `ip` at them, runs `run_inner` once, and restores the saved state:
+The mechanism is a tiny *trampoline*: a run of cells reserved at the bottom of
+the dictionary, held back from word storage by `DICT_RESERVED`. Each
+`Interpreter` owns its own three-cell trio, named by `interp->trampoline_base`
+— the main interpreter at base 0, and each worker interpreter at a disjoint
+base (`3 * worker_index`), so interpreters running concurrently never write
+each other's trampoline. `DICT_RESERVED` is `3 * (MAX_WORKER_THREADS + 1)`,
+enough for the main interpreter plus every worker. `execute_cfa` writes the
+call into its own trio, points `ip` at it, runs `run_inner` once, and restores
+the saved state:
 
 ```c
 cell stop_handler = vocab.dict[vocab.stop_cfa];
 if (handler == docol) {
-    vocab.dict[TRAMPOLINE_SLOT]     = (cell)docol;          // dispatch docol
-    vocab.dict[TRAMPOLINE_SLOT + 1] = (cell)cfa;            //   with this target
-    vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;         // exit returns here → stop
+    vocab.dict[interp->trampoline_base]     = (cell)docol;       // dispatch docol
+    vocab.dict[interp->trampoline_base + 1] = (cell)cfa;         //   with this target
+    vocab.dict[interp->trampoline_base + 2] = stop_handler;      // exit returns here → stop
 } else {
-    vocab.dict[TRAMPOLINE_SLOT]     = (cell)handler;        // dispatch the primitive
-    vocab.dict[TRAMPOLINE_SLOT + 1] = stop_handler;         // its DISPATCH lands here → stop
-    vocab.dict[TRAMPOLINE_SLOT + 2] = stop_handler;
+    vocab.dict[interp->trampoline_base]     = (cell)handler;     // dispatch the primitive
+    vocab.dict[interp->trampoline_base + 1] = stop_handler;      // its DISPATCH lands here → stop
+    vocab.dict[interp->trampoline_base + 2] = stop_handler;
 }
-interp->ip = TRAMPOLINE_SLOT;
+interp->ip = interp->trampoline_base;
 interp->running = 1;
 run_inner(interp);
 ```
 
 `(stop)` sets `running = 0`, so the loop in `run_inner` exits and control
 returns to `execute_cfa`, which restores the previous `ip`, `running`, and
-trampoline cells. The reserved region is three cells wide because the docol
-case needs handler, target, and stop.
+trampoline cells. Each interpreter's trio is three cells wide because the docol
+case needs handler, target, and stop. (Why each worker needs its own base — the
+worker-interpreter model — is `docs/multicore.md`'s subject.)
 
 For tight loops that call a word once per iteration (the combinators in
 `functional.c`), `call_open` / `call_invoke` / `call_close` split this up so
@@ -563,8 +569,8 @@ version number so incompatible images are rejected rather than misread.
 - **`docol` / `dovar` / `dosym`** in `core.c` — read their target CFA from the
   operand cell, act, then `DISPATCH`.
 - **`execute_cfa`**, **`call_open` / `call_invoke` / `call_close` /
-  `call_step`** in `core.c` — invoking a word from C through the
-  `TRAMPOLINE_SLOT` reserved cells; the split form amortizes setup across a
+  `call_step`** in `core.c` — invoking a word from C through the interpreter's
+  `trampoline_base` reserved cells; the split form amortizes setup across a
   combinator's loop.
 - **`define_primitive`** in `core.c` — defines a primitive and registers its
   handler for image translation.

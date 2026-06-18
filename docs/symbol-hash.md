@@ -1,16 +1,16 @@
 # The Symbol Hash Index in logicforth
 
-This document is a primer on how logicforth interns symbols — turning a name like `first_name` into a small integer id — and how a hash index over the symbol pool turned that operation from a linear scan into a constant-time lookup. By the end you should understand:
+This document is a primer on how logicforth interns symbols — turning a name like `first_name` into a small integer id — and on the hash index that makes that lookup constant-time. By the end you should understand:
 
 - What a symbol is in logicforth, where symbols come from, and why interning needs to be fast
 - How the symbol pool stores names, and why an id is just a byte offset into it
-- What the original `intern_symbol` did, and why it was O(n) per call — quadratic over a run of distinct names
-- How a JSON benchmark made that cost visible, and what the profile actually showed
-- The open-addressing hash index that fixes it: the `offset + 1` slot encoding, the FNV-1a hash, and why the table never needs to rehash
+- Why recognizing a name needs an index rather than a scan of the pool
+- The open-addressing hash index that provides it: the `offset + 1` slot encoding, the FNV-1a hash, and why the table never needs to rehash
+- How interning probes the index, and how it stays correct when several worker threads intern at once — lock-free reads, inserts under a lock
 - The one corner that needs care — keeping the index consistent when the pool is truncated on `forget_user` (the reset path) or image load
-- What the change cost in memory, and what it bought in time
+- How the table is sized, and what that costs in memory
 
-The implementation is in `src/c/core.c` (`symbol_hash_index`, `intern_symbol`, `rebuild_symbol_hash`) and `src/c/logicforth.h` (the `symbol_pool` / `symbol_hash` fields on the single global `Vocabulary` and the `SYMBOL_POOL` / `SYMBOL_HASH_SIZE` constants). The aim of this document is to make the index feel like an obvious bookkeeping trick — a side table that answers "have I seen this name?" — rather than a clever optimization bolted onto the interner.
+The implementation is in `src/c/core.c` (`symbol_hash_index`, `probe_symbol`, `intern_symbol`, `rebuild_symbol_hash`, and the `intern_lock` mutex) and `src/c/logicforth.h` (the `symbol_pool` / `symbol_hash` fields on the single global `Vocabulary` and the `SYMBOL_POOL` / `SYMBOL_HASH_SIZE` constants). The aim of this document is to make the index feel like an obvious bookkeeping trick — a side table that answers "have I seen this name?" — rather than a clever optimization bolted onto the interner.
 
 ---
 
@@ -52,62 +52,29 @@ This representation is compact and makes the text trivially recoverable, but it 
 
 ---
 
-## Part 3: The naive interner and its cost
+## Part 3: Why recognition needs an index
 
-The original `intern_symbol` did exactly that walk:
+Walking the pool is a linear search: to find or add one name, `strcmp` the candidate against *every* name already stored, advancing entry by entry with a `strlen` each step. If there are `n` symbols, interning one name is O(n) — and interning a run of `n` distinct names is O(n²).
 
-```c
-int intern_symbol(Interpreter *interp, const char *name) {
-    for (int i = 0; i < vocab.symbol_pool_here; ) {
-        if (strcmp(&vocab.symbol_pool[i], name) == 0)
-            return i;                                   // found
-        i += (int)strlen(&vocab.symbol_pool[i]) + 1;    // next entry
-    }
-    /* not found: append name to the pool, return its offset */
-}
-```
+For a program that interns a few dozen symbols once, that is invisible. The cost bites when the same names are interned repeatedly in a loop — exactly what frame-heavy code does. Each `{ ... }` built at runtime, each object produced by `json>frame`, re-walks the pool once per key, and the dominant work is *re-recognizing* names already present — the case a search should make cheap.
 
-Read it as a linear search. To find or add one name, it `strcmp`s the candidate against *every* name already in the pool, advancing entry by entry with a `strlen` each step. If there are `n` symbols, interning one name is O(n) — and interning a run of `n` distinct names is O(n²).
-
-For a small program that interns a few dozen symbols once, this is invisible. The cost only bites when the same names are interned repeatedly in a loop — which is exactly what frame-heavy code does. Each `{ ... }` built at runtime, each object produced by `json>frame`, re-walks the pool once per key.
+So the pool carries a side table that maps a name straight to its offset. Recognition becomes a hash probe instead of a walk.
 
 ---
 
-## Part 4: How the cost became visible
+## Part 4: The hash index over the pool
 
-The `bm_json_loads` benchmark parses the same set of JSON objects tens of thousands of times. Each object has ~30 string keys, and each key is interned on every parse. Against CPython's C `json` module, logicforth's `json>frame` was about 2.4× slower — the first benchmark it lost.
-
-A sampling profile (`sample` on a heavy parse loop) made the reason unambiguous. Sorted by where samples landed:
-
-| function | samples | what |
-|---|---|---|
-| `strcmp` (+ stubs) | ~2285 | the pool walk's per-entry compare |
-| `strlen` (+ stubs) | ~430 | the pool walk advancing entry to entry |
-| `json_parse_string` | 605 | the string-decode loop |
-| `malloc` / `free` / `calloc` | ~1500 | allocation churn |
-| `intern_symbol` (own frame) | 192 | the loop itself |
-
-(These sample counts are historical figures from the original profiling run, kept here for illustration; there is no profile artifact checked into the repo to reproduce them exactly.)
-
-About **half the samples were the `strcmp`/`strlen` scan inside `intern_symbol`.** Every key the parser interned compared against the whole pool. The pool stayed small (the ~30 key names repeat across objects, so they dedup to ~30 entries), but the scan re-walked all ~30 on every one of the millions of interns.
-
-This is the giveaway: the work was not interning new names, it was *re-recognizing* names already present — the case a search should make cheap.
-
----
-
-## Part 5: The fix — a hash index over the pool
-
-The pool stays exactly as it is. We add a side table that maps a name to its pool offset, so recognition is a hash probe instead of a walk.
-
-The table is a fixed array of ints on the `Vocabulary`:
+The pool stays exactly as it is. The side table is a fixed array of slots on the `Vocabulary`:
 
 ```c
-char symbol_pool[SYMBOL_POOL];        // interned name bytes
-int  symbol_pool_here;
-int  symbol_hash[SYMBOL_HASH_SIZE];   // open-addressing slots: offset+1, or 0 for empty
+char        symbol_pool[SYMBOL_POOL];        // interned name bytes
+int         symbol_pool_here;
+_Atomic int symbol_hash[SYMBOL_HASH_SIZE];   // open-addressing slots: offset+1, or 0 for empty
 ```
 
-It is **open-addressed**: the table is the storage, with no per-entry allocation and no pointer chasing. A slot holds an offset into the pool — but encoded as `offset + 1`, so that the value `0` can mean "empty." That detail matters: offset 0 is a real, valid symbol id (`:0`, the boolean false), so we cannot use 0 as the empty marker directly. Storing `offset + 1` lets a freshly `calloc`-zeroed table read as all-empty while still letting offset 0 live in it.
+It is **open-addressed**: the table is the storage, with no per-entry allocation and no pointer chasing. A slot holds an offset into the pool — but encoded as `offset + 1`, so that the value `0` can mean "empty." That detail matters: offset 0 is a real, valid symbol id (`:0`, the boolean false), so we cannot use 0 as the empty marker directly. Storing `offset + 1` lets a freshly zeroed table read as all-empty while still letting offset 0 live in it.
+
+The slots are `_Atomic` because several worker threads can intern concurrently; Part 5 covers the access protocol. A single thread sees them as ordinary ints.
 
 The hash is FNV-1a over the name bytes, folded into the table size:
 
@@ -126,53 +93,92 @@ Because `SYMBOL_HASH_SIZE` is a power of two, the fold is a single mask, and pro
 
 ---
 
-## Part 6: Interning with the index
+## Part 5: Interning — lock-free probe, locked insert
 
-`intern_symbol` becomes a probe. Hash the name to a starting slot and walk forward (linear probing) until we either find the name or hit an empty slot:
+Interning splits in two: a lock-free **probe** that recognizes a name already in the table, and an **insert** that appends a new name to the pool under a lock.
+
+`probe_symbol` hashes the name to a starting slot and walks forward (linear probing) until it finds the name, hits an empty slot, or exhausts the table. Each slot is read with an acquire-load:
 
 ```c
-int intern_symbol(Interpreter *interp, const char *name) {
+static int probe_symbol(const char *name, unsigned int *empty_slot) {
     unsigned int index = symbol_hash_index(name);
-    while (vocab.symbol_hash[index] != 0) {           // slot occupied
-        int offset = vocab.symbol_hash[index] - 1;    // decode the id
-        if (strcmp(&vocab.symbol_pool[offset], name) == 0)
-            return offset;                            // found
+    for (int probe = 0; probe < SYMBOL_HASH_SIZE; probe++) {
+        int slot = atomic_load_explicit(&vocab.symbol_hash[index], memory_order_acquire);
+        if (slot == 0) {                              // empty: name is not present
+            *empty_slot = index;
+            return -1;
+        }
+        if (strcmp(&vocab.symbol_pool[slot - 1], name) == 0)
+            return slot - 1;                          // found: decode the id
         index = (index + 1) & (SYMBOL_HASH_SIZE - 1); // probe on
     }
-
-    /* empty slot reached: name is new. Append to the pool... */
-    int length = (int)strlen(name) + 1;
-    if (vocab.symbol_pool_here + length > SYMBOL_POOL) {
-        fail(interp, "symbol pool full");
-        return 0;
-    }
-    int offset = vocab.symbol_pool_here;
-    memcpy(&vocab.symbol_pool[offset], name, (size_t)length);
-    vocab.symbol_pool_here += length;
-    vocab.symbol_hash[index] = offset + 1;            // ...and record it here
-    return offset;
+    return -2;                                        // scanned every slot, none empty
 }
 ```
 
-The crucial change is *when* `strcmp` runs. In the linear interner it ran once per existing symbol. Here it runs once per **hash collision** — only when a different name happens to land on the same slot. With a well-spread hash and a half-empty table, that is rarely more than one compare. The common case — re-interning a key seen thousands of times before — is: hash the name, land on its slot, one `strcmp` to confirm, return. Constant time.
+`strcmp` runs once per **hash collision** — only when a different name happens to land on the same slot. With a well-spread hash and a half-empty table, that is rarely more than one compare. The common case — re-interning a key seen thousands of times — is: hash the name, land on its slot, one `strcmp` to confirm, return. Constant time.
 
-A worked collision: suppose `age` hashes to slot 5, and that slot is occupied. We read its stored value, subtract 1 to get the pool offset, and `strcmp` the name there against `age`. If it matches, done. If not (some other name owns slot 5), we move to slot 6 and try again, wrapping at the end of the table. Insertion stops at the first empty slot along that same probe path, so a name is always found on the exact path its insertion would have taken.
+`intern_symbol` probes first without any lock. On a hit it returns immediately — the overwhelmingly common path, and the only path a single-threaded program ever takes for a known name. On a miss it has to insert:
+
+```c
+int intern_symbol(Interpreter *interp, const char *name) {
+    unsigned int index;
+    int symbol_offset = probe_symbol(name, &index);
+    if (symbol_offset >= 0)
+        return symbol_offset;                         // already interned
+
+    if (in_parallel)
+        pthread_mutex_lock(&intern_lock);
+
+    symbol_offset = probe_symbol(name, &index);       // re-probe under the lock
+    if (symbol_offset == -1) {
+        int name_bytes = (int)strlen(name) + 1;
+        if (vocab.symbol_pool_here + name_bytes > SYMBOL_POOL) {
+            fail(interp, "symbol pool full");
+            symbol_offset = 0;
+        } else {
+            symbol_offset = vocab.symbol_pool_here;
+            memcpy(&vocab.symbol_pool[symbol_offset], name, (size_t)name_bytes);
+            vocab.symbol_pool_here += name_bytes;
+            atomic_store_explicit(&vocab.symbol_hash[index], symbol_offset + 1,
+                                  memory_order_release);
+        }
+    } else if (symbol_offset == -2) {
+        fail(interp, "symbol table full");
+        symbol_offset = 0;
+    }
+
+    if (in_parallel)
+        pthread_mutex_unlock(&intern_lock);
+    return symbol_offset;
+}
+```
+
+Three things make this correct:
+
+- **The insert is serialized.** Appending to the pool bumps `symbol_pool_here` and writes the name bytes; two threads doing that at once would corrupt the pool. The `intern_lock` mutex serializes inserts, so the append is atomic with respect to other inserters.
+- **It re-probes under the lock (double-checked).** Between the first lock-free probe and acquiring the lock, another thread may have interned the *same* new name. The second `probe_symbol` catches that: if the name is now present, intern returns its id and no second copy is made. Two threads racing to intern the same new name dedup to one offset.
+- **Reads and the publish are ordered.** The writer fills the pool bytes, then publishes the slot with a release-store. A reader's acquire-load of that slot pairs with the release, so any thread that sees the published `offset + 1` also sees the name bytes already in the pool — no reader can dereference a half-written entry.
+
+The lock is taken only when `in_parallel` is set. Outside a parallel region — every ordinary REPL or script run — interning never touches the mutex; the atomics compile to plain loads and stores on the single thread. `docs/multicore.md` covers `in_parallel` and the worker model that makes concurrent interning possible.
+
+A worked collision: suppose `age` hashes to slot 5, and that slot is occupied. The probe reads its stored value, subtracts 1 to get the pool offset, and `strcmp`s the name there against `age`. If it matches, done. If not (some other name owns slot 5), it moves to slot 6 and tries again, wrapping at the end of the table. An insert stops at the first empty slot along that same probe path, so a name is always found on the exact path its insertion would have taken.
 
 ---
 
-## Part 7: Sizing the table
+## Part 6: Sizing the table
 
-Open-addressing tables usually grow and rehash when they get too full, because probe chains lengthen badly past ~70% load. logicforth's table never grows — it is sized once, `calloc`-zeroed with the rest of the `Vocabulary`, and that is the whole lifecycle (no rehash code, no growth check, no resize). What that buys in headroom comes down to two constants: `SYMBOL_POOL` (the pool's size in bytes) and `SYMBOL_HASH_SIZE` (the table's slot count).
+Open-addressing tables usually grow and rehash when they get too full, because probe chains lengthen badly past ~70% load. logicforth's table never grows — it is sized once, zeroed with the rest of the `Vocabulary`, and that is the whole lifecycle (no rehash code, no growth check, no resize). What that buys in headroom comes down to two constants: `SYMBOL_POOL` (the pool's size in bytes) and `SYMBOL_HASH_SIZE` (the table's slot count).
 
 The smallest possible symbol is a one-character name plus its NUL terminator — 2 bytes — so the pool can hold at most `SYMBOL_POOL / 2` distinct symbols, ever.
 
-The invariant that matters is `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2`: with at least that many slots, the table can never be more than half full, an empty slot always exists, and the linear-probe loop always terminates. logicforth sizes the table below that, so it can fill *before* the pool does — a program interning enough distinct symbols (JSON ingests strings as symbols, so high counts are reachable) exhausts the slots. To keep that from becoming an infinite probe, `intern_symbol` caps its scan at `SYMBOL_HASH_SIZE` steps and fails with `"symbol table full"` when no empty slot remains. Either way the table never rehashes: at or above the threshold it cannot overflow; below it, interning fails cleanly when the table is full.
+The invariant that matters is `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2`: with at least that many slots, the table can never be more than half full, an empty slot always exists, and the linear-probe loop always terminates. logicforth sizes the table below that, so it can fill *before* the pool does — a program interning enough distinct symbols (JSON ingests strings as symbols, so high counts are reachable) exhausts the slots. To keep that from becoming an infinite probe, `probe_symbol` caps its scan at `SYMBOL_HASH_SIZE` steps and returns `-2`, and `intern_symbol` fails with `"symbol table full"` when no empty slot remains. Either way the table never rehashes: at or above the threshold it cannot overflow; below it, interning fails cleanly when the table is full.
 
 The cost is memory: `SYMBOL_HASH_SIZE` ints, always allocated, mostly empty for a typical program that interns a few hundred symbols. Keeping `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2` preserves the overflow-impossible guarantee; sizing it smaller trades that headroom for less memory, with the probe cap as the backstop.
 
 ---
 
-## Part 8: The corner — keeping the index consistent on truncation
+## Part 7: The corner — keeping the index consistent on truncation
 
 The index is redundant state: it duplicates information already implied by the pool. Redundant state has to be kept in step with its source, and there is one place where the source changes out from under it.
 
@@ -199,46 +205,29 @@ void rebuild_symbol_hash(void) {
 }
 ```
 
-It clears the table and re-inserts every name still in the pool, walking the pool exactly the way the old linear interner did — but only once, at reset, which is rare. `rebuild_symbol_hash` is called right after each of the two `symbol_pool_here = ...` truncations.
+It clears the table and re-inserts every name still in the pool, walking the pool entry by entry — but only once, at reset or image load, which is rare and always single-threaded (no worker is in flight), so it needs no locking or atomics. `rebuild_symbol_hash` is called right after each of the two `symbol_pool_here = ...` truncations.
 
 This is why the reserved boolean symbols survive a reset cleanly. `:0` and `:1` are interned first at startup, landing at offsets 0 and 2 — *below* the reset snapshot watermark. A rebuild re-scans `[0, symbol_pool_here)`, which always includes them, so they keep their ids and their `offset + 1` slots. The `offset + 1` encoding and the rebuild work together: the false symbol at offset 0 round-trips through both the live table and a rebuilt one.
 
 ---
 
-## Part 9: What it cost, and what it bought
-
-**Memory.** `SYMBOL_HASH_SIZE` ints added to the global `Vocabulary` (Part 7), always allocated. For a process that interns a few hundred symbols, that table is nearly all empty. This is the price of a fixed-size, never-rehashing table.
-
-**A second copy of the truth.** The index restates what the pool already encodes, so any code that mutates the pool out of band has to keep the index in step. Today that is exactly the two truncation sites, both calling `rebuild_symbol_hash`. A future operation that edits the pool would need the same discipline.
-
-The payoff was direct. On `bm_json_loads`, swapping the linear interner for the hash index roughly halved parse time:
-
-| json-loads | elapsed |
-|---|---|
-| linear `intern_symbol` | 2.38 s |
-| hash index | 1.17 s |
-
-(These elapsed figures are historical/illustrative numbers from the original change; no benchmark artifact backing them is checked into the repo, so treat the ~2× as the durable takeaway rather than the exact seconds.)
-
-That confirmed the profile's claim that interning was about half the work. And the win is not JSON-specific: every symbol literal, every frame key, every dictionary-of-symbols operation in the interpreter goes through `intern_symbol`, so all of them got the same constant-time recognition. JSON parsing was merely the workload that made a long-standing O(n) scan loud enough to fix.
-
----
-
-## Part 10: Where to look in the source
+## Part 8: Where to look in the source
 
 In `src/c/logicforth.h`:
 
-- **`SYMBOL_POOL` and `SYMBOL_HASH_SIZE`** — when `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2` the table can't overflow and never rehashes; the current config sizes the hash below that, so `intern_symbol` caps its probe and fails with "symbol table full" when the table fills (Part 7).
-- **`symbol_pool` / `symbol_pool_here` / `symbol_hash`** on the `Vocabulary` struct — the name buffer, its high-water mark, and the open-addressing index.
+- **`SYMBOL_POOL` and `SYMBOL_HASH_SIZE`** — when `SYMBOL_HASH_SIZE ≥ SYMBOL_POOL / 2` the table can't overflow and never rehashes; the current config sizes the hash below that, so the probe caps at `SYMBOL_HASH_SIZE` steps and interning fails with "symbol table full" when the table fills (Part 6).
+- **`symbol_pool` / `symbol_pool_here` / `symbol_hash`** on the `Vocabulary` struct — the name buffer, its high-water mark, and the `_Atomic` open-addressing index.
 
 In `src/c/core.c`:
 
 - **`symbol_hash_index`** — FNV-1a over the name, masked to the table size.
-- **`intern_symbol`** — the probe: hash, compare on collision, insert at the first empty slot.
-- **`rebuild_symbol_hash`** — re-inserts every pooled name; takes no argument (it reads the global `vocab` directly); called after the pool is truncated.
+- **`probe_symbol`** — the lock-free probe: hash, acquire-load each slot, compare on collision; returns the id, the empty slot index, or `-2` for a full table.
+- **`intern_symbol`** — probe, and on a miss insert under `intern_lock` with a re-probe (double-check) and a release-store publish; the lock is taken only when `in_parallel`.
+- **`rebuild_symbol_hash`** — re-inserts every pooled name; takes no argument (it reads the global `vocab` directly); called after the pool is truncated, single-threaded.
 - The two truncation sites — `forget_user` (which the `reset` word, `reload`, and image error-recovery all route through) and `p_load_image` — each set `symbol_pool_here` back and then call `rebuild_symbol_hash`.
 
 For broader context:
 
 - **`docs/nan-boxing.md`** — how a symbol id is carried inside an 8-byte `Val` (the `T_SYMBOL` tag and the payload that holds the offset).
 - **`docs/gc.md`** — frames hold symbol ids as keys; the collector walks frame values but the keys are plain integer ids, not heap references.
+- **`docs/multicore.md`** — the worker model and the `in_parallel` flag that gate the interning lock.

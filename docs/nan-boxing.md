@@ -193,7 +193,7 @@ static inline Val make_float(double number) {
 
 The canonicalization guarantees deterministic behavior — a Val constructed by `make_float` from any NaN-producing double ends up with the same bit pattern. But it doesn't *resolve* the collision: that canonical pattern still has the prefix, so `VAL_IS_FLOAT` will read it as boxed (tag = `T_NONE`, garbage payload).
 
-The scheme is sound in practice because lforth programs rarely produce float NaNs. Standard arithmetic doesn't hit the failure modes, and there's no user-level primitive that constructs a specific NaN bit pattern. One way to resolve the collision fully is to reserve an extra bit (say, the sign bit at position 63) to distinguish "real float NaN" from "boxed value" and have `VAL_IS_FLOAT` check both. The code doesn't, because that cost would apply on every tag inspection in every hot loop, and the partial scheme suffices in practice.
+The scheme is sound in practice because lforth programs rarely produce float NaNs. Standard arithmetic doesn't hit the failure modes, and there's no user-level primitive that constructs a specific NaN bit pattern.
 
 This is the one place where NaN-boxing requires care that a plain tagged struct wouldn't. The win — half the bytes per Val, halved stack bandwidth, single-register passing — is paid for by this corner.
 
@@ -216,15 +216,15 @@ The single-word Val shapes the surrounding code in a few places.
 
 **Stack arrays.** The data stack, return stack, side stack, and frame value arrays are all `Val[]`, so each slot is 8 bytes rather than 16 — half the footprint, and the hot top-of-stack working set stays comfortably in cache.
 
-**Function calling convention.** An 8-byte Val passes by value in a single register; functions taking or returning Val (notably `pop`, the `make_*` helpers) get tighter code than a 16-byte struct that occupies two registers. The effect on per-op cost is small but real where the same Val passes through several helpers.
+**Function calling convention.** An 8-byte Val passes by value in a single register; functions taking or returning Val (notably `pop`, the `make_*` helpers) get tighter code than a 16-byte struct that occupies two registers.
 
 ---
 
 ## Part 8: Where it helps
 
-The gain isn't uniform. Code where the data stack is the hot data structure — fannkuch and nqueens both shuffle Vals through the stack heavily — wins the most from halving stack bandwidth. Code structured to keep working data in global variables rather than on the stack (n-body's style) benefits less from the stack savings, though the two-cell variable layout from Part 7 helps it a little.
+The gain isn't uniform. Code where the data stack is the hot data structure — code that shuffles Vals through the stack heavily — wins the most from halving stack bandwidth. Code structured to keep working data in global variables rather than on the stack benefits less from the stack savings, though the two-cell variable layout from Part 7 helps it a little.
 
-The other gain is qualitative: with 8-byte Vals, function signatures involving Vals are cheaper and the compiler keeps more Vals in registers across operations. Hard to quantify without instrumentation, but visible in the assembly for hot primitives.
+The other gain is qualitative: with 8-byte Vals, function signatures involving Vals are cheaper and the compiler keeps more Vals in registers across operations.
 
 ---
 
@@ -232,7 +232,7 @@ The other gain is qualitative: with 8-byte Vals, function signatures involving V
 
 The cost has two pieces.
 
-**Tag inspection is a mask-and-compare, not a field read.** Code paths like generic `+` that check `VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT` mask-and-compare on the bits rather than projecting a field. On modern CPUs this is essentially free — the bits are already in a register, the compare is one cycle, the branch well-predicted — but the source-level reading is more complex, and the macro computes a conditional rather than just reading a field.
+**Tag inspection is a mask-and-compare, not a field read.** Code paths like generic `+` that check `VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT` mask-and-compare on the bits rather than projecting a field. The bits are already in a register, so the work is a mask and a compare, but the source-level reading is more complex — the macro computes a conditional rather than just reading a field.
 
 **The corner around float NaN is sharp.** The runtime infers float vs. boxed from the bit pattern alone. The canonicalization in `make_float` papers over the most common collisions, but a hostile program that constructs specific NaN bit patterns could still confuse the runtime. logicforth doesn't expose a primitive that lets users do this directly, so the scheme is sound in practice.
 

@@ -1,0 +1,53 @@
+\ Parallel map: pmap (shortcut, num-cores workers / claim 1) and
+\ pmap-ext ( array worker_count items_per_claim xt -- image ).
+\ Every result is checked against the sequential `map` so the golden
+\ output is independent of core count and worker scheduling.
+
+\ pmap == map, basic
+[ 1 2 3 4 5 ] dup [: 10 * :] map swap [: 10 * :] pmap = . cr
+
+\ pmap-ext == map, explicit worker_count and items_per_claim
+[ 1 2 3 4 5 6 7 8 ] dup [: 1 + :] map swap 4 2 [: 1 + :] pmap-ext = . cr
+
+\ order preserved in the image
+[ 1 2 3 4 ] [: dup * :] pmap . cr
+
+\ empty domain
+[ ] [: 1 + :] pmap . cr
+
+\ single element
+[ 7 ] [: 1 + :] pmap . cr
+
+\ worker_count clamped to domain length
+[ 1 2 3 ] 99 1 [: 1 + :] pmap-ext . cr
+
+\ items_per_claim larger than the whole domain
+[ 1 2 3 ] 2 999 [: 1 + :] pmap-ext . cr
+
+\ single worker, degenerate parallelism
+[ 1 2 3 ] 1 1 [: 1 + :] pmap-ext . cr
+
+\ the source array is read, never mutated
+[ 1 2 3 ] dup [: 100 * :] pmap drop . cr
+
+\ a set domain produces an image array
+< 3 1 2 > [: 1 + :] pmap . cr
+
+\ num-cores reports at least one core
+num-cores 0 gt . cr
+
+\ named word as the xt
+: triple 3 * ;
+[ 10 20 30 ] ' triple pmap . cr
+
+\ pmap shortcut over a larger domain == map
+1 100 range dup [: dup * 1 + :] map swap [: dup * 1 + :] pmap = . cr
+
+\ claim 1, max contention, 500 elements == map
+1 500 range dup [: sq :] map swap 8 1 [: sq :] pmap-ext = . cr
+
+\ allocating quotation: a fresh string per element == map
+1 200 range dup [: "{0}" format :] map swap [: "{0}" format :] pmap = . cr
+
+\ interning in workers (string>symbol) == sequential interning
+1 200 range dup [: "{0}" format string>symbol :] map swap 8 1 [: "{0}" format string>symbol :] pmap-ext = . cr
