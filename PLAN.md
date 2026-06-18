@@ -280,77 +280,55 @@ overlapping blocking syscalls.
 
 ---
 
-## Multi-core parallelism: fork-join over a shared immutable heap
+## Multi-core parallelism: threads over the shared heap
 
-Multiple OS threads, each with its own `Interpreter` and a private GC'd heap
-for scratch. Work is structured as fork-join, not message passing: a
-coordinator splits the work, hands each worker a slice, and gathers results
-when they join. Shared data is immutable; mutable scratch stays per-worker;
-no locks on the hot path. Three layers, built in order, each broadening
-coverage.
+Built — and built differently from the fork/private-heap sketch this section
+once held. `pmap` / `pfilter` / `pmap-reduce` run OS threads over the one shared
+global heap. Each worker has its own `Interpreter` (stacks, ip, trampoline
+base) but allocates into the global object and pair tables through per-thread
+slab/band cursors refilled by atomic claims (`atomic_fetch_add` once per slab /
+per `SLOTS_PER_CLAIM`, not per allocation), so a worker's result handle
+resolves in the coordinator with no copy-back — zero-copy join. Work is
+dispatched dynamically (an atomic cursor over `items_per_claim` chunks) for load
+balance. A failed region, or a successful one whose results reference no
+region-allocated memory (pfilter always; scalar-result maps and reductions),
+rewinds its allocations wholesale — snapshot the bump high-waters before the
+region, restore them on teardown — so repeated regions stay memory-bounded
+without GC. Worker faults set a shared flag the coordinator surfaces as a clean
+error. `docs/multicore.md` is the full account.
 
-**1. Shared immutable heap.** A global object store every interpreter can
-read, alongside its private heap.
+Remaining work, in rough priority:
 
-- `x freeze ( x -- gx )` deep-copies `x` once into the global store and
-  returns a global handle; reads after that are zero-copy from every thread.
-- A `Val` distinguishes a global handle from a local one with a single tag
-  bit, so dereference is `is_global(h) ? global[h] : interp->objects[h]`.
-- The symbol pool moves to the shared store (intern is a synchronized append,
-  reads lock-free), so frame keys resolve identically in every worker.
-- Frozen objects are immutable: the in-place mutators check the frozen flag
-  and refuse, or copy back into the local heap.
-- Append-only to start (bounded broadcast data); reclamation by epoch or
-  explicit free is a later refinement.
+- **Persistent worker-thread pool.** `parallel_for` `pthread_create`s and joins
+  the workers per region. For one big region that amortizes to nothing (a single
+  `pmap` over a huge domain saturates the cores); for many small regions the
+  spawn/join dominates — system time, not compute (see `bench/parallel-stress.l4`,
+  where it shows as a tall red CPU band). A pool that parks threads and
+  dispatches per call fixes it. Must be co-designed with the rewind: pooled
+  threads keep their `AllocContext` across regions, so teardown has to reset
+  every worker's context, not just the caller's.
 
-This removes the broadcast cost — handing a large read-only input (a corpus,
-a matrix) to every worker is free.
+- **Reclamation for live-heap-result regions.** The rewind covers regions whose
+  results are transient. A region returning live heap objects can't rewind; its
+  dropped output is ordinary garbage, but GC triggers on slot count and is blind
+  to byte pressure, so a big-payload churn can exhaust the arena before GC fires.
+  Fix is a byte-pressure GC trigger (rare, not a cadence). Not parallel-specific
+  — a sequential big-payload loop has the same gap.
 
-**2. Fork-join workers.** A pool of OS threads, each running the same xt over
-a disjoint slice of the work.
+- **De-fragilize the region rewind.** `abort_parallel_region` restores three
+  counters and resets the calling thread's context by hand; correctness depends
+  on invariants maintained across files (the `in_parallel` gating, the
+  per-region thread lifecycle). Folding the region's mutated state into one
+  begin/commit/abort owner removes that coupling — and is a prerequisite for the
+  thread pool.
 
-- `items width xt parallel-map ( -- results )`: partition `items` into
-  `width` ranges, each worker runs `xt` over its range in its own heap,
-  results are copied back once at the join barrier and gathered in input
-  order.
-- A worker reads frozen input zero-copy and builds its result in its private
-  heap. The single result-copy at join is unavoidable for boxed results —
-  intermediates have to be GC'd locally — and is dwarfed by per-chunk compute
-  for the work this targets (text processing, parsing, per-record transforms).
-- `spawn-thread` clones the vocabulary *tight* from the parent's compiled
-  state (used `dict` region and pools, capacity = `here`) so the worker
-  inherits every word defined so far and the xt's dict index resolves.
+- **Numeric disjoint-write buffer / work-stealing.** Lower priority: a shared
+  unboxed-`double` output buffer threaded under the matrix kernels, and
+  work-stealing for skewed workloads.
 
-The broad workhorse: any chunked text / object / numeric work where
-per-element compute is non-trivial.
-
-**3. Disjoint-write shared buffer (numeric).** For tight numeric kernels whose
-result is unboxed doubles, where a copy-back would cost as much as the compute.
-
-- A preallocated shared mutable matrix or float buffer in the global store;
-  each worker gets a disjoint index/row range and writes only there, so the
-  writes need no lock.
-- Sound only for unboxed `double` output — a boxed result would put a
-  worker-local handle into a shared slot. The buffer is rooted by the
-  coordinator and exempt from worker GC for the parallel region.
-- Highest value as the threading *under* the built-in matrix kernels (matmul,
-  element-wise, reductions): the user writes ordinary matrix code and it
-  saturates the cores, with no per-element interpreter dispatch.
-
-**Cost (rough):**
-
-- Shared immutable heap + `freeze` + global-handle dereference + shared symbol
-  pool: ~250 lines, touching the object-deref hot path.
-- Fork-join `parallel-map` + tight vocabulary clone + join/gather: ~200 lines.
-- Disjoint-write buffer + threaded matrix kernels: ~150 lines.
-
-Constraints: shared data is immutable (mutating a frozen object errors or
-copies back); workers communicate only through frozen inputs and joined
-results — never live shared mutable state, except the disjoint numeric
-buffer; output coordination via a shared stdout mutex.
-
-**Build order within this section:** shared immutable heap, then fork-join
-`parallel-map`, then the disjoint-write numeric buffer.
+The worker contract: workers produce new values and don't mutate shared inputs;
+they don't print (stdout interleaves); logic-variable state is per-worker, so
+logic programming across workers is out of scope.
 
 ---
 

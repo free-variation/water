@@ -250,8 +250,27 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
 	}
 }
 
+static int references_region(Val value, RegionSnapshot *snapshot) {
+	switch (VAL_TAG(value)) {
+		case T_STRING:
+		case T_SET:
+		case T_ARRAY:
+		case T_FRAME:
+		case T_MATRIX:
+		case T_CONT:
+			return VAL_DATA(value) >= snapshot->n_objects;
+		case T_PAIR:
+			return VAL_DATA(value) >= snapshot->n_pairs;
+		case T_LOGIC_VAR:
+			return 1;
+		default:
+			return 0;
+	}
+}
+
 static int parallel_apply(Object *domain, int worker_count,
-		int items_per_claim, void (*kernel)(int, int, void *), void *context) {
+		int items_per_claim, void (*kernel)(int, int, void *), void *context,
+		RegionSnapshot *snapshot) {
 	int object_headroom = arena.n_objects + domain->len + worker_count * SLOTS_PER_CLAIM;
 	object_headroom = MIN(object_headroom, arena.max_objects);
 	if (object_headroom > arena.objects_cap)
@@ -261,9 +280,9 @@ static int parallel_apply(Object *domain, int worker_count,
 	if (pair_headroom > pairs.pairs_cap)
 		GROW_PAIR_TABLE(pair_headroom);
 
-	size_t saved_used = arena.used;
-	int saved_n_objects = arena.n_objects;
-	int saved_n_pairs = pairs.n_pairs;
+	snapshot->used = arena.used;
+	snapshot->n_objects = arena.n_objects;
+	snapshot->n_pairs = pairs.n_pairs;
 
 	worker_claim = 0;
 	worker_interp = NULL;
@@ -271,9 +290,6 @@ static int parallel_apply(Object *domain, int worker_count,
 	in_parallel = 1;
 	parallel_for(domain->len, worker_count, items_per_claim, kernel, context);
 	in_parallel = 0;
-
-	if (parallel_error)
-		abort_parallel_region(saved_used, saved_n_objects, saved_n_pairs);
 
 	return parallel_error;
 }
@@ -313,11 +329,15 @@ void p_pfilter(Interpreter *interp) {
 	char *keep = calloc((size_t)MAX(domain->len, 1), 1);
 
 	PfilterContext filter = { .predicate = predicate, .domain = domain, .keep = keep };
-	if (parallel_apply(domain, worker_count, items_per_claim, pfilter_kernel, &filter)) {
+	RegionSnapshot region;
+	if (parallel_apply(domain, worker_count, items_per_claim, pfilter_kernel, &filter, &region)) {
 		free(keep);
+		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
 		fail(interp, "pfilter: a worker predicate failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
+
+	abort_parallel_region(region.used, region.n_objects, region.n_pairs);
 
 	int n_kept = 0;
 	for (int i = 0; i < domain->len; i++)
@@ -350,14 +370,25 @@ void p_pmap(Interpreter *interp) {
 	gc_root_push(interp, make_array(image_handle));
 
 	PmapContext mapping = { .function = function, .domain = domain, .image = image };
-	int failed = parallel_apply(domain, worker_count, items_per_claim, pmap_kernel, &mapping);
+	RegionSnapshot region;
+	int failed = parallel_apply(domain, worker_count, items_per_claim, pmap_kernel, &mapping, &region);
 
 	gc_root_pop(interp);
 
 	if (failed) {
+		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
 		fail(interp, "pmap: a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
+
+	int rewindable = 1;
+	for (int i = 0; i < domain->len; i++)
+		if (references_region(image->items[i], &region)) {
+			rewindable = 0;
+			break;
+		}
+	if (rewindable)
+		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
 
 	interp->dsp = domain_index;
 	push(interp, make_array(image_handle));
@@ -422,10 +453,12 @@ void p_pmap_reduce(Interpreter *interp) {
 		.domain = domain,
 		.partials = partials,
 	};
+	RegionSnapshot region;
 
-	if (parallel_apply(domain, worker_count, items_per_claim, pmap_reduce_kernel, &reduction)) {
+	if (parallel_apply(domain, worker_count, items_per_claim, pmap_reduce_kernel, &reduction, &region)) {
 		gc_root_pop(interp);
 		gc_root_pop(interp);
+		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
 		fail(interp, "pmap-reduce: a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
@@ -445,6 +478,10 @@ void p_pmap_reduce(Interpreter *interp) {
 
 	gc_root_pop(interp);
 	gc_root_pop(interp);
+
+	if (!references_region(result, &region))
+		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+
 	interp->dsp = domain_index;
 	push(interp, result);
 

@@ -452,6 +452,20 @@ The quotation/predicate cost dominates; `xt` denotes one call.
 | `times` | `( xt n -- )` | Run xt n times, no index pushed | 2 + n·xt | none | O(n·xt) |
 | `i-times` | `( xt n -- )` | Run xt n times, pushing index 0..n-1 first | 2 + n·(1+xt) | none | O(n·xt) |
 
+### Parallel (`docs/multicore.md`)
+
+Run the xt across worker threads over the shared heap; `w` worker threads, `c` items per claim. The bare forms default to `num-cores` workers and claim 1. xt runs concurrently, so it must produce fresh values, not mutate shared inputs, and not print. A faulting xt aborts the region and raises an error.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `pmap` | `( arr xt -- arr )` | Parallel `map` (num-cores workers, claim 1) | 2 + n·xt | `1a(n)` | O(n·xt / w) |
+| `pmap-ext` | `( arr w c xt -- arr )` | `pmap` with explicit worker count and items-per-claim | 2 + n·xt | `1a(n)` | O(n·xt / w) |
+| `pfilter` | `( arr pred -- arr )` | Parallel `filter`, order preserved | 2 + n·xt | malloc(n) flags + `1a(k)` | O(n·xt / w) |
+| `pfilter-ext` | `( arr w c pred -- arr )` | `pfilter` with explicit worker count and items-per-claim | 2 + n·xt | malloc(n) flags + `1a(k)` | O(n·xt / w) |
+| `pmap-reduce` | `( arr id map-xt combine-xt -- val )` | Fused parallel map+fold; `combine-xt` must be associative with `id` as neutral element | 2 + n·xt | per-worker partials | O(n·xt / w) |
+| `pmap-reduce-ext` | `( arr w c id map-xt combine-xt -- val )` | `pmap-reduce` with explicit worker count and items-per-claim | 2 + n·xt | per-worker partials | O(n·xt / w) |
+| `num-cores` | `( -- n )` | Online CPU count (`sysconf`) | 1 | none | O(1) |
+
 ---
 
 ## Delimited continuations
