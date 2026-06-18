@@ -181,11 +181,18 @@ const HelpEntry help_entries[] = {
 	{ "not", "( a -- bool )", "logical not of truthiness", "2", "none", "O(1)" },
 	{ "now", "( -- f )", "CLOCK_MONOTONIC seconds as a float", "1", "none", "O(1)" },
 	{ "null", "( -- none )", "Push the none value (T_NONE) — what JSON null parses to, and what an unset env returns", "1", "none", "O(1)" },
+	{ "num-cores", "( -- n )", "Online CPU count (sysconf)", "1", "none", "O(1)" },
 	{ "num-elements", "( m -- n )", "lib.l4: dim *", "5", "none", "O(1)" },
 	{ "or", "( a b -- bool )", "logical or of truthiness", "3", "none", "O(1)" },
 	{ "over", "( a b -- a b a )", "Copy second over top", "5", "none", "O(1)" },
 	{ "parallel-run", "( commands width -- results )", "lib.l4: run each argv array in commands as a subprocess, at most width at once; collect { :out :err :status } per command in input order, refilling a slot as each child finishes", "fork per command + poll", "1a + per-child frames/streams", "O(critical path)" },
+	{ "pfilter", "( arr pred -- arr )", "Parallel filter, order preserved", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt / w)" },
+	{ "pfilter-ext", "( arr w c pred -- arr )", "pfilter with explicit worker count and items-per-claim", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt / w)" },
 	{ "pi", "( -- f )", "lib.l4: variable initialized to π (3.141592653589793); invoking it pushes the stored float", "1", "none", "O(1)" },
+	{ "pmap", "( arr xt -- arr )", "Parallel map (num-cores workers, claim 1)", "2 + n·xt", "1a(n)", "O(n·xt / w)" },
+	{ "pmap-ext", "( arr w c xt -- arr )", "pmap with explicit worker count and items-per-claim", "2 + n·xt", "1a(n)", "O(n·xt / w)" },
+	{ "pmap-reduce", "( arr id map-xt combine-xt -- val )", "Fused parallel map+fold; combine-xt must be associative with id as neutral element", "2 + n·xt", "per-worker partials", "O(n·xt / w)" },
+	{ "pmap-reduce-ext", "( arr w c id map-xt combine-xt -- val )", "pmap-reduce with explicit worker count and items-per-claim", "2 + n·xt", "per-worker partials", "O(n·xt / w)" },
 	{ "query", "( rel pattern -- [rows] )", "Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans. When every constraint is a ground indexed column the narrowed bucket *is* the answer, so the per-row matches? is skipped (covering query)", "candidates·n", "1a + set ops", "O(candidates·n)" },
 	{ "quotient", "( a b -- quotient )", "lib.l4: % swap drop; toward zero", "9", "none", "O(1)" },
 	{ "r>", "return stack → ( -- a )", "Move return-stack top to data stack", "2", "none", "O(1)" },
@@ -294,4 +301,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 288;
+const int help_entry_count = 295;

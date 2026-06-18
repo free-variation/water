@@ -7,10 +7,11 @@ This document is a primer on how logicforth runs work across CPU cores — what 
 - How a parallel loop is dispatched: a dynamic work cursor instead of a fixed partition, and why that load-balances
 - How threads allocate from the shared heap without a global lock — per-thread slabs and object/pair bands, refilled by atomic claims
 - Why the object and pair tables are pre-sized before a parallel region and never grown inside one
+- How a region reclaims its allocations on teardown by rewinding the bump high-waters, and how a worker fault is surfaced as a clean error
 - How symbol interning, the trampoline, and garbage collection behave under threads
-- The `pmap` / `pmap-ext` / `ncores` words, and the discipline a worker quotation must follow
+- The `pmap` / `pfilter` / `pmap-reduce` words (and their `-ext` forms and `num-cores`), and the discipline a worker quotation must follow
 
-The core machinery is in `src/c/core.c` (`parallel_for`, `worker_entry`, the `in_parallel` branches of `object_alloc_slot` and `object_new_pair`, `arena_bump`, `intern_symbol`, `interp_init` / `main_init` / `worker_init`) and `src/c/functional.c` (`p_pmap`, `pmap_kernel`, `claim_worker`, `p_ncores`). The types are in `src/c/logicforth.h` (`AllocContext`, `ParallelTask`, the `in_parallel` flag, and the `MAX_WORKER_THREADS` / `SLAB_BYTES` / `SLOTS_PER_CLAIM` constants), and the `pmap` shortcut is in `src/forth/lib.l4`. The aim is to make the parallel path feel like a small extension of the sequential one — a few atomic claims and a per-thread allocation cursor — rather than a separate runtime.
+The core machinery is in `src/c/core.c` (`parallel_for`, `worker_entry`, the `in_parallel` branches of `object_alloc_slot` and `object_new_pair`, `arena_bump`, `abort_parallel_region`, `intern_symbol`, `interp_init` / `main_init` / `worker_init`) and `src/c/functional.c` (`p_pmap`, `p_pfilter`, `p_pmap_reduce`, their kernels, `references_region`, `claim_worker`, `p_num_cores`). The types are in `src/c/logicforth.h` (`AllocContext`, `ParallelTask`, the `in_parallel` flag, and the `MAX_WORKER_THREADS` / `SLAB_BYTES` / `SLOTS_PER_CLAIM` constants), and the `pmap` shortcut is in `src/forth/lib.l4`. The aim is to make the parallel path feel like a small extension of the sequential one — a few atomic claims and a per-thread allocation cursor — rather than a separate runtime.
 
 ---
 
@@ -197,17 +198,23 @@ Calling a word from C — which the `pmap` kernel does once per element — goes
 
 ---
 
-## Part 7: pmap, pmap-ext, ncores
+## Part 7: pmap, pfilter, pmap-reduce
 
-The user-facing words are a parallel `map`. The full form exposes the two tuning knobs; the shortcut defaults them:
+The three parallel words mirror `map`, `filter`, and an associative `reduce`. Each has a full `-ext` form exposing the two tuning knobs and a shortcut that defaults them (`num-cores` workers, claim 1):
 
 ```
-pmap-ext   ( array worker_count items_per_claim xt -- image )
-pmap       ( array xt -- image )      \ lib.l4: >r ncores 1 r> pmap-ext
-ncores     ( -- n )                   \ sysconf(_SC_NPROCESSORS_ONLN)
+pmap-ext        ( array worker_count items_per_claim xt -- image )
+pmap            ( array xt -- image )
+pfilter-ext     ( array worker_count items_per_claim pred -- image )
+pfilter         ( array pred -- image )
+pmap-reduce-ext ( array worker_count items_per_claim identity map-xt combine-xt -- result )
+pmap-reduce     ( array identity map-xt combine-xt -- result )
+num-cores       ( -- n )    \ sysconf(_SC_NPROCESSORS_ONLN)
 ```
 
-`p_pmap` is the coordinator. It allocates the result array, pre-sizes the tables (Part 4), opens the region, runs the loop, and closes it:
+`pmap-reduce` is a fused parallel map+fold: each worker folds its chunk into a running accumulator starting from `identity`, and the coordinator combines the per-worker partials — so `combine-xt` must be associative with `identity` as its neutral element. `pfilter` keeps the elements for which `pred` is truthy, order preserved.
+
+`p_pmap` is the coordinator, and the other two have the same shape. It allocates the result array, runs the region through `parallel_apply` (which pre-sizes the tables (Part 4), snapshots the bump high-waters, and runs `parallel_for`), then either surfaces a worker fault or rewinds the region and returns the result:
 
 ```c
 void p_pmap(Interpreter *interp) {
@@ -222,17 +229,23 @@ void p_pmap(Interpreter *interp) {
     memset(image->items, 0, sizeof(Val) * (size_t)MAX(domain->len, 1));
     gc_root_push(interp, make_array(image_handle));
 
-    /* ... pre-size object and pair tables ... */
-
-    worker_claim = 0;
-    worker_interp = NULL;
-    in_parallel = 1;
-
     PmapContext mapping = { .function = function, .domain = domain, .image = image };
-    parallel_for(domain->len, worker_count, items_per_claim, pmap_kernel, &mapping);
-
-    in_parallel = 0;
+    RegionSnapshot region;
+    int failed = parallel_apply(domain, worker_count, items_per_claim, pmap_kernel, &mapping, &region);
     gc_root_pop(interp);
+
+    if (failed) {                                         // a worker faulted
+        abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+        fail(interp, "pmap: a worker quotation failed");
+        return;
+    }
+
+    int rewindable = 1;                                   // results all transient?
+    for (int i = 0; i < domain->len; i++)
+        if (references_region(image->items[i], &region)) { rewindable = 0; break; }
+    if (rewindable)
+        abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+
     interp->dsp = domain_index;
     push(interp, make_array(image_handle));
     DISPATCH(interp);
@@ -249,6 +262,10 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
     for (int i = start_index; i < end_index; i++) {
         push(worker_interp, mapping->domain->items[i]);
         execute_cfa(worker_interp, mapping->function);
+        if (worker_interp->error_flag) {                  // fault → signal and stop
+            parallel_error = 1;
+            return;
+        }
         mapping->image->items[i] = pop(worker_interp);
     }
 }
@@ -260,15 +277,32 @@ Two pieces make this work:
 
 - **The image write is zero-copy and contention-free.** Worker *t* writes `image->items[i]` for the indices it claimed — disjoint from every other worker's, so the writes need no synchronization. And `image` is an ordinary global-table array, so once the threads join, the coordinator reads the finished handles directly. There is no merge step.
 
+### Teardown: faults and rewind
+
+When a worker's quotation faults — throws, has the wrong stack effect, or exhausts the pre-sized headroom — the allocator sets that interpreter's `error_flag`, the kernel sees it after `execute_cfa`, sets the shared `parallel_error`, and returns. After the join, the coordinator finds `parallel_error` set, `abort_parallel_region`s, and raises a clean error on the main interpreter — so a worker fault surfaces as an error, never silent garbage in the result.
+
+On success the coordinator does one more thing: it reclaims the region's allocations when nothing live points into them. It snapshotted the bump high-waters (`arena.used`, `n_objects`, `n_pairs`) before the workers ran; if no result references region-allocated memory — checked by a shallow `references_region` scan of the output — `abort_parallel_region` restores those high-waters, dropping the entire region's allocations at once:
+
+```c
+void abort_parallel_region(size_t used, int n_objects, int n_pairs) {
+    arena.used = used;
+    arena.n_objects = n_objects;
+    pairs.n_pairs = n_pairs;
+    memset(&thread_alloc, 0, sizeof thread_alloc);   // calling thread re-claims fresh
+}
+```
+
+This is the same wholesale rewind the failure path uses, and it's valid for the same reason: a worker-allocated object always has a handle at or above the snapshot, so if the output references none of them, everything above the line is garbage. It costs an O(n) tag scan (O(1) for the single result of `pmap-reduce`), no GC, no lock. The cases it covers: `pfilter` always (results are kept input elements, below the line), and scalar-result `pmap` / `pmap-reduce` (numeric reductions, sizes, predicates). A region returning live heap objects fails the scan and commits, growing the heap as ordinary live data. The one assumption is the worker contract below — that a quotation doesn't bury a region reference inside a pre-existing object, where the output scan wouldn't see it.
+
 ### Choosing worker_count and items_per_claim
 
 The two knobs exist because the right values depend on what each element costs.
 
-- **CPU-bound work** (arithmetic, parsing, transforms). Set `worker_count` near the core count, and `items_per_claim` large — hundreds or more — so the per-chunk atomic is amortized across many cheap items. This is what `pmap` defaults to with `ncores` workers, though its default claim of 1 favors balance over amortization; `pmap-ext` lets you raise it for very cheap elements.
+- **CPU-bound work** (arithmetic, parsing, transforms). Set `worker_count` near the core count, and `items_per_claim` large — hundreds or more — so the per-chunk atomic is amortized across many cheap items. This is what `pmap` defaults to with `num-cores` workers, though its default claim of 1 favors balance over amortization; `pmap-ext` lets you raise it for very cheap elements.
 
 - **Latency-bound work** (each element a network call, an LLM request, a subprocess). The limit is no longer cores but how many requests you may have outstanding — a rate limit or connection budget — so `worker_count` is set to *that*, often far below or above the core count. And `items_per_claim` should be 1: the per-item cost dwarfs the atomic, item latencies vary wildly, and a claim of 1 keeps any one worker from being handed a run of slow items while others idle.
 
-`pmap`'s `(ncores, 1)` default is the reasonable middle: one worker per core, finest-grained balancing.
+`pmap`'s `(num-cores, 1)` default is the reasonable middle: one worker per core, finest-grained balancing.
 
 ---
 
@@ -280,7 +314,7 @@ A `pmap` quotation runs on a worker thread over the shared heap, so it works wit
 
 - **It allocates freely — objects, pairs, interned symbols.** Strings, arrays, sets, frames, matrices (object slots + arena payloads), cons cells (the pair band), and interned symbols are all on the per-thread allocation path and safe to create concurrently (Parts 4–5).
 
-- **It must be net `+1` on the data stack and must not fault.** The kernel pushes one element and pops one result per item; a quotation that leaves a different number of values, or that errors partway, leaves the worker's stack and the image in an inconsistent state — the kernel does not check `error_flag` between items. Treat the quotation as a total function from one value to one value, as with `map`.
+- **It should be net `+1` on the data stack.** The kernel pushes one element and pops one result per item, so the quotation is expected to leave exactly one value, like `map`. A quotation that faults — throws, has the wrong arity, or out-allocates the region headroom — is not undefined behavior: the kernel catches the `error_flag`, the region is abandoned and rewound, and the coordinator raises a clean error (Part 7). You get an error, not a partial or corrupt result.
 
 - **It must not print.** Worker threads share one stdout; concurrent writes interleave. Compute in the workers, print from the coordinator after the join.
 
@@ -302,19 +336,21 @@ In `src/c/core.c`:
 - **`parallel_for` / `worker_entry`** — the harness and the dynamic work cursor.
 - **`arena_bump`** — slab claim shared by both contexts.
 - **`object_alloc_slot` / `object_new_pair`** — the `in_parallel` allocation bands.
+- **`abort_parallel_region`** — the wholesale rewind: restore the bump high-waters, reset the calling thread's context.
 - **`intern_symbol`** — the lock-free-read / locked-insert interner (see `docs/symbol-hash.md`).
 - **`interp_init` / `main_init` / `worker_init`** — per-thread vs whole-program setup; `worker_init` sets `trampoline_base` and `gc_disabled`.
 
 In `src/c/functional.c`:
 
-- **`p_pmap`** — the coordinator: pre-size, open region, `parallel_for`, close.
-- **`pmap_kernel`** — the per-element map over a worker interpreter.
+- **`parallel_apply`** — pre-size the tables, snapshot the high-waters, run `parallel_for`, return whether a worker faulted.
+- **`references_region`** — the shallow test of whether a result Val points into region-allocated memory (drives the success rewind).
+- **`p_pmap` / `p_pfilter` / `p_pmap_reduce`** and their kernels — the three coordinators and per-element loops; the kernels check `error_flag` and signal `parallel_error` on a fault.
 - **`claim_worker`** — the thread-local worker-pool claim.
-- **`p_ncores`** — `sysconf(_SC_NPROCESSORS_ONLN)`.
+- **`p_num_cores`** — `sysconf(_SC_NPROCESSORS_ONLN)`.
 
 In `src/forth/lib.l4`:
 
-- **`pmap`** — the `(ncores, 1)` shortcut over `pmap-ext`.
+- **`pmap` / `pfilter` / `pmap-reduce`** — the `num-cores`/claim-1 shortcuts over the `-ext` forms.
 
 For broader context:
 

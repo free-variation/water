@@ -214,6 +214,13 @@ typedef struct {
 } AllocContext;
 
 typedef struct {
+	size_t used;
+	int n_objects;
+	int n_pairs;
+} RegionSnapshot;
+
+
+typedef struct {
 	int slot;
 	Val value;
 } VarMapEntry;
