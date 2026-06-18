@@ -36,8 +36,8 @@ running the body means a `musttail` chain of indirect calls, one per operation.
 That dispatch is cheap, but it is not free: an indirect call plus the per-op
 bookkeeping costs more than a single floating-point add.
 
-For arithmetic-heavy code, that ratio is unfavorable. Consider a line from the
-n-body benchmark's inner loop, computing one coordinate difference:
+For arithmetic-heavy code, that ratio is unfavorable. Consider a line that
+computes one coordinate difference in a tight float loop:
 
 ```forth
 x1 x2 f- to dx
@@ -46,11 +46,11 @@ x1 x2 f- to dx
 Compiled naively, that is four dispatched ops: push the variable `x1`, push the
 variable `x2`, subtract, then store into `dx` (the store is two cells but one
 dispatch). Three of the four do
-almost no arithmetic — they move a value or read a variable. Profiling that loop
-shows the variable pushes (`dovar`) and the stores dominating; the actual
-subtraction is a small slice.
+almost no arithmetic — they move a value or read a variable. In that loop the
+variable pushes (`dovar`) and the store dominate; the actual subtraction is a
+small slice.
 
-A modern bytecode interpreter like CPython 3.14 narrows this gap with a
+A modern bytecode interpreter like CPython narrows this gap with a
 *specializing* interpreter: it fuses and specializes opcodes at runtime so each
 bytecode does more real work. logicforth has no runtime specializer and does not
 compile to native code. The only lever available is to **do more per dispatch**
@@ -177,9 +177,9 @@ So `x1 x2 f- to dx` ends up as a single op:
 ```
 
 The store variant reads all its source operands *before* it writes the
-destination, so it is correct even when the destination is also a source — which
-is exactly the n-body velocity update, `vvf*- mag vx1 to vx1`, where `vx1` is
-both read and written.
+destination, so it is correct even when the destination is also a source — as in
+a velocity update like `vvf*- mag vx1 to vx1`, where `vx1` is both read and
+written.
 
 ---
 
@@ -346,13 +346,12 @@ That is the tool for confirming a hot word fused the way you expected.
 Fusion removes dispatch, so the gain tracks how much of a loop is dispatch
 versus real work.
 
-- In a tight float loop over variables — the n-body inner loop is the archetype
-  — the variable-push dispatch (`dovar`) is the single largest cost, and fusing
-  the arithmetic folds those pushes into the operator op. Store fusion further
-  removes the per-element writebacks.
-- A loop with a tiny body and a store per iteration — the Leibniz π series,
-  `X negate to X` and `PI f+ to PI` — folds each store into a store variant,
-  removing a push-and-store round trip from every iteration.
+- In a tight float loop over variables, the variable-push dispatch (`dovar`) is
+  the single largest cost, and fusing the arithmetic folds those pushes into the
+  operator op. Store fusion further removes the per-element writebacks.
+- A loop with a tiny body and a store per iteration — `X negate to X`,
+  `PI f+ to PI` — folds each store into a store variant, removing a
+  push-and-store round trip from every iteration.
 - Loops written with `begin`/`until` over scalar locals are unaffected: fusion
   keys on variable pushes and float operators, not on local fetches or
   hand-rolled loop control.

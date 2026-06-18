@@ -35,33 +35,70 @@ megabytes of RAM. The point of the large reservation is that the region never
 has to move or grow — `arena.base` is fixed for the life of the process, so every
 pointer into the arena stays valid.
 
-`arena.used` is the high-water mark: the offset of the next free byte.
+`arena.used` is the high-water mark: the offset just past the last slab claimed
+from the region (the next section explains slabs).
 
 ## Bump allocation
 
-The base layer hands out memory by advancing `used`:
+Allocations don't advance `arena.used` directly. Each one bumps a pointer within
+a *slab* — a contiguous window the allocator has already claimed from the
+reserved region. An `AllocContext` holds that window (plus the object-slot and
+pair bands the later layers use):
 
 ```c
+typedef struct {
+    char *slab_next, *slab_end;   // the current slab window
+    int slot_next, slot_end;      // object-table band
+    int pair_next, pair_end;      // pair-table band
+} AllocContext;
+```
+
+`arena_bump` hands out memory by advancing `slab_next`, refilling the window
+from `arena.used` when it runs dry; `arena_alloc` rounds the request up and
+defers to it:
+
+```c
+static inline void *arena_bump(AllocContext *ctx, size_t advance_bytes) {
+    if ((size_t)(ctx->slab_end - ctx->slab_next) < advance_bytes) {
+        size_t claim = advance_bytes > SLAB_BYTES ? advance_bytes : SLAB_BYTES;
+        size_t claimed = atomic_fetch_add(&arena.used, claim);   // reserve a slab
+        if (claimed + claim > arena.reserved) { /* exhausted: report and exit */ }
+        ctx->slab_next = arena.base + claimed;
+        ctx->slab_end  = ctx->slab_next + claim;
+    }
+    void *allocation = ctx->slab_next;
+    ctx->slab_next += advance_bytes;
+    return allocation;
+}
+
 static inline void *arena_alloc(size_t bytes) {
     size_t advance = (bytes + (ARENA_ALIGNMENT - 1)) & ~(size_t)(ARENA_ALIGNMENT - 1);
-    if (arena.used + advance > arena.reserved) { /* exhausted: report and exit */ }
-    void *p = arena.base + arena.used;
-    arena.used += advance;
-    return p;
+    return arena_bump(in_parallel ? &thread_alloc : &main_alloc, advance);
 }
 ```
 
-That is the whole fast path: round the request up to a 16-byte boundary, return
-the current top, advance the top. No free lists to consult, no header to write —
-a bump allocation is a handful of instructions.
+The common case is the whole fast path: round the request up to a 16-byte
+boundary, return the context's slab pointer, advance it. No free lists to
+consult, no header to write — a bump allocation is a handful of instructions.
+Only when a slab is exhausted does the allocator touch the shared `arena.used`,
+once per `SLAB_BYTES` (64 KiB) window, with a single atomic fetch-add — which is
+why `arena.used` is `_Atomic`.
+
+`arena_alloc` picks the context: normally `main_alloc`, but inside a parallel
+region (`in_parallel` set) the thread-local `thread_alloc`, so each worker bumps
+its own slab and contends on `arena.used` only at slab boundaries. The
+sequential path is one predicted branch over the single `main_alloc` context.
+`docs/multicore.md` covers why the contexts split and how the object-slot and
+pair bands work.
 
 The 16-byte alignment (`ARENA_ALIGNMENT`) earns its keep twice over: every block
 is suitable for any type the language stores, including `double`s and
 SIMD-friendly matrix buffers; and, as the layers above rely on, there is always
 room to stash a pointer-sized word at the start of a block.
 
-Bump allocation has one limitation: it only moves forward. `arena_alloc` cannot
-take memory back. Reclamation is the job of the layers built on top of it.
+Bump allocation has one limitation: it only moves forward. Neither `arena_bump`
+nor `arena_alloc` can take memory back. Reclamation is the job of the layers
+built on top of it.
 
 ## Reuse without a general heap: size-class free lists
 

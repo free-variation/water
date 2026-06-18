@@ -468,7 +468,7 @@ void p_resume(Interpreter *interp) {
     int saved_local_base = interp->local_base;
 
     /* Trampoline-stop frame so the slice's EXIT chain terminates here. */
-    rpush(interp, make_addr(TRAMPOLINE_SLOT + 2));
+    rpush(interp, make_addr(interp->trampoline_base + 2));
 
     /* Plain id-0 MARK delimits the resumed slice. */
     rpush(interp, make_mark());

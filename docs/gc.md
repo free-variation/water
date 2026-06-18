@@ -213,8 +213,8 @@ Look at the "scan roots" code in `gc()`:
 ```c
 void gc(Interpreter *interp) {
     arena.current_epoch++;                                   // invalidate every old object mark
-    memset(interp->pair_mark, 0, sizeof(unsigned char) * (size_t)interp->n_pairs);
-    interp->pair_free_count = 0;
+    memset(pairs.mark, 0, sizeof(unsigned char) * (size_t)pairs.n_pairs);
+    pairs.free_count = 0;
 
     for (int i = 0; i < interp->dsp; i++) mark_value(interp, interp->data_stack[i]);
     for (int i = 0; i < interp->rsp; i++) mark_value(interp, interp->return_stack[i]);
@@ -229,9 +229,9 @@ void gc(Interpreter *interp) {
 
 There are two collectable tables: `arena.objects` for the composite heap objects, and the `pairs` table for cons cells. Both get traced by `mark_value`, and both get swept at the end. But they record marks differently, and that asymmetry is worth understanding.
 
-The **pairs** table uses a real mark array, `pair_mark`, and `gc()` `memset`s it to zero at the start of every cycle. Cleared bit, set bit, swept, repeat.
+The **pairs** table — the global `PairPool pairs` (its `table`, `mark`, and `free_list` arrays) — uses a real mark array, `pairs.mark`, and `gc()` `memset`s it to zero at the start of every cycle. Cleared bit, set bit, swept, repeat.
 
-**Objects** do not use a mark array at all. There is no `object_mark` array and no per-cycle `memset` clearing it. Instead each `Object` carries a `cell mark_epoch`, and the arena holds a single global counter, `arena.current_epoch`. `gc()` bumps that counter once (`arena.current_epoch++`). An object is considered marked iff `obj->mark_epoch == arena.current_epoch`; marking an object just stamps `obj->mark_epoch = arena.current_epoch`. Bumping the counter by one instantly invalidates every mark left over from the previous cycle, because no surviving object's stamp matches the new epoch until it's re-marked. That replaces an O(n) `memset` over the whole object table with a single increment — the whole reason objects went to an epoch stamp while pairs kept a bit array.
+**Objects** do not use a mark array at all. There is no `object_mark` array and no per-cycle `memset` clearing it. Instead each `Object` carries a `cell mark_epoch`, and the arena holds a single global counter, `arena.current_epoch`. `gc()` bumps that counter once (`arena.current_epoch++`). An object is considered marked iff `obj->mark_epoch == arena.current_epoch`; marking an object just stamps `obj->mark_epoch = arena.current_epoch`. Bumping the counter by one instantly invalidates every mark left over from the previous cycle, because no surviving object's stamp matches the new epoch until it's re-marked. That replaces an O(n) `memset` over the whole object table with a single increment — the whole reason objects use an epoch stamp while pairs use a bit array.
 
 Logic-variable bindings need no mark storage of their own — a reachable `T_LOGIC_VAR` is followed into the `lvar_stack` during marking, so its binding is traced wherever it's reached.
 
@@ -257,10 +257,10 @@ void mark_value(Interpreter *interp, Val value) {
 
     if (VAL_TAG(value) == T_PAIR) {                 // cons cells live in their own table
         int slot = (int)VAL_DATA(value);
-        if (interp->pair_mark[slot]) return;
-        interp->pair_mark[slot] = 1;
-        mark_value(interp, interp->pairs[slot].head);
-        mark_value(interp, interp->pairs[slot].tail);
+        if (pairs.mark[slot]) return;
+        pairs.mark[slot] = 1;
+        mark_value(interp, pairs.table[slot].head);
+        mark_value(interp, pairs.table[slot].tail);
         return;
     }
 
@@ -282,7 +282,7 @@ void mark_value(Interpreter *interp, Val value) {
 }
 ```
 
-(The bounds test is `handle >= arena.n_objects` — `n_objects` is the high-water mark, and any valid handle is below it. The earlier `objects_cap` test is unnecessary because `n_objects <= objects_cap` always.)
+(The bounds test is `handle >= arena.n_objects` — `n_objects` is the high-water mark, so any valid handle is below it.)
 
 Read it line by line:
 
@@ -290,7 +290,7 @@ Read it line by line:
 
 2. **Is this even a heap reference?** Floats, symbols, xts, addrs, marks, and the empty `T_NONE` tag carry no heap pointer. Return immediately.
 
-3. **Pair? Mark it in the pair table.** Cons cells (`T_PAIR`) live in a separate `pairs` table with their own `pair_mark` bits, not in `objects[]`. If the cell is already marked, stop (the cycle guard); otherwise set the bit and recurse into its head and tail.
+3. **Pair? Mark it in the pair table.** Cons cells (`T_PAIR`) live in a separate `pairs.table` with their own `pairs.mark` bits, not in `objects[]`. If the cell is already marked, stop (the cycle guard); otherwise set the bit and recurse into its head and tail.
 
 4. **In bounds and live?** Defensive — handles should always be valid, but this guards against bugs. Fetch the slot via `OBJECT_AT(handle)`; if it's already freed (`NULL`), skip.
 
@@ -302,7 +302,7 @@ Read it line by line:
 
 Notice what `mark_value` does *not* do:
 
-- It doesn't unmark anything. Old object marks are invalidated wholesale by the `arena.current_epoch++` at the start of `gc()`; the `pair_mark` array is `memset` to zero there.
+- It doesn't unmark anything. Old object marks are invalidated wholesale by the `arena.current_epoch++` at the start of `gc()`; the `pairs.mark` array is `memset` to zero there.
 - It doesn't look inside strings or matrices. Those are flat numeric or byte data — no further Vals inside.
 - It doesn't walk frame `keys` arrays (they're cells, not Vals).
 - It doesn't traverse the `Object` struct's bookkeeping fields (`kind`, `len`, `capacity`). Those aren't Vals.
@@ -427,7 +427,7 @@ The dispatch on handler type matters:
 - **`docol`**: a colon-defined word. The whole body is compiled code — walk it all with `mark_body(body_start, body_end)`.
 - **Everything else** takes the `else` branch:
   - If the handler is **`dovar`** (a variable), the first body cell is the packed Val of its current value — read it directly and mark it.
-  - Then, for *any* non-`docol` handler (including `dovar`), call `mark_body(body_start + 1, body_end)` over the remainder of the body. A word with a non-`docol` handler can still carry trailing compiled cells, and those can hold literals or string handles that need marking. (For a plain `dovar` whose body is a single cell, `body_start + 1 == body_end`, so this scans nothing.) The earlier claim that "other handlers have nothing in the body to mark, skip" is wrong: the `else` branch always scans `body_start + 1 .. body_end`.
+  - Then, for *any* non-`docol` handler (including `dovar`), call `mark_body(body_start + 1, body_end)` over the remainder of the body. A word with a non-`docol` handler can still carry trailing compiled cells, and those can hold literals or string handles that need marking. (For a plain `dovar` whose body is a single cell, `body_start + 1 == body_end`, so this scans nothing.) The `else` branch always scans `body_start + 1 .. body_end`.
 
 ---
 
@@ -624,15 +624,13 @@ First the kind-specific payload — strings/sets/arrays/frames give their `arena
 
 That last step is the point of the sweep: it rebuilds the free list. `arena.free_slots` is a stack of reusable handles, reset to empty at the start of the sweep and refilled with every dead or already-empty slot. The allocator pops from it, so reusing a freed slot is O(1) — no scanning required. Frames are the only kind with two inner allocations to free.
 
-The pairs table is swept the same way, right after. Cons cells aren't `calloc`'d individually — they live in one preallocated `pairs` array — so there's nothing to `free`; the sweep just walks the table and pushes every unmarked slot onto `pair_free_list`. Allocating a pair pops from that list, exactly as object allocation pops from `free_slots`.
+The pairs table is swept the same way, right after. Cons cells aren't `calloc`'d individually — they live in one preallocated `pairs.table` — so there's nothing to `free`; the sweep just walks the table and pushes every unmarked slot onto `pairs.free_list`. Allocating a pair pops from that list, exactly as object allocation pops from `free_slots`.
 
-The next mark cycle invalidates all object marks at once by bumping `arena.current_epoch`, and zeroes the `pair_mark` array. Every survivor is effectively unmarked again, to be re-marked on the next collection if it's still reachable.
+The next mark cycle invalidates all object marks at once by bumping `arena.current_epoch`, and zeroes the `pairs.mark` array. Every survivor is effectively unmarked again, to be re-marked on the next collection if it's still reachable.
 
 ### Why not compact?
 
-After sweep, `arena.objects` has holes — freed slots scattered among live ones. logicforth doesn't compact (move live objects together at the bottom of the array). Compaction would let new allocations always use the highest free slot (cheap O(1) allocation), but it would require updating every reference to a moved object. Logically straightforward: walk every root and every internal reference, fixing up handles. Implementationally bigger than the entire current GC put together.
-
-The cost of not compacting: `arena.objects` stays sparse — freed slots are reused in place rather than packed down, so the array never shrinks below its high-water mark. Allocation stays cheap regardless: the sweep leaves behind a `free_slots` stack of reusable handles, and `object_alloc_slot` just pops one. No scan, no fixups. Acceptable.
+After sweep, `arena.objects` has holes — freed slots scattered among live ones. logicforth doesn't compact them down: moving a live object would mean rewriting every handle that points at it, so freed slots are reused in place instead. The array stays sparse and never shrinks below its high-water mark. Allocation stays O(1) regardless — the sweep leaves behind a `free_slots` stack of reusable handles, and `object_alloc_slot` just pops one. No scan, no fixups.
 
 ---
 
@@ -676,6 +674,8 @@ Four cases:
 
 The `gc_disabled` flag exists for deep copy and reify. Those routines build a new structure piece by piece, and the intermediate handles aren't reachable from any root until the copy is finished — a collection partway through would free them. So `copy_or_reify` collects up front if the heap is nearly full, sets `gc_disabled` for the duration of the copy, and accepts that an allocation may fail (returning `-1`) rather than risk a mid-copy sweep.
 
+Inside a parallel region `object_alloc_slot` takes a different path, omitted from the listing above: when `in_parallel` is set it hands out slots from a per-thread band claimed in bulk from `arena.n_objects`, never growing the table or collecting (worker interpreters run with `gc_disabled` set, and the table is pre-sized so growth can't move it under a concurrent reader). `docs/multicore.md` covers that path and why GC is suspended for the duration of the region.
+
 The user can also call GC manually with the `gc` Forth word, which just delegates to the C `gc(interp)` function. This is useful for measuring memory use or for debugging — most user programs never need to.
 
 ### Why lazy?
@@ -687,7 +687,7 @@ A more aggressive collector would run periodically: every N allocations, every M
 - **Allocation-count-based**: a counter, fire every N. Reasonable.
 - **On-demand (logicforth's choice)**: zero overhead when not collecting; one large pause when it does.
 
-For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it can take a while — but at the scale of `max_objects`, "a while" is still well under a millisecond on modern hardware.
+For an interpreter where allocation tends to come in bursts (parsing, set building, matrix construction), on-demand keeps the steady-state fast. The downside is that when the collection does run, it pauses execution for one full mark-and-sweep, whose length scales with the number of live objects.
 
 ---
 
@@ -710,7 +710,7 @@ The implementation handles cycles correctly via the per-object `mark_epoch` chec
 
 ### Finalizers
 
-There are none. Object teardown frees memory and that's it. If we someday add a kind of object that wraps an OS resource (a file handle, a database connection), we'd need to either add finalizers or make the resource user-managed. Today the question doesn't arise.
+There are none. Object teardown frees memory and that's it — a heap object wraps only memory, never an OS resource, so there is nothing else to release.
 
 ### Weak references
 
@@ -774,7 +774,7 @@ Now suppose for the sake of the example that the registry holds only 8 slots and
 
 GC runs:
 
-1. **Invalidate old marks.** `arena.current_epoch++` (and `memset(pair_mark, 0, ...)`). No object now satisfies `mark_epoch == current_epoch`, so every object starts the cycle unmarked.
+1. **Invalidate old marks.** `arena.current_epoch++` (and `memset(pairs.mark, 0, ...)`). No object now satisfies `mark_epoch == current_epoch`, so every object starts the cycle unmarked.
 2. **Walk data stack.**
    - `T_SET(7)` → mark handle 7. Recurse on its items: `T_STRING(2)`, `T_STRING(3)` → mark handles 2 and 3.
 3. **Walk return stack.** At the REPL, this contains saved IPs (`T_ADDR`s) from the dispatch trampoline. None are heap refs. Nothing marked.
@@ -831,4 +831,3 @@ The total size of the GC implementation is under 100 lines. It's a small piece o
 For broader context:
 
 - **`docs/continuations.md`** — the same kind of pedagogical primer for the continuation machinery, which the GC interoperates with (continuations are heap-allocated Objects whose `return_slice` is walked by `mark_value`).
-- **`PLAN.md`** — pending work. If you add a new heap-allocated type (a dictionary/hashmap, for instance), the changes you'd make for GC are: add a new `OBJECT_*` enum, add a `mark_value` case if it can contain Vals, and add a sweep case to free its payload.

@@ -68,7 +68,7 @@ float fast path first; the heavy cases are captured by the O column.
 
 ### In-place matrix arithmetic
 
-Mutate the left operand and return it; no allocation. Programmer is responsible for uniqueness (no implicit refcounting — see PLAN.md).
+Mutate the left operand and return it; no allocation. Programmer is responsible for uniqueness (no implicit refcounting).
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -258,7 +258,7 @@ String literals `"…"` are **raw**: bytes between the quotes are copied verbati
 
 ## String operations
 
-Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is compiled once and cached (1024-slot round-robin), so reusing a pattern costs only the match. Patterns are PCRE syntax in raw `"…"` literals — PCRE itself interprets `\n`, `\t`, `\d`, `\x22`, and the rest. Matching is multiline: `^` and `$` bind to line boundaries. Captures come back as strings; an optional group that didn't participate is `0.0`. Booleans are `1.0`/`0.0`. Indices are byte offsets (no UTF-8 codepoint model yet). In the cost columns `n` is the subject length.
+Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is compiled once and cached (1024-slot round-robin), so reusing a pattern costs only the match. Patterns are PCRE syntax in raw `"…"` literals — PCRE itself interprets `\n`, `\t`, `\d`, `\x22`, and the rest. Matching is multiline: `^` and `$` bind to line boundaries. Captures come back as strings; an optional group that didn't participate is `0.0`. Booleans are `1.0`/`0.0`. Indices are byte offsets (no UTF-8 codepoint model). In the cost columns `n` is the subject length.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -491,7 +491,7 @@ Logic variables, unification, and committed choice, built on the trail and a `PR
 
 ## Fact database
 
-A relational store built entirely from frames and sets — no new type. A **relation** is `{ :rows <set of rows> :index <index> }`; a **row** is a frame keyed by column name; a **database**, if you want several relations, is just a frame keyed by relation name (`db :father @` reaches one — no words of its own). The same shape describes a SQLite query result, so a fetched table and a hand-built relation are interchangeable (see the SQLite section of PLAN.md).
+A relational store built entirely from frames and sets — no new type. A **relation** is `{ :rows <set of rows> :index <index> }`; a **row** is a frame keyed by column name; a **database**, if you want several relations, is just a frame keyed by relation name (`db :father @` reaches one — no words of its own). The same shape describes a SQLite query result, so a fetched table and a hand-built relation are interchangeable (see the SQLite section below).
 
 Rows live in a set, so an identical row asserted twice dedups to one (a relation is a set of tuples). A caller-supplied `:id` column keeps otherwise-identical rows distinct. Indexed columns are declared at creation and must be symbol-valued; `:index` maps each to a `{ value → <rows> }` frame whose buckets share the row frames in `:rows`.
 
@@ -589,7 +589,7 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 
 ## Subprocesses and streams
 
-A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process (later, a socket). `start-process` launches a program directly from an argv array (no shell, so no quoting or injection surface) and returns a frame `{ :pid :in :out :err }` whose `:in`/`:out`/`:err` are streams. The lifecycle is: `write` input → `close` `:in` (sends EOF) → `read` the output → `wait`. `SIGPIPE` is ignored process-wide, so a `write` to a child that has exited returns an error rather than killing the interpreter. Bytes are raw and length-counted, so streams are binary-safe.
+A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process. `start-process` launches a program directly from an argv array (no shell, so no quoting or injection surface) and returns a frame `{ :pid :in :out :err }` whose `:in`/`:out`/`:err` are streams. The lifecycle is: `write` input → `close` `:in` (sends EOF) → `read` the output → `wait`. `SIGPIPE` is ignored process-wide, so a `write` to a child that has exited returns an error rather than killing the interpreter. Bytes are raw and length-counted, so streams are binary-safe.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -639,7 +639,7 @@ Using a closed handle errors (`database is closed`). Do selection, projection, a
 | `T_MATRIX` | heap object; r×c row-major `double[]` |
 | `T_XT` | execution token (dict index); first-class callable |
 | `T_ADDR` | dict index; used internally for return-stack frames |
-| `T_STREAM` | OS file descriptor (pipe or socket end); an inline `int`, like `T_ADDR` |
+| `T_STREAM` | OS file descriptor (a pipe end to a child process); an inline `int`, like `T_ADDR` |
 | `T_DB` | inline handle into the per-interpreter registry of open SQLite connections; not GC'd (closed with `db-close`) |
 | `T_CONT` | heap object; a captured return-stack slice plus a resume IP |
 | `T_MARK` | ephemeral sentinel from `<`, `[`, `{`, `reset`; not user-visible |

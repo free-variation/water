@@ -1,0 +1,46 @@
+\ Leibniz pi, parallel — load test for pmap on 16 cores.
+\ Same series as bench/leibniz.l4:  pi = 4 * (1 - 1/3 + 1/5 - 1/7 + ...)
+\
+\ The series splits into CHUNKS contiguous blocks of CHUNK_SIZE terms.
+\ Worker j sums the terms k in [j*CHUNK_SIZE, (j+1)*CHUNK_SIZE):
+\   term k = (-1)^k / (2k+1)
+\ CHUNK_SIZE is even, so every chunk starts on an even k (sign +1) and
+\ the sign alternates within the chunk. pmap-ext runs one chunk per
+\ worker; reduce sums the partials and the result is scaled by 4.
+
+variable TERMS
+1000000000 to TERMS
+
+variable CHUNKS
+16 to CHUNKS
+
+variable CHUNK_SIZE
+TERMS CHUNKS / to CHUNK_SIZE
+
+variable PI
+variable T0
+
+: partial ( j -- partialsum )
+  | >j acc sign k0 |
+  0.0 to acc
+  1.0 to sign
+  j CHUNK_SIZE f* to k0
+  [: ( idx -- )
+     k0 + 2.0 1.0 f*+        \ divisor = 2k+1
+     sign swap f/            \ sign / divisor
+     acc f+ to acc
+     sign fnegate to sign
+  :] CHUNK_SIZE i-times
+  acc ;
+
+: pleibniz
+  now to T0
+  0 CHUNKS 1- range
+  CHUNKS 1 ' partial pmap-ext
+  0.0 [: f+ :] reduce
+  4.0 f* to PI
+  now T0 - "elapsed: {0}s" format . cr
+  PI "pi: {0}" format . cr ;
+
+pleibniz
+bye

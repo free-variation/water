@@ -3,6 +3,8 @@
 static Interpreter *worker_pool[MAX_WORKER_THREADS];
 static _Atomic int worker_claim;
 static _Thread_local Interpreter *worker_interp;
+static _Thread_local int worker_slot;
+static _Atomic int parallel_error;
 
 void p_map(Interpreter *interp) {
 	POP_XT(xt, "map");
@@ -204,10 +206,13 @@ COUNTED_LOOP(p_i_times, "i-times", push(interp, make_float((double)i)))
 
 static Interpreter *claim_worker(void) {
 	int pool_index = atomic_fetch_add(&worker_claim, 1);
+	worker_slot = pool_index;
 
 	if (!worker_pool[pool_index])
 		worker_pool[pool_index] = worker_init(pool_index + 1);
 
+	worker_pool[pool_index]->dsp = 0;
+	worker_pool[pool_index]->error_flag = 0;
 	return worker_pool[pool_index];
 }
 
@@ -216,6 +221,17 @@ typedef struct {
 	Object *domain;
 	Object *image;
 } PmapContext;
+
+
+static int cpu_count(void) {
+	long n_cores = sysconf(_SC_NPROCESSORS_ONLN);
+	return n_cores > 0 ? (int)n_cores : 1;
+}
+
+void p_num_cores(Interpreter *interp) {
+	push(interp, make_float(cpu_count()));
+	DISPATCH(interp);
+}
 
 static void pmap_kernel(int start_index, int end_index, void *context) {
 	PmapContext *mapping = context;
@@ -226,8 +242,98 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
 	for (int i = start_index; i < end_index; i++) {
 		push(worker_interp, mapping->domain->items[i]);
 		execute_cfa(worker_interp, mapping->function);
+		if (worker_interp->error_flag) {
+			parallel_error = 1;
+			return;
+		}
 		mapping->image->items[i] = pop(worker_interp);
 	}
+}
+
+static int parallel_apply(Object *domain, int worker_count,
+		int items_per_claim, void (*kernel)(int, int, void *), void *context) {
+	int object_headroom = arena.n_objects + domain->len + worker_count * SLOTS_PER_CLAIM;
+	object_headroom = MIN(object_headroom, arena.max_objects);
+	if (object_headroom > arena.objects_cap)
+		GROW_OBJECT_TABLE(object_headroom);
+
+	int pair_headroom = pairs.n_pairs + domain->len + worker_count * SLOTS_PER_CLAIM;
+	if (pair_headroom > pairs.pairs_cap)
+		GROW_PAIR_TABLE(pair_headroom);
+
+	size_t saved_used = arena.used;
+	int saved_n_objects = arena.n_objects;
+	int saved_n_pairs = pairs.n_pairs;
+
+	worker_claim = 0;
+	worker_interp = NULL;
+	parallel_error = 0;
+	in_parallel = 1;
+	parallel_for(domain->len, worker_count, items_per_claim, kernel, context);
+	in_parallel = 0;
+
+	if (parallel_error)
+		abort_parallel_region(saved_used, saved_n_objects, saved_n_pairs);
+
+	return parallel_error;
+}
+
+typedef struct {
+	int predicate;
+	Object *domain;
+	char *keep;
+} PfilterContext;
+
+static void pfilter_kernel(int start_index, int end_index, void *context) {
+	PfilterContext *filter = context;
+
+	if (!worker_interp)
+		worker_interp = claim_worker();
+
+	for (int i = start_index; i < end_index; i++) {
+		push(worker_interp, filter->domain->items[i]);
+		execute_cfa(worker_interp, filter->predicate);
+		if (worker_interp->error_flag) {
+			parallel_error = 1;
+			return;
+		}
+		filter->keep[i] = truthy(pop(worker_interp));
+	}
+}
+
+void p_pfilter(Interpreter *interp) {
+	POP_XT(predicate, "pfilter-ext");
+	POP_INT(items_per_claim, "pfilter-ext", "items per claim");
+	POP_INT(worker_count, "pfilter", "worker count");
+	PEEK_SEQUENCE_AT(domain_val, 0, "pfilter-ext");
+
+	Object *domain = OBJECT_AT(VAL_DATA(domain_val));
+	int domain_index = interp->dsp - 1;
+
+	char *keep = calloc((size_t)MAX(domain->len, 1), 1);
+
+	PfilterContext filter = { .predicate = predicate, .domain = domain, .keep = keep };
+	if (parallel_apply(domain, worker_count, items_per_claim, pfilter_kernel, &filter)) {
+		free(keep);
+		fail(interp, "pfilter: a worker predicate failed (faulted or allocated past the parallel headroom)");
+		return;
+	}
+
+	int n_kept = 0;
+	for (int i = 0; i < domain->len; i++)
+		n_kept += keep[i];
+
+	NEW_ARRAY(image_handle, image, n_kept);
+	int write_index = 0;
+	for (int i = 0; i < domain->len; i++)
+		if (keep[i])
+			image->items[write_index++] = domain->items[i];
+
+	free(keep);
+	interp->dsp = domain_index;
+	push(interp, make_array(image_handle));
+
+	DISPATCH(interp);
 }
 
 void p_pmap(Interpreter *interp) {
@@ -243,23 +349,104 @@ void p_pmap(Interpreter *interp) {
 	memset(image->items, 0, sizeof(Val) * (size_t)MAX(domain->len, 1));
 	gc_root_push(interp, make_array(image_handle));
 
-	int object_headroom = arena.n_objects + domain->len + worker_count * SLOTS_PER_CLAIM;
-	object_headroom = MIN(object_headroom, arena.max_objects);
-	if (object_headroom > arena.objects_cap)
-		GROW_OBJECT_TABLE(object_headroom);
-
-	worker_claim = 0;
-	worker_interp = NULL;
-	in_parallel = 1;
-
 	PmapContext mapping = { .function = function, .domain = domain, .image = image };
-	parallel_for(domain->len, worker_count, items_per_claim, pmap_kernel, &mapping);
+	int failed = parallel_apply(domain, worker_count, items_per_claim, pmap_kernel, &mapping);
 
-	in_parallel = 0;
 	gc_root_pop(interp);
+
+	if (failed) {
+		fail(interp, "pmap: a worker quotation failed (faulted or allocated past the parallel headroom)");
+		return;
+	}
 
 	interp->dsp = domain_index;
 	push(interp, make_array(image_handle));
+
+	DISPATCH(interp);
+}
+
+typedef struct {
+	int map_function;
+	int combine_function;
+	Object *domain;
+	Object *partials;
+} PmapReduceContext;
+
+static void pmap_reduce_kernel(int start_index, int end_index, void *context) {
+	PmapReduceContext *reduction = context;
+
+	if (!worker_interp)
+		worker_interp = claim_worker();
+
+	Val accumulator = reduction->partials->items[worker_slot];
+	for (int i = start_index; i < end_index; i++) {
+		push(worker_interp, accumulator);
+		push(worker_interp, reduction->domain->items[i]);
+
+		execute_cfa(worker_interp, reduction->map_function);
+		execute_cfa(worker_interp, reduction->combine_function);
+		if (worker_interp->error_flag) {
+			parallel_error = 1;
+			return;
+		}
+
+		accumulator = pop(worker_interp);
+	}
+
+	reduction->partials->items[worker_slot] = accumulator;
+}
+
+void p_pmap_reduce(Interpreter *interp) {
+	POP_XT(combine_function, "pmap-reduce-ext");
+	POP_XT(map_function, "pmap-reduce-ext");
+	POP(identity);
+	POP_INT(items_per_claim, "pmap-reduce-ext", "items per claim");
+	POP_INT(worker_count, "pmap-reduce-ext", "worker count");
+	PEEK_SEQUENCE_AT(domain_val, 0, "pmap-reduce-ext");
+
+	Object *domain = OBJECT_AT(VAL_DATA(domain_val));
+	int domain_index = interp->dsp - 1;
+
+	CLAMP(worker_count, 1, MAX_WORKER_THREADS);
+
+	gc_root_push(interp, identity);
+
+	NEW_ARRAY(partials_handle, partials, worker_count);
+	for (int i = 0; i < worker_count; i++) 
+		partials->items[i] = identity;
+	gc_root_push(interp, make_array(partials_handle));
+
+	PmapReduceContext reduction = {
+		.map_function = map_function,
+		.combine_function = combine_function,
+		.domain = domain,
+		.partials = partials,
+	};
+
+	if (parallel_apply(domain, worker_count, items_per_claim, pmap_reduce_kernel, &reduction)) {
+		gc_root_pop(interp);
+		gc_root_pop(interp);
+		fail(interp, "pmap-reduce: a worker quotation failed (faulted or allocated past the parallel headroom)");
+		return;
+	}
+
+	push(interp, identity);
+	for (int i = 0; i < worker_count; i++) {
+		push(interp, partials->items[i]);
+		execute_cfa(interp, combine_function);
+		if (interp->error_flag) {
+			gc_root_pop(interp);
+			gc_root_pop(interp);
+			return;
+		}
+	}
+
+	Val result = pop(interp);
+
+	gc_root_pop(interp);
+	gc_root_pop(interp);
+	interp->dsp = domain_index;
+	push(interp, result);
 
 	DISPATCH(interp);
 }

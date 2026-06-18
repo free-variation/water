@@ -258,3 +258,13 @@ inline
 	rel :rows @
 	[: |> row | cols row [: |> acc col | acc col [: string>symbol :] update-at :] reduce :] map
 	cols relation swap load-bag ;
+
+( array xt -- image )
+: pmap >r num-cores 1 r> pmap-ext ;
+
+( array predicate -- image )
+: pfilter >r num-cores 1 r> pfilter-ext ;
+
+( array identity map-xt combine-xt -- result )
+: pmap-reduce >r >r >r num-cores 1 r> r> r> pmap-reduce-ext ;
+

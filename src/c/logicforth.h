@@ -192,8 +192,6 @@ typedef struct {
 	char *base;
 	_Atomic size_t used;
 	size_t reserved;
-	void *size_class_free[ARENA_SIZE_CLASSES];
-	void *freed_object_structs;
 
 	Object **objects;
 	cell current_epoch;
@@ -211,6 +209,8 @@ typedef struct {
 	char *slab_next, *slab_end;
 	int slot_next, slot_end;
 	int pair_next, pair_end;
+	void *size_class_free[ARENA_SIZE_CLASSES];
+	void *freed_object_structs;
 } AllocContext;
 
 typedef struct {
@@ -262,6 +262,14 @@ typedef enum {
 	arena.free_slots = realloc(arena.free_slots, sizeof(int) * (size_t)grow_new); \
 	memset(arena.objects + grow_old, 0, sizeof(Object *) * (size_t)(grow_new - grow_old)); \
 	arena.objects_cap = grow_new; \
+} while (0)
+
+#define GROW_PAIR_TABLE(new_cap) do { \
+	int grow_new = (new_cap); \
+	pairs.table = realloc(pairs.table, sizeof(Pair) * (size_t)grow_new); \
+	pairs.mark = realloc(pairs.mark, sizeof(unsigned char) * (size_t)grow_new); \
+	pairs.free_list = realloc(pairs.free_list, sizeof(int) * (size_t)grow_new); \
+	pairs.pairs_cap = grow_new; \
 } while (0)
 
 #define OBJECT_AT(handle) (arena.objects[handle])
@@ -810,6 +818,10 @@ void parallel_for(int n_items, int n_threads, int items_per_claim,
 void p_mapn(Interpreter *interp);
 void p_filter(Interpreter *interp);
 void p_pmap(Interpreter *interp);
+void p_pfilter(Interpreter *interp);
+void p_pmap_reduce(Interpreter *interp);
+void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_pairs);
+void p_num_cores(Interpreter *interp);
 void p_reduce(Interpreter *interp);
 void p_times(Interpreter *interp);
 void p_i_times(Interpreter *interp);

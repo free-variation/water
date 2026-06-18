@@ -69,11 +69,12 @@ static inline int size_class_index(size_t bytes) {
 }
 
 static void *arena_alloc_sized(size_t bytes) {
+	AllocContext *context = in_parallel ? &thread_alloc : &main_alloc;
 	int class_index = size_class_index(bytes);
-	void *recycled_block = arena.size_class_free[class_index];
+	void *recycled_block = context->size_class_free[class_index];
 
 	if (recycled_block) {
-		arena.size_class_free[class_index] = *(void **)recycled_block;
+		context->size_class_free[class_index] = *(void **)recycled_block;
 		return recycled_block;
 	}
 
@@ -81,9 +82,10 @@ static void *arena_alloc_sized(size_t bytes) {
 }
 
 static void arena_free_sized(void *block, size_t bytes) {
+	AllocContext *context = in_parallel ? &thread_alloc : &main_alloc;
 	int class_index = size_class_index(bytes);
-	*(void **)block = arena.size_class_free[class_index];
-	arena.size_class_free[class_index] = block;
+	*(void **)block = context->size_class_free[class_index];
+	context->size_class_free[class_index] = block;
 }
 
 void *arena_malloc(size_t bytes) {
@@ -123,10 +125,11 @@ void *arena_realloc(void *payload, size_t bytes) {
 }
 
 static Object *arena_alloc_object(void) {
+	AllocContext *context = in_parallel ? &thread_alloc : &main_alloc;
 	Object *fresh;
-	if (arena.freed_object_structs) {
-		fresh = arena.freed_object_structs;
-		arena.freed_object_structs = *(void **)fresh;
+	if (context->freed_object_structs) {
+		fresh = context->freed_object_structs;
+		context->freed_object_structs = *(void **)fresh;
 	} else {
 		fresh = arena_alloc(sizeof(Object));
 	}
@@ -135,8 +138,9 @@ static Object *arena_alloc_object(void) {
 }
 
 static void arena_free_object(Object *obj) {
-	*(void **)obj = arena.freed_object_structs;
-	arena.freed_object_structs = obj;
+	AllocContext *context = in_parallel ? &thread_alloc : &main_alloc;
+	*(void **)obj = context->freed_object_structs;
+	context->freed_object_structs = obj;
 }
 
 int object_alloc_slot(Interpreter *interp) {
@@ -192,6 +196,13 @@ int object_alloc_slot(Interpreter *interp) {
 	}
 
 	return -1;
+}
+
+void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_pairs) {
+	arena.used = saved_used;
+	arena.n_objects = saved_n_objects;
+	pairs.n_pairs = saved_n_pairs;
+	memset(&thread_alloc, 0, sizeof thread_alloc);
 }
 
 static Object *object_new(Interpreter *interp, ObjectKind kind, int *out_slot) {
@@ -254,6 +265,23 @@ int object_new_array(Interpreter *interp, int num_elements) {
 int object_new_pair(Interpreter *interp) {
 	int slot;
 
+	if (in_parallel) {
+		if (thread_alloc.pair_next >= thread_alloc.pair_end) {
+			int claimed = atomic_fetch_add(&pairs.n_pairs, SLOTS_PER_CLAIM);
+			if (claimed + SLOTS_PER_CLAIM > pairs.pairs_cap) {
+				fail(interp, "pair table full in parallel region");
+				return -1;
+			}
+			
+			thread_alloc.pair_next = claimed;
+			thread_alloc.pair_end = claimed + SLOTS_PER_CLAIM;
+		}
+
+		slot = thread_alloc.pair_next++;
+		INIT_PAIR(slot);
+		return slot;
+	}
+
 	if (pairs.free_count > 0) {
 		slot = pairs.free_list[--pairs.free_count];
 		INIT_PAIR(slot);
@@ -269,11 +297,7 @@ int object_new_pair(Interpreter *interp) {
 			return slot;
 		}
 
-		int new_cap = pairs.pairs_cap * 2;
-		pairs.table = realloc(pairs.table, sizeof(Pair) * (size_t)new_cap);
-		pairs.mark = realloc(pairs.mark, sizeof(unsigned char) * (size_t)new_cap);
-		pairs.free_list = realloc(pairs.free_list, sizeof(int) * (size_t)new_cap);
-		pairs.pairs_cap = new_cap;
+		GROW_PAIR_TABLE(pairs.pairs_cap * 2);
 	}
 
 	slot = pairs.n_pairs++;
@@ -3025,12 +3049,8 @@ void p_load_image(Interpreter *interp) {
 		fail(interp, "%s: bad pair count", filename);
 		goto done;
 	}
-	while (pairs.pairs_cap < saved_n_pairs) {
-		pairs.pairs_cap *= 2;
-		pairs.table = realloc(pairs.table, sizeof(Pair) * (size_t)pairs.pairs_cap);
-		pairs.mark = realloc(pairs.mark, sizeof(unsigned char) * (size_t)pairs.pairs_cap);
-		pairs.free_list = realloc(pairs.free_list, sizeof(int) * (size_t)pairs.pairs_cap);
-	}
+	while (pairs.pairs_cap < saved_n_pairs)
+		GROW_PAIR_TABLE(pairs.pairs_cap * 2);
 	for (int i = 0; i < saved_n_pairs; i++) {
 		if (!r_val(file, &pairs.table[i].head) || !r_val(file, &pairs.table[i].tail)) {
 			fail(interp, "%s: truncated pairs", filename);
@@ -3288,6 +3308,9 @@ int construct_vocabulary(Interpreter *interp) {
 	define_primitive(interp, "times", p_times, 0);
 	define_primitive(interp, "i-times", p_i_times, 0);
 	define_primitive(interp, "pmap-ext", p_pmap, 0);
+	define_primitive(interp, "pfilter-ext", p_pfilter, 0);
+	define_primitive(interp, "pmap-reduce-ext", p_pmap_reduce, 0);
+	define_primitive(interp, "num-cores", p_num_cores, 0);
 
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
