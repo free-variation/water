@@ -57,6 +57,10 @@ typedef int64_t cell;
 #define JSON_MAX_DEPTH (1 << 10)
 #define SELECT_MAX_DEPTH JSON_MAX_DEPTH
 #define MAX_WORKER_THREADS (1 << 6)
+#define MAX_NESTING_DEPTH (1 << 7)
+#define PRINT_FIRST 10
+#define PRINT_LAST 3
+#define LIST_PRINT_MAX 100000
 
 typedef enum {
 	T_NONE = 0,
@@ -105,6 +109,20 @@ static inline Val make_tagged(Tag tag, int64_t data) {
 	}
 	return value;
 }
+
+#define LOCAL_BASE_BITS 24
+static inline Val make_locals_header(int local_base, int n_locals) {
+	return make_tagged(T_ADDR, ((int64_t)n_locals << LOCAL_BASE_BITS | local_base));
+}
+
+static inline int saved_local_base(Val locals_header) {
+	return (int)(VAL_DATA(locals_header) & ((1 << LOCAL_BASE_BITS) - 1));
+}
+
+static inline int saved_n_locals(Val locals_header) {
+	return (int)(VAL_DATA(locals_header) >> LOCAL_BASE_BITS);
+}
+
 
 static inline Val make_float(double number) {
 	Val value;
@@ -318,6 +336,7 @@ typedef struct Interpreter {
 	Val side_stack[SIDESTACK_DEPTH];
 	int side_dsp;
 	int local_base;
+	int run_floor;
 	int *bind_trail;
 	int bind_trail_top, bind_trail_cap;
 	Val *lvar_stack;
@@ -334,6 +353,7 @@ typedef struct Interpreter {
 
 	struct {
 		char *pattern;
+		int pattern_len;
 		void *re;
 		int in_use;
 	} regex_cache[REGEX_CACHE_SIZE];
@@ -619,7 +639,7 @@ const char *name_of(int cfa);
 void docol(Interpreter *interp);
 void dosym(Interpreter *interp);
 void dovar(Interpreter *interp);
-void run_inner(Interpreter *interp);
+void run_inner(Interpreter *interp, int floor);
 void execute_cfa(Interpreter *interp, int cfa);
 
 typedef struct {
@@ -828,6 +848,7 @@ void p_pmap(Interpreter *interp);
 void p_pfilter(Interpreter *interp);
 void p_pmap_reduce(Interpreter *interp);
 void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_pairs);
+void reset_thread_alloc(void);
 void p_num_cores(Interpreter *interp);
 void p_reduce(Interpreter *interp);
 void p_times(Interpreter *interp);
@@ -979,7 +1000,7 @@ void p_running(Interpreter *interp);
 void interp_init(Interpreter *interp);
 Interpreter *main_init(void);
 Interpreter *worker_init(int worker_index);
-int construct_vocabulary(Interpreter *interp);
+int construct_vocabulary(Interpreter *interp, int load_lib);
 
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 

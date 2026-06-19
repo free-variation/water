@@ -41,13 +41,6 @@ and/or `#ifdef`); row-major vs column-major handling at the boundary.
 
 ## String operations
 
-A single pattern-matching primitive subsumes the string-handling zoo
-(split / index-of / starts-with / ends-with / trim / lines / replace), with
-named operations as `lib.l4` wrappers. The engine is **PCRE2**
-(Perl-compatible, JIT-compiled, statically linked); patterns are a superset
-of POSIX ERE — `\d`, `\w`, `\n` / `\t`, lookaround, `\p{...}` — so plain
-`"..."` patterns express newlines directly.
-
 ### Still deferred
 
 - **Wrappers** over the match/replace layer: `index-of`, `starts-with`,
@@ -55,8 +48,7 @@ of POSIX ERE — `\d`, `\w`, `\n` / `\t`, lookaround, `\p{...}` — so plain
 
 ### Unicode model
 
-UTF-8 throughout, codepoint-indexed at the user level. Today every string
-operation is byte-indexed (exact for ASCII). When done:
+UTF-8 throughout, codepoint-indexed at the user level:
 
 - `size` (on a string), `substring`, `index-of`, and match positions
   expressed in *codepoints* via a small UTF-8 codec (encode / decode /
@@ -76,17 +68,12 @@ locale case-folding outside ASCII.
 
 ### Path queries — follow-ups
 
-The read-side query layer is implemented (see `docs/reference.md`): the `*` and `//`
-axes and `[…]` predicates in path literals, `select-values` / `select-keys`, and
-search-path rejection on `@` / `!` / `delete-at` / `update-at` (with `has?`
-accepting a search path). Remaining:
+Remaining:
 
 - **Wildcard mutation** — `*` / `//` in `!` / `delete-at` / `update-at` for
-  broadcast writes. The single-location words reject a search path today; that is
-  the syntax this claims.
+  broadcast writes.
 - **Quotation predicates** — an arbitrary `[: … :]` evaluated per node, built as an
-  explicit element array. The fixed predicate set (existence, `=`, `<`, `>`, the
-  self `.`, a sub-path subject) is the current scope.
+  explicit element array.
 - **Axes beyond child and descendant.**
 
 ### Time / dates
@@ -95,8 +82,7 @@ Unix timestamps as `T_FLOAT` (seconds since epoch, fractional allowed). No
 separate date type; durations are floats in seconds, arithmetic is `+` /
 `-`.
 
-- `"%Y-%m-%d %H:%M:%S" time-format` — strftime-style, UTC by default
-  (`now` for the current time as a float is already built).
+- `"%Y-%m-%d %H:%M:%S" time-format` — strftime-style, UTC by default.
 - `"2026-05-25" time-parse` — strptime-style parsing.
 - `"%Y-%m-%dT%H:%M:%SZ"` is the recommended ISO 8601 format string.
 
@@ -143,8 +129,7 @@ into the same `(exc 1)` result a `throw` produces.
 
 Extend `format`'s placeholders with optional format specifiers after a
 colon: `{0:.2f}` (precision), `{0:8}` (field width), `{0:x}` (hex) — a
-small printf-style mini-language on top of the existing positional `{n}`
-fill, which keeps its current rendering.
+small printf-style mini-language on top of the positional `{n}` fill.
 
 ---
 
@@ -174,9 +159,8 @@ TLS termination, HTTP/1.1–3, request parsing, static files, timeouts, rate
 limiting, access logs, load balancing — and forwards each request over a Unix or
 TCP socket as FastCGI records. logicforth never sees a raw HTTP byte: it decodes
 the records, runs a handler, writes the response. This is the web story instead
-of an in-process HTTP server — the language stays small (no HTTP stack, no TLS,
-no concurrency layer needed just to serve), and scaling, supervision, and crash
-isolation come from the deployment.
+of an in-process HTTP server — scaling, supervision, and crash isolation come
+from the deployment.
 
 **Instrumentation needed** — less than an in-process server, since the web server
 keeps the HTTP work:
@@ -184,9 +168,9 @@ keeps the HTTP work:
 - `accept ( listen-stream -- conn-stream )` — accept a forwarded connection as a
   `T_STREAM`. By convention the web server passes the listen socket on fd 0
   (`FCGI_LISTENSOCK_FILENO`), so `bind`/`listen` may be unnecessary.
-- `read-n ( stream n -- s )` — read exactly `n` bytes. The current `read` slurps
-  to EOF, which never comes on a persistent FastCGI connection; records are
-  length-framed, so a bounded read is required.
+- `read-n ( stream n -- s )` — read exactly `n` bytes. A slurp-to-EOF read never
+  terminates on a persistent FastCGI connection; records are length-framed, so a
+  bounded read is required.
 - A FastCGI record codec — decode `BEGIN_REQUEST` / `PARAMS` (the CGI environment
   → a request frame) / `STDIN` (body → a string), and encode `STDOUT` +
   `END_REQUEST`. The framing is simple: `lib.l4` over `read-n`/`write` plus byte
@@ -214,16 +198,10 @@ builders are `lib.l4`.
 
 ## REPL line editing
 
-The interactive REPL is driven by vendored **isocline** (MIT, single-source build
-under `external/isocline`, refreshed by `tools/vendor-isocline.sh`): persistent
-history (`.logicforth_history`), emacs/vi editing with reverse-search, dictionary
-word completion, and filename completion inside string literals. Batch mode
-(`-b`) reads stdin raw and is unaffected. Remaining:
+Remaining:
 
 - **Inline hints and syntax highlighting** via isocline's highlight callback.
-- **Native multiline editing** — continuation on an open delimiter works today
-  through the reader's need-more accumulation; isocline's in-place multiline
-  editor is not yet wired.
+- **Native multiline editing** — wire isocline's in-place multiline editor.
 
 ---
 
@@ -249,30 +227,20 @@ into logicforth; struct-by-value arguments.
 
 ## Coroutines, generators, lazy sequences
 
-Suspendable computations on the delimited-continuation machinery (`reset` /
-`shift` / `resume`, already built). A coroutine yields control and resumes where
-it left off; a generator is a coroutine that yields a stream of values pulled on
-demand. The aim is **lazy sequences** — produce values only as a consumer asks,
-so `map` / `filter` / `take` / `zip` compose over large or unbounded sequences
-without materializing the whole thing.
+Building on the generator primitives:
 
-**API:**
+- Lazy `map` / `filter` / `take` / `zip` as `lib.l4` wrappers that resume the
+  source on demand, with `lazy>array` to force a finite prefix.
+- A cooperative scheduler (`spawn` / `run-scheduler`, a queue of `T_CONT`s) for
+  producer/consumer pipelines.
+- **Kanren-style interleaving streams.** A captured continuation is the
+  suspension a miniKanren stream needs — force it with `resume` and it yields an
+  answer or suspends again. Missing is fair interleaving: `mplus` (merge two
+  streams so an infinite branch can't starve the other) and `bind` (flatMap with
+  interleaving) — a *complete* search, distinct from the depth-first `amb` /
+  `fail`. Generators are the substrate; the interleaving combinators are the work.
 
-```
-xt generator      ( -- gen )       \ a paused producer; resume to pull values
-gen next          ( gen -- value gen' | done )  \ pull one value, or signal exhaustion
-v yield           ( v -- )         \ inside a producer: emit v, then suspend
-```
-
-with lazy `map` / `filter` / `take` / `zip` as `lib.l4` wrappers that resume the
-source on demand, and `lazy>array` to force a finite prefix. Cooperative tasks
-are the same machinery used differently — `spawn` / `yield` / `run-scheduler`
-round-robin several coroutines for producer/consumer pipelines and suspendable
-simulations.
-
-**Implementation:** `yield` is `shift`; `next` re-enters the captured slice; a
-generator is a `T_CONT` plus an exhaustion sentinel; the scheduler is a queue of
-`T_CONT`s. ~50 lines of `lib.l4` on the existing primitives — no new C.
+All `lib.l4` on the existing primitives — no new C.
 
 No async-I/O layer sits above this: under the FastCGI model the web server
 multiplexes connections, so coroutines here are for lazy data flow, not for
@@ -281,21 +249,6 @@ overlapping blocking syscalls.
 ---
 
 ## Multi-core parallelism: threads over the shared heap
-
-Built — and built differently from the fork/private-heap sketch this section
-once held. `pmap` / `pfilter` / `pmap-reduce` run OS threads over the one shared
-global heap. Each worker has its own `Interpreter` (stacks, ip, trampoline
-base) but allocates into the global object and pair tables through per-thread
-slab/band cursors refilled by atomic claims (`atomic_fetch_add` once per slab /
-per `SLOTS_PER_CLAIM`, not per allocation), so a worker's result handle
-resolves in the coordinator with no copy-back — zero-copy join. Work is
-dispatched dynamically (an atomic cursor over `items_per_claim` chunks) for load
-balance. A failed region, or a successful one whose results reference no
-region-allocated memory (pfilter always; scalar-result maps and reductions),
-rewinds its allocations wholesale — snapshot the bump high-waters before the
-region, restore them on teardown — so repeated regions stay memory-bounded
-without GC. Worker faults set a shared flag the coordinator surfaces as a clean
-error. `docs/multicore.md` is the full account.
 
 Remaining work, in rough priority:
 
@@ -326,10 +279,6 @@ Remaining work, in rough priority:
   unboxed-`double` output buffer threaded under the matrix kernels, and
   work-stealing for skewed workloads.
 
-The worker contract: workers produce new values and don't mutate shared inputs;
-they don't print (stdout interleaves); logic-variable state is per-worker, so
-logic programming across workers is out of scope.
-
 ---
 
 ## Functional primitives
@@ -356,10 +305,7 @@ and fill in C. Words returning a scalar, element, or boolean belong in
 **On frames:**
 
 - **`group-by` (quotation-keyed variant)** — `arr [: ( elt -- key ) :]` grouping
-  by a computed key. The column form — `rows :col group-by`, grouping an array of
-  frames by a symbol field into a frame of row-sets — is already implemented as a
-  C primitive (see docs/reference.md); this would be the computed-key variant,
-  under a distinct name.
+  by a computed key, under a distinct name from the existing column form.
 - **`partition`** — `arr [: pred :] partition` → matches and non-matches.
 
 Composable in one line, so not added: `count` (`[: pred :] filter size`),

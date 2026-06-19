@@ -14,3 +14,5 @@
 1 
 1 
 1 
+error: pmap: a worker quotation failed (faulted or allocated past the parallel headroom)
+error: pmap: a worker quotation failed (faulted or allocated past the parallel headroom)

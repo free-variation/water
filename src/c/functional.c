@@ -211,9 +211,18 @@ static Interpreter *claim_worker(void) {
 	if (!worker_pool[pool_index])
 		worker_pool[pool_index] = worker_init(pool_index + 1);
 
-	worker_pool[pool_index]->dsp = 0;
-	worker_pool[pool_index]->error_flag = 0;
-	return worker_pool[pool_index];
+	Interpreter *worker = worker_pool[pool_index];
+	worker->dsp = 0;
+	worker->rsp = 0;
+	worker->side_dsp = 0;
+	worker->local_base = 0;
+	worker->run_floor = 0;
+	worker->bind_trail_top = 0;
+	worker->lvar_top = 0;
+	worker->n_gc_roots = 0;
+	worker->unwinding = 0;
+	worker->error_flag = 0;
+	return worker;
 }
 
 typedef struct {
@@ -288,6 +297,7 @@ static int parallel_apply(Object *domain, int worker_count,
 	worker_interp = NULL;
 	parallel_error = 0;
 	in_parallel = 1;
+	reset_thread_alloc();
 	parallel_for(domain->len, worker_count, items_per_claim, kernel, context);
 	in_parallel = 0;
 

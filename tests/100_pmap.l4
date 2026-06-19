@@ -51,3 +51,9 @@ num-cores 0 gt . cr
 
 \ interning in workers (string>symbol) == sequential interning
 1 200 range dup [: "{0}" format string>symbol :] map swap 8 1 [: "{0}" format string>symbol :] pmap-ext = . cr
+
+\ worker reuse after a fault carries no residue: region 1 faults with the side
+\ stack dirty; the reused worker in region 2 must see an empty side stack, not
+\ the stale value (a partial reset would leak 99 into the result).
+1 1 range 1 1 [: 99 >side [ 1 2 ] 5 @i :] pmap-ext
+1 1 range 1 1 [: side> :] pmap-ext . cr
