@@ -61,6 +61,7 @@ const HelpEntry help_entries[] = {
 	{ "bulk-load", "( rel rows-array -- rel )", "Load all rows at once: builds :rows (a deduped set) and each declared column's index, instead of row-by-row", "—", "sets + frame", "O(n log n)" },
 	{ "bye", "( -- )", "exit(0)", "—", "—", "—" },
 	{ "catch", "( xt -- result 0 | exc 1 )", "lib.l4: reset execute 0", "—", "cont if thrown", "O(xt)" },
+	{ "cd", "( path -- )", "Change the interpreter's working directory (chdir); process-wide, so it moves the base for relative file I/O and is inherited by subsequent start-process children", "1", "none", "O(1)" },
 	{ "choose", "( list cont -- )", "lib.l4: run cont with each element of a cons list in turn, committing to the first for which it succeeds; fail if none do (n-way amb over a list)", "n·cont", "none", "O(n·cont)" },
 	{ "clear", "( … -- )", "Reset data stack depth to 0", "1", "none", "O(1)" },
 	{ "close", "( stream -- )", "Close the fd; closing a child's :in sends it EOF", "1 syscall", "none", "O(1)" },
@@ -76,6 +77,7 @@ const HelpEntry help_entries[] = {
 	{ "count-matches", "( rel pattern -- n )", "How many rows match; for a covering query this is the bucket's size with no scan, otherwise query size", "—", "(covering: none)", "O(candidates)" },
 	{ "cr", "( -- )", "Print a newline", "1", "none", "O(1)" },
 	{ "create-index", "( rel cols -- rel )", "Index a relation on the symbol columns cols: intern each indexed column's value to a symbol (so it keys the bucket and matches a { :col :val } pattern), then load-bag into a cols-indexed relation. Other columns keep their type; :rows stays a bag. The explicit bridge from a db-query result to an indexed relation", "n", "frame + sets", "O(n)" },
+	{ "cwd", "( -- path )", "The interpreter's current working directory as a string (getcwd)", "1", "1o", "O(|path|)" },
 	{ "db-close", "( db -- )", "Close the connection and free its registry slot. Idempotent — closing an already-closed handle is a no-op. A handle that is dropped without closing leaks the connection until process exit", "1 syscall", "none", "O(1)" },
 	{ "db-exec", "( db statement params -- n )", "Bind params to the statement's ? placeholders and run it with no result set (INSERT / UPDATE / DELETE / CREATE / …); return the affected-row count as a float (0 for DDL). One statement per call. On a bad statement, errors with SQLite's message", "per statement", "none", "O(statement)" },
 	{ "db-open", "( path -- db )", "Open (creating if absent) the database file at path and push a handle; \":memory:\" is a private in-memory database. Errors if it can't be opened", "open", "1 connection (not GC'd)", "O(1)+" },
@@ -270,6 +272,7 @@ const HelpEntry help_entries[] = {
 	{ "to", "( val -- )", "Assign to the named local (in a definition) or global. At the REPL, auto-creates the global if absent. In a definition, the variable must already exist. May trigger superword store-fusion while compiling.", NULL, NULL, NULL },
 	{ "to-slice!", "( v₀ … vₙ₋₁ arr offset n -- arr )", "Store the n values just below arr into arr[offset…offset+n); leaves arr", "2 + n", "none", "O(n)" },
 	{ "transpose", "( m -- m' )", "Rows/columns swapped", "1 + r×c", "1m(c×r)", "O(r×c)" },
+	{ "trim", "( s -- s' )", "Strip leading and trailing ASCII whitespace (' ' \\t \\n \\v \\f \\r); a backward/forward byte-scan, one allocation of the surviving span", "n", "1o", "O(n)" },
 	{ "truncate", "( a -- trunc a )", "trunc", "2", "matrix 1m(r×c)", "same" },
 	{ "try-catch", "( normal-xt err-xt -- … )", "lib.l4: run normal-xt; on throw, run err-xt with exc on the stack", "—", "cont if thrown", "O(normal-xt)" },
 	{ "unify", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A _ on either side matches anything and binds nothing. On a mismatch, fails.", "n", "none", "O(n)" },
@@ -308,4 +311,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 302;
+const int help_entry_count = 305;

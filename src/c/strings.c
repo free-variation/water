@@ -334,6 +334,26 @@ void p_substring(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static inline int trim_is_ws(unsigned char c) {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
+}
+
+void p_trim(Interpreter *interp) {
+	PEEK_STRING_AT(source, 0, "trim");
+
+	int start = 0;
+	int end = source->len;
+	while (start < end && trim_is_ws((unsigned char)source->bytes[start]))
+		start++;
+	while (end > start && trim_is_ws((unsigned char)source->bytes[end - 1]))
+		end--;
+
+	int handle = object_new_string(interp, source->bytes + start, end - start);
+	interp->data_stack[interp->dsp - 1] = make_string(handle);
+
+	DISPATCH(interp);
+}
+
 void p_join(Interpreter *interp) {
 	PEEK_STRING_AT(separator, 0, "join");
 	PEEK_TYPE_AT(array_val, 1, "join", T_ARRAY);

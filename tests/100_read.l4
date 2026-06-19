@@ -24,3 +24,14 @@
 
 \ error: read on a non-stream
 5 read
+
+\ --- cwd ( -- path ): current working directory, non-empty.
+cwd size 0 gt . cr
+\ --- cd ( path -- ): change working dir; root "/" is portable across machines.
+"/" cd cwd "/" = . cr
+\ --- cd is inherited by children across fork.
+[ "pwd" ] start-process :out @ read trim "/" = . cr
+\ --- cd failure leaves the directory unchanged and names the path.
+"/no/such/dir" cd
+\ --- end-process ( proc -- ): closes the streams (a later read fails) and reaps the child.
+[ "echo" "hi" ] start-process dup end-process :out @ read

@@ -3360,6 +3360,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "split", p_split, 0);
 	define_primitive(interp, "replace", p_replace, 0);
 	define_primitive(interp, "substring", p_substring, 0);
+	define_primitive(interp, "trim", p_trim, 0);
 	define_primitive(interp, "join", p_join, 0);
 	define_primitive(interp, "format", p_format, 0);
 	define_primitive(interp, "update-at", p_update_at, 0);
@@ -3540,6 +3541,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "sleep", p_sleep, 0);
 	define_primitive(interp, "env", p_env, 0);
 	define_primitive(interp, "env!", p_env_set, 0);
+	define_primitive(interp, "cd", p_cd, 0);
+	define_primitive(interp, "cwd", p_cwd, 0);
 	define_primitive(interp, "read-file", p_read_file, 0);
 	define_primitive(interp, "write-file", p_write_file, 0);
 	define_primitive(interp, "append-file", p_append_file, 0);

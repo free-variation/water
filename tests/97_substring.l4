@@ -10,3 +10,13 @@
 "hello" -1 3 substring            \ negative start
 "hello" 3 1 substring             \ start > end
 5 0 1 substring                   \ not a string
+
+\ --- trim ( s -- s' ): strip leading/trailing ASCII whitespace; interior preserved.
+"  hi  " trim . cr
+"  hi  " trim size . cr
+"mid word" trim . cr
+"	
+data " trim . cr
+"" trim size . cr
+"  	 " trim size . cr
+5 trim

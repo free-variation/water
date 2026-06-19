@@ -8,3 +8,10 @@ error: substring: range [0, 6) out of bounds for length 5
 error: substring: range [-1, 3) out of bounds for length 5
 error: substring: range [3, 1) out of bounds for length 5
 error: substring: expected a string; got a float
+hi 
+2 
+mid word 
+data 
+0 
+0 
+error: trim: expected a string; got a float

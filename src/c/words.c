@@ -1825,6 +1825,25 @@ void p_env_set(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_cd(Interpreter *interp) {
+	POP_STRING(path, "cd");
+	if (chdir(path->bytes) != 0)
+		fail(interp, "cd: cannot change to %s", path->bytes);
+
+	DISPATCH(interp);
+}
+
+void p_cwd(Interpreter *interp) {
+	char buffer[PATH_MAX];
+	if (getcwd(buffer, sizeof buffer) == NULL) {
+		fail(interp, "cwd: cannot read working directory");
+		return;
+	}
+	push(interp, make_string(object_new_string(interp, buffer, (int)strlen(buffer))));
+
+	DISPATCH(interp);
+}
+
 void p_read_file(Interpreter *interp) {
 	POP_STRING(path, "read-file");
 

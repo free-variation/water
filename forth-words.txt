@@ -55,6 +55,7 @@ begin
 bulk-load
 bye
 catch
+cd
 choose
 clear
 close
@@ -70,6 +71,7 @@ cos
 count-matches
 cr
 create-index
+cwd
 db-close
 db-exec
 db-open
@@ -264,6 +266,7 @@ times
 to
 to-slice!
 transpose
+trim
 truncate
 try-catch
 unify

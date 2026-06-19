@@ -1,13 +1,16 @@
 ( name fs-command -- array ) \ applies fs-command to name, returning an array of output rows
+: run-collect
+	run
+	dup read-out trim
+	swap end-process ;
+
 : fs-command
-	"{0} {1}" format run
-	dup read-out
-	swap end-process
-	"\n" split 
-	[: size 0 gt :] filter ;
+	"{0} {1}" format run-collect
+	"\n" split ;
 
 ( glob -- array ) \ runs the ls utility
 : ls  "ls" fs-command ;
 
 ( glob -- array ) \ runs find in the current directory with the provided glob
 : find-files "find . -name" fs-command ;
+

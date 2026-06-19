@@ -6,3 +6,8 @@
 108894 
 1 
 error: read: expected a stream; got a float
+1 
+1 
+1 
+error: cd: cannot change to /no/such/dir
+error: read: Bad file descriptor
