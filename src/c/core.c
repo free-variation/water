@@ -2796,26 +2796,21 @@ void free_one_object(Object *obj) {
 }
 
 void forget_user(Interpreter *interp) {
-	for (int i = 0; i < arena.n_objects; i++) {
+	/* Free only user objects; objects below init_n_objects are literals baked
+	   into the compiled-in vocabulary (e.g. run's " +") and must survive. */
+	for (int i = arena.init_n_objects; i < arena.n_objects; i++) {
 		if (arena.objects[i]) {
 			free_one_object(arena.objects[i]);
 			arena.objects[i] = NULL;
 		}
 	}
-	arena.n_objects = 0;
+	arena.n_objects = arena.init_n_objects;
 	main_alloc.slot_next = arena.n_objects;
 	main_alloc.slot_end = arena.n_objects;
 	arena.n_free_slots = 0;
 
-	free(pairs.table);
-	free(pairs.mark);
-	free(pairs.free_list);
-	pairs.table = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
-	pairs.pairs_cap = PAIR_TABLE_DEPTH;
-	pairs.n_pairs = 0;
+	pairs.n_pairs = pairs.init_n_pairs;
 	main_alloc.pair_next = main_alloc.pair_end = pairs.n_pairs;
-	pairs.mark = malloc(sizeof(unsigned char) * PAIR_TABLE_DEPTH);
-	pairs.free_list = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
 	pairs.free_count = 0;
 
 	interp->dsp = 0;
@@ -3585,6 +3580,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.init_names_here = vocab.names_here;
 	vocab.init_source_here = vocab.source_here;
 	vocab.init_symbol_pool_here = vocab.symbol_pool_here;
+	arena.init_n_objects = arena.n_objects;
+	pairs.init_n_pairs = pairs.n_pairs;
 
 	vocab.lib_end_latest_cfa = vocab.latest_cfa;
 	return 0;

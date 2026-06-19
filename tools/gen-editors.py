@@ -140,8 +140,15 @@ def emit_vim(auto):
     L.append('syn match   logicforthDelimiter "\\s\\zs|\\ze\\s"')
     L.append("")
     # vim folds operators into the builtin group (the broad iskeyword covers them).
-    for chunk in wrap(OPERATORS + auto):
+    # `|` is a vim command separator and `"` starts a comment, so tokens containing
+    # them can't go in `syn keyword` (E488) — emit those via `syn match` instead.
+    kw_tokens = [t for t in OPERATORS + auto if "|" not in t and '"' not in t]
+    match_tokens = [t for t in OPERATORS + auto if "|" in t or '"' in t]
+    for chunk in wrap(kw_tokens):
         L.append(kw("logicforthBuiltin", chunk))
+    for tok in match_tokens:
+        escaped = "".join("\\" + c if c in "\\.*[]^$~/" else c for c in tok)
+        L.append('syn match   logicforthBuiltin "%s"' % escaped)
     L.append("")
     for grp, link in [
         ("Comment", "Comment"), ("String", "String"), ("Number", "Number"),

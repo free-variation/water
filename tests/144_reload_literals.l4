@@ -1,0 +1,7 @@
+\ reload (forget_user) must preserve string-literal objects baked into the
+\ compiled-in vocabulary. `run` is `: run " +" split start-process ;` — its
+\ " +" regex is an init-time arena object. forget_user used to free every
+\ object (n_objects=0), dangling that literal, so run/ls broke after a reload.
+\ Now objects below the init watermark survive. Non-empty output (1) proves it.
+reload
+"echo marker" run read-out size 0 gt . cr

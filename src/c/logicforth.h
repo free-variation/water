@@ -202,6 +202,7 @@ typedef struct {
 typedef struct {
 	Pair *table;
 	_Atomic int n_pairs;
+	int init_n_pairs;
 	int pairs_cap;
 	unsigned char *mark;
 	int *free_list;
@@ -217,6 +218,7 @@ typedef struct {
 	Object **objects;
 	cell current_epoch;
 	_Atomic int n_objects;
+	int init_n_objects;
 	int max_objects;
 	int objects_cap;
 
