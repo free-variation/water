@@ -796,6 +796,7 @@ void p_setclose(Interpreter *interp);
 void p_frameopen(Interpreter *interp);
 void p_frameclose(Interpreter *interp);
 void p_array_open(Interpreter *interp);
+void p_list_open(Interpreter *interp);
 void p_array_close(Interpreter *interp);
 void p_list_close(Interpreter *interp);
 void p_cons(Interpreter *interp);

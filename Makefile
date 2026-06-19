@@ -3,7 +3,7 @@ CFLAGS = -O3 -march=native -Wall -Wextra -pthread
 LDLIBS = -lm
 
 SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c
-HDRS = src/c/logicforth.h src/c/lib_embed.h
+HDRS = src/c/logicforth.h src/c/lib_embed.h src/c/repl_highlight_groups.h
 
 # Vendored PCRE2 (see external/pcre2/PROVENANCE; refresh with tools/vendor-pcre2.sh).
 PCRE2_DIR    = external/pcre2
@@ -52,7 +52,7 @@ src/c/lib_embed.h: src/forth/lib.l4
 
 # Regenerate the editor syntax files from docs/reference.md (not compiled, so
 # on-demand rather than a build dependency). Run after editing reference.md.
-editors: docs/reference.md tools/gen-editors.py
+editors src/c/repl_highlight_groups.h: docs/reference.md tools/gen-editors.py
 	python3 tools/gen-editors.py
 
 vendor-pcre2:

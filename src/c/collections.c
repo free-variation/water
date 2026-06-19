@@ -131,7 +131,7 @@ int set_difference(Interpreter *interp, int handle_a, int handle_b) {
 	}
 
 void p_setopen(Interpreter *interp) {
-	push(interp, make_mark());
+	push(interp, make_tagged(T_MARK, '<'));
 
 	DISPATCH(interp);
 }
@@ -151,7 +151,7 @@ void p_setclose(Interpreter *interp) {
 }
 
 void p_frameopen(Interpreter *interp) {
-	push(interp, make_mark());
+	push(interp, make_tagged(T_MARK, '{'));
 
 	DISPATCH(interp);
 }
@@ -188,7 +188,13 @@ void p_frameclose(Interpreter *interp) {
 }
 
 void p_array_open(Interpreter *interp) {
-	push(interp, make_mark());
+	push(interp, make_tagged(T_MARK, '['));
+
+	DISPATCH(interp);
+}
+
+void p_list_open(Interpreter *interp) {
+	push(interp, make_tagged(T_MARK, '('));
 
 	DISPATCH(interp);
 }

@@ -192,15 +192,6 @@ builders are `lib.l4`.
 
 ---
 
-## REPL line editing
-
-Remaining:
-
-- **Inline hints and syntax highlighting** via isocline's highlight callback.
-- **Native multiline editing** — wire isocline's in-place multiline editor.
-
----
-
 ## Foreign function interface
 
 Load any `.so` / `.dylib`, look up symbols by name, declare a C signature

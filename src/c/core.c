@@ -701,6 +701,14 @@ void print_val(Interpreter *interp, Val value) {
 						  print_depth_leave();
 						  break;
 					  }
+		case T_MARK: {
+						 int bracket = (int)VAL_DATA(value);
+						 if (bracket == '(')
+							 fputs("[(", stdout);
+						 else
+							 putchar(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?');
+						 break;
+					 }
 		default: printf("<?>"); break;
 	}
 }
@@ -845,6 +853,14 @@ void print_val_compact(Interpreter *interp, Val value) {
 		case T_ADDR: printf("@%lld", (long long)VAL_DATA(value)); break;
 		case T_CONT: fputs("k", stdout); break;
 		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
+		case T_MARK: {
+						 int bracket = (int)VAL_DATA(value);
+						 if (bracket == '(')
+							 fputs("[(", stdout);
+						 else
+							 putchar(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?');
+						 break;
+					 }
 		default: fputs("?", stdout); break;
 	}
 }
@@ -3368,7 +3384,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, ">", p_setclose, 0);
 	define_primitive(interp, "[", p_array_open, 0);
 	define_primitive(interp, "]", p_array_close, 0);
-	define_primitive(interp, "[(", p_array_open, 0);
+	define_primitive(interp, "[(", p_list_open, 0);
 	define_primitive(interp, ")]", p_list_close, 0);
 	define_primitive(interp, "cons", p_cons, 0);
 	define_primitive(interp, "head-tail", p_head_tail, 0);
@@ -3576,6 +3592,109 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 
 static Interpreter *repl_interp;
 
+#include "repl_highlight_groups.h"
+
+static int lf_token_in(const char *const *set, const char *tok, long len) {
+	for (int i = 0; set[i]; i++)
+		if ((long)strlen(set[i]) == len && memcmp(set[i], tok, (size_t)len) == 0)
+			return 1;
+	return 0;
+}
+
+static int lf_is_number(const char *s, long len) {
+	long i = 0;
+	if (i < len && (s[i] == '-' || s[i] == '+'))
+		i++;
+	long digits = 0;
+	while (i < len && s[i] >= '0' && s[i] <= '9') { i++; digits++; }
+	if (i < len && s[i] == '.') {
+		i++;
+		while (i < len && s[i] >= '0' && s[i] <= '9') { i++; digits++; }
+	}
+	if (digits == 0)
+		return 0;
+	if (i < len && (s[i] == 'e' || s[i] == 'E')) {
+		i++;
+		if (i < len && (s[i] == '-' || s[i] == '+'))
+			i++;
+		long exp_digits = 0;
+		while (i < len && s[i] >= '0' && s[i] <= '9') { i++; exp_digits++; }
+		if (exp_digits == 0)
+			return 0;
+	}
+	return i == len;
+}
+
+static const char *lf_token_style(const char *s, long len) {
+	if (lf_is_number(s, len))
+		return "ansi-teal";
+	if (len == 2 && (memcmp(s, "[:", 2) == 0 || memcmp(s, ":]", 2) == 0
+			|| memcmp(s, "[(", 2) == 0 || memcmp(s, ")]", 2) == 0))
+		return "ansi-blue";
+	if (s[0] == ':' && len > 1)
+		return "ansi-olive";
+	if (s[0] == '/' && len > 1 && ((s[1] >= 'a' && s[1] <= 'z') || (s[1] >= 'A' && s[1] <= 'Z')))
+		return "ansi-olive";
+	if (s[0] >= 'A' && s[0] <= 'Z')
+		return "ansi-purple";
+	if (lf_token_in(lf_control, s, len))
+		return "ansi-maroon";
+	if (lf_token_in(lf_defining, s, len))
+		return "ansi-blue";
+	if (lf_token_in(lf_logicwords, s, len))
+		return "ansi-fuchsia";
+	if (len > 0 && len < 128) {
+		char buf[128];
+		memcpy(buf, s, (size_t)len);
+		buf[len] = 0;
+		if (find(buf))
+			return "ansi-navy";
+	}
+	return NULL;
+}
+
+static int lf_is_ws(char c) {
+	return c == ' ' || c == '\t' || c == '\r' || c == '\n';
+}
+
+static void repl_highlighter(ic_highlight_env_t *henv, const char *input, void *arg) {
+	(void)arg;
+	long n = (long)strlen(input);
+	long i = 0;
+	while (i < n) {
+		if (lf_is_ws(input[i])) { i++; continue; }
+		long start = i;
+		if (input[i] == '\\' && (i + 1 >= n || lf_is_ws(input[i + 1]))) {
+			while (i < n && input[i] != '\n') i++;
+			ic_highlight(henv, start, i - start, "ansi-silver");
+			continue;
+		}
+		if (input[i] == '(' && i + 1 < n && lf_is_ws(input[i + 1])) {
+			while (i < n && input[i] != ')') i++;
+			if (i < n) i++;
+			ic_highlight(henv, start, i - start, "ansi-silver");
+			continue;
+		}
+		if (input[i] == '"') {
+			i++;
+			while (i < n) {
+				if (input[i] == '"') {
+					if (i + 1 < n && input[i + 1] == '"') { i += 2; continue; }
+					i++;
+					break;
+				}
+				i++;
+			}
+			ic_highlight(henv, start, i - start, "ansi-green");
+			continue;
+		}
+		while (i < n && !lf_is_ws(input[i])) i++;
+		const char *style = lf_token_style(input + start, i - start);
+		if (style)
+			ic_highlight(henv, start, i - start, style);
+	}
+}
+
 static void repl_complete_word(ic_completion_env_t *cenv, const char *word) {
 	size_t word_len = strlen(word);
 	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
@@ -3635,6 +3754,12 @@ int main(int argc, char **argv) {
 		ic_set_history(".logicforth_history", -1);
 		repl_interp = interp;
 		ic_set_default_completer(repl_completer, NULL);
+		ic_set_default_highlighter(repl_highlighter, NULL);
+		ic_enable_brace_matching(true);
+		ic_set_matching_braces("[]{}");
+		ic_enable_brace_insertion(false);
+		ic_set_prompt_marker(NULL, "..");
+		ic_enable_multiline_indent(true);
 	}
 	char line[1024];
 
