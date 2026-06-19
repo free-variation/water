@@ -615,7 +615,7 @@ static int find_prompt(Interpreter *interp, int kind) {
 static void restore_local_base_below(Interpreter *interp, int mark_index) {
 	int base = interp->local_base;
 	while (base > mark_index)
-		base = (int)VAL_DATA(interp->return_stack[base - 1]);
+		base = saved_local_base(interp->return_stack[base - 1]);
 	interp->local_base = base;
 }
 
@@ -702,6 +702,7 @@ void p_resume(Interpreter *interp) {
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
 	int saved_local_base = interp->local_base;
+	int resume_base = interp->rsp;
 
 	rpush(interp, make_addr(interp->trampoline_base + 2));
 
@@ -716,7 +717,7 @@ void p_resume(Interpreter *interp) {
 
 	interp->ip = continuation->continuation.resume_ip;
 	interp->running = 1;
-	run_inner(interp);
+	run_inner(interp, resume_base);
 
 	interp->running = saved_running;
 	interp->ip = saved_ip;

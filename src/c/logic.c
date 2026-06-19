@@ -33,7 +33,12 @@ static void trail_undo_to(Interpreter *interp, int mark) {
 	}
 }
 
-int unify(Interpreter *interp, Val left_val, Val right_val) {
+static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int depth) {
+	if (depth > MAX_NESTING_DEPTH) {
+		fail(interp, "unify: structure too deeply nested (cycle?)");
+		return 0;
+	}
+
 	left_val = deref(interp, left_val);
 	right_val = deref(interp, right_val);
 
@@ -64,18 +69,18 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 		if (n == 0)
 			return 1;
 		for (int i = 0; i < n - 1; i++)
-			if (!unify(interp, left->items[i], right->items[i]))
+			if (!unify_depth(interp, left->items[i], right->items[i], depth + 1))
 				return 0;
-		__attribute__((musttail)) return unify(interp, left->items[n - 1], right->items[n - 1]);
+		__attribute__((musttail)) return unify_depth(interp, left->items[n - 1], right->items[n - 1], depth + 1);
 	}
 
 	if (VAL_TAG(left_val) == T_PAIR && VAL_TAG(right_val) == T_PAIR) {
 		Pair *left = &pairs.table[VAL_DATA(left_val)];
 		Pair *right = &pairs.table[VAL_DATA(right_val)];
 
-		if (!unify(interp, left->head, right->head))
+		if (!unify_depth(interp, left->head, right->head, depth + 1))
 			return 0;
-		__attribute__((musttail)) return unify(interp, left->tail, right->tail);
+		__attribute__((musttail)) return unify_depth(interp, left->tail, right->tail, depth + 1);
 	}
 
 	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
@@ -87,7 +92,7 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 			cell left_key = left->frame.keys[i];
 			cell right_key = right->frame.keys[j];
 			if (left_key == right_key) {
-				if (!unify(interp, left->frame.values[i], right->frame.values[j]))
+				if (!unify_depth(interp, left->frame.values[i], right->frame.values[j], depth + 1))
 					return 0;
 				i++;
 				j++;
@@ -102,11 +107,18 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 	return val_cmp(interp, left_val, right_val) == 0;
 }
 
+int unify(Interpreter *interp, Val left_val, Val right_val) {
+	return unify_depth(interp, left_val, right_val, 0);
+}
+
 void p_unify(Interpreter *interp) {
 	POP(right);
 	POP(left);
 
-	if (unify(interp, left, right))
+	int unified = unify(interp, left, right);
+	if (interp->error_flag) return;
+
+	if (unified)
 		push(interp, deref(interp, left));
 	else
 		backtrack(interp);
@@ -121,6 +133,8 @@ void p_matches(Interpreter *interp) {
 	int trail_mark = interp->bind_trail_top;
 	int matched = unify(interp, pattern, row);
 	trail_undo_to(interp, trail_mark);
+
+	if (interp->error_flag) return;
 
 	push(interp, make_bool(matched));
 

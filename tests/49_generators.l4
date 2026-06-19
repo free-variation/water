@@ -1,0 +1,35 @@
+\ Generators: gen-each drives a producer's yields through a consumer,
+\ gen-take collects the first N. The reset lives in a locals-free helper
+\ (start-generator); producers below carry their own locals to prove the
+\ continuation survives a locals-bearing frame.
+
+\ -- 1: finite producer, print each value
+[: 1 yield 2 yield 3 yield :] [: . :] gen-each cr
+
+\ -- 2: consumer transforms each value
+[: 10 yield 20 yield 30 yield :] [: 2 * . :] gen-each cr
+
+\ -- 3: single yield
+[: 7 yield :] [: . :] gen-each cr
+
+\ -- 4: zero-yield producer runs the consumer zero times, leaves a clean stack
+[: :] [: . :] gen-each .s cr
+
+\ -- 5: producer with its own local state, yielded sequentially
+: triple-from |> n | n yield n 1 + yield n 2 + yield ;
+[: 100 triple-from :] [: . :] gen-each cr
+
+\ -- 6: consumer transforms; producer with locals
+[: 1 yield 2 yield 3 yield 4 yield :] [: dup * . :] gen-each cr
+
+\ -- 7: gen-take collects the first N into an array
+[: 5 yield 6 yield 7 yield :] 2 gen-take .
+
+\ -- 8: gen-take over an unbounded locals producer
+: nats |> n | begin n yield n 1 + to n again ;
+[: 0 nats :] 5 gen-take .
+
+\ -- 9: two generators driven independently keep separate state
+: nats2 |> n | begin n yield n 1 + to n again ;
+[: 10 nats2 :] 3 gen-take .
+[: 100 nats2 :] 3 gen-take .

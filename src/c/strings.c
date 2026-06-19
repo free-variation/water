@@ -5,7 +5,9 @@
 
 static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	for (int i = 0; i < REGEX_CACHE_SIZE; i++)
-		if (interp->regex_cache[i].in_use && strcmp(interp->regex_cache[i].pattern, pattern->bytes) == 0)
+		if (interp->regex_cache[i].in_use
+				&& interp->regex_cache[i].pattern_len == pattern->len
+				&& memcmp(interp->regex_cache[i].pattern, pattern->bytes, (size_t)pattern->len) == 0)
 			return interp->regex_cache[i].re;
 
 	int errcode;
@@ -26,7 +28,9 @@ static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 		pcre2_code_free(interp->regex_cache[slot].re);
 		free(interp->regex_cache[slot].pattern);
 	}
-	interp->regex_cache[slot].pattern = strdup(pattern->bytes);
+	interp->regex_cache[slot].pattern = malloc((size_t)pattern->len);
+	memcpy(interp->regex_cache[slot].pattern, pattern->bytes, (size_t)pattern->len);
+	interp->regex_cache[slot].pattern_len = pattern->len;
 	interp->regex_cache[slot].re = re;
 	interp->regex_cache[slot].in_use = 1;
 	return re;
@@ -90,7 +94,7 @@ int string_matches(Interpreter *interp, Object *subject, Object *pattern) {
 	pcre2_code *compiled = compiled_pattern(interp, pattern);
 	if (interp->error_flag) return 0;
 	pcre2_match_data *md = pcre2_match_data_create(1, NULL);
-	int rc = pcre2_match(compiled, (PCRE2_SPTR)subject->bytes, PCRE2_ZERO_TERMINATED, 0, 0, md, NULL);
+	int rc = pcre2_match(compiled, (PCRE2_SPTR)subject->bytes, (PCRE2_SIZE)subject->len, 0, 0, md, NULL);
 	pcre2_match_data_free(md);
 	return rc >= 0;
 }

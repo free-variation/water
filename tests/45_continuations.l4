@@ -29,5 +29,17 @@ ex3 swap drop 3 swap resume . cr
 : ex4 reset 100 inner-body 1000 + ;
 ex4 .s cr
 
-\ -- 7: shift outside reset is a clean error
+\ -- 7: reset in a word with its own locals; shift unwinds past the locals scope
+: locals-reset |> seed | reset seed 7 + shifter ;
+5 locals-reset drop . cr
+
+\ -- 8: resume after unwinding past a locals scope
+: locals-resume |> seed | reset seed shifter 100 + ;
+5 locals-resume swap drop 3 swap resume . cr
+
+\ -- 9: shift inside a nested execute whose reset-owner has locals
+: locals-exec |> producer | reset producer execute ;
+[: 9 shift :] locals-exec drop . cr
+
+\ -- 10: shift outside reset is a clean error
 shift

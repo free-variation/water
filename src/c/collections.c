@@ -1132,7 +1132,8 @@ void p_update_at(Interpreter *interp) {
 			}
 			push(interp, frame->frame.values[at]);
 			execute_cfa(interp, (int)VAL_DATA(xt));
-			frame->frame.values[at] = pop(interp);
+			if (interp->error_flag) return;
+			frame_put(frame, VAL_DATA(key_or_path), pop(interp));
 			interp->dsp -= 2;
 			}, {
 			REQUIRE_NONEMPTY_PATH(path, "update-at");
@@ -1152,7 +1153,8 @@ void p_update_at(Interpreter *interp) {
 			}
 			push(interp, parent_obj->frame.values[at]);
 			execute_cfa(interp, (int)VAL_DATA(xt));
-			parent_obj->frame.values[at] = pop(interp);
+			if (interp->error_flag) return;
+			frame_put(parent_obj, leaf, pop(interp));
 			interp->dsp -= 2;
 			});
 

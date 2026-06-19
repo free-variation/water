@@ -205,6 +205,10 @@ void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_p
 	memset(&thread_alloc, 0, sizeof thread_alloc);
 }
 
+void reset_thread_alloc(void) {
+	memset(&thread_alloc, 0, sizeof thread_alloc);
+}
+
 static Object *object_new(Interpreter *interp, ObjectKind kind, int *out_slot) {
 	int slot = object_alloc_slot(interp);
 	if (slot < 0) {
@@ -390,7 +394,11 @@ void parallel_for(int n_items, int n_threads, int items_per_claim,
 		pthread_join(threads[worker], NULL);
 }
 
-int val_cmp(Interpreter *interp, Val left, Val right) {
+int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
+	if (depth > MAX_NESTING_DEPTH) {
+		fail(interp, "compare: structure too deeply nested (cycle?)");
+		return 0;
+	}
 
 	if (VAL_TAG(left) != VAL_TAG(right))
 		return (int)VAL_TAG(left) - (int)VAL_TAG(right);
@@ -428,8 +436,8 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 									  Object *right_collection = OBJECT_AT(VAL_DATA(right));
 									  int compare_length = MIN(left_collection->len, right_collection->len);
 									  for (int i = 0; i < compare_length; i++) {
-										  int element_cmp = val_cmp(interp, left_collection->items[i],
-												  right_collection->items[i]);
+										  int element_cmp = val_cmp_depth(interp, left_collection->items[i],
+												  right_collection->items[i], depth + 1);
 										  if (element_cmp)
 										  	return element_cmp;
 									  }
@@ -439,10 +447,10 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 		case T_PAIR: {
 			Pair *left_pair = &pairs.table[VAL_DATA(left)];
 			Pair *right_pair = &pairs.table[VAL_DATA(right)];
-			int head_cmp = val_cmp(interp, left_pair->head, right_pair->head);
+			int head_cmp = val_cmp_depth(interp, left_pair->head, right_pair->head, depth + 1);
 			if (head_cmp)
 				return head_cmp;
-			return val_cmp(interp, left_pair->tail, right_pair->tail);
+			return val_cmp_depth(interp, left_pair->tail, right_pair->tail, depth + 1);
 		}
 
 		case T_MATRIX: {
@@ -476,7 +484,7 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 							  	return -1;
 							  if (left_key > right_key)
 							  	return 1;
-							  int value_cmp = val_cmp(interp, left_frame->frame.values[i], right_frame->frame.values[i]);
+							  int value_cmp = val_cmp_depth(interp, left_frame->frame.values[i], right_frame->frame.values[i], depth + 1);
 							  if (value_cmp)
 							  	return value_cmp;
 						  }
@@ -490,6 +498,10 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 	}
 }
 
+int val_cmp(Interpreter *interp, Val left, Val right) {
+	return val_cmp_depth(interp, left, right, 0);
+}
+
 void print_double(double number) {
 	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
 		printf("%lld", (long long)number);
@@ -497,12 +509,6 @@ void print_double(double number) {
 		printf("%g", number);
 }
 
-#define PRINT_FIRST 10
-
-#define PRINT_LAST 3
-
-#define MAX_NESTING_DEPTH 100
-#define LIST_PRINT_MAX 100000
 
 int print_truncate = 1;
 
@@ -933,17 +939,30 @@ void dovar(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void run_inner(Interpreter *interp) {
-	int initial_rsp = interp->rsp;
+static void unwind_locals_scopes(Interpreter *interp) {
+	while (interp->local_base > interp->run_floor 
+			&& interp->rsp - 1 >= interp->local_base
+			&& interp->rsp - 1 < interp->local_base + saved_n_locals(interp->return_stack[interp->local_base - 1])) {
+		int enclosing_base = saved_local_base(interp->return_stack[interp->local_base - 1]);
+		interp->rsp = interp->local_base - 1;
+		interp->local_base = enclosing_base;
+	}
+}
+
+void run_inner(Interpreter *interp, int floor) {
+	int saved_floor = interp->run_floor;
+	interp->run_floor = floor;
 
 	while (interp->running && !interp->error_flag) {
 		if (interp->unwinding) {
-			if (interp->rsp <= initial_rsp)
+			if (interp->rsp <= floor)
 				break;
 
 			Val frame = interp->return_stack[--interp->rsp];
 			if (VAL_TAG(frame) == T_MARK && (int)VAL_DATA(frame) == interp->unwind_target) {
 				interp->unwinding = 0;
+
+				unwind_locals_scopes(interp);
 
 				if (interp->rsp > 0) {
 					Val ret = interp->return_stack[--interp->rsp];
@@ -957,6 +976,8 @@ void run_inner(Interpreter *interp) {
 		cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
 		handler(interp);
 	}
+
+	interp->run_floor = saved_floor;
 }
 
 void execute_cfa(Interpreter *interp, int cfa) {
@@ -991,7 +1012,7 @@ void execute_cfa(Interpreter *interp, int cfa) {
 	interp->ip = interp->trampoline_base;
 	interp->running = 1;
 
-	run_inner(interp);
+	run_inner(interp, interp->rsp);
 
 	interp->running = saved_running;
 	interp->ip = saved_ip;
@@ -1030,7 +1051,7 @@ void call_open(Interpreter *interp, int cfa, CallContext *ctx) {
 void call_invoke(Interpreter *interp) {
 	interp->ip = interp->trampoline_base;
 	interp->running = 1;
-	run_inner(interp);
+	run_inner(interp, interp->rsp);
 }
 
 void call_close(Interpreter *interp, CallContext *ctx) {
@@ -1212,7 +1233,10 @@ void p_exit(Interpreter *interp) {
 	while (interp->rsp > 0 && VAL_TAG(interp->return_stack[interp->rsp - 1]) == T_MARK) 
 		interp->rsp--;
 
-	if (interp->rsp <= 0) {
+
+	unwind_locals_scopes(interp);
+
+	if (interp->rsp <= interp->run_floor) {
 		interp->running = 0;
 		return;
 	}
@@ -1282,7 +1306,7 @@ void p_enter_locals(Interpreter *interp) {
 		fail(interp, "return stack overflow");
 		return;
 	}
-	interp->return_stack[interp->rsp++] = make_addr(interp->local_base);
+	interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
 	interp->rsp += n_locals;
 	interp->local_base = interp->rsp - n_locals;
 
@@ -1300,7 +1324,7 @@ void p_enter_locals_to(Interpreter *interp) {
 		return;
 	}
 
-	interp->return_stack[interp->rsp++] = make_addr(interp->local_base);
+	interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
 	int data_start = interp->dsp - n_locals;
 	for (int i = 0; i < n_locals; i++)
 		interp->return_stack[interp->rsp + i] = interp->data_stack[data_start + i];
@@ -1325,7 +1349,7 @@ void p_enter_locals_mixed(Interpreter *interp) {
 		return;
 	}
 
-	interp->return_stack[interp->rsp++] = make_addr(interp->local_base);
+	interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
 	interp->local_base = interp->rsp;
 	interp->rsp += n_locals;
 
@@ -1342,8 +1366,8 @@ void p_enter_locals_mixed(Interpreter *interp) {
 void p_leave_locals(Interpreter *interp) {
 	int n_locals = (int)vocab.dict[interp->ip++];
 	interp->rsp -= n_locals;
-	Val saved = rpop(interp);
-	interp->local_base = (int)VAL_DATA(saved);
+	Val locals_header = rpop(interp);
+	interp->local_base = saved_local_base(locals_header);
 
 	DISPATCH(interp);
 }
@@ -1354,7 +1378,7 @@ static Val *local_slot(Interpreter *interp) {
 
 	int base = interp->local_base;
 	for (int i = 0; i < depth; i++)
-		base = (int)VAL_DATA(interp->return_stack[base - 1]);
+		base = saved_local_base(interp->return_stack[base - 1]);
 
 	return &interp->return_stack[base + slot];
 }
@@ -1424,7 +1448,7 @@ UNSAFE_LOCAL_ARITH_0DEPTH(p_local_fdec_0depth, n - 1.0)
 		int slot = (int)vocab.dict[interp->ip++]; \
 		int base = interp->local_base; \
 		for (int i = 0; i < depth; i++) \
-			base = (int)VAL_DATA(interp->return_stack[base - 1]); \
+			base = saved_local_base(interp->return_stack[base - 1]); \
 		Val *p = &interp->return_stack[base + slot]; \
 		double x = pop(interp).number; \
 		p->number = x op p->number; \
@@ -2349,6 +2373,8 @@ void gc(Interpreter *interp) {
 		arena.free_slots[arena.n_free_slots++] = handle;
 	}
 
+	main_alloc.slot_next = main_alloc.slot_end = 0;
+
 	for (int slot = 0; slot < pairs.n_pairs; slot++)
 		if (!pairs.mark[slot])
 			pairs.free_list[pairs.free_count++] = slot;
@@ -2952,7 +2978,6 @@ void p_load_image(Interpreter *interp) {
 			case OBJECT_STRING:
 				obj->bytes = arena_malloc((size_t)len + 1);
 				if (len > 0 && fread(obj->bytes, 1, (size_t)len, file) != (size_t)len) {
-					arena_free(obj->bytes);
 					fail(interp, "%s: truncated string", filename);
 					goto done;
 				}
@@ -2963,7 +2988,6 @@ void p_load_image(Interpreter *interp) {
 				obj->items = arena_malloc(sizeof(Val) * (size_t)MAX(cap, 1));
 				for (int j = 0; j < len; j++) {
 					if (!r_val(file, &obj->items[j])) {
-						arena_free(obj->items);
 						fail(interp, "%s: truncated items", filename);
 						goto done;
 					}
@@ -2975,8 +2999,6 @@ void p_load_image(Interpreter *interp) {
 				for (int j = 0; j < len; j++) {
 					int64_t key;
 					if (!r_i64(file, &key) || !r_val(file, &obj->frame.values[j])) {
-						arena_free(obj->frame.keys);
-						arena_free(obj->frame.values);
 						fail(interp, "%s: truncated frame", filename);
 						goto done;
 					}
@@ -2994,7 +3016,6 @@ void p_load_image(Interpreter *interp) {
 									size_t n = (size_t)rows * (size_t)cols;
 									obj->matrix.elements = calloc(MAX(n, 1), sizeof(double));
 									if (n > 0 && fread(obj->matrix.elements, sizeof(double), n, file) != n) {
-										free(obj->matrix.elements);
 										fail(interp, "%s: truncated matrix data", filename);
 										goto done;
 									}
@@ -3011,7 +3032,6 @@ void p_load_image(Interpreter *interp) {
 											  malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 										  for (int j = 0; j < return_len; j++) {
 											  if (!r_val(file, &obj->continuation.return_slice[j])) {
-												  free(obj->continuation.return_slice);
 												  fail(interp, "%s: truncated continuation slice", filename);
 												  goto done;
 											  }
@@ -3020,14 +3040,12 @@ void p_load_image(Interpreter *interp) {
 										  if (!r_i32(file, &resume_ip)
 												  || resume_ip < DICT_RESERVED || resume_ip >= vocab.here)
 										  {
-											  free(obj->continuation.return_slice);
 											  fail(interp, "%s: continuation resume_ip out of range", filename);
 											  goto done;
 										  }
 										  obj->continuation.resume_ip = resume_ip;
 										  int32_t local_base_offset;
 										  if (!r_i32(file, &local_base_offset)) {
-											  free(obj->continuation.return_slice);
 											  fail(interp, "%s: truncated continuation local_base_offset", filename);
 											  goto done;
 										  }
@@ -3146,7 +3164,7 @@ Interpreter *worker_init(int worker_index) {
 	return interp;
 }
 
-int construct_vocabulary(Interpreter *interp) {
+int construct_vocabulary(Interpreter *interp, int load_lib) {
 	compiler.handler_registry[compiler.n_handlers++] = (void *)docol;
 	compiler.handler_registry[compiler.n_handlers++] = (void *)dovar;
 	compiler.handler_registry[compiler.n_handlers++] = (void *)dosym;
@@ -3441,19 +3459,21 @@ int construct_vocabulary(Interpreter *interp) {
 	define_primitive(interp, "stop", p_stop_process, 0);
 	define_primitive(interp, "running?", p_running, 0);
 
-	memcpy(compiler.input_buffer, lib_l4, lib_l4_len);
-	compiler.input_buffer[lib_l4_len] = 0;
-	compiler.input_buffer_len = (int)lib_l4_len;
-	compiler.input_buffer_pos = 0;
-	run_outer(interp);
+	if (load_lib) {
+		memcpy(compiler.input_buffer, lib_l4, lib_l4_len);
+		compiler.input_buffer[lib_l4_len] = 0;
+		compiler.input_buffer_len = (int)lib_l4_len;
+		compiler.input_buffer_pos = 0;
+		run_outer(interp);
 
-	compiler.input_buffer_len = 0;
-	compiler.input_buffer_pos = 0;
-	compiler.input_buffer[0] = 0;
+		compiler.input_buffer_len = 0;
+		compiler.input_buffer_pos = 0;
+		compiler.input_buffer[0] = 0;
 
-	if (interp->error_flag) {
-		printf("lib.l4 load error\n");
-		return 1;
+		if (interp->error_flag) {
+			printf("lib.l4 load error\n");
+			return 1;
+		}
 	}
 
 	/* lib.l4 is part of the rebuilt-each-process base, not user state: the
@@ -3490,12 +3510,15 @@ static void repl_completer(ic_completion_env_t *cenv, const char *prefix) {
 
 int main(int argc, char **argv) {
 	int interactive = isatty(fileno(stdin));
+	int load_lib = 1;
 	long max_objects_arg = 0;
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0)
 			interactive = 1;
 		else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batch") == 0)
 			interactive = 0;
+		else if (strcmp(argv[i], "--no-lib") == 0)
+			load_lib = 0;
 		else if (strcmp(argv[i], "--max-objects") == 0) {
 			if (i + 1 >= argc) {
 				fprintf(stderr, "logicforth: --max-objects needs a value\n");
@@ -3519,7 +3542,7 @@ int main(int argc, char **argv) {
 		arena.max_objects = (int)max_objects_arg;
 	}
 	signal(SIGPIPE, SIG_IGN);
-	if (construct_vocabulary(interp))
+	if (construct_vocabulary(interp, load_lib))
 		return 1;
 
 	if (interactive) {
