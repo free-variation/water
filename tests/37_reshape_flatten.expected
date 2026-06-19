@@ -37,3 +37,5 @@
 error: reshape: cannot reshape 6 elements (2x3) into 2x2 (4)
 error: reshape: expected a float row count; got a string
 error: reshape: expected a matrix; got a float
+error: reshape: dimensions must be non-negative; got -2x-2
+error: reshape: 100000x100000 too large (element count overflows)

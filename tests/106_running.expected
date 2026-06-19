@@ -2,3 +2,6 @@
 0 
 0 
 error: running?: expected a float pid; got a string
+error: stop: invalid pid 0 (expected a spawned process id)
+error: stop: invalid pid -1 (expected a spawned process id)
+error: wait: invalid pid 0 (expected a spawned process id)

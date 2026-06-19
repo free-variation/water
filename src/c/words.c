@@ -699,6 +699,10 @@ void p_resume(Interpreter *interp) {
 	}
 
 	Object *continuation = OBJECT_AT(VAL_DATA(continuation_val));
+	if (continuation->continuation.capture_generation != vocab.forget_generation) {
+		fail(interp, "resume: continuation outlived its defining word");
+		return;
+	}
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
 	int saved_local_base = interp->local_base;
@@ -882,9 +886,19 @@ void p_qif(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static int valid_patch_slot(Interpreter *interp, int slot, const char *op) {
+	if (slot < DICT_RESERVED || slot > vocab.here) {
+		fail(interp, "%s: no matching control-flow opener", op);
+		return 0;
+	}
+	return 1;
+}
+
 void p_then(Interpreter *interp) {
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
+	if (!valid_patch_slot(interp, slot, "then"))
+		return;
 	vocab.dict[slot] = (vocab.here - slot);
 
 	DISPATCH(interp);
@@ -893,6 +907,8 @@ void p_then(Interpreter *interp) {
 void p_else(Interpreter *interp) {
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
+	if (!valid_patch_slot(interp, slot, "else"))
+		return;
 	emit_call(interp, vocab.branch_cfa);
 	push(interp, make_float((double)vocab.here));
 	emit(interp, 0);
@@ -910,6 +926,8 @@ void p_begin(Interpreter *interp) {
 void p_until(Interpreter *interp) {
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
+	if (!valid_patch_slot(interp, back, "until"))
+		return;
 	if (!try_fuse_cmp_branch(interp))
 		emit_call(interp, vocab.zbranch_cfa);
 	emit(interp, back - vocab.here);
@@ -920,6 +938,8 @@ void p_until(Interpreter *interp) {
 void p_again(Interpreter *interp) {
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
+	if (!valid_patch_slot(interp, back, "again"))
+		return;
 	emit_call(interp, vocab.branch_cfa);
 	emit(interp, back - vocab.here);
 
@@ -940,6 +960,8 @@ void p_repeat(Interpreter *interp) {
 	POP(back_val);
 	int exit_slot = (int)VAL_NUMBER(exit_slot_val);
 	int back = (int)VAL_NUMBER(back_val);
+	if (!valid_patch_slot(interp, back, "repeat") || !valid_patch_slot(interp, exit_slot, "repeat"))
+		return;
 	emit_call(interp, vocab.branch_cfa);
 	emit(interp, back - vocab.here);
 	vocab.dict[exit_slot] = (vocab.here - exit_slot);
@@ -1379,6 +1401,7 @@ void p_forget(Interpreter *interp) {
 		return;
 	}
 	vocab.here = target_cfa - 4;
+	vocab.forget_generation++;
 	vocab.names_here = (int)WORD_NAME(target_cfa);
 	vocab.latest_cfa = (int)WORD_LINK(target_cfa);
 
@@ -1421,18 +1444,33 @@ int read_string_literal(void) {
 	return -1;
 }
 
-static void interp_append(char **buffer, int *capacity, int *length, const char *src, int n) {
+static void interp_append(Interpreter *interp, char **buffer, int *capacity, int *length, const char *src, int n) {
+	if (interp->error_flag)
+		return;
 	if (*length + n > *capacity) {
 		while (*length + n > *capacity) {
+			if (*capacity > INT_MAX / 2) {
+				free(*buffer);
+				*buffer = NULL;
+				fail(interp, "format: result too large");
+				return;
+			}
 			*capacity *= 2;
 		}
-		*buffer = realloc(*buffer, (size_t)*capacity);
+		char *grown = realloc(*buffer, (size_t)*capacity);
+		if (!grown) {
+			free(*buffer);
+			*buffer = NULL;
+			fail(interp, "format: out of memory");
+			return;
+		}
+		*buffer = grown;
 	}
 	memcpy(*buffer + *length, src, (size_t)n);
 	*length += n;
 }
 
-static void interp_render_val(Val value, char **out_buffer, int *capacity, int *out_length) {
+static void interp_render_val(Interpreter *interp, Val value, char **out_buffer, int *capacity, int *out_length) {
 	switch (VAL_TAG(value)) {
 		case T_FLOAT: {
 			char rendered[64];
@@ -1442,21 +1480,21 @@ static void interp_render_val(Val value, char **out_buffer, int *capacity, int *
 				n = snprintf(rendered, sizeof(rendered), "%lld", (long long)number);
 			else
 				n = snprintf(rendered, sizeof(rendered), "%g", number);
-			interp_append(out_buffer, capacity, out_length, rendered, n);
+			interp_append(interp, out_buffer, capacity, out_length, rendered, n);
 			break;
 		}
 		case T_SYMBOL: {
 			const char *name = &vocab.symbol_pool[VAL_DATA(value)];
-			interp_append(out_buffer, capacity, out_length, name, (int)strlen(name));
+			interp_append(interp, out_buffer, capacity, out_length, name, (int)strlen(name));
 			break;
 		}
 		case T_STRING: {
 			Object *string_obj = OBJECT_AT(VAL_DATA(value));
-			interp_append(out_buffer, capacity, out_length, string_obj->bytes, string_obj->len);
+			interp_append(interp, out_buffer, capacity, out_length, string_obj->bytes, string_obj->len);
 			break;
 		}
 		default:
-			interp_append(out_buffer, capacity, out_length, "<?>", 3);
+			interp_append(interp, out_buffer, capacity, out_length, "<?>", 3);
 			break;
 	}
 }
@@ -1465,6 +1503,10 @@ int interpolate(Interpreter *interp, int template_handle) {
 	Object *template = OBJECT_AT(template_handle);
 	int capacity = template->len + 64;
 	char *out_buffer = malloc((size_t)capacity);
+	if (!out_buffer) {
+		fail(interp, "format: out of memory");
+		return object_new_string(interp, "", 0);
+	}
 	int out_length = 0;
 	int refs[64];
 	int ref_count = 0;
@@ -1493,13 +1535,18 @@ int interpolate(Interpreter *interp, int template_handle) {
 					}
 				if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
 					refs[ref_count++] = digit_value;
-				interp_render_val(interp->data_stack[stack_index], &out_buffer, &capacity, &out_length);
+				interp_render_val(interp, interp->data_stack[stack_index], &out_buffer, &capacity, &out_length);
 				cursor = scan + 1;
 				continue;
 			}
 		}
-		interp_append(&out_buffer, &capacity, &out_length, &template->bytes[cursor], 1);
+		interp_append(interp, &out_buffer, &capacity, &out_length, &template->bytes[cursor], 1);
 		cursor++;
+	}
+
+	if (interp->error_flag) {
+		free(out_buffer);
+		return object_new_string(interp, "", 0);
 	}
 
 	if (ref_count > 0) {
@@ -1872,6 +1919,10 @@ void p_start_process(Interpreter *interp) {
 		return;
 	}
 
+	int pipe_fds[6] = { in_pipe[0], in_pipe[1], out_pipe[0], out_pipe[1], err_pipe[0], err_pipe[1] };
+	for (int i = 0; i < 6; i++)
+		fcntl(pipe_fds[i], F_SETFD, FD_CLOEXEC);
+
 	pid_t pid = fork();
 	if (pid < 0) {
 		free(argv);
@@ -1947,10 +1998,25 @@ void p_read(Interpreter *interp) {
 	int length = 0;
 	int capacity = 1 << 16;
 	char *buffer = malloc((size_t)capacity);
+	if (!buffer) {
+		fail(interp, "read: out of memory");
+		return;
+	}
 	while (1) {
 		if (length == capacity) {
+			if (capacity > INT_MAX / 2) {
+				free(buffer);
+				fail(interp, "read: stream exceeds %d bytes", INT_MAX);
+				return;
+			}
 			capacity *= 2;
-			buffer = realloc(buffer, (size_t)capacity);
+			char *grown = realloc(buffer, (size_t)capacity);
+			if (!grown) {
+				free(buffer);
+				fail(interp, "read: out of memory");
+				return;
+			}
+			buffer = grown;
 		}
 
 		ssize_t bytes_read = read(file_descriptor, buffer + length, (size_t)(capacity - length));
@@ -1990,6 +2056,10 @@ void p_close(Interpreter *interp) {
 
 void p_wait(Interpreter *interp) {
 	POP_INT(pid, "wait", "pid");
+	if (pid <= 0) {
+		fail(interp, "wait: invalid pid %d (expected a spawned process id)", pid);
+		return;
+	}
 
 	int status;
 	pid_t result;
@@ -2016,6 +2086,10 @@ void p_wait(Interpreter *interp) {
 
 void p_stop_process(Interpreter *interp) {
 	POP_INT(pid, "stop", "pid");
+	if (pid <= 0) {
+		fail(interp, "stop: invalid pid %d (expected a spawned process id)", pid);
+		return;
+	}
 
 	kill((pid_t)pid, SIGKILL);
 

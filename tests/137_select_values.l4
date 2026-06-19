@@ -6,3 +6,8 @@
 { :a { :city 1 } } /a//city select-values . cr
 { :a { :x 1 } :b { :x 2 :y 3 } } //* select-values . cr
 { } dup :self swap ! //x select-values . cr
+
+\ malformed predicate steps must error, not read past a short array (M2):
+\ an empty-array step has no op/key; a comparison op with no value misses items[2].
+{ :a 1 } [ :a [ ] ] select-values . cr
+{ :a 1 } [ [ 1 :a ] ] select-values . cr

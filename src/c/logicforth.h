@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.6.0"
+#define VERSION "0.7.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,6 +14,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <sys/wait.h>
 #include <sys/mman.h>
@@ -58,6 +59,7 @@ typedef int64_t cell;
 #define SELECT_MAX_DEPTH JSON_MAX_DEPTH
 #define MAX_WORKER_THREADS (1 << 6)
 #define MAX_NESTING_DEPTH (1 << 7)
+#define MAX_CALL_DEPTH (1 << 12)
 #define PRINT_FIRST 10
 #define PRINT_LAST 3
 #define LIST_PRINT_MAX 100000
@@ -185,6 +187,7 @@ typedef struct Object {
 			int return_len;
 			int resume_ip;
 			int local_base_offset;
+			int capture_generation;
 		} continuation;
 	};
 
@@ -303,6 +306,7 @@ typedef struct Vocabulary {
 	cell dict[VOCABULARY_INIT_SIZE];
 	int here;
 	int latest_cfa;
+	int forget_generation;
 	char name_pool[NAME_POOL];
 	int names_here;
 	char source_pool[SOURCE_POOL];
@@ -363,6 +367,7 @@ typedef struct Interpreter {
 	int n_databases;
 
 	int unwinding, unwind_target, next_mark_id;
+	int call_depth;
 
 	char error_message[256];
 } Interpreter;
@@ -836,6 +841,7 @@ void p_reset(Interpreter *interp);
 void p_fail(Interpreter *interp);
 int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index);
 void backtrack(Interpreter *interp);
+void trail_undo_to(Interpreter *interp, int mark);
 void p_shift(Interpreter *interp);
 void p_shift_with(Interpreter *interp);
 void p_resume(Interpreter *interp);

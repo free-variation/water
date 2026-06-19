@@ -18,3 +18,9 @@ p :pid @ running? .  cr          \ 0
 
 \ error: pid must be a number
 "x" running?
+
+\ M11: a non-positive pid would broadcast (kill(0)=process group, kill(-1)=everyone);
+\ a spawned child is always > 0, so stop/wait reject pid <= 0 before kill/waitpid.
+0 stop
+-1 stop
+0 wait

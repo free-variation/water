@@ -20,7 +20,7 @@
   ],
   "wordPattern": "[^\\s()\\[\\]{}\"]+",
   "indentationRules": {
-    "increaseIndentPattern": "^(?!.*(?:(?:\\s|^)(?:then|until|again|repeat)(?:\\s|$)|;\\s*$|:\\]))(?:.*(?:(?:\\s|^)(?::|if|\\?if|begin|else)(?:\\s|$)|\\[:))",
-    "decreaseIndentPattern": "^\\s*(?:;|:\\]|then|else|until|again|repeat)(?:\\s|$)"
+    "increaseIndentPattern": "^(?!.*(?:(?:\\s|^)(?:then|until|again|repeat)(?:\\s|$)|;\\s*$|:\\]))(?:.*(?:(?:\\s|^)(?::|if|\\?if|begin|else)(?:\\s|$)|\\[:|(?:\\s|^)<\\s*$))",
+    "decreaseIndentPattern": "^\\s*(?:;|:\\]|>|then|else|until|again|repeat)(?:\\s|$)"
   }
 }

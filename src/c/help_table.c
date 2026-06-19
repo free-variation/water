@@ -26,6 +26,7 @@ const HelpEntry help_entries[] = {
 	{ "0=", "( a -- bool )", "!truthy(a); any type", "2", "none", "O(1)" },
 	{ "1+", "( a -- a+1 )", "float or matrix", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
 	{ "1-", "( a -- a-1 )", "float or matrix", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
+	{ "2drop", "( a b -- )", "lib.l4: drop drop (inlined)", "6", "none", "O(1)" },
 	{ "2dup", "( a b -- a b a b )", "lib.l4: over over (inlined)", "10", "none", "O(1)" },
 	{ ":", "—", "Begin a colon definition; read the following name; enter compile mode", NULL, NULL, NULL },
 	{ ":name", "( -- sym )", "Symbol literal; interns the name at read time", NULL, NULL, NULL },
@@ -60,6 +61,7 @@ const HelpEntry help_entries[] = {
 	{ "bulk-load", "( rel rows-array -- rel )", "Load all rows at once: builds :rows (a deduped set) and each declared column's index, instead of row-by-row", "—", "sets + frame", "O(n log n)" },
 	{ "bye", "( -- )", "exit(0)", "—", "—", "—" },
 	{ "catch", "( xt -- result 0 | exc 1 )", "lib.l4: reset execute 0", "—", "cont if thrown", "O(xt)" },
+	{ "choose", "( list cont -- )", "lib.l4: run cont with each element of a cons list in turn, committing to the first for which it succeeds; fail if none do (n-way amb over a list)", "n·cont", "none", "O(n·cont)" },
 	{ "clear", "( … -- )", "Reset data stack depth to 0", "1", "none", "O(1)" },
 	{ "close", "( stream -- )", "Close the fd; closing a child's :in sends it EOF", "1 syscall", "none", "O(1)" },
 	{ "column-maxes", "( m -- m' )", "1×c of per-column maxima", "1 + r×c", "1m(1×c)", "O(r×c)" },
@@ -139,6 +141,8 @@ const HelpEntry help_entries[] = {
 	{ "ftanh", "( a -- tanh a ) ⚠", "hyperbolic tangent, in place", "1", "none", "O(1)" },
 	{ "ftruncate", "( a -- trunc a ) ⚠", "toward zero, in place", "1", "none", "O(1)" },
 	{ "gc", "( -- )", "Force a mark-sweep now", "walks stacks + dict + roots, frees unmarked", "none", "O(objects + dict)" },
+	{ "gen-each", "( producer consumer -- )", "lib.l4: run consumer on each value the producer yields until the producer falls off (a :gen-end sentinel marks exhaustion)", "—", "cont/step", "O(values · consumer)" },
+	{ "gen-take", "( producer count -- array )", "lib.l4: the first count values the producer yields, collected into an array", "—", "1a(count) + cont/step", "O(count · L)" },
 	{ "group-by", "( array col -- frame )", "Group an array of frames by their symbol-valued col into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted", "n log n", "frame + sets", "O(n log n)" },
 	{ "gt", "( a b -- bool )", "greater-than", "3 (float)", "none", "same" },
 	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)" },
@@ -247,6 +251,7 @@ const HelpEntry help_entries[] = {
 	{ "split", "( s pat -- [ piece… ] )", "Split s at each non-overlapping match of pat; the pieces are the gaps between matches, empty fields kept; no match → [ s ]", "n", "1a + pieces", "O(n)" },
 	{ "sq", "( a -- a² )", "float or matrix", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
 	{ "sqrt", "( a -- √a )", "sqrt", "2", "matrix 1m(r×c)", "same" },
+	{ "start-generator", "( producer -- value generator )", "lib.l4: reset execute — run producer to its first yield; leaves the yielded value and a resumable continuation", "L", "1o (cont)", "O(producer to first yield)" },
 	{ "start-process", "( argv -- proc )", "fork/exec argv[0] with argv as its arguments; return { :pid :in :out :err } (the three streams are T_STREAM)", "fork + 3 pipes", "1o frame + 3 streams", "O(argc)" },
 	{ "stop", "( pid -- status )", "SIGKILL the child then reap it (137 = 128+9, or its code if it had already exited)", "2 syscalls", "none", "O(1)" },
 	{ "string>symbol", "( s -- sym )", "Intern a computed string as a symbol", NULL, NULL, NULL },
@@ -298,7 +303,8 @@ const HelpEntry help_entries[] = {
 	{ "write", "( s stream -- )", "Write the string's bytes to the stream; loops over partial writes, retries EINTR", "write syscalls", "none", "O(|s|)" },
 	{ "write-file", "( s path -- )", "Create or truncate the file, then write the string's bytes", "file write", "none", "O(|s|)" },
 	{ "write-in", "( s proc -- )", "lib.l4: write the string to the child's :in stream", "write syscalls", "none", "O(|s|)" },
+	{ "yield", "( v -- resumed )", "lib.l4: shift — emit v to the driver; returns whatever the driver passes back via resume", "L", "1o (cont)", "O(L)" },
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 295;
+const int help_entry_count = 301;

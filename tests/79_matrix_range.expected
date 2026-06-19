@@ -10,3 +10,4 @@
           0          3          6          9
 error: matrix-range: step cannot be zero
 error: matrix-range: step sign does not match start/end direction
+error: matrix-range: too many elements

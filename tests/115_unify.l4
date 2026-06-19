@@ -69,4 +69,12 @@ G 5 ~ drop   G $ 5 = . cr                                              \ 1  G st
 [ 1 2 ] [ 1 9 ] ~                                    \ error (element)
 { :a 1 } { :a 2 } ~                                  \ error (clashing shared key)
 
+\ === M9: a binding committed on one line survives a later failing line.
+\         REPL error recovery rolls back only the failing line's own logic
+\         state (snapshot lvar_top/bind_trail_top + trail_undo_to), so the
+\         earlier commit is preserved rather than wiped to 0. ===
+lvar to Persist   Persist 42 ~ drop
+1 2 ~
+Persist $ 42 = . cr                                  \ 1
+
 bye

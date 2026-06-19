@@ -43,6 +43,7 @@ incremental collection.
 | `roll` | `( xₙ … x₀ n -- xₙ₋₁ … x₀ xₙ )` | Move the item n deep to the top; memmoves the n above it down | 2 + n | none | O(n) |
 | `clear` | `( … -- )` | Reset data stack depth to 0 | 1 | none | O(1) |
 | `2dup` | `( a b -- a b a b )` | lib.l4: `over over` (inlined) | 10 | none | O(1) |
+| `2drop` | `( a b -- )` | lib.l4: `drop drop` (inlined) | 6 | none | O(1) |
 | `nip` | `( a b -- b )` | lib.l4: `swap drop` (inlined) | 5 | none | O(1) |
 
 ---
@@ -484,6 +485,19 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 
 ---
 
+## Generators
+
+Coroutines over the continuation substrate: a producer `yield`s values one at a time and a driver `resume`s it for the next. All lib.l4 on `shift`/`reset`/`resume`. `L` = captured return-stack length per step.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `yield` | `( v -- resumed )` | lib.l4: `shift` — emit v to the driver; returns whatever the driver passes back via `resume` | L | `1o` (cont) | O(L) |
+| `start-generator` | `( producer -- value generator )` | lib.l4: `reset execute` — run producer to its first `yield`; leaves the yielded value and a resumable continuation | L | `1o` (cont) | O(producer to first yield) |
+| `gen-take` | `( producer count -- array )` | lib.l4: the first `count` values the producer yields, collected into an array | — | `1a(count)` + cont/step | O(count · L) |
+| `gen-each` | `( producer consumer -- )` | lib.l4: run consumer on each value the producer yields until the producer falls off (a `:gen-end` sentinel marks exhaustion) | — | cont/step | O(values · consumer) |
+
+---
+
 ## Logic
 
 Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. A capitalized identifier is a logic-var literal: at the REPL it names a persistent global logic var (created on first mention); inside a definition or quotation, declare it in `| X |` for a fresh per-call variable. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`. Lists are cons pairs (see Pairs): `[( H T )]` is the `[H|T]` head/tail pattern under `unify`. To keep a result past backtracking, snapshot it with `copy` (fresh vars) or `reify` (canonical `:_N`).
@@ -498,6 +512,7 @@ Logic variables, unification, and committed choice, built on the trail and a `PR
 | `$` | `( v -- val )` | lib.l4: `deref` (inlined) | d | none | O(d) |
 | `amb` | `( xt1 xt2 -- … )` | Run xt1; if it fails (a `unify` mismatch or `fail`), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds. | xt1 | none | O(xt1 + xt2) |
 | `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
+| `choose` | `( list cont -- )` | lib.l4: run cont with each element of a cons list in turn, committing to the first for which it succeeds; `fail` if none do (n-way `amb` over a list) | n·cont | none | O(n·cont) |
 | `matches?` | `( a b -- flag )` | Non-destructive unify test: mark the trail, unify a and b, roll the trail back, push whether they unified. Leaves no bindings and never backtracks (so it composes in straight-line code, unlike `unify`) | n | none | O(n) |
 | `symbol?` | `( v -- flag )` | True when v is a symbol | 2 | none | O(1) |
 

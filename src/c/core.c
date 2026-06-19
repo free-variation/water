@@ -350,6 +350,7 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->continuation.return_len = return_len;
 	obj->continuation.resume_ip = resume_ip;
 	obj->continuation.local_base_offset = -1;
+	obj->continuation.capture_generation = vocab.forget_generation;
 	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
 	return slot;
@@ -385,12 +386,14 @@ void parallel_for(int n_items, int n_threads, int items_per_claim,
 	};
 
 	pthread_t threads[MAX_WORKER_THREADS];
+	int created = 0;
 
 	for (int worker = 1; worker < n_threads; worker++)
-		pthread_create(&threads[worker], NULL, worker_entry, &task);
-	
+		if (pthread_create(&threads[created], NULL, worker_entry, &task) == 0)
+			created++;
+
 	worker_entry(&task);
-	for (int worker = 1; worker < n_threads; worker++)
+	for (int worker = 0; worker < created; worker++)
 		pthread_join(threads[worker], NULL);
 }
 
@@ -491,9 +494,6 @@ int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 						  return 0;
 					  }
 
-					  /* T_CONT, T_MARK, T_NONE have no ordering: they compare equal here, so
-						 a set treats all continuations/marks as a single member. Identity-
-						 based comparison is deferred to the planned logic layer. */
 		default: return 0;
 	}
 }
@@ -950,6 +950,11 @@ static void unwind_locals_scopes(Interpreter *interp) {
 }
 
 void run_inner(Interpreter *interp, int floor) {
+	if (interp->call_depth >= MAX_CALL_DEPTH) {
+		fail(interp, "call stack too deep (runaway recursion via execute/resume/amb?)");
+		return;
+	}
+	interp->call_depth++;
 	int saved_floor = interp->run_floor;
 	interp->run_floor = floor;
 
@@ -978,6 +983,7 @@ void run_inner(Interpreter *interp, int floor) {
 	}
 
 	interp->run_floor = saved_floor;
+	interp->call_depth--;
 }
 
 void execute_cfa(Interpreter *interp, int cfa) {
@@ -1974,47 +1980,62 @@ void p_reload(Interpreter *interp) {
 }
 
 void mark_value(Interpreter *interp, Val value) {
-	if (VAL_TAG(value) == T_LOGIC_VAR) {
-		mark_value(interp, interp->lvar_stack[VAL_DATA(value)]);
-		return;
-	}
+	for (;;) {
+		if (VAL_TAG(value) == T_LOGIC_VAR) {
+			value = interp->lvar_stack[VAL_DATA(value)];
+			continue;
+		}
 
-	if (VAL_TAG(value) != T_STRING &&
-			VAL_TAG(value) != T_SET &&
-			VAL_TAG(value) != T_ARRAY &&
-			VAL_TAG(value) != T_PAIR &&
-			VAL_TAG(value) != T_FRAME &&
-			VAL_TAG(value) != T_MATRIX &&
-			VAL_TAG(value) != T_CONT) return;
+		if (VAL_TAG(value) != T_STRING &&
+				VAL_TAG(value) != T_SET &&
+				VAL_TAG(value) != T_ARRAY &&
+				VAL_TAG(value) != T_PAIR &&
+				VAL_TAG(value) != T_FRAME &&
+				VAL_TAG(value) != T_MATRIX &&
+				VAL_TAG(value) != T_CONT) return;
 
-	if (VAL_TAG(value) == T_PAIR) {
-		int slot = (int)VAL_DATA(value);
-		if (pairs.mark[slot])
+		if (VAL_TAG(value) == T_PAIR) {
+			int slot = (int)VAL_DATA(value);
+			if (pairs.mark[slot])
+				return;
+			pairs.mark[slot] = 1;
+			mark_value(interp, pairs.table[slot].head);
+			value = pairs.table[slot].tail;
+			continue;
+		}
+
+		int handle = (int)VAL_DATA(value);
+		if (handle < 0 || handle >= arena.n_objects)
 			return;
-		pairs.mark[slot] = 1;
-		mark_value(interp, pairs.table[slot].head);
-		mark_value(interp, pairs.table[slot].tail);
-		return;
-	}
 
-	int handle = (int)VAL_DATA(value);
-	if (handle < 0 || handle >= arena.n_objects)
-		return;
+		Object *obj = OBJECT_AT(handle);
+		if (!obj || obj->mark_epoch == arena.current_epoch)
+			return;
+		obj->mark_epoch = arena.current_epoch;
 
-	Object *obj = OBJECT_AT(handle);
-	if (!obj || obj->mark_epoch == arena.current_epoch)
+		if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
+			if (obj->len == 0)
+				return;
+			for (int i = 0; i < obj->len - 1; i++)
+				mark_value(interp, obj->items[i]);
+			value = obj->items[obj->len - 1];
+			continue;
+		} else if (obj->kind == OBJECT_FRAME) {
+			if (obj->len == 0)
+				return;
+			for (int i = 0; i < obj->len - 1; i++)
+				mark_value(interp, obj->frame.values[i]);
+			value = obj->frame.values[obj->len - 1];
+			continue;
+		} else if (obj->kind == OBJECT_CONTINUATION) {
+			if (obj->continuation.return_len == 0)
+				return;
+			for (int i = 0; i < obj->continuation.return_len - 1; i++)
+				mark_value(interp, obj->continuation.return_slice[i]);
+			value = obj->continuation.return_slice[obj->continuation.return_len - 1];
+			continue;
+		}
 		return;
-	obj->mark_epoch = arena.current_epoch;
-
-	if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
-		for (int i = 0; i < obj->len; i++)
-			mark_value(interp, obj->items[i]);
-	} else if (obj->kind == OBJECT_FRAME) {
-		for (int i = 0; i < obj->len; i++)
-			mark_value(interp, obj->frame.values[i]);
-	} else if (obj->kind == OBJECT_CONTINUATION) {
-		for (int i = 0; i < obj->continuation.return_len; i++)
-			mark_value(interp, obj->continuation.return_slice[i]);
 	}
 }
 
@@ -2784,11 +2805,60 @@ void forget_user(Interpreter *interp) {
 	interp->dsp = 0;
 	interp->rsp = 0;
 	vocab.here = vocab.init_here;
+	vocab.forget_generation = 0;
 	vocab.latest_cfa = vocab.init_latest_cfa;
 	vocab.names_here = vocab.init_names_here;
 	vocab.source_here = vocab.init_source_here;
 	vocab.symbol_pool_here = vocab.init_symbol_pool_here;
 	rebuild_symbol_hash();
+}
+
+static int loaded_handle_ok(Interpreter *interp, Val v) {
+	int handle = (int)VAL_DATA(v);
+	ObjectKind want;
+	switch (VAL_TAG(v)) {
+		case T_STRING: want = OBJECT_STRING; break;
+		case T_SET:    want = OBJECT_SET; break;
+		case T_ARRAY:  want = OBJECT_ARRAY; break;
+		case T_FRAME:  want = OBJECT_FRAME; break;
+		case T_MATRIX: want = OBJECT_MATRIX; break;
+		case T_CONT:   want = OBJECT_CONTINUATION; break;
+		case T_PAIR:      return handle >= 0 && handle < pairs.n_pairs;
+		case T_LOGIC_VAR: return handle >= 0 && handle < interp->lvar_top;
+		case T_SYMBOL:    return handle >= 0 && handle < vocab.symbol_pool_here;
+		case T_XT:        return handle >= DICT_RESERVED && handle < vocab.here;
+		default: return 1;
+	}
+	return handle >= 0 && handle < arena.n_objects
+			&& arena.objects[handle] && arena.objects[handle]->kind == want;
+}
+
+static int validate_loaded(Interpreter *interp) {
+	for (int i = 0; i < arena.n_objects; i++) {
+		Object *obj = arena.objects[i];
+		if (!obj) continue;
+		if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
+			for (int j = 0; j < obj->len; j++)
+				if (!loaded_handle_ok(interp, obj->items[j])) return 0;
+		} else if (obj->kind == OBJECT_FRAME) {
+			for (int j = 0; j < obj->len; j++) {
+				cell key = obj->frame.keys[j];
+				if (key < 0 || key >= vocab.symbol_pool_here) return 0;
+				if (!loaded_handle_ok(interp, obj->frame.values[j])) return 0;
+			}
+		} else if (obj->kind == OBJECT_CONTINUATION) {
+			for (int j = 0; j < obj->continuation.return_len; j++)
+				if (!loaded_handle_ok(interp, obj->continuation.return_slice[j])) return 0;
+		}
+	}
+	for (int i = 0; i < pairs.n_pairs; i++)
+		if (!loaded_handle_ok(interp, pairs.table[i].head) || !loaded_handle_ok(interp, pairs.table[i].tail))
+			return 0;
+	for (int i = 0; i < interp->lvar_top; i++)
+		if (!loaded_handle_ok(interp, interp->lvar_stack[i])) return 0;
+	for (int i = 0; i < interp->dsp; i++)
+		if (!loaded_handle_ok(interp, interp->data_stack[i])) return 0;
+	return 1;
 }
 
 void p_load_image(Interpreter *interp) {
@@ -2969,6 +3039,12 @@ void p_load_image(Interpreter *interp) {
 			fail(interp, "%s: truncated object header", filename);
 			goto done;
 		}
+		
+		if (len < 0 || cap < 0 || len > cap) {
+			fail(interp, "%s: object %d: invalid len/cap %d/%d", filename, slot, len, cap);
+			goto done;
+		}
+
 		Object *obj = arena_alloc_object();
 		obj->kind = kind;
 		arena.objects[slot] = obj;
@@ -3009,6 +3085,10 @@ void p_load_image(Interpreter *interp) {
 									int32_t rows, cols;
 									if (!r_i32(file, &rows) || !r_i32(file, &cols)) {
 										fail(interp, "%s: truncated matrix header", filename);
+										goto done;
+									}
+									if (rows < 0 || cols < 0 || (int64_t)rows * cols > INT_MAX) {
+										fail(interp, "%s: bad matrix dims %dx%d", filename, rows, cols);
 										goto done;
 									}
 									obj->matrix.rows = rows;
@@ -3104,6 +3184,11 @@ void p_load_image(Interpreter *interp) {
 		}
 	}
 	interp->dsp = saved_dsp;
+
+	if (!validate_loaded(interp)) {
+		fail(interp, "%s: image contains an invalid handle", filename);
+		goto done;
+	}
 
 	vocab.latest_cfa = saved_latest_cfa;
 
@@ -3577,6 +3662,9 @@ int main(int argc, char **argv) {
 		}
 
 		interp->error_flag = 0;
+		interp->unwinding = 0;
+		int line_lvar_top = interp->lvar_top;
+		int line_bind_trail_top = interp->bind_trail_top;
 		compiler.need_more = 0;
 		run_outer(interp);
 
@@ -3587,6 +3675,11 @@ int main(int argc, char **argv) {
 			compiler.compiling = 0;
 			interp->dsp = 0;
 			interp->rsp = 0;
+			interp->side_dsp = 0;
+			interp->local_base = 0;
+			interp->n_gc_roots = 0;
+			trail_undo_to(interp, line_bind_trail_top);
+			interp->lvar_top = line_lvar_top;
 			compiler.compiling_src_start = 0;
 			compiler.n_local_scopes = 0;
 			compiler.n_local_names = 0;

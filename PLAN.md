@@ -104,13 +104,12 @@ Small high-quality PRNG (xoshiro256++ or PCG, ~30 lines).
   that pops two Vals and pushes `-1` / `0` / `1`.
 - Algorithm: introsort or libc `qsort` with a comparator thunk. ~30 lines.
 
-### stdin / env
+### Standard streams
 
 - `stdin` / `stdout` / `stderr` — the three standard streams as `T_STREAM`
   values (fds 0/1/2). Reading and writing reuse the subprocess stream
   words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
   lines, `s stdout write` emits.
-- `"VAR" env` — environment variable value as a string; empty if unset.
 
 `argv` is not included; invocation is `logicforth file.l4`, and argument
 handling lives in the shell-script wrapper layer.
@@ -158,9 +157,7 @@ server (nginx, Caddy, lighttpd, Apache). The web server owns everything HTTP —
 TLS termination, HTTP/1.1–3, request parsing, static files, timeouts, rate
 limiting, access logs, load balancing — and forwards each request over a Unix or
 TCP socket as FastCGI records. logicforth never sees a raw HTTP byte: it decodes
-the records, runs a handler, writes the response. This is the web story instead
-of an in-process HTTP server — scaling, supervision, and crash isolation come
-from the deployment.
+the records, runs a handler, writes the response.
 
 **Instrumentation needed** — less than an in-process server, since the web server
 keeps the HTTP work:
@@ -180,11 +177,10 @@ keeps the HTTP work:
 `lib.l4`, each handler wrapped in `try-catch` so a bad request can't kill the
 worker; per-request allocations are reclaimed by GC. No threads.
 
-**Scaling and robustness from the deployment, not the language.** Run N worker
-processes all accepting on the same socket (the kernel load-balances) under a
-process manager (e.g. systemd template units) that respawns on crash. One request
-per worker isolates failures; the web server retries elsewhere — the robustness
-the fork-per-connection idea was reaching for, provided by the OS.
+**Worker processes.** Run N worker processes all accepting on the same socket
+(the kernel load-balances) under a process manager (e.g. systemd template units)
+that respawns on crash. One request per worker isolates failures; the web server
+retries elsewhere.
 
 **SQLite.** Each worker opens its own connection; enable WAL once
 (`PRAGMA journal_mode=WAL`) plus a `busy_timeout`, so concurrent reads across
@@ -242,9 +238,7 @@ Building on the generator primitives:
 
 All `lib.l4` on the existing primitives — no new C.
 
-No async-I/O layer sits above this: under the FastCGI model the web server
-multiplexes connections, so coroutines here are for lazy data flow, not for
-overlapping blocking syscalls.
+Scope: lazy data flow, not async I/O.
 
 ---
 
@@ -255,8 +249,7 @@ Remaining work, in rough priority:
 - **Persistent worker-thread pool.** `parallel_for` `pthread_create`s and joins
   the workers per region. For one big region that amortizes to nothing (a single
   `pmap` over a huge domain saturates the cores); for many small regions the
-  spawn/join dominates — system time, not compute (see `bench/parallel-stress.l4`,
-  where it shows as a tall red CPU band). A pool that parks threads and
+  spawn/join dominates — system time, not compute. A pool that parks threads and
   dispatches per call fixes it. Must be co-designed with the rewind: pooled
   threads keep their `AllocContext` across regions, so teardown has to reset
   every worker's context, not just the caller's.

@@ -18,3 +18,8 @@
 [ 1 2 3 4 5 6 ] 2 3 matrix 2 2 reshape
 [ 1 2 3 4 5 6 ] 2 3 matrix "x" 6 reshape
 1 2 3 2 3 reshape
+
+\ negative dims rejected (M4) — -2 * -2 == 4 would pass an int-only equality check
+[ 1 2 3 4 ] 1 4 matrix -2 -2 reshape
+\ element count overflows int (M4)
+[ 1 2 3 4 ] 1 4 matrix 100000 100000 reshape

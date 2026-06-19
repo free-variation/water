@@ -20,6 +20,7 @@ $
 0=
 1+
 1-
+2drop
 2dup
 :
 :name
@@ -54,6 +55,7 @@ begin
 bulk-load
 bye
 catch
+choose
 clear
 close
 column-maxes
@@ -133,6 +135,8 @@ ftan
 ftanh
 ftruncate
 gc
+gen-each
+gen-take
 group-by
 gt
 has?
@@ -241,6 +245,7 @@ slice!
 split
 sq
 sqrt
+start-generator
 start-process
 stop
 string>symbol
@@ -292,4 +297,5 @@ words
 write
 write-file
 write-in
+yield
 ~

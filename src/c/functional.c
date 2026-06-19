@@ -221,6 +221,8 @@ static Interpreter *claim_worker(void) {
 	worker->lvar_top = 0;
 	worker->n_gc_roots = 0;
 	worker->unwinding = 0;
+	worker->unwind_target = 0;
+	worker->next_mark_id = 1;
 	worker->error_flag = 0;
 	return worker;
 }
@@ -259,17 +261,52 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
 	}
 }
 
-static int references_region(Val value, RegionSnapshot *snapshot) {
+static int references_region_depth(Val value, RegionSnapshot *snapshot, int depth) {
+	if (depth > MAX_NESTING_DEPTH)
+		return 1;   /* too deep / possible cycle: conservatively keep the region */
 	switch (VAL_TAG(value)) {
 		case T_STRING:
-		case T_SET:
-		case T_ARRAY:
-		case T_FRAME:
 		case T_MATRIX:
-		case T_CONT:
 			return VAL_DATA(value) >= snapshot->n_objects;
-		case T_PAIR:
-			return VAL_DATA(value) >= snapshot->n_pairs;
+		case T_SET:
+		case T_ARRAY: {
+			int handle = (int)VAL_DATA(value);
+			if (handle >= snapshot->n_objects)
+				return 1;
+			Object *obj = OBJECT_AT(handle);
+			for (int i = 0; i < obj->len; i++)
+				if (references_region_depth(obj->items[i], snapshot, depth + 1))
+					return 1;
+			return 0;
+		}
+		case T_FRAME: {
+			int handle = (int)VAL_DATA(value);
+			if (handle >= snapshot->n_objects)
+				return 1;
+			Object *obj = OBJECT_AT(handle);
+			for (int i = 0; i < obj->len; i++)
+				if (references_region_depth(obj->frame.values[i], snapshot, depth + 1))
+					return 1;
+			return 0;
+		}
+		case T_CONT: {
+			int handle = (int)VAL_DATA(value);
+			if (handle >= snapshot->n_objects)
+				return 1;
+			Object *obj = OBJECT_AT(handle);
+			for (int i = 0; i < obj->continuation.return_len; i++)
+				if (references_region_depth(obj->continuation.return_slice[i], snapshot, depth + 1))
+					return 1;
+			return 0;
+		}
+		case T_PAIR: {
+			int handle = (int)VAL_DATA(value);
+			if (handle >= snapshot->n_pairs)
+				return 1;
+			Pair *pair = &pairs.table[handle];
+			return references_region_depth(pair->head, snapshot, depth + 1)
+					|| references_region_depth(pair->tail, snapshot, depth + 1);
+		}
 		case T_LOGIC_VAR:
 			return 1;
 		default:
@@ -277,9 +314,14 @@ static int references_region(Val value, RegionSnapshot *snapshot) {
 	}
 }
 
+static int references_region(Val value, RegionSnapshot *snapshot) {
+	return references_region_depth(value, snapshot, 0);
+}
+
 static int parallel_apply(Object *domain, int worker_count,
 		int items_per_claim, void (*kernel)(int, int, void *), void *context,
 		RegionSnapshot *snapshot) {
+	CLAMP(worker_count, 1, MAX_WORKER_THREADS);
 	int object_headroom = arena.n_objects + domain->len + worker_count * SLOTS_PER_CLAIM;
 	object_headroom = MIN(object_headroom, arena.max_objects);
 	if (object_headroom > arena.objects_cap)

@@ -1,0 +1,13 @@
+\ A parallel worker that mutates a pre-region object to hold a region
+\ string violates the worker contract (workers produce new values, never
+\ mutate shared inputs) -- but the commit/rewind decision must stay sound
+\ even under that misuse. references_region walks nested contents, sees
+\ the region string stored in A[0], and keeps the region instead of
+\ rewinding it out from under the still-live handle. With a shallow check
+\ the region is rewound, the freed slot is reused by a later allocation,
+\ and A[0] aliases it -- so this would print the aliasing value, not 1234.
+variable A
+[ 0 ] to A
+1 1 range 1 1 [: drop A 0 1234 "{0}" format !i drop A :] pmap-ext drop
+[: drop 5678 "{0}" format drop :] 3000 i-times
+A 0 @i . cr

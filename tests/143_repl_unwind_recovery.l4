@@ -1,0 +1,8 @@
+\ shift-with with no resume unwinds to the reset, leaving interp->unwinding
+\ set. At the top level that unwind escapes without being cleared, and since
+\ no error_flag is set, the REPL recovery block never runs -- so every later
+\ line silently no-ops (DISPATCH / run_inner bail while unwinding). Clearing
+\ unwinding unconditionally per line breaks the wedge: the line after the
+\ trigger must still execute. Without the fix the 42 below never prints.
+reset [: 99 . cr :] shift-with
+42 . cr

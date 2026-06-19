@@ -110,7 +110,14 @@ void p_match_all(Interpreter *interp) {
 	for (int from = 0; from <= subject->len; ) {
 		if (count + 1 > capacity) {
 			capacity = capacity ? capacity * 2 : 16;
-			spans = realloc(spans, (size_t)capacity * (size_t)num_groups * 2 * sizeof(int));
+			int *grown = realloc(spans, (size_t)capacity * (size_t)num_groups * 2 * sizeof(int));
+			if (!grown) {
+				free(spans);
+				pcre2_match_data_free(md);
+				fail(interp, "match-all: out of memory");
+				return;
+			}
+			spans = grown;
 		}
 		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, &spans[count * num_groups * 2], md);
 		if (resume_from < 0) break;
@@ -218,11 +225,20 @@ void p_split(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-static void append_bytes(char **buffer, int *length, int *capacity, const char *src, int n) {
+static void append_bytes(Interpreter *interp, char **buffer, int *length, int *capacity, const char *src, int n) {
+	if (interp->error_flag)
+		return;
 	if (*length + n > *capacity) {
 		while (*length + n > *capacity)
 			*capacity = *capacity ? *capacity * 2 : 64;
-		*buffer = realloc(*buffer, (size_t)*capacity);
+		char *grown = realloc(*buffer, (size_t)*capacity);
+		if (!grown) {
+			free(*buffer);
+			*buffer = NULL;
+			fail(interp, "replace: out of memory");
+			return;
+		}
+		*buffer = grown;
 	}
 	memcpy(*buffer + *length, src, (size_t)n);
 	*length += n;
@@ -240,20 +256,20 @@ void p_replace(Interpreter *interp) {
 	int length = 0, capacity = 0;
 	int pos = 0;
 
-	for (int from = 0; from <= subject->len; ) {
+	for (int from = 0; from <= subject->len && !interp->error_flag; ) {
 		int resume_from = next_match(compiled, subject->bytes, subject->len, from, num_groups, match_offsets, md);
 		if (resume_from < 0) break;
 		int start = match_offsets[0];
 		int end = match_offsets[1];
 
-		append_bytes(&out, &length, &capacity, subject->bytes + pos, start - pos);
+		append_bytes(interp, &out, &length, &capacity, subject->bytes + pos, start - pos);
 
 		for (int i = 0; i < replacement->len; ) {
 			char c = replacement->bytes[i];
 			if (c == '\\' && i + 1 < replacement->len) {
 				char escaped = replacement->bytes[i + 1];
 				if (escaped == '\\' || escaped == '&') {
-					append_bytes(&out, &length, &capacity, &escaped, 1);
+					append_bytes(interp, &out, &length, &capacity, &escaped, 1);
 					i += 2;
 				} else if (escaped >= '0' && escaped <= '9') {
 					int group = escaped - '0';
@@ -264,19 +280,19 @@ void p_replace(Interpreter *interp) {
 						return;
 					}
 					if (match_offsets[2 * group] >= 0)
-						append_bytes(&out, &length, &capacity, subject->bytes + match_offsets[2 * group],
+						append_bytes(interp, &out, &length, &capacity, subject->bytes + match_offsets[2 * group],
 								match_offsets[2 * group + 1] - match_offsets[2 * group]);
 					i += 2;
 				} else {
-					append_bytes(&out, &length, &capacity, &c, 1);
+					append_bytes(interp, &out, &length, &capacity, &c, 1);
 					i += 1;
 				}
 			} else if (c == '&') {
-				append_bytes(&out, &length, &capacity, subject->bytes + match_offsets[0],
+				append_bytes(interp, &out, &length, &capacity, subject->bytes + match_offsets[0],
 						match_offsets[1] - match_offsets[0]);
 				i += 1;
 			} else {
-				append_bytes(&out, &length, &capacity, &c, 1);
+				append_bytes(interp, &out, &length, &capacity, &c, 1);
 				i += 1;
 			}
 		}
@@ -285,7 +301,12 @@ void p_replace(Interpreter *interp) {
 		from = resume_from;
 	}
 	pcre2_match_data_free(md);
-	append_bytes(&out, &length, &capacity, subject->bytes + pos, subject->len - pos);
+	append_bytes(interp, &out, &length, &capacity, subject->bytes + pos, subject->len - pos);
+
+	if (interp->error_flag) {
+		free(out);
+		return;
+	}
 
 	int result = object_new_string(interp, out ? out : "", length);
 	free(out);
@@ -318,7 +339,7 @@ void p_join(Interpreter *interp) {
 	PEEK_TYPE_AT(array_val, 1, "join", T_ARRAY);
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
 
-	int total = 0;
+	int64_t total = 0;
 	for (int i = 0; i < array->len; i++) {
 		if (VAL_TAG(array->items[i]) != T_STRING) {
 			fail(interp, "join: element %d is %s, expected a string", i, tag_name(VAL_TAG(array->items[i])));
@@ -327,9 +348,13 @@ void p_join(Interpreter *interp) {
 		total += OBJECT_AT(VAL_DATA(array->items[i]))->len;
 	}
 	if (array->len > 0)
-		total += separator->len * (array->len - 1);
+		total += (int64_t)separator->len * (array->len - 1);
+	if (total > INT_MAX) {
+		fail(interp, "join: result too large (%lld bytes)", (long long)total);
+		return;
+	}
 
-	int handle = object_new_string_uninit(interp, total);
+	int handle = object_new_string_uninit(interp, (int)total);
 	if (interp->error_flag) return;
 	Object *result = OBJECT_AT(handle);
 	int offset = 0;

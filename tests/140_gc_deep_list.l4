@@ -1,0 +1,6 @@
+\ Marking a long cons list must not recurse on the native C stack: a
+\ length-N list once recursed N deep down the tail and overflowed under
+\ gc. mark_value walks the tail spine iteratively, so a 1M-deep list
+\ survives a collection instead of crashing. Reverting to recursive
+\ tail-marking turns this into a SIGSEGV.
+1 1000000 range array>cons gc 42 . cr

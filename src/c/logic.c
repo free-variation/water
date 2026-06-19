@@ -26,7 +26,7 @@ static void bind_var(Interpreter *interp, int var_handle, Val value) {
 	interp->bind_trail[interp->bind_trail_top++] = var_handle;
 }
 
-static void trail_undo_to(Interpreter *interp, int mark) {
+void trail_undo_to(Interpreter *interp, int mark) {
 	while (interp->bind_trail_top > mark) {
 		int var_handle = interp->bind_trail[--interp->bind_trail_top];
 		interp->lvar_stack[var_handle] = make_tagged(T_UNBOUND, 0);

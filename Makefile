@@ -50,6 +50,11 @@ src/c/help_table.c: docs/reference.md tools/gen-help.py
 src/c/lib_embed.h: src/forth/lib.l4
 	cd src/forth && xxd -i lib.l4 > ../../src/c/lib_embed.h
 
+# Regenerate the editor syntax files from docs/reference.md (not compiled, so
+# on-demand rather than a build dependency). Run after editing reference.md.
+editors: docs/reference.md tools/gen-editors.py
+	python3 tools/gen-editors.py
+
 vendor-pcre2:
 	sh tools/vendor-pcre2.sh
 
@@ -62,4 +67,4 @@ bench:
 clean:
 	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
 
-.PHONY: clean test bench vendor-pcre2
+.PHONY: clean test bench vendor-pcre2 editors

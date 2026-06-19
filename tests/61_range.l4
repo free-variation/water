@@ -34,3 +34,6 @@
 0 "x" range
 5 range
 range
+
+\ element count overflows int (M3) — must error, not wrap to a negative len
+2000000000 -2000000000 range

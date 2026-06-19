@@ -96,7 +96,7 @@ void p_db_exec(Interpreter *interp) {
 	}
 
 	sqlite3_stmt *prepared;
-	if (sqlite3_prepare_v2(db, statement->bytes, -1, &prepared, NULL) != SQLITE_OK) {
+	if (sqlite3_prepare_v2(db, statement->bytes, statement->len, &prepared, NULL) != SQLITE_OK) {
 		fail(interp, "db-exec: %s", sqlite3_errmsg(db));
 		return;
 	}
@@ -161,7 +161,7 @@ void p_db_query(Interpreter *interp) {
 	}
 
 	sqlite3_stmt *statement;
-	if (sqlite3_prepare_v2(db, query->bytes, -1, &statement, NULL) != SQLITE_OK) {
+	if (sqlite3_prepare_v2(db, query->bytes, query->len, &statement, NULL) != SQLITE_OK) {
 		fail(interp, "db-query: %s", sqlite3_errmsg(db));
 		return;
 	}

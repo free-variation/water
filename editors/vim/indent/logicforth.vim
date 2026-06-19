@@ -6,7 +6,7 @@ endif
 let b:did_indent = 1
 
 setlocal indentexpr=GetLogicforthIndent()
-setlocal indentkeys=!^F,o,O,0=then,0=else,0=until,0=again,0=repeat,0=;,0=:]
+setlocal indentkeys=!^F,o,O,0=then,0=else,0=until,0=again,0=repeat,0=;,0=:],0=},0=],0=>
 setlocal nolisp nosmartindent
 
 if exists("*GetLogicforthIndent")
@@ -22,16 +22,13 @@ function! s:Clean(line) abort
   return l
 endfunction
 
-" Count non-overlapping matches of pat in line.
-function! s:Count(line, pat) abort
-  let n = 0
-  let i = match(a:line, a:pat)
-  while i >= 0
-    let n += 1
-    let i = match(a:line, a:pat, i + 1)
-  endwhile
-  return n
-endfunction
+" Whole-token openers/closers: defs, control flow, quotations, and the
+" structure literals (frames {}, arrays [], sets <>). Counted as standalone
+" whitespace-delimited tokens, so the > inside words (>r, side>, cons>array)
+" is never mistaken for a set close.
+let s:openers = ['[:', '{', '[', '<', 'if', '?if', 'begin', 'else', ':']
+let s:closers = [':]', '}', ']', '>', ';']
+let s:dedent  = [';', ':]', '}', ']', '>', 'then', 'else', 'until', 'again', 'repeat']
 
 function! GetLogicforthIndent() abort
   let pnum = prevnonblank(v:lnum - 1)
@@ -39,26 +36,27 @@ function! GetLogicforthIndent() abort
     return 0
   endif
 
-  let prev = s:Clean(getline(pnum))
-  let cur  = s:Clean(getline(v:lnum))
-  let sw   = shiftwidth()
+  let sw = shiftwidth()
+  let opened = 0
+  let closed = 0
+  for tok in split(s:Clean(getline(pnum)))
+    if index(s:openers, tok) >= 0
+      let opened += 1
+    elseif index(s:closers, tok) >= 0
+      let closed += 1
+    endif
+  endfor
 
-  " Structure openers on the previous line.
-  let openers = s:Count(prev, '\[:')
-        \ + s:Count(prev, '\<if\>')
-        \ + s:Count(prev, '?if')
-        \ + s:Count(prev, '\<begin\>')
-        \ + s:Count(prev, '\<else\>')
-        \ + s:Count(prev, '\%(^\|\s\):\%(\s\|$\)')
-
-  " Block enders that balance an opener on the same line (defs, quotations).
-  let closers = s:Count(prev, ':\]')
-        \ + s:Count(prev, '\%(^\|\s\);\%(\s\|$\)')
-
-  let ind = indent(pnum) + (openers - closers) * sw
+  " A net-opening previous line indents the body one level; a pure closer line
+  " does not reduce the next line further (its own dedent already returned to
+  " the opener's column).
+  let ind = indent(pnum)
+  if opened > closed
+    let ind += sw
+  endif
 
   " A line that *starts* with a closer aligns one level out, with its opener.
-  if cur =~# '^\s*\%(;\|:\]\|then\|else\|until\|again\|repeat\)\>'
+  if index(s:dedent, get(split(s:Clean(getline(v:lnum))), 0, '')) >= 0
     let ind -= sw
   endif
 

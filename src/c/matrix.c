@@ -393,6 +393,14 @@ void p_reshape(Interpreter *interp) {
 	POP_INT(new_rows, "reshape", "row count");
 	POP_MATRIX(source, "reshape");
 
+	if (new_rows < 0 || new_cols < 0) {
+		fail(interp, "reshape: dimensions must be non-negative; got %dx%d", new_rows, new_cols);
+		return;
+	}
+	if (new_cols != 0 && new_rows > INT_MAX / new_cols) {
+		fail(interp, "reshape: %dx%d too large (element count overflows)", new_rows, new_cols);
+		return;
+	}
 	int total = source->matrix.rows * source->matrix.columns;
 	if (new_rows * new_cols != total) {
 		fail(interp, "reshape: cannot reshape %d elements (%dx%d) into %dx%d (%d)",
@@ -550,7 +558,12 @@ void p_matrix_range(Interpreter *interp) {
 		return;
 	}
 
-	int n_steps = (int)((end - start) / step) + 1;
+	double raw_steps = (end - start) / step;
+	if (raw_steps > (double)INT_MAX - 1.0) {
+		fail(interp, "matrix-range: too many elements");
+		return;
+	}
+	int n_steps = (int)raw_steps + 1;
 	NEW_MATRIX(handle, matrix, 1, n_steps);
 	double *elements = matrix->matrix.elements;
 	

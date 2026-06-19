@@ -63,13 +63,13 @@ reset producer                          \ leaves (1, k) — next value via resum
 [: fail :] [: "fallback" :] amb .                  \ fallback
 ```
 
-## What's currently implemented
+## Features
 
 ### Core language
 
 - **Tagged Vals** — floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, execution tokens, dictionary addresses, continuations, logic variables, process streams, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
 - **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code — no separate bytecode.
-- **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `gt while`, `0= until`) fuses into a single compare-and-branch op.
+- **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `gt while`, `0= until`) fuses into a single compare-and-branch op. Variable-fused float words (`vf+`/`vf*`/… on one named variable, `vvf+`/`vvf*`/… on two) collapse the variable load into the float op.
 - **Program and execution state separated** — the dictionary, symbol pool, and object heap live in global structures (`Vocabulary`, `Compiler`, `Arena`) that are read-only during a run; the per-run mutable state — the three stacks, instruction pointer, locals, and GC roots — lives in an `Interpreter`, so one program can be shared across multiple execution contexts.
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
 - **Colon definitions** — `: name body ;`. The body is captured as source text for `see` and the text-form `save`.
@@ -85,7 +85,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 - **Polymorphic arithmetic** — `+`/`-`/`*`/`/` dispatch on operand tags: floats compute, strings concatenate (`+`), sets union/difference/intersection, matrices element-wise, a scalar broadcasts over a matrix, and arrays concatenate (`+`).
 - **In-place matrix ops** — `+!`/`-!`/`*!`/`/!` mutate the left matrix in place (explicit; the programmer decides). Float-only fast paths (`f+`, `f-`, `f*`, `f/`, `f^`, …) skip the type dispatch when both operands are known floats.
-- **Matrix construction** — `R C 0-matrix` (zeros), `[ ... ] R C matrix`, `V N diagonal-matrix` (N×N with V on the diagonal), `N identity-matrix`.
+- **Matrix construction** — `R C 0-matrix` (zeros), `[ ... ] R C matrix`, `V N diagonal-matrix` (N×N with V on the diagonal), `N identity-matrix`, `start end step matrix-range` (a 1×N row over a stepped range).
 - **DGEMM** — `dgemm-nn`/`tn`/`nt`/`tt` (`αAB + βC`) for all four transpose variants. The non-transposed `nn` path is ikj-ordered with `restrict` pointers for cache-friendly access; the transposed variants use a straightforward triple loop.
 - **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells.
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
@@ -97,8 +97,18 @@ reset producer                          \ leaves (1, k) — next value via resum
 
 - **Set literals** — `< 1 2 3 >`, set operations, `member?`, `size`, in-place `set-add!`/`set-remove!`, and `array>set` (sort-and-dedup an array into a set in one pass).
 - **`group-by`** — `array :col group-by` groups frames by a symbol field into a frame from each value to a set of rows (the engine behind fast indexing and aggregation).
-- **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), indexed access via `@i`.
+- **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), `range` ( from to -- arr ) for an ascending or descending integer sequence, indexed access via `@i`.
 - **Map, fold, zip-map, filter** — `map` for a single source, `reduce` for a left fold with an accumulator, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
+- **Destructuring** — `destruct` spreads a set/array/frame's elements onto the stack (a frame as alternating symbol/value). `destruct-to` ( values names -- ) takes two equal-length arrays and assigns each value to the global variable named by the corresponding symbol, creating it if absent.
+- **In-place slicing** — `slice!` copies a strided run from one array into another, `reverse-slice!` reverses a run in place, `to-slice!` stores values from the stack into a range.
+
+### Multi-core parallelism
+
+Worker threads over one shared object heap (not `fork`): a quotation runs across the collection on several cores, results joining back by handle with no copy.
+
+- **`pmap`** — `( arr xt -- arr )` parallel `map`; **`pfilter`** — `( arr pred -- arr )` parallel `filter`, order preserved; **`pmap-reduce`** — `( arr id map-xt combine-xt -- val )` fused parallel map+fold, with `combine-xt` associative and `id` its neutral element.
+- **`-ext` forms** — `pmap-ext` / `pfilter-ext` / `pmap-reduce-ext` take an explicit worker count and items-per-claim; the bare forms default to `num-cores` workers.
+- **`num-cores`** — online CPU count.
 
 ### Frames
 
@@ -115,7 +125,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 
 - **String literals** are raw (newlines allowed; `""` is the one escape → a literal `"`); **`format`** fills `{n}` placeholders from the stack — `"got {0} of {1}" format`; **polymorphic concatenation** via `+`.
 - **Regex** on PCRE2 (Perl-compatible, JIT-compiled): `match` (first match as a flat `[ whole cap… ]`), `match-all` (all matches, nested), `replace` (replace-all, with `&` / `\1`–`\9` backrefs), and the `has?` string overload (does the pattern match?). Patterns are plain `"..."` literals — PCRE2 reads `\d`, `\w`, `\n`, lookaround, `\p{...}`.
-- **Slicing / building** — `substring` (half-open byte range), `join` (concatenate an array of strings with a separator).
+- **Slicing / building** — `substring` (half-open byte range), `split` (split at each non-overlapping match of a pattern, empty fields kept), `join` (concatenate an array of strings with a separator).
 
 ### JSON
 
@@ -129,6 +139,8 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 - **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
 - **`reload`** truncates user state and re-runs every file `load`ed this session, in order.
+- **`read-file`** / **`write-file`** / **`append-file`** — read a whole file as one (byte-safe) string; write or append a string's bytes to a path.
+- **`env`** / **`env!`** — read an environment variable as a string (the none value if unset) and set one (process-wide, so `start-process` children inherit it).
 
 ### Subprocesses and pipes
 
@@ -159,6 +171,14 @@ A four-primitive substrate the rest of the control story is built on. See `docs/
 - **`shift-with`** — same capture, but runs a handler xt in the outer context after the unwind. Used for exceptions and restarts.
 - **`resume`** — re-enters a captured continuation. Multi-shot.
 
+### Generators
+
+Coroutines on the continuation primitives, in `lib.l4`:
+
+- **`yield`** — emit a value to the driver and suspend until resumed.
+- **`start-generator`** — run a producer to its first `yield`, leaving the yielded value and a resumable continuation.
+- **`gen-take`** — collect the first N values a producer yields into an array; **`gen-each`** — run a consumer on each yielded value until the producer falls off.
+
 ### Side stack
 
 A third stack for stashing arbitrary Vals without disturbing the data or return stack: **`>side`**, **`side>`**, **`side-drop`**, **`side-depth`**.
@@ -187,8 +207,8 @@ Unification and committed choice, on the trail and the continuation machinery:
 
 ### Other
 
-- **`depth`**, **`roll`** — stack-manipulation primitives.
-- **`copy`** — deep copy of a value (strings, arrays, sets, frames, matrices).
+- **`dup`**, **`drop`**, **`swap`**, **`over`**, **`rot`**, **`depth`**, **`roll`**, **`clear`** — stack-manipulation primitives.
+- **`copy`** / **`reify`** — deep copy of a value (strings, arrays, sets, frames, matrices); `reify` additionally renames unbound logic vars to canonical `:_0`/`:_1`/… for a ground, storable, comparable snapshot.
 - **`now`** — current Unix time as a float (seconds since epoch).
 - **`see`** — prints a word's source definition; **`see-compiled`** disassembles its threaded body.
 - **`man`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes). **`help name`** prints it for the named word.

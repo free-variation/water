@@ -557,7 +557,13 @@ void p_range(Interpreter *interp) {
 	POP_INT(range_from, "range", "from");
 
 	int step = range_to >= range_from ? 1 : -1;
-	int n_values = (range_to - range_from) * step + 1;
+	int64_t span = (int64_t)range_to - (int64_t)range_from;
+	int64_t count = (span < 0 ? -span : span) + 1;
+	if (count > INT_MAX) {
+		fail(interp, "range: too many elements (%lld)", (long long)count);
+		return;
+	}
+	int n_values = (int)count;
 	NEW_ARRAY(result_handle, result, n_values);
 
 	for (int i = 0; i < n_values; i++)
@@ -865,6 +871,10 @@ void p_frame_to_array(Interpreter *interp) {
 }
 
 static int predicate_holds(Interpreter *interp, Val tree_node, Object *pred) {
+	if (pred->len < 2) {
+		fail(interp, "select: malformed predicate (expected [key] or [key op value])");
+		return 0;
+	}
 	int op = (int)VAL_NUMBER(pred->items[0]);
 	Val key = pred->items[1];
 	Val subject = make_tagged(T_NONE, 0);
@@ -890,6 +900,12 @@ static int predicate_holds(Interpreter *interp, Val tree_node, Object *pred) {
 	if (!present)
 		return 0;
 
+	if (op == PRED_EQ || op == PRED_LT || op == PRED_GT) {
+		if (pred->len < 3) {
+			fail(interp, "select: malformed predicate (comparison needs a value)");
+			return 0;
+		}
+	}
 	if (op == PRED_EQ)
 		return val_cmp(interp, subject, pred->items[2]) == 0;
 	if (op == PRED_LT)

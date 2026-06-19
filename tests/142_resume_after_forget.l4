@@ -1,0 +1,13 @@
+\ A continuation captured before `forget` must not be resumable. forget
+\ rewinds the dictionary; a later redefinition then overwrites the cells
+\ resume_ip points into, and vocab.here climbs back past resume_ip -- so a
+\ range check on resume_ip cannot detect the staleness. A forget-generation
+\ stamp on the continuation, compared at resume, rejects it cleanly instead
+\ of jumping into overwritten code (which SIGSEGVs without the guard).
+variable K
+: shifter shift ;
+: ex1 reset 99 shifter 2 * ;
+ex1 swap drop to K
+forget shifter
+: a 1 + ; : b a a a ; : c b b b ; : d c c c ;
+5 K resume . cr
