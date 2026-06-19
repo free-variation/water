@@ -76,6 +76,13 @@ inline
 ( string -- proc) \ start a process from an argv string
 : run " +" split start-process ;
 
+( proc -- ) \ close a process's streams and reap it (graceful — waits for exit); the teardown mirror of start-process
+: end-process
+	dup :in @ close
+	dup :out @ close
+	dup :err @ close
+	:pid @ wait drop ;
+
 ( commands width -- results )  \ run each argv array in commands as a subprocess,
 \ at most width at a time; collect { :out :err :status } per command in input
 \ order, refilling a slot as soon as its child finishes (as-completed).

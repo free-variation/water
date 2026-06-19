@@ -97,6 +97,7 @@ const HelpEntry help_entries[] = {
 	{ "dup", "( a -- a a )", "Duplicate top", "3", "none", "O(1)" },
 	{ "else", "—", "Separate the true and false arms", NULL, NULL, NULL },
 	{ "emit", "( n -- )", "Print the character with codepoint n", "1", "none", "O(1)" },
+	{ "end-process", "( proc -- )", "lib.l4: the teardown mirror of start-process — close :in/:out/:err and wait :pid (graceful, blocks until exit)", "3 closes + wait", "none", "O(1)" },
 	{ "env", "( name -- val )", "Environment variable as a string, or the none value if unset (so set-empty \"\" and unset stay distinct)", "1", "1o on hit", "O(|val|)" },
 	{ "env!", "( name value -- )", "Set an environment variable (overwriting); process-wide, so subsequent start-process children inherit it", "1", "none", "O(1)" },
 	{ "execute", "( xt -- … )", "Call the word at xt", NULL, NULL, NULL },
@@ -307,4 +308,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 301;
+const int help_entry_count = 302;

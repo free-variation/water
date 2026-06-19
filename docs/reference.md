@@ -633,6 +633,7 @@ A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process.
 | `write-in` | `( s proc -- )` | lib.l4: write the string to the child's `:in` stream | write syscalls | none | O(\|s\|) |
 | `read-out` | `( proc -- s )` | lib.l4: read the child's `:out` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
 | `read-err` | `( proc -- s )` | lib.l4: read the child's `:err` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
+| `end-process` | `( proc -- )` | lib.l4: the teardown mirror of `start-process` — close `:in`/`:out`/`:err` and `wait` `:pid` (graceful, blocks until exit) | 3 closes + wait | none | O(1) |
 | `parallel-run` | `( commands width -- results )` | lib.l4: run each argv array in `commands` as a subprocess, at most `width` at once; collect `{ :out :err :status }` per command in input order, refilling a slot as each child finishes | fork per command + poll | `1a` + per-child frames/streams | O(critical path) |
 
 Line access is `read "\n" split`.

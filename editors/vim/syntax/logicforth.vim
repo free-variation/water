@@ -35,14 +35,14 @@ syn match   logicforthDelimiter "\[("
 syn match   logicforthDelimiter ")\]"
 syn match   logicforthDelimiter "\s\zs|\ze\s"
 
-syn keyword logicforthBuiltin |> +! -! *! /! ++ -- f++ f-- f1+ f1- f+
-syn keyword logicforthBuiltin f- f* f/ f^ 1+ 1- 0= + - * / %
-syn keyword logicforthBuiltin ^ = !i ! @i,j @i @j @ >r >side side> 2dup
-syn keyword logicforthBuiltin .s .a . 0-matrix 2drop abs acos alloc-stats and append-file array array-of
-syn keyword logicforthBuiltin array>cons array>frame array>set asin assert atan bulk-load bye catch choose clear close
-syn keyword logicforthBuiltin column-maxes column-means column-mins column-sums concat cons cons>array copy cos count-matches cr create-index
-syn keyword logicforthBuiltin db-close db-exec db-open db-query delete-at depth destruct destruct-to dgemm-nn dgemm-nt dgemm-tn dgemm-tt
-syn keyword logicforthBuiltin diagonal diagonal-matrix difference dim drop dup emit env env! exp f*+ f*-
+syn keyword logicforthBuiltin +! -! *! /! ++ -- f++ f-- f1+ f1- f+ f-
+syn keyword logicforthBuiltin f* f/ f^ 1+ 1- 0= + - * / % ^
+syn keyword logicforthBuiltin = !i ! @i,j @i @j @ >r >side side> 2dup .s
+syn keyword logicforthBuiltin .a . 0-matrix 2drop abs acos alloc-stats and append-file array array-of array>cons
+syn keyword logicforthBuiltin array>frame array>set asin assert atan bulk-load bye catch choose clear close column-maxes
+syn keyword logicforthBuiltin column-means column-mins column-sums concat cons cons>array copy cos count-matches cr create-index db-close
+syn keyword logicforthBuiltin db-exec db-open db-query delete-at depth destruct destruct-to dgemm-nn dgemm-nt dgemm-tn dgemm-tt diagonal
+syn keyword logicforthBuiltin diagonal-matrix difference dim drop dup emit end-process env env! exp f*+ f*-
 syn keyword logicforthBuiltin fabs facos fasin fatan fcos fexp filter flatten fln flog fmod fnegate
 syn keyword logicforthBuiltin format frame frame>array frame>json fround fround-down fround-up fsin fsq fsqrt ftan ftanh
 syn keyword logicforthBuiltin ftruncate gc gen-each gen-take group-by gt has? head-tail help identity-matrix inner-join intersection
@@ -58,6 +58,7 @@ syn keyword logicforthBuiltin substring sum swap symbol? take tan tanh throw to-
 syn keyword logicforthBuiltin union update-at values vf* vf+ vf- vf/ vfabs vfcos vfexp vflog vfneg
 syn keyword logicforthBuiltin vfsin vfsq vfsqrt vftan vftanh vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait
 syn keyword logicforthBuiltin words write write-file write-in yield
+syn match   logicforthBuiltin "|>"
 
 hi def link logicforthComment      Comment
 hi def link logicforthString       String

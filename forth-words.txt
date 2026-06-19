@@ -91,6 +91,7 @@ drop
 dup
 else
 emit
+end-process
 env
 env!
 execute

@@ -130,6 +130,15 @@ Extend `format`'s placeholders with optional format specifiers after a
 colon: `{0:.2f}` (precision), `{0:8}` (field width), `{0:x}` (hex) — a
 small printf-style mini-language on top of the positional `{n}` fill.
 
+### Named interpolation
+
+`format` is positional (`{0}` from the stack); a named form `{name}` referencing
+an in-scope local or global reads better — `"ls {dir}" …`. `format` runs at
+runtime where local names are gone, so this needs either a compile-time f-string
+(scan a string literal, resolve each `{name}` in scope, rewrite to the positional
+`{n}` form) under an explicit opt-in marker so raw strings and regex like `\d{3}`
+stay literal, or a runtime frame-keyed `format-with` (`{ :dir d } "{dir}" format-with`).
+
 ---
 
 ## TSV file I/O
