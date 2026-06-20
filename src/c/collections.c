@@ -357,29 +357,38 @@ static int val_cmp_qsort(void *interp, const void *left, const void *right) {
 	return val_cmp((Interpreter *)interp, *(const Val *)left, *(const Val *)right);
 }
 
-void p_array_to_set (Interpreter *interp) {
-	PEEK_TYPE_AT(array_val, 0, "array>set", T_ARRAY);
-	Object *array = OBJECT_AT(VAL_DATA(array_val));
-
+int build_set_from_values(Interpreter *interp, const Val *values, int count) {
 	int set_handle = object_new_set(interp);
-	if (interp->error_flag) return;
+	if (interp->error_flag)
+		return -1;
+
 	Object *set = OBJECT_AT(set_handle);
-
-	if (array->len > set->capacity) {
-		set->items = arena_realloc(set->items, sizeof(Val) * (size_t)array->len);
-		set->capacity = array->len;
+	if (count > set->capacity) {
+		set->items = arena_realloc(set->items, sizeof(Val) * (size_t)count);
+		set->capacity = count;
 	}
-	memcpy(set->items, array->items, sizeof(Val) * (size_t)array->len);
+	memcpy(set->items, values, sizeof(Val) * (size_t)count);
 
-	if (array->len > 0) {
-		qsort_r(set->items, (size_t)array->len, sizeof(Val), interp, val_cmp_qsort);
+	if (count > 0) {
+		qsort_r(set->items, (size_t)count, sizeof(Val), interp, val_cmp_qsort);
 
 		int unique = 1;
-		for (int i = 1; i < array->len; i++)
+		for (int i = 1; i < count; i++)
 			if (val_cmp(interp, set->items[unique - 1], set->items[i]) != 0)
 				set->items[unique++] = set->items[i];
 		set->len = unique;
 	}
+
+	return set_handle;
+}
+
+void p_array_to_set (Interpreter *interp) {
+	PEEK_TYPE_AT(array_val, 0, "array>set", T_ARRAY);
+	Object *array = OBJECT_AT(VAL_DATA(array_val));
+
+	int set_handle = build_set_from_values(interp, array->items, array->len);
+	if (interp->error_flag)
+		return;
 
 	interp->data_stack[interp->dsp - 1] = make_set(set_handle);
 
@@ -603,6 +612,48 @@ void frame_put(Object *frame, cell key, Val value) {
 	frame->frame.keys[at] = key;
 	frame->frame.values[at] = value;
 	frame->len++;
+}
+
+typedef struct {
+	cell key;
+	Val value;
+	int order;
+} FrameEntry;
+
+static int frame_entry_cmp(const void *a, const void *b) {
+	const FrameEntry *left = a;
+	const FrameEntry *right = b;
+	if (left->key != right->key)
+		return left->key < right->key ? -1 : 1;
+	return (left->order > right->order) - (left->order < right->order);
+}
+
+void frame_sort_dedup(Object *frame) {
+	if (frame->len < 2)
+		return;
+
+	FrameEntry *entries = malloc(sizeof(FrameEntry) * (size_t)frame->len);
+	for (int i = 0; i < frame->len; i++) {
+		entries[i].key = frame->frame.keys[i];
+		entries[i].value = frame->frame.values[i];
+		entries[i].order = i;
+	}
+
+	qsort(entries, (size_t)frame->len, sizeof(FrameEntry), frame_entry_cmp);
+
+	int unique = 0;
+	for (int i = 0; i < frame->len; i++) {
+		if (unique > 0 && frame->frame.keys[unique - 1] == entries[i].key)
+			frame->frame.values[unique - 1] = entries[i].value;
+		else {
+			frame->frame.keys[unique] = entries[i].key;
+			frame->frame.values[unique] = entries[i].value;
+			unique++;
+		}
+	}
+	frame->len = unique;
+
+	free(entries);
 }
 
 int frame_delete(Object *frame, cell key) {
@@ -1049,10 +1100,46 @@ void p_merge(Interpreter *interp) {
 	Object *left_frame = OBJECT_AT(VAL_DATA(left));
 
 	NEW_FRAME(result_handle, result);
-	for (int i = 0; i < left_frame->len; i++)
-		frame_put(result, left_frame->frame.keys[i], left_frame->frame.values[i]);
-	for (int i = 0; i < right_frame->len; i++)
-		frame_put(result, right_frame->frame.keys[i], right_frame->frame.values[i]);
+	frame_reserve(result, left_frame->len + right_frame->len);
+
+	int i = 0;
+	int j = 0;
+	int n = 0;
+	while (i < left_frame->len && j < right_frame->len) {
+		cell left_key = left_frame->frame.keys[i];
+		cell right_key = right_frame->frame.keys[j];
+		if (left_key < right_key) {
+			result->frame.keys[n] = left_key;
+			result->frame.values[n] = left_frame->frame.values[i];
+			i++;
+		} else if (left_key > right_key) {
+			result->frame.keys[n] = right_key;
+			result->frame.values[n] = right_frame->frame.values[j];
+			j++;
+		} else {
+			result->frame.keys[n] = right_key;
+			result->frame.values[n] = right_frame->frame.values[j];
+			i++;
+			j++;
+		}
+		n++;
+	}
+
+	while (i < left_frame->len) {
+		result->frame.keys[n] = left_frame->frame.keys[i];
+		result->frame.values[n] = left_frame->frame.values[i];
+		i++;
+		n++;
+	}
+
+	while (j < right_frame->len) {
+		result->frame.keys[n] = right_frame->frame.keys[j];
+		result->frame.values[n] = right_frame->frame.values[j];
+		j++;
+		n++;
+	}
+
+	result->len = n;
 
 	interp->dsp -= 2;
 	push(interp, make_frame(result_handle));
@@ -1077,8 +1164,13 @@ void p_frame(Interpreter *interp) {
 	}
 
 	NEW_FRAME(frame_handle, frame);
-	for (int i = 0; i < keys->len; i++)
-		frame_put(frame, VAL_DATA(keys->items[i]), values->items[i]);
+	frame_reserve(frame, keys->len);
+	for (int i = 0; i < keys->len; i++) {
+		frame->frame.keys[i] = VAL_DATA(keys->items[i]);
+		frame->frame.values[i] = values->items[i];
+	}
+	frame->len = keys->len;
+	frame_sort_dedup(frame);
 
 	interp->dsp -= 2;
 	push(interp, make_frame(frame_handle));
@@ -1690,36 +1782,7 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 		return;
 	}
 
-	Object *frame = OBJECT_AT(handle);
-	cell *keys = frame->frame.keys;
-	Val *values = frame->frame.values;
-	
-	for (int i = 1; i < frame->len; i++) {
-		cell key_symbol = keys[i];
-		Val value = values[i];
-		int j = i - 1;
-		
-		while (j >= 0 && keys[j] > key_symbol) {
-			keys[j + 1] = keys[j];
-			values[j + 1] = values[j];
-			j--;
-		}
-
-		keys[j + 1] = key_symbol;
-		values[j + 1] = value;
-	}
-
-	int unique = 0;
-	for (int i = 0; i < frame->len; i++) {
-		if (unique > 0 && keys[unique - 1] == keys[i]) {
-			values[unique - 1] = values[i];
-		} else {
-			keys[unique] = keys[i];
-			values[unique] = values[i];
-			unique++;
-		}
-	}
-	frame->len = unique;
+	frame_sort_dedup(OBJECT_AT(handle));
 
 	parser->depth--;
 }

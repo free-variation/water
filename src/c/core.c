@@ -1530,15 +1530,12 @@ void p_set(Interpreter *interp) {
 		return;
 	}
 
-	int set_handle = object_new_set(interp);
+	int first_item = interp->dsp - count;
+	int set_handle = build_set_from_values(interp, &interp->data_stack[first_item], count);
 	if (interp->error_flag)
 		return;
 
-	int first_item = interp->dsp - count;
-	for (int i = 0; i < count; i++) 
-		set_add(interp, set_handle, interp->data_stack[first_item + i]);
 	interp->dsp = first_item;
-
 	push(interp, make_set(set_handle));
 
 	DISPATCH(interp);

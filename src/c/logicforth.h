@@ -617,6 +617,7 @@ void arena_free(void *payload);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
 int object_new_string_uninit(Interpreter *interp, int length);
 int object_new_set(Interpreter *interp);
+int build_set_from_values(Interpreter *interp, const Val *values, int count);
 int object_new_array(Interpreter *interp, int num_elements);
 int object_new_frame(Interpreter *interp);
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns);
