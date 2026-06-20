@@ -66,7 +66,7 @@ run_one() {
 
 tests=("$@")
 if [ "${#tests[@]}" -eq 0 ]; then
-	tests=(image-load sqlite-load parallel-stress extreme-load select-load)
+	tests=(image-load sqlite-load parallel-stress extreme-load select-load cpu-stress-1pass)
 fi
 
 for t in "${tests[@]}"; do
