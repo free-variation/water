@@ -162,6 +162,16 @@ Embedded relational storage via the vendored SQLite amalgamation — built into 
 - **Bound parameters** — `params` is an array bound positionally to the `?` placeholders (`[ ]` for none); floats, strings, symbols, and `null` bind, so string values need no hand-escaping.
 - **`create-index`** — `( rel cols -- rel )`, `lib.l4` — index a query result on `cols`, interning those columns to symbols so the fact-db index and `query` can use them.
 
+### Foreign function interface
+
+Call C functions in any shared library at runtime via `libffi` — no per-library glue. An opaque C pointer is a `T_PTR` handle (a registry index, since a 64-bit pointer doesn't fit a Val).
+
+- **`ffi-open`** — `( path -- lib )` — `dlopen` a library and push a handle; `""` opens the running process for already-linked symbols.
+- **`ffi-function`** — `( lib symbol arg-types ret-type -- ) <name>` — resolve a symbol and define the following word `<name>` to call it. Types are symbols: `:void :int :long :double :ptr :string`. Floats marshal to/from C `int`/`long`/`double`, strings pass as `const char*` (a returned `char*` is copied back into a string), `:ptr` is an opaque handle. The call interface is prepared once; calls are ~30–100 ns.
+- **`ffi-variadic`** — `( lib symbol arg-types ret-type n-fixed -- ) <name>` — the same for a variadic C function (`ffi_prep_cif_var`); `n-fixed` leading args are fixed, the rest variadic, with the variadic types fixed per binding. Enough to drive `printf`, `curl_easy_setopt`, etc.
+- **`ffi-free`** — `( ptr -- )` — `free` a C buffer held as a `T_PTR`.
+- Example: `"/usr/lib/libcurl.4.dylib" ffi-open` then a few `ffi-function`/`ffi-variadic` declarations is enough to drive a real libcurl HTTPS request in-process, no subprocess. FFI is unsafe — a wrong signature corrupts or crashes; arg *count* is checked, types are the caller's responsibility.
+
 ### Delimited continuations
 
 A four-primitive substrate the rest of the control story is built on. See `docs/continuations.md` for the full treatment.

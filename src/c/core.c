@@ -674,6 +674,7 @@ void print_val(Interpreter *interp, Val value) {
 		case T_ADDR: printf("<addr %lld>", (long long)VAL_DATA(value)); break;
 		case T_STREAM: printf("<stream %lld>", (long long)VAL_DATA(value)); break;
 		case T_DB: printf("<database %lld>", (long long)VAL_DATA(value)); break;
+		case T_PTR: printf("<ptr %lld>", (long long)VAL_DATA(value)); break;
 		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
 		case T_MATRIX: {
 						   Object *matrix = OBJECT_AT(VAL_DATA(value));
@@ -851,6 +852,7 @@ void print_val_compact(Interpreter *interp, Val value) {
 					   break;
 				   }
 		case T_ADDR: printf("@%lld", (long long)VAL_DATA(value)); break;
+		case T_PTR: printf("<ptr %lld>", (long long)VAL_DATA(value)); break;
 		case T_CONT: fputs("k", stdout); break;
 		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
 		case T_MARK: {
@@ -1247,6 +1249,7 @@ const char *tag_name(Tag t) {
 		case T_MARK:   return "a mark";
 		case T_LOGIC_VAR: return "a logic variable";
 		case T_DB: return "a database";
+		case T_PTR: return "a pointer";
 		default:       return "an unknown value";
 	}
 }
@@ -3548,6 +3551,11 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "read", p_read, 0);
 	define_primitive(interp, "close", p_close, 0);
 	define_primitive(interp, "db-open", p_db_open, 0);
+	define_primitive(interp, "ffi-open", p_ffi_open, 0);
+	define_primitive(interp, "ffi-function", p_ffi_function, 0);
+	define_primitive(interp, "ffi-variadic", p_ffi_variadic, 0);
+	ffi_register_call_cfa(define_primitive(interp, "(ffi-call)", p_ffi_call, 4));
+	define_primitive(interp, "ffi-free", p_ffi_free, 0);
 	define_primitive(interp, "db-close", p_db_close, 0);
 	define_primitive(interp, "db-exec", p_db_exec, 0);
 	define_primitive(interp, "db-query", p_db_query, 0);

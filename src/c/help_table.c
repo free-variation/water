@@ -123,6 +123,10 @@ const HelpEntry help_entries[] = {
 	{ "fatan", "( a -- atan a ) ⚠", "inverse tangent, in place", "1", "none", "O(1)" },
 	{ "fcos", "( a -- cos a ) ⚠", "cosine (radians), in place", "1", "none", "O(1)" },
 	{ "fexp", "( a -- eᵃ ) ⚠", "in place", "1", "none", "O(1)" },
+	{ "ffi-free", "( ptr -- )", "free a C buffer held as a T_PTR (e.g. from malloc) and clear its registry slot. Not for library handles", "free", "none", "O(1)" },
+	{ "ffi-function", "( lib symbol arg-types ret-type -- ) <name>", "Resolve symbol in lib, build a libffi call interface, and define the following word <name> to call it. arg-types is an array of type symbols, ret-type a single symbol. The interface is prepared once; calls are ~30–100 ns", "dlsym + prep_cif", "1 binding", "O(argc)" },
+	{ "ffi-open", "( path -- lib )", "dlopen the library at path and push a T_PTR handle; \"\" opens the running process itself (dlopen(NULL)) for already-linked symbols. Errors if not found", "dlopen", "1 handle (not GC'd)", "O(1)" },
+	{ "ffi-variadic", "( lib symbol arg-types ret-type n-fixed -- ) <name>", "Like ffi-function for a variadic C function: n-fixed leading arguments use the fixed convention, the rest the variadic one (ffi_prep_cif_var). Variadic argument types are fixed per binding, so declare one word per type combination (e.g. a :string setopt and a :long setopt)", "dlsym + prep_cif_var", "1 binding", "O(argc)" },
 	{ "filter", "( arr/set xt -- arr )", "Keep elements where xt is truthy", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt)" },
 	{ "flatten", "( m -- m' )", "lib.l4: 1×(r·c) reshape", "r×c", "1m(1×r·c)", "O(r×c)" },
 	{ "fln", "( a -- ln a ) ⚠", "natural log, in place", "1", "none", "O(1)" },
@@ -311,4 +315,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 305;
+const int help_entry_count = 309;

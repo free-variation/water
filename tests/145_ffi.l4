@@ -1,0 +1,21 @@
+\ FFI through libffi (libcurl): fixed-arity calls and a variadic call.
+"hello from ffi variadic" "/tmp/lf_ffi_test.txt" write-file
+"/usr/lib/libcurl.4.dylib" ffi-open to curl
+
+\ fixed: curl_easy_strerror ( int -- string )
+curl "curl_easy_strerror" [ :int ] :string ffi-function curl-strerror
+0 curl-strerror . cr
+6 curl-strerror . cr
+28 curl-strerror . cr
+
+\ variadic: curl_easy_setopt(handle, CURLOPT_URL, str) via ffi_prep_cif_var,
+\ then perform a file:// fetch — the body proves the variadic string arg landed.
+curl "curl_easy_init"    [ ]                    :ptr  ffi-function curl-init
+curl "curl_easy_setopt"  [ :ptr :int :string ]  :int  2 ffi-variadic curl-setopt-str
+curl "curl_easy_perform" [ :ptr ]               :int  ffi-function curl-perform
+curl "curl_easy_cleanup" [ :ptr ]               :void ffi-function curl-cleanup
+curl-init to h
+h 10002 "file:///tmp/lf_ffi_test.txt" curl-setopt-str drop
+h curl-perform to code
+cr code . cr
+h curl-cleanup

@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.7.0"
+#define VERSION "0.8.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,6 +20,7 @@
 #include <sys/mman.h>
 #include <stdatomic.h>
 #include <pthread.h>
+#include <ffi/ffi.h>
 
 typedef int64_t cell;
 
@@ -81,7 +82,8 @@ typedef enum {
 	T_STREAM,
 	T_LOGIC_VAR,
 	T_UNBOUND,
-	T_DB
+	T_DB,
+	T_PTR
 } Tag;
 
 typedef union {
@@ -146,6 +148,7 @@ static inline Val make_xt(int cfa) { return make_tagged(T_XT, cfa); }
 static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_index); }
 static inline Val make_stream(int file_descriptor) {return make_tagged(T_STREAM, file_descriptor); }
 static inline Val make_db(int handle) { return make_tagged(T_DB, handle); }
+static inline Val make_pointer(int handle) { return make_tagged(T_PTR, handle); }
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_logic_var(int handle) { return make_tagged(T_LOGIC_VAR, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
@@ -1005,6 +1008,12 @@ void p_read(Interpreter *interp);
 void p_close(Interpreter *interp);
 void p_db_open(Interpreter *interp);
 void p_db_close(Interpreter *interp);
+void p_ffi_open(Interpreter *interp);
+void p_ffi_function(Interpreter *interp);
+void p_ffi_variadic(Interpreter *interp);
+void p_ffi_call(Interpreter *interp);
+void p_ffi_free(Interpreter *interp);
+int ffi_register_call_cfa(int cfa);
 void p_db_exec(Interpreter *interp);
 void p_db_query(Interpreter *interp);
 void p_wait(Interpreter *interp);

@@ -1493,6 +1493,12 @@ static void interp_render_val(Interpreter *interp, Val value, char **out_buffer,
 			interp_append(interp, out_buffer, capacity, out_length, string_obj->bytes, string_obj->len);
 			break;
 		}
+		case T_PTR: {
+			char rendered[32];
+			int n = snprintf(rendered, sizeof(rendered), "<ptr %lld>", (long long)VAL_DATA(value));
+			interp_append(interp, out_buffer, capacity, out_length, rendered, n);
+			break;
+		}
 		default:
 			interp_append(interp, out_buffer, capacity, out_length, "<?>", 3);
 			break;
