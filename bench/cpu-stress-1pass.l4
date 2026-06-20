@@ -1,0 +1,38 @@
+\ CPU stress, single pass — one giant pmap over a large domain, so there are no
+\ per-round serial gaps: every core stays pinned for the whole region and the
+\ load graph is a solid block until the very end. Bump DOMAIN for a longer
+\ viewing window.
+\
+\ Run:  ./logicforth -b < bench/cpu-stress-1pass.l4
+
+variable ITERS
+variable WORKERS
+variable DOMAIN
+variable SEEDS
+variable T0
+variable ELAPSED
+variable CHECK
+
+20000000 to ITERS
+num-cores to WORKERS
+num-cores 128 * to DOMAIN
+1 DOMAIN range to SEEDS
+
+( seed -- result )  \ a long, allocation-free float mill (2 FLOPs/iter)
+: crunch
+	| acc >seed |
+	seed 1.0 + to acc
+	[: acc seed + 0.5 * to acc :] ITERS times
+	acc ;
+
+WORKERS "cpu-stress-1pass: one pmap over all cores ({0} workers)" format . cr
+DOMAIN ITERS "  {1} items x {0} float-iters in a single region" format . cr
+cr
+
+now to T0
+SEEDS WORKERS 1 [: crunch :] pmap-ext 0.0 [: + :] reduce to CHECK
+now T0 - to ELAPSED
+
+ELAPSED "elapsed   : {0} s" format . cr
+DOMAIN ITERS * 2.0 * ELAPSED / 1000000000.0 / "aggregate : {0} GFLOP/s (interpreted scalar)" format . cr
+CHECK "checksum  : {0}" format . cr
