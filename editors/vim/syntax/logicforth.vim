@@ -16,7 +16,7 @@ syn region  logicforthString start=+"+ skip=+""+ end=+"+ contains=@Spell
 syn match   logicforthNumber "\<-\=\d\+\%(\.\d\+\)\=\%([eE][-+]\=\d\+\)\=\>"
 syn match   logicforthSymbol  ":\k\+"
 syn match   logicforthPath    "/\a\k*"
-syn match   logicforthLogicVar "\<\u\w*\>"
+syn match   logicforthLogicVar "\<\u\k*\>"
 
 syn keyword logicforthDefine : ; variable symbol to forget inline ' lookup immediate
 syn match   logicforthDefine "\[:"

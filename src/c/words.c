@@ -1908,6 +1908,43 @@ void p_append_file(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static char *resolve_program_path(const char *name) {
+	if (strchr(name, '/')) {
+		size_t length = strlen(name);
+		char *copy = malloc(length + 1);
+		memcpy(copy, name, length + 1);
+		return copy;
+	}
+
+	const char *path = getenv("PATH");
+	if (!path || !*path)
+		path = "/usr/bin:/bin";
+
+	size_t name_len = strlen(name);
+	for (const char *segment = path; ; ) {
+		const char *colon = strchr(segment, ':');
+		const char *dir = segment;
+		size_t dir_len = colon ? (size_t)(colon - segment) : strlen(segment);
+		if (dir_len == 0) {
+			dir = ".";
+			dir_len = 1;
+		}
+
+		char *candidate = malloc(dir_len + 1 + name_len + 1);
+		memcpy(candidate, dir, dir_len);
+		candidate[dir_len] = '/';
+		memcpy(candidate + dir_len + 1, name, name_len + 1);
+
+		if (access(candidate, X_OK) == 0)
+			return candidate;
+		free(candidate);
+
+		if (!colon)
+			return NULL;
+		segment = colon + 1;
+	}
+}
+
 void p_start_process(Interpreter *interp) {
 	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
 	Object *argv_array = OBJECT_AT(VAL_DATA(argv_val));
@@ -1929,11 +1966,20 @@ void p_start_process(Interpreter *interp) {
 	}
 	argv[argc] = NULL;
 
+	char *program_path = resolve_program_path(argv[0]);
+	if (!program_path) {
+		const char *name = argv[0];
+		free(argv);
+		fail(interp, "start-process: %s: command not found", name);
+		return;
+	}
+
 	int in_pipe[2];
 	int out_pipe[2];
 	int err_pipe[2];
 	if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0 || pipe(err_pipe) < 0) {
 		free(argv);
+		free(program_path);
 		fail(interp, "start-process: pipe failed");
 		return;
 	}
@@ -1945,6 +1991,7 @@ void p_start_process(Interpreter *interp) {
 	pid_t pid = fork();
 	if (pid < 0) {
 		free(argv);
+		free(program_path);
 		fail(interp, "start-process: fork failed");
 		return;
 	}
@@ -1959,7 +2006,7 @@ void p_start_process(Interpreter *interp) {
 		close(out_pipe[1]);
 		close(err_pipe[0]);
 		close(err_pipe[1]);
-		execvp(argv[0], argv);
+		execv(program_path, argv);
 		_exit(127);
 	}
 
@@ -1967,6 +2014,7 @@ void p_start_process(Interpreter *interp) {
 	close(out_pipe[1]);
 	close(err_pipe[1]);
 	free(argv);
+	free(program_path);
 
 	NEW_FRAME(proc_handle, proc);
 	frame_put(proc, intern_symbol(interp, "pid"), make_float((double)pid));

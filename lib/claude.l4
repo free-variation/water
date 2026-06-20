@@ -1,0 +1,92 @@
+"claude-opus-4-8" to claude-model
+65536 to claude-max-tokens
+
+: user-message ( content -- message ) |> content | { :role "user" :content content } ;
+
+: assistant-message ( content -- message )  |> content | { :role "assistant" :content content } ;
+
+: request-body ( prompt -- json )
+  |> messages |
+  {	:model claude-model
+	:max_tokens claude-max-tokens
+	:messages messages
+  }
+  frame>json ;
+
+\ Build the curl argv array that POSTs one prompt to the API.
+: build-curl-argv ( prompt -- argv )
+  |> body |
+  [ "curl" "-s" "https://api.anthropic.com/v1/messages"
+    "-H" "x-api-key: " "ANTHROPIC_API_KEY" env +
+    "-H" "anthropic-version: 2023-06-01"
+    "-H" "content-type: application/json"
+    "-d" body ] ;
+
+: call-once ( messages -- result )
+	|> messages |
+	messages request-body build-curl-argv run-result ;
+
+: response-ok? ( result -- bool )
+	dup :status @ 0 = if
+		:out @ json>frame :content has?
+	else
+		drop 0
+	then ;
+
+
+\ Pull the response text out of one { :out :err :status } result.
+: extract-response ( result -- answer )
+  dup :status @ 0 = not if
+    :err @
+  else
+    :out @ json>frame
+    dup :content has? if
+      :content @ 0 @i :text @
+    else
+      frame>json
+    then
+  then ;
+
+: try-call ( messages -- answer )
+	call-once dup response-ok? if
+		extract-response
+	else
+		extract-response throw
+	then ;
+
+: elicit-with-retries ( messages -- answer )
+	| attempts >messages |
+	3 to attempts
+	begin
+		[: messages try-call :] catch
+		0 = if exit then
+		-- attempts
+		attempts 1 lt if throw then
+		drop
+	again ;
+
+( prompts -- answer ) \ prompts: array of user-message strings
+: run-cot 
+	| history answer prompt i n-prompts >prompts |
+	[ ] to history
+	prompts size to n-prompts
+	0 to i
+
+	begin i n-prompts lt while
+		prompts i @i to prompt
+		history [ prompt user-message ] + to history
+		history elicit-with-retries to answer
+		history [ answer assistant-message ] + to history
+		++ i
+	repeat
+	answer ;
+
+( conversations -- answers ) \ conversations: array of prompt-arrays; run in parallel, failed ones yield null 
+: run-cots
+	[: 
+		[: run-cot :] 
+		[: drop null :] 
+		try-catch 
+	:] 
+	pmap ;
+

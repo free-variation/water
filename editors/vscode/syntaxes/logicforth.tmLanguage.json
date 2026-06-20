@@ -114,7 +114,7 @@
     },
     "logicvar": {
       "name": "variable.other.logicvar.logicforth",
-      "match": "(?<=^|\\s)[A-Z][A-Za-z0-9_]*(?=\\s|$)"
+      "match": "(?<=^|\\s)[A-Z]\\S*(?=\\s|$)"
     },
     "delimiters": {
       "name": "punctuation.section.logicforth",

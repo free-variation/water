@@ -116,7 +116,7 @@ def emit_vim(auto):
     L.append('syn match   logicforthNumber "\\<-\\=\\d\\+\\%(\\.\\d\\+\\)\\=\\%([eE][-+]\\=\\d\\+\\)\\=\\>"')
     L.append('syn match   logicforthSymbol  ":\\k\\+"')
     L.append('syn match   logicforthPath    "/\\a\\k*"')
-    L.append('syn match   logicforthLogicVar "\\<\\u\\w*\\>"')
+    L.append('syn match   logicforthLogicVar "\\<\\u\\k*\\>"')
     L.append("")
 
     def kw(group, items):
@@ -210,7 +210,7 @@ def emit_vscode(auto):
             "symbol": {"name": "constant.other.symbol.logicforth", "match": r"(?<=^|\s):\S+"},
             "path": {"name": "constant.other.path.logicforth", "match": r"(?<=^|\s)/[A-Za-z]\S*"},
             "logicvar": {"name": "variable.other.logicvar.logicforth",
-                         "match": r"(?<=^|\s)[A-Z][A-Za-z0-9_]*(?=\s|$)"},
+                         "match": r"(?<=^|\s)[A-Z]\S*(?=\s|$)"},
             "delimiters": {"name": "punctuation.section.logicforth", "match": r"\[\(|\)\]|[\[\]{}<>]"},
         },
     }

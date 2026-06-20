@@ -83,6 +83,16 @@ inline
 	dup :err @ close
 	:pid @ wait drop ;
 
+( argv -- result ) \ run one argv array to completion; return { :out :err :status }; closes all streams and reaps (the singular of parallel-run)
+: run-result
+	| proc result >argv |
+	argv start-process to proc
+	{ :out proc read-out :err proc read-err :status proc :pid @ wait } to result
+	proc :in @ close
+	proc :out @ close
+	proc :err @ close
+	result ;
+
 ( commands width -- results )  \ run each argv array in commands as a subprocess,
 \ at most width at a time; collect { :out :err :status } per command in input
 \ order, refilling a slot as soon as its child finishes (as-completed).

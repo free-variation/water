@@ -6,59 +6,109 @@ endif
 let b:did_indent = 1
 
 setlocal indentexpr=GetLogicforthIndent()
-setlocal indentkeys=!^F,o,O,0=then,0=else,0=until,0=again,0=repeat,0=;,0=:],0=},0=],0=>
+setlocal indentkeys=!^F,o,O,0=then,0=else,0=until,0=again,0=repeat,0=;,0=:],0=},0=],0=>,0=)]
 setlocal nolisp nosmartindent
 
 if exists("*GetLogicforthIndent")
   finish
 endif
 
-" Strip strings and comments so their contents aren't counted as structure.
-function! s:Clean(line) abort
+" Blank out string and comment spans, preserving column positions, so their
+" contents are neither tokenised as structure nor shift the columns we align to.
+function! s:Blank(line) abort
   let l = a:line
-  let l = substitute(l, '"\%([^"]\|""\)*"', '', 'g')
-  let l = substitute(l, '\%(^\|\s\)\zs\\\%(\s.*\)\=$', '', '')
-  let l = substitute(l, '(\s.\{-})', '', 'g')
+  let l = substitute(l, '"\%([^"]\|""\)*"', '\=repeat(" ", len(submatch(0)))', 'g')
+  let l = substitute(l, '\%(^\|\s\)\zs\\\%(\s.*\)\=$', '\=repeat(" ", len(submatch(0)))', '')
+  let l = substitute(l, '\%(\[\)\@<!(\s.\{-})', '\=repeat(" ", len(submatch(0)))', 'g')
   return l
 endfunction
 
-" Whole-token openers/closers: defs, control flow, quotations, and the
-" structure literals (frames {}, arrays [], sets <>). Counted as standalone
-" whitespace-delimited tokens, so the > inside words (>r, side>, cons>array)
-" is never mistaken for a set close.
-let s:openers = ['[:', '{', '[', '<', 'if', '?if', 'begin', 'else', ':']
-let s:closers = [':]', '}', ']', '>', ';']
-let s:dedent  = [';', ':]', '}', ']', '>', 'then', 'else', 'until', 'again', 'repeat']
+" Whitespace-delimited tokens with their 0-based *display* columns (tabs
+" expanded per 'tabstop'), so alignment matches the screen even with tab
+" indentation, and so the > inside words (>r, frame>json) is never mistaken
+" for a set close.
+function! s:Tokens(line) abort
+  let toks = []
+  let i = 0
+  let n = len(a:line)
+  let vcol = 0
+  let ts = &tabstop
+  while i < n
+    let ch = a:line[i]
+    if ch == "\t"
+      let vcol += ts - (vcol % ts)
+      let i += 1
+      continue
+    elseif ch == ' '
+      let vcol += 1
+      let i += 1
+      continue
+    endif
+    let start = i
+    let startv = vcol
+    while i < n && a:line[i] != ' ' && a:line[i] != "\t"
+      let vcol += 1
+      let i += 1
+    endwhile
+    call add(toks, [a:line[start : i - 1], startv])
+  endwhile
+  return toks
+endfunction
+
+" Structure literals align continuation lines to the column of the first token
+" after the opener; control-flow and definitions indent their body one level.
+let s:bopen  = {'{': 1, '[': 1, '<': 1, '[:': 1, '[(': 1}
+let s:bclose = {'}': 1, ']': 1, '>': 1, ':]': 1, ')]': 1}
+let s:cfopen = {'if': 1, '?if': 1, 'begin': 1}
+let s:cfclose = {'then': 1, 'until': 1, 'again': 1, 'repeat': 1, ';': 1}
 
 function! GetLogicforthIndent() abort
-  let pnum = prevnonblank(v:lnum - 1)
-  if pnum == 0
+  let sw = shiftwidth()
+  let stack = []
+
+  for lnum in range(1, v:lnum - 1)
+    let toks = s:Tokens(s:Blank(getline(lnum)))
+    let base = indent(lnum)
+    let ti = 0
+    let ntoks = len(toks)
+    while ti < ntoks
+      let tok = toks[ti][0]
+      let col = toks[ti][1]
+      if has_key(s:bopen, tok)
+        let bodycol = (ti + 1 < ntoks) ? toks[ti + 1][1] : col + sw
+        call add(stack, [col, bodycol])
+      elseif tok ==# ':'
+        " Forth definitions do not nest: a new : starts fresh at top level,
+        " so an unterminated definition above cannot indent everything below.
+        let stack = [[base, base + sw]]
+      elseif has_key(s:cfopen, tok)
+        call add(stack, [base, base + sw])
+      elseif tok ==# 'else'
+        if !empty(stack)
+          let top = remove(stack, -1)
+          call add(stack, [top[0], top[0] + sw])
+        endif
+      elseif has_key(s:bclose, tok) || has_key(s:cfclose, tok)
+        if !empty(stack)
+          call remove(stack, -1)
+        endif
+      endif
+      let ti += 1
+    endwhile
+  endfor
+
+  if empty(stack)
     return 0
   endif
 
-  let sw = shiftwidth()
-  let opened = 0
-  let closed = 0
-  for tok in split(s:Clean(getline(pnum)))
-    if index(s:openers, tok) >= 0
-      let opened += 1
-    elseif index(s:closers, tok) >= 0
-      let closed += 1
-    endif
-  endfor
-
-  " A net-opening previous line indents the body one level; a pure closer line
-  " does not reduce the next line further (its own dedent already returned to
-  " the opener's column).
-  let ind = indent(pnum)
-  if opened > closed
-    let ind += sw
+  let cur = s:Tokens(s:Blank(getline(v:lnum)))
+  let first = empty(cur) ? '' : cur[0][0]
+  if first ==# ':'
+    return 0
   endif
-
-  " A line that *starts* with a closer aligns one level out, with its opener.
-  if index(s:dedent, get(split(s:Clean(getline(v:lnum))), 0, '')) >= 0
-    let ind -= sw
+  let top = stack[-1]
+  if has_key(s:bclose, first) || has_key(s:cfclose, first) || first ==# 'else'
+    return top[0]
   endif
-
-  return ind > 0 ? ind : 0
+  return top[1]
 endfunction
