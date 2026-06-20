@@ -66,6 +66,12 @@ locale case-folding outside ASCII.
 
 ## Core language additions
 
+### `constant`
+
+A defining word for immutable named values: `42 constant answer` binds a
+read-only word `answer` that pushes `42`. Value-then-defword-then-name shape
+(like `to`), name read via `next_token()`. Reassignment via `to` errors.
+
 ### Path queries — follow-ups
 
 Remaining:
@@ -201,23 +207,21 @@ builders are `lib.l4`.
 
 ---
 
-## Foreign function interface
+## Foreign function interface — remaining
 
-Load any `.so` / `.dylib`, look up symbols by name, declare a C signature
-at the Forth level, and call — nothing about the target known at
-logicforth's compile time. Makes LAPACK, full PCRE, libcurl, libgit2
-bindable without per-library C.
+Core implemented (`foreign.c`): `ffi-open` / `ffi-function` / `ffi-variadic` /
+`ffi-free`, scalar + string + opaque-pointer (`:ptr` → `T_PTR` registry handle)
+marshalling, fixed and variadic calls. See reference.md. Still deferred:
 
-Mechanism: link `libdl` (`dlopen` / `dlsym`) and `libffi` (runtime-described
-calls); user code declares each function's signature, libffi handles
-calling-convention details at call time. ~30–100 ns per call overhead.
-
-Implementation: ~250–400 lines of C glue; build adds `-ldl -lffi`.
-
-To settle at implementation: word-level API surface; signature declaration
-syntax; the marshalled C type set; representation of opaque C pointers in
-the Val tag space; ownership of C-allocated buffers; callbacks from C back
-into logicforth; struct-by-value arguments.
+- **Callbacks** — C → logicforth function pointers (`qsort` comparators,
+  `CURLOPT_WRITEFUNCTION` to capture a response body into a string).
+- **Buffer bridge** — typed alloc plus element poke/peek and matrix↔buffer
+  copy, to pass arrays in and out (LAPACK, any out-parameter API).
+- **Struct-by-value** arguments and returns.
+- **Per-call varargs** — variadic arg types chosen at the call site rather
+  than fixed per declared word.
+- **Finer numeric types** — `float`, unsigned variants, explicit widths.
+- **`dlclose`** for library handles (today they live to process exit).
 
 ---
 
