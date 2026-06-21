@@ -2344,6 +2344,11 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 void gc(Interpreter *interp) {
 	int i;
 
+	if (in_parallel) {
+		fail(interp, "gc: cannot collect inside a parallel region");
+		return;
+	}
+
 	arena.current_epoch++;
 	memset(pairs.mark, 0, sizeof(unsigned char) * (size_t)pairs.n_pairs);
 	pairs.free_count = 0;
