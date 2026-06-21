@@ -44,23 +44,25 @@ and/or `#ifdef`); row-major vs column-major handling at the boundary.
 ### Still deferred
 
 - **Wrappers** over the match/replace layer: `index-of`, `starts-with`,
-  `ends-with`, `trim`, `lines`.
+  `ends-with`, `lines`.
 
-### Unicode model
+### Unicode — remaining
 
-UTF-8 throughout, codepoint-indexed at the user level:
+Codepoint-indexed UTF-8 is in: `size`/`substring`/`char-at`/`codepoint-at`,
+`string>chars`/`string>codepoints`/`codepoint>char`/`codepoints>string`, the
+byte layer (`byte-size`/`byte-substring`), `emit` UTF-8 encoding, and regex in
+UTF + UCP mode (`.` per codepoint, `\w`/`\d` Unicode-aware, `\p{...}` available,
+invalid bytes tolerated). Match offsets stay byte offsets — pair with
+`byte-substring`. Remaining:
 
-- `size` (on a string), `substring`, `index-of`, and match positions
-  expressed in *codepoints* via a small UTF-8 codec (encode / decode /
-  count / advance-by-n); translate PCRE2's byte offsets at the boundary.
-  `size` stays the single count word.
-- **ASCII fast path**: a cached per-string all-ASCII flag collapses the
-  codec to no-ops, keeping byte-oriented speed for the common case.
-- `setlocale(LC_CTYPE, "")` plus PCRE2's UCP mode for codepoint-aware
-  classes; `\p{...}` property classes available under UCP.
-
-Not covered: normalization (NFC vs NFD stay distinct), grapheme clusters,
-locale case-folding outside ASCII.
+- **ASCII fast path**: a cached per-string all-ASCII flag to collapse the
+  codepoint walk in `size`/`substring`/`char-at`/`codepoint-at` back to byte
+  speed for the common case (each is currently an O(n) scan).
+- **Case folding**: no `upcase`/`downcase` yet; Unicode-correct folding needs
+  tables (ICU or a generated table), so even an ASCII-only first cut should
+  name the boundary.
+- Not covered: normalization (NFC vs NFD stay distinct), grapheme clusters,
+  locale-aware collation (ordering stays codepoint/byte order).
 
 ---
 

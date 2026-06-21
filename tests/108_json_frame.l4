@@ -39,8 +39,8 @@
 
 \ --- \u escapes: ASCII, 2-byte UTF-8, surrogate pair ---
 """\u0041""" json>frame "A" = . cr
-"""\u00e9""" json>frame size . cr
-"""\ud83d\ude00""" json>frame size . cr
+"""\u00e9""" json>frame byte-size . cr
+"""\ud83d\ude00""" json>frame byte-size . cr
 
 \ --- arrays ---
 "[1, 2, 3]" json>frame size . cr

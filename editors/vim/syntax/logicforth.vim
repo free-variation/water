@@ -39,25 +39,26 @@ syn keyword logicforthBuiltin +! -! *! /! ++ -- f++ f-- f1+ f1- f+ f-
 syn keyword logicforthBuiltin f* f/ f^ 1+ 1- 0= + - * / % ^
 syn keyword logicforthBuiltin = !i ! @i,j @i @j @ >r >side side> 2dup .s
 syn keyword logicforthBuiltin .a . 0-matrix 2drop abs acos alloc-stats and append-file array array-of array>cons
-syn keyword logicforthBuiltin array>frame array>set asin assert atan bulk-load bye catch cd choose clear close
-syn keyword logicforthBuiltin column-maxes column-means column-mins column-sums concat cons cons>array copy cos count-matches cr create-index
-syn keyword logicforthBuiltin cwd db-close db-exec db-open db-query delete-at depth destruct destruct-to dgemm-nn dgemm-nt dgemm-tn
-syn keyword logicforthBuiltin dgemm-tt diagonal diagonal-matrix difference dim drop dup emit end-process env env! exp
-syn keyword logicforthBuiltin f*+ f*- fabs facos fasin fatan fcos fexp ffi-free ffi-function ffi-open ffi-variadic
-syn keyword logicforthBuiltin filter flatten fln flog fmod fnegate format frame frame>array frame>json fround fround-down
-syn keyword logicforthBuiltin fround-up fsin fsq fsqrt ftan ftanh ftruncate gc gen-each gen-take group-by gt
-syn keyword logicforthBuiltin has? head-tail help identity-matrix inner-join intersection join json>frame keys last ln load
-syn keyword logicforthBuiltin load-bag load-image log lt man map mapn match match-all matches? matrix matrix-range
-syn keyword logicforthBuiltin max mean member? merge min mod negate nip not now num-cores num-elements
-syn keyword logicforthBuiltin or over parallel-run pfilter pfilter-ext pi pmap pmap-ext pmap-reduce pmap-reduce-ext query quotient
-syn keyword logicforthBuiltin r> r@ range read read-err read-file read-out reduce reify relation reload replace
-syn keyword logicforthBuiltin reset reshape resume retract reverse reverse-slice! roll rot round round-down round-up row-maxes
-syn keyword logicforthBuiltin row-means row-mins row-sums run running? save save-image see see-compiled select-keys select-values set
-syn keyword logicforthBuiltin set-add! set-remove! shift shift-with side-depth side-drop sin size skip sleep slice! split
-syn keyword logicforthBuiltin sq sqrt start-generator start-process stop string>symbol substring sum swap symbol? take tan
-syn keyword logicforthBuiltin tanh throw to-slice! transpose trim truncate try-catch union update-at values vf* vf+
-syn keyword logicforthBuiltin vf- vf/ vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh
-syn keyword logicforthBuiltin vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait words write write-file write-in yield
+syn keyword logicforthBuiltin array>frame array>set asin assert atan bulk-load bye byte-size byte-substring catch cd char-at
+syn keyword logicforthBuiltin choose clear close codepoint-at codepoint>char codepoints>string column-maxes column-means column-mins column-sums concat cons
+syn keyword logicforthBuiltin cons>array copy cos count-matches cr create-index cwd db-close db-exec db-open db-query delete-at
+syn keyword logicforthBuiltin depth destruct destruct-to dgemm-nn dgemm-nt dgemm-tn dgemm-tt diagonal diagonal-matrix difference dim drop
+syn keyword logicforthBuiltin dup emit end-process env env! exp f*+ f*- fabs facos fasin fatan
+syn keyword logicforthBuiltin fcos fexp ffi-free ffi-function ffi-open ffi-variadic filter flatten fln flog fmod fnegate
+syn keyword logicforthBuiltin format frame frame>array frame>json fround fround-down fround-up fsin fsq fsqrt ftan ftanh
+syn keyword logicforthBuiltin ftruncate gc gen-each gen-take group-by gt has? head-tail help identity-matrix inner-join intersection
+syn keyword logicforthBuiltin join json>frame keys last ln load load-bag load-image log lt man map
+syn keyword logicforthBuiltin mapn match match-all matches? matrix matrix-range max mean member? merge min mod
+syn keyword logicforthBuiltin negate nip not now num-cores num-elements or over parallel-run pfilter pfilter-ext pi
+syn keyword logicforthBuiltin pmap pmap-ext pmap-reduce pmap-reduce-ext query quotient r> r@ range read read-err read-file
+syn keyword logicforthBuiltin read-out reduce reify relation reload replace reset reshape resume retract reverse reverse-slice!
+syn keyword logicforthBuiltin roll rot round round-down round-up row-maxes row-means row-mins row-sums run running? save
+syn keyword logicforthBuiltin save-image see see-compiled select-keys select-values set set-add! set-remove! shift shift-with side-depth side-drop
+syn keyword logicforthBuiltin sin size skip sleep slice! split sq sqrt start-generator start-process stop string>chars
+syn keyword logicforthBuiltin string>codepoints string>symbol substring sum swap symbol? take tan tanh throw to-slice! transpose
+syn keyword logicforthBuiltin trim truncate try-catch union update-at values vf* vf+ vf- vf/ vfabs vfcos
+syn keyword logicforthBuiltin vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh vvf* vvf*+ vvf*- vvf+
+syn keyword logicforthBuiltin vvf- vvf/ wait words write write-file write-in yield
 syn match   logicforthBuiltin "|>"
 
 hi def link logicforthComment      Comment

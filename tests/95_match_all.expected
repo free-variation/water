@@ -17,6 +17,9 @@
 0 
 1 
 0 
+4 
+3 
+1 
 error: regex: missing closing parenthesis
 error: match-all: expected a string; got a float
 error: match-all: expected a string; got a float

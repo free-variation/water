@@ -9,6 +9,9 @@
 0 
 [ "" ] 
 0 
+[ "café" ] 
+[ "naïve_x" ] 
+[ "a" ] 
 error: regex: missing closing parenthesis
 error: match: expected a string; got a float
 error: match: expected a string; got a float

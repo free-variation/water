@@ -33,6 +33,11 @@ c" "^[a-z]" match . cr                           \ [ a ]
 \ --- no match anywhere ---
 "hello" "z" match . cr                           \ 0
 
+\ --- Unicode (UTF mode + UCP): \w is accent-aware, . matches a codepoint ---
+"café" "\w+" match . cr                          \ [ café ]
+"naïve_x" "^\w+$" match . cr                     \ [ naïve_x ]  (all word chars)
+"a→b" "." match . cr                             \ [ a ]        (first codepoint)
+
 \ --- errors ---
 "x" "(" match                                    \ bad pattern
 5 "a" match                                      \ non-string subject
