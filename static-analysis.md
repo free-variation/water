@@ -372,6 +372,26 @@ Not golden-able (a stall, not divergent stdout).
 - **`p_join` sums lengths in `int`** — `strings.c:321-330`; overflow → bad alloc/OOB on a huge
   array. **inferred.** **FIXED:** sum in `int64_t`, reject `total > INT_MAX` (like M3).
 
+### M13. `gc` word collects inside a parallel region → cross-thread heap corruption
+`core.c` `p_gc` → `gc` — **verified**
+
+A worker quotation that calls `gc` reaches `p_gc`, which calls `gc(interp)` directly, bypassing
+the `gc_disabled` flag worker interpreters carry (only `object_alloc_slot`/`object_new_pair` honour
+it). Running mid-region, `gc()` marks only that worker's stacks/roots plus the dictionary, so
+objects reachable only from the coordinator or sibling workers — including the result image, rooted
+on the main interpreter — go unmarked, are swept, and freed → UAF. It also mutates shared global
+state non-atomically (`arena.current_epoch`, `pairs.mark`/`free_count`, `arena.free_slots`, resets
+`main_alloc.slot_next/slot_end = 0`) while other workers bump-allocate and read. Not data-reachable:
+only a hand-written worker quotation that calls `gc` (already a worker-contract violation) triggers
+it, but the consequence is whole-heap corruption, not a wrong result.
+
+**FIXED.** `gc()` rejects `in_parallel` up front (`fail` + return) — a single chokepoint covering
+`p_gc` and any future in-region caller. The worker `fail` propagates the normal way: the kernel sees
+`error_flag`, sets `parallel_error`, and the region aborts and rewinds cleanly. Legitimate callers
+are unaffected — `object_alloc_slot`/`object_new_pair` reach `gc()` only on their `!in_parallel`
+paths, and `copy_or_reify` runs with `in_parallel` clear. Not golden-guarded (needs a worker
+quotation that calls `gc`).
+
 ---
 
 ## Low
