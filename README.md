@@ -1,6 +1,6 @@
 # logicforth
 
-A Forth-flavored language for matrix work, set/array manipulation,
+A Forth-flavored language for matrix work, set/array/frame manipulation,
 string/regex processing, and logic programming. A compact C
 interpreter built with `clang -O3`.
 
@@ -225,9 +225,9 @@ Unification and committed choice, on the trail and the continuation machinery:
 - **`man`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes). **`help name`** prints it for the named word.
 - **`words`**, **`forget`**, **`bye`**, **`gc`**, **`clear`**, **`.s`**, **`.a`** — interpreter utilities.
 
-## Planned work
+## Future work
 
-Roadmap and design notes live in `PLAN.md`.
+See `PLAN.md`.
 
 ## Project layout
 
@@ -247,7 +247,7 @@ src/forth/lib.l4       — standard library (auto-loaded at startup)
 tests/                 — golden-output test files
 docs/                  — design documents
 examples/              — sample programs
-PLAN.md                — deferred work and design notes
+PLAN.md                — future work
 ```
 
 ## License
