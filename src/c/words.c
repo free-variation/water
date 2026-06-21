@@ -492,7 +492,20 @@ void p_cr(Interpreter *interp) {
 
 void p_emit_(Interpreter *interp) {
 	POP_INT(char_code, "emit", "character code");
-	putchar(char_code);
+
+	if (char_code < 0 || char_code > 0x10FFFF) {
+		fail(interp, "emit: codepoint %d out of range", char_code);
+		return;
+	}
+
+	if (char_code < 0x80)
+		putchar(char_code);
+	else {
+		char encoded[4];
+		int length = utf8_encode(char_code, encoded);
+		fwrite(encoded, 1, (size_t)length, stdout);
+	}
+
 	fflush(stdout);
 
 	DISPATCH(interp);

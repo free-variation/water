@@ -3360,6 +3360,13 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "split", p_split, 0);
 	define_primitive(interp, "replace", p_replace, 0);
 	define_primitive(interp, "substring", p_substring, 0);
+	define_primitive(interp, "byte-substring", p_byte_substring, 0);
+	define_primitive(interp, "char-at", p_char_at, 0);
+	define_primitive(interp, "codepoint-at", p_codepoint_at, 0);
+	define_primitive(interp, "string>chars", p_string_to_chars, 0);
+	define_primitive(interp, "string>codepoints", p_string_to_codepoints, 0);
+	define_primitive(interp, "codepoint>char", p_codepoint_to_char, 0);
+	define_primitive(interp, "codepoints>string", p_codepoints_to_string, 0);
 	define_primitive(interp, "trim", p_trim, 0);
 	define_primitive(interp, "join", p_join, 0);
 	define_primitive(interp, "format", p_format, 0);
@@ -3408,6 +3415,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "to-slice!", p_to_slice, 0);
 	define_primitive(interp, "range", p_range, 0);
 	define_primitive(interp, "size", p_size, 0);
+	define_primitive(interp, "byte-size", p_byte_size, 0);
 	define_primitive(interp, "member?", p_member, 0);
 	define_primitive(interp, "set", p_set, 0);
 	define_primitive(interp, "union", p_union, 0);

@@ -38,6 +38,11 @@ b" "[a-z]$" match-all size . cr                 \ 2  ($ at each line end)
 \ --- no match anywhere ---
 "hello" "z" match-all . cr                      \ 0
 
+\ --- Unicode (UTF mode): . matches whole codepoints, \d/\w are UCP-aware ---
+"café" "." match-all size . cr                  \ 4  (codepoints, not 5 bytes)
+"x😀y" "." match-all size . cr                  \ 3  (emoji is one codepoint)
+"a1٢3" "\d+" match-all size . cr                \ 1  (٢ U+0662 is a Unicode digit)
+
 \ --- errors ---
 "x" "(" match-all                               \ bad pattern
 5 "a" match-all                                 \ non-string subject

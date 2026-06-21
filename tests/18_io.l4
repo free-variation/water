@@ -3,3 +3,7 @@
 46 emit
 46 emit
 46 emit cr
+\ multibyte: emit UTF-8 encodes codepoints above ASCII
+233 emit cr
+128512 emit cr
+9731 emit cr

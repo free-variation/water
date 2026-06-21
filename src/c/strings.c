@@ -3,6 +3,79 @@
 #define PCRE2_CODE_UNIT_WIDTH 8
 #include <pcre2.h>
 
+int utf8_codepoint_count(const char *bytes, int length) {
+	int count = 0;
+	for (int i = 0; i < length; i++)
+		if ((bytes[i] & 0xC0) != 0x80)
+			count++;
+	return count;
+}
+
+static int utf8_byte_offset(const char *bytes, int length, int char_index) {
+	int byte = 0;
+
+	for (int seen = 0; seen < char_index && byte < length; seen++) {
+		byte++;
+		while (byte < length && (bytes[byte] & 0xC0) == 0x80)
+			byte++;
+	}
+
+	return byte;
+}
+
+int utf8_encode(int codepoint, char *out) {
+	if (codepoint < 0x80) {
+		out[0] = (char)codepoint;
+		return 1;
+	}
+	if (codepoint < 0x800) {
+		out[0] = (char)(0xC0 | (codepoint >> 6));
+		out[1] = (char)(0x80 | (codepoint & 0x3F));
+		return 2;
+	}
+	if (codepoint < 0x10000) {
+		out[0] = (char)(0xE0 | (codepoint >> 12));
+		out[1] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+		out[2] = (char)(0x80 | (codepoint & 0x3F));
+		return 3;
+	}
+	out[0] = (char)(0xF0 | (codepoint >> 18));
+	out[1] = (char)(0x80 | ((codepoint >> 12) & 0x3F));
+	out[2] = (char)(0x80 | ((codepoint >> 6) & 0x3F));
+	out[3] = (char)(0x80 | (codepoint & 0x3F));
+	return 4;
+}
+
+static int utf8_decode(const char *bytes, int length, int *codepoint) {
+	unsigned char lead = (unsigned char)bytes[0];
+	if (lead < 0x80) {
+		*codepoint = lead;
+		return 1;
+	}
+
+	int extra;
+	int value;
+	if ((lead & 0xE0) == 0xC0) {
+		extra = 1;
+		value = lead & 0x1F;
+	} else if ((lead & 0xF0) == 0xE0) {
+		extra = 2;
+		value = lead & 0x0F;
+	} else if ((lead & 0xF8) == 0xF0) {
+		extra = 3;
+		value = lead & 0x07;
+	} else {
+		*codepoint = lead;
+		return 1;
+	}
+
+	for (int i = 1; i <= extra && i < length; i++)
+		value = (value << 6) | (bytes[i] & 0x3F);
+	*codepoint = value;
+	
+	return extra + 1;
+}
+
 static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	for (int i = 0; i < REGEX_CACHE_SIZE; i++)
 		if (interp->regex_cache[i].in_use
@@ -13,7 +86,7 @@ static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	int errcode;
 	PCRE2_SIZE erroffset;
 	pcre2_code *re = pcre2_compile((PCRE2_SPTR)pattern->bytes, (PCRE2_SIZE)pattern->len,
-			PCRE2_MULTILINE, &errcode, &erroffset, NULL);
+			PCRE2_MULTILINE | PCRE2_UTF | PCRE2_UCP | PCRE2_MATCH_INVALID_UTF, &errcode, &erroffset, NULL);
 	if (!re) {
 		PCRE2_UCHAR message[256];
 		pcre2_get_error_message(errcode, message, sizeof(message));
@@ -323,13 +396,165 @@ void p_substring(Interpreter *interp) {
 	POP_INT(start, "substring", "start");
 	PEEK_STRING_AT(source, 0, "substring");
 
-	if (start < 0 || end > source->len || start > end) {
-		fail(interp, "substring: range [%d, %d) out of bounds for length %d", start, end, source->len);
+	int char_count = utf8_codepoint_count(source->bytes, source->len);
+	if (start < 0 || end > char_count || start > end) {
+		fail(interp, "substring: range [%d, %d) out of bounds for length %d", start, end, char_count);
 		return;
 	}
 
-	int handle = object_new_string(interp, source->bytes + start, end - start);
+	int start_byte = utf8_byte_offset(source->bytes, source->len, start);
+	int end_byte = utf8_byte_offset(source->bytes, source->len, end);
+	int handle = object_new_string(interp, source->bytes + start_byte, end_byte - start_byte);
 	interp->data_stack[interp->dsp - 1] = make_string(handle);
+
+	DISPATCH(interp);
+}
+
+void p_byte_substring(Interpreter *interp) {
+      POP_INT(end, "byte-substring", "end");
+      POP_INT(start, "byte-substring", "start");
+      PEEK_STRING_AT(source, 0, "byte-substring");
+
+      if (start < 0 || end > source->len || start > end) {
+              fail(interp, "byte-substring: range [%d, %d) out of bounds for length %d", start, end, source->len);
+              return;
+      }
+
+      int handle = object_new_string(interp, source->bytes + start, end - start);
+      interp->data_stack[interp->dsp - 1] = make_string(handle);
+
+      DISPATCH(interp);
+}	
+
+static Val produce_char_string(Interpreter *interp, Object *source, int start_byte, int end_byte) {
+	return make_string(object_new_string(interp, source->bytes + start_byte, end_byte - start_byte));
+}
+
+static Val produce_codepoint(Interpreter *interp, Object *source, int start_byte, int end_byte) {
+	(void)interp;
+	(void)end_byte;
+	int codepoint;
+	utf8_decode(source->bytes + start_byte, source->len - start_byte, &codepoint);
+	return make_float((double)codepoint);
+}
+
+static void char_index_op(Interpreter *interp, const char *op,
+		Val (*produce)(Interpreter *, Object *, int start_byte, int end_byte)) {
+	POP_INT(index, op, "index");
+	PEEK_STRING_AT(source, 0, op);
+
+	int char_count = utf8_codepoint_count(source->bytes, source->len);
+	if (index < 0 || index >= char_count) {
+		fail(interp, "%s: index %d out of bounds for length %d", op, index, char_count);
+		return;
+	}
+
+	int start_byte = utf8_byte_offset(source->bytes, source->len, index);
+	int end_byte = utf8_byte_offset(source->bytes, source->len, index + 1);
+	Val result = produce(interp, source, start_byte, end_byte);
+	if (interp->error_flag) return;
+
+	interp->data_stack[interp->dsp - 1] = result;
+}
+
+void p_char_at(Interpreter *interp) {
+	char_index_op(interp, "char-at", produce_char_string);
+
+	DISPATCH(interp);
+}
+
+void p_codepoint_at(Interpreter *interp) {
+	char_index_op(interp, "codepoint-at", produce_codepoint);
+
+	DISPATCH(interp);
+}
+
+static void string_explode(Interpreter *interp, const char *op,
+		Val (*produce)(Interpreter *, Object *, int start_byte, int end_byte)) {
+	PEEK_STRING_AT(source, 0, op);
+
+	int char_count = utf8_codepoint_count(source->bytes, source->len);
+	int handle = object_new_array(interp, char_count);
+	if (interp->error_flag) return;
+	Object *result = OBJECT_AT(handle);
+	memset(result->items, 0, sizeof(Val) * (size_t)char_count);
+	gc_root_push(interp, make_array(handle));
+
+	int start_byte = 0;
+	for (int index = 0; index < char_count; index++) {
+		int end_byte = start_byte + 1;
+		while (end_byte < source->len && (source->bytes[end_byte] & 0xC0) == 0x80)
+			end_byte++;
+		result->items[index] = produce(interp, source, start_byte, end_byte);
+		if (interp->error_flag) {
+			gc_root_pop(interp);
+			return;
+		}
+		start_byte = end_byte;
+	}
+	gc_root_pop(interp);
+
+	interp->data_stack[interp->dsp - 1] = make_array(handle);
+}
+
+void p_string_to_chars(Interpreter *interp) {
+	string_explode(interp, "string>chars", produce_char_string);
+
+	DISPATCH(interp);
+}
+
+void p_string_to_codepoints(Interpreter *interp) {
+	string_explode(interp, "string>codepoints", produce_codepoint);
+
+	DISPATCH(interp);
+}
+
+void p_codepoint_to_char(Interpreter *interp) {
+	POP_INT(code, "codepoint>char", "codepoint");
+	if (code < 0 || code > 0x10FFFF) {
+		fail(interp, "codepoint>char: codepoint %d out of range", code);
+		return;
+	}
+
+	char encoded[4];
+	int length = utf8_encode(code, encoded);
+	push(interp, make_string(object_new_string(interp, encoded, length)));
+
+	DISPATCH(interp);
+}
+
+void p_codepoints_to_string(Interpreter *interp) {
+	POP_ARRAY(codes, "codespoints>string");
+
+	int codepoint_count = codes->len;
+	char *buffer = malloc((size_t)codepoint_count * 4 + 1);
+	if (!buffer) {
+		fail(interp, "codepoints>string: out of memory");
+		return;
+	}
+
+	int offset = 0;
+	for (int i = 0; i < codepoint_count; i++) {
+		Val item = codes->items[i];
+		if (VAL_TAG(item) != T_FLOAT) {
+			free(buffer);
+			fail(interp, "codepoints>string: element %d is not a number; got %s", i, tag_name(VAL_TAG(item)));
+			return;
+		}
+
+		int code = (int)VAL_NUMBER(item);
+		if (code < 0 || code > 0x10FFFF) {
+			free(buffer);
+			fail(interp, "codepoints>string: codepoint %d out of range at element %d", code, i);
+			return;
+		}
+
+		offset += utf8_encode(code, buffer + offset);
+	}
+
+	int handle = object_new_string(interp, buffer, offset);
+	free(buffer);
+	push(interp, make_string(handle));
 
 	DISPATCH(interp);
 }

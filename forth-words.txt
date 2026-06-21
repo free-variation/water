@@ -54,11 +54,17 @@ atan
 begin
 bulk-load
 bye
+byte-size
+byte-substring
 catch
 cd
+char-at
 choose
 clear
 close
+codepoint-at
+codepoint>char
+codepoints>string
 column-maxes
 column-means
 column-mins
@@ -255,6 +261,8 @@ sqrt
 start-generator
 start-process
 stop
+string>chars
+string>codepoints
 string>symbol
 substring
 sum

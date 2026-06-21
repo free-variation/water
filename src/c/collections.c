@@ -397,12 +397,22 @@ void p_array_to_set (Interpreter *interp) {
 
 void p_size(Interpreter *interp) {
 	POP(collection);
-	if (VAL_TAG(collection) == T_SET ||
+
+	if (VAL_TAG(collection) == T_STRING) {
+		Object *string = OBJECT_AT(VAL_DATA(collection));
+		push(interp, make_float((double)utf8_codepoint_count(string->bytes, string->len)));
+	}	else if (VAL_TAG(collection) == T_SET ||
 			VAL_TAG(collection) == T_ARRAY ||
-			VAL_TAG(collection) == T_STRING ||
 			VAL_TAG(collection) == T_FRAME)
 		push(interp, make_float((double)OBJECT_AT(VAL_DATA(collection))->len));
 	else fail(interp, "size: expected a set, array, string, or frame; got %s", tag_name(VAL_TAG(collection)));
+
+	DISPATCH(interp);
+}
+
+void p_byte_size(Interpreter *interp) {
+	POP_STRING(string, "byte-size");
+	push(interp, make_float((double)string->len));
 
 	DISPATCH(interp);
 }
