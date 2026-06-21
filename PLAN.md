@@ -1,20 +1,16 @@
-# logicforth — deferred work
+# logicforth — future work
 
-Planned and pending work. Completed items are deleted; git history holds
-what's been built.
+A TODO list of pending work.
 
 ---
 
-## Matrix — remaining work
+## Matrix
 
 ### argmax / argmin
 
-Index of the maximum / minimum element (or an `(i, j)` pair). Deferred
-until there's a concrete use case.
+Index of the maximum / minimum element (or an `(i, j)` pair).
 
 ### Beyond core
-
-Deferred until there's a specific use case:
 
 - **Slicing** — submatrix by `(row-start, row-end, col-start, col-end)`.
 - **Concatenation** — `hstack` (side by side), `vstack` (stacked).
@@ -41,28 +37,19 @@ and/or `#ifdef`); row-major vs column-major handling at the boundary.
 
 ## String operations
 
-### Still deferred
+### Wrappers
 
-- **Wrappers** over the match/replace layer: `index-of`, `starts-with`,
-  `ends-with`, `lines`.
+Over the match/replace layer: `index-of`, `starts-with`, `ends-with`,
+`lines`.
 
-### Unicode — remaining
-
-Codepoint-indexed UTF-8 is in: `size`/`substring`/`char-at`/`codepoint-at`,
-`string>chars`/`string>codepoints`/`codepoint>char`/`codepoints>string`, the
-byte layer (`byte-size`/`byte-substring`), `emit` UTF-8 encoding, and regex in
-UTF + UCP mode (`.` per codepoint, `\w`/`\d` Unicode-aware, `\p{...}` available,
-invalid bytes tolerated). Match offsets stay byte offsets — pair with
-`byte-substring`. Remaining:
+### Unicode
 
 - **ASCII fast path**: a cached per-string all-ASCII flag to collapse the
   codepoint walk in `size`/`substring`/`char-at`/`codepoint-at` back to byte
-  speed for the common case (each is currently an O(n) scan).
-- **Case folding**: no `upcase`/`downcase` yet; Unicode-correct folding needs
+  speed for the common case.
+- **Case folding**: `upcase`/`downcase`. Unicode-correct folding needs
   tables (ICU or a generated table), so even an ASCII-only first cut should
   name the boundary.
-- Not covered: normalization (NFC vs NFD stay distinct), grapheme clusters,
-  locale-aware collation (ordering stays codepoint/byte order).
 
 ---
 
@@ -75,8 +62,6 @@ read-only word `answer` that pushes `42`. Value-then-defword-then-name shape
 (like `to`), name read via `next_token()`. Reassignment via `to` errors.
 
 ### Path queries — follow-ups
-
-Remaining:
 
 - **Wildcard mutation** — `*` / `//` in `!` / `delete-at` / `update-at` for
   broadcast writes.
@@ -106,7 +91,7 @@ Small high-quality PRNG (xoshiro256++ or PCG, ~30 lines).
 
 ### Sort
 
-- `array sort` — new array sorted by the existing `val_cmp` ordering; input
+- `array sort` — new array sorted by the `val_cmp` ordering; input
   untouched.
 - `array [ x y -- cmp ] sort-with` — same, with a user comparator quotation
   that pops two Vals and pushes `-1` / `0` / `1`.
@@ -119,13 +104,13 @@ Small high-quality PRNG (xoshiro256++ or PCG, ~30 lines).
   words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
   lines, `s stdout write` emits.
 
-`argv` is not included; invocation is `logicforth file.l4`, and argument
+`argv` is out of scope; invocation is `logicforth file.l4`, and argument
 handling lives in the shell-script wrapper layer.
 
 ### Error handling — `catch` intercepts `error_flag`
 
 Interpreter-level errors (stack underflow, type mismatch, division by zero,
-bad pattern, out-of-bounds) are catchable, not only user `throw`s. `catch` /
+bad pattern, out-of-bounds) become catchable, not only user `throw`s. `catch` /
 `try-catch` run a wrapped xt; if `error_flag` is set afterward, `catch`
 clears it and returns the `error_message` as a string with the failure
 flag, exactly as a `throw` would. Uncaught errors still surface at the REPL.
@@ -140,20 +125,21 @@ small printf-style mini-language on top of the positional `{n}` fill.
 
 ### Named interpolation
 
-`format` is positional (`{0}` from the stack); a named form `{name}` referencing
-an in-scope local or global reads better — `"ls {dir}" …`. `format` runs at
-runtime where local names are gone, so this needs either a compile-time f-string
-(scan a string literal, resolve each `{name}` in scope, rewrite to the positional
-`{n}` form) under an explicit opt-in marker so raw strings and regex like `\d{3}`
-stay literal, or a runtime frame-keyed `format-with` (`{ :dir d } "{dir}" format-with`).
+A named form `{name}` referencing an in-scope local or global reads better
+than the positional `{0}` — `"ls {dir}" …`. `format` runs at runtime where
+local names are gone, so this needs either a compile-time f-string (scan a
+string literal, resolve each `{name}` in scope, rewrite to the positional
+`{n}` form) under an explicit opt-in marker so raw strings and regex like
+`\d{3}` stay literal, or a runtime frame-keyed `format-with`
+(`{ :dir d } "{dir}" format-with`).
 
 ---
 
 ## TSV file I/O
 
-Read and write tab-separated-value files, numeric and non-numeric. TSV is
-the only tabular format logicforth supports — no CSV, JSON, Parquet, Arrow,
-or HDF5 reader; convert other formats to TSV before loading.
+Read and write tab-separated-value files, numeric and non-numeric. TSV will
+be the only tabular format; no CSV, JSON, Parquet, Arrow, or HDF5 reader —
+convert other formats to TSV before loading.
 
 - Reader: `"file.tsv" read-tsv` → array of arrays, one per row. Numeric-
   looking cells become `T_FLOAT`; everything else stays a string.
@@ -209,11 +195,7 @@ builders are `lib.l4`.
 
 ---
 
-## Foreign function interface — remaining
-
-Core implemented (`foreign.c`): `ffi-open` / `ffi-function` / `ffi-variadic` /
-`ffi-free`, scalar + string + opaque-pointer (`:ptr` → `T_PTR` registry handle)
-marshalling, fixed and variadic calls. See reference.md. Still deferred:
+## Foreign function interface
 
 - **Callbacks** — C → logicforth function pointers (`qsort` comparators,
   `CURLOPT_WRITEFUNCTION` to capture a response body into a string).
@@ -223,7 +205,7 @@ marshalling, fixed and variadic calls. See reference.md. Still deferred:
 - **Per-call varargs** — variadic arg types chosen at the call site rather
   than fixed per declared word.
 - **Finer numeric types** — `float`, unsigned variants, explicit widths.
-- **`dlclose`** for library handles (today they live to process exit).
+- **`dlclose`** for library handles.
 
 ---
 
@@ -237,10 +219,10 @@ Building on the generator primitives:
   producer/consumer pipelines.
 - **Kanren-style interleaving streams.** A captured continuation is the
   suspension a miniKanren stream needs — force it with `resume` and it yields an
-  answer or suspends again. Missing is fair interleaving: `mplus` (merge two
-  streams so an infinite branch can't starve the other) and `bind` (flatMap with
-  interleaving) — a *complete* search, distinct from the depth-first `amb` /
-  `fail`. Generators are the substrate; the interleaving combinators are the work.
+  answer or suspends again. Fair interleaving: `mplus` (merge two streams so an
+  infinite branch can't starve the other) and `bind` (flatMap with interleaving)
+  — a *complete* search, distinct from the depth-first `amb` / `fail`. Generators
+  are the substrate; the interleaving combinators are the work.
 
 All `lib.l4` on the existing primitives — no new C.
 
@@ -250,29 +232,28 @@ Scope: lazy data flow, not async I/O.
 
 ## Multi-core parallelism: threads over the shared heap
 
-Remaining work, in rough priority:
+In rough priority:
 
-- **Persistent worker-thread pool.** `parallel_for` `pthread_create`s and joins
-  the workers per region. For one big region that amortizes to nothing (a single
-  `pmap` over a huge domain saturates the cores); for many small regions the
-  spawn/join dominates — system time, not compute. A pool that parks threads and
-  dispatches per call fixes it. Must be co-designed with the rewind: pooled
-  threads keep their `AllocContext` across regions, so teardown has to reset
-  every worker's context, not just the caller's.
+- **Persistent worker-thread pool.** Spawning and joining worker threads per
+  region amortizes to nothing for one big region (a single `pmap` over a huge
+  domain saturates the cores), but the spawn/join dominates for many small
+  regions — system time, not compute. A pool that parks threads and dispatches
+  per call fixes it. Co-design with the rewind: pooled threads keep their
+  `AllocContext` across regions, so teardown has to reset every worker's context,
+  not just the caller's.
 
-- **Reclamation for live-heap-result regions.** The rewind covers regions whose
-  results are transient. A region returning live heap objects can't rewind; its
-  dropped output is ordinary garbage, but GC triggers on slot count and is blind
-  to byte pressure, so a big-payload churn can exhaust the arena before GC fires.
-  Fix is a byte-pressure GC trigger (rare, not a cadence). Not parallel-specific
-  — a sequential big-payload loop has the same gap.
+- **Reclamation for live-heap-result regions.** A region returning live heap
+  objects can't be rewound; its dropped output is ordinary garbage, but GC
+  triggers on slot count and is blind to byte pressure, so a big-payload churn
+  can exhaust the arena before GC fires. Add a byte-pressure GC trigger (rare,
+  not a cadence). Not parallel-specific — a sequential big-payload loop has the
+  same gap.
 
-- **De-fragilize the region rewind.** `abort_parallel_region` restores three
-  counters and resets the calling thread's context by hand; correctness depends
-  on invariants maintained across files (the `in_parallel` gating, the
-  per-region thread lifecycle). Folding the region's mutated state into one
-  begin/commit/abort owner removes that coupling — and is a prerequisite for the
-  thread pool.
+- **De-fragilize the region rewind.** The rewind restores three counters and
+  resets the calling thread's context by hand; correctness depends on invariants
+  maintained across files (the `in_parallel` gating, the per-region thread
+  lifecycle). Fold the region's mutated state into one begin/commit/abort owner
+  to remove that coupling — a prerequisite for the thread pool.
 
 - **Numeric disjoint-write buffer / work-stealing.** Lower priority: a shared
   unboxed-`double` output buffer threaded under the matrix kernels, and
@@ -282,11 +263,9 @@ Remaining work, in rough priority:
 
 ## Functional primitives
 
-A word that builds a new array of data-dependent length must be a C
-primitive, not `lib.l4`: Forth-side construction gathers off the data stack
-(capped at `DATA_STACK_DEPTH`, 256), so `map` / `mapn` / `filter` allocate
-and fill in C. Words returning a scalar, element, or boolean belong in
-`lib.l4`.
+Forth-side construction gathers off the data stack, so any word that builds a
+new array of data-dependent length must allocate and fill in C; words returning
+a scalar, element, or boolean belong in `lib.l4`.
 
 **`lib.l4` (scalar/element result, or compose C builders):**
 
@@ -307,9 +286,8 @@ and fill in C. Words returning a scalar, element, or boolean belong in
   by a computed key, under a distinct name from the existing column form.
 - **`partition`** — `arr [: pred :] partition` → matches and non-matches.
 
-Composable in one line, so not added: `count` (`[: pred :] filter size`),
-`min-by` / `max-by` (`reduce` with comparison), `sum` / `product`
-(`0 [: + :] reduce`).
+Composable in one line: `count` (`[: pred :] filter size`), `min-by` / `max-by`
+(`reduce` with comparison), `sum` / `product` (`0 [: + :] reduce`).
 
 **Cost:** `find`, `any?`, `all?`, `flat-map`, `sort-by`, `each` → ~60 lines
 of `lib.l4`; `group-by` / `partition` build on frames.
