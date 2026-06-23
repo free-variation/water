@@ -51,6 +51,7 @@ array>set
 asin
 assert
 atan
+augment
 begin
 bulk-load
 bye
@@ -78,6 +79,7 @@ count-matches
 cr
 create-index
 cwd
+dataset>matrix
 db-close
 db-exec
 db-open
@@ -95,6 +97,7 @@ diagonal
 diagonal-matrix
 difference
 dim
+double-segment
 drop
 dup
 else
@@ -119,6 +122,7 @@ f^
 fabs
 facos
 fail
+false
 fasin
 fatan
 fcos
@@ -129,6 +133,7 @@ ffi-open
 ffi-variadic
 filter
 flatten
+flatten-array
 fln
 flog
 fmod
@@ -160,7 +165,9 @@ identity-matrix
 if
 inline
 inner-join
+int-segment
 intersection
+iota
 join
 json>frame
 keys
@@ -181,6 +188,7 @@ match-all
 matches?
 matrix
 matrix-range
+matrix>pointer
 max
 mean
 member?
@@ -204,21 +212,28 @@ pmap
 pmap-ext
 pmap-reduce
 pmap-reduce-ext
+print
+print-stack
+quantile
 query
 quotient
 r>
 r@
+random
+random-int
 range
 read
 read-err
 read-file
 read-out
+read-tsv
 reduce
 reify
 relation
 reload
 repeat
 replace
+resample-indices
 reset
 reshape
 resume
@@ -234,13 +249,20 @@ row-maxes
 row-means
 row-mins
 row-sums
+rows>dataset
+rows>relation
 run
+run-result
 running?
+sample
 save
 save-image
 see
 see-compiled
+seed
+segment>pointer
 select-keys
+select-rows
 select-values
 set
 set-add!
@@ -255,6 +277,7 @@ size
 skip
 sleep
 slice!
+sort
 split
 sq
 sqrt
@@ -264,6 +287,7 @@ stop
 string>chars
 string>codepoints
 string>symbol
+submatrix
 substring
 sum
 swap
@@ -279,6 +303,7 @@ to
 to-slice!
 transpose
 trim
+true
 truncate
 try-catch
 unify
@@ -286,6 +311,7 @@ union
 until
 update-at
 values
+var
 variable
 vf*
 vf+
@@ -313,5 +339,6 @@ words
 write
 write-file
 write-in
+write-tsv
 yield
 ~

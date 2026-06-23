@@ -150,6 +150,8 @@ Result is `1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural
 |------|-------------|----------|-----|-------|---|
 | `=` | `( a b -- bool )` | structural equality | 3 (float) | none | float O(1); string O(\|s\|); array/set O(n); frame O(n); matrix O(r×c) |
 | `lt` | `( a b -- bool )` | less-than | 3 (float) | none | same |
+| `true` | `( -- bool )` | lib.l4: pushes 1 (inline) | 1 | none | O(1) |
+| `false` | `( -- bool )` | lib.l4: pushes 0 (inline) | 1 | none | O(1) |
 | `gt` | `( a b -- bool )` | greater-than | 3 (float) | none | same |
 | `0=` | `( a -- bool )` | `!truthy(a)`; any type | 2 | none | O(1) |
 | `and` | `( a b -- bool )` | logical and of truthiness | 3 | none | O(1) |
@@ -250,6 +252,8 @@ These compile-time words read a following local name and emit a single fused dep
 | `.` | `( a -- )` | Print value then a space; matrices print as a grid, frames pretty-print | 1 + print | none | O(size printed) |
 | `.a` | `( a -- )` | Like `.` but disables print truncation (show all elements) | 1 + print | none | O(size printed) |
 | `.s` | `( -- )` | Print every stack value, bottom to top; leaves the stack intact | print | none | O(depth) |
+| `print` | `( x -- )` | lib.l4: alias for `.` | 1 + print | none | O(size printed) |
+| `print-stack` | `( -- )` | lib.l4: alias for `.s` | print | none | O(depth) |
 | `cr` | `( -- )` | Print a newline | 1 | none | O(1) |
 | `emit` | `( code -- )` | Print the character with codepoint `code`, UTF-8 encoded (1–4 bytes); range-checked `[0, 0x10FFFF]` | 1 | none | O(1) |
 
@@ -326,6 +330,10 @@ Fixed length, 0-indexed, elements of any type.
 | `to-slice!` | `( v₀ … vₙ₋₁ arr offset n -- arr )` | Store the n values just below `arr` into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
 | `last` | `( arr n -- arr )` | lib.l4: `swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
 | `skip` | `( arr n -- arr )` | lib.l4: `over size swap - swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
+| `sort` | `( arr -- arr )` | Sorted copy in `val_cmp` order; array only | 1 + n log n | `1a(n)` | O(n log n) |
+| `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
+| `sample` | `( arr/set count repl -- arr )` | Draw `count` elements; `repl` truthy = with replacement, else without (count ≤ len) | 3 + n | `1a(count)` (+ `malloc(n)` without replacement) | O(n) |
+| `iota` | `( n -- arr )` | lib.l4: `[0…n−1]`, empty when n ≤ 0 | 3 + n | `1a(n)` | O(n) |
 
 ---
 
@@ -447,6 +455,63 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `row-means` | `( m -- m' )` | lib.l4: `row-sums` then scalar ÷ | r×c | 2×`1m(r×1)` | O(r×c) |
 | `column-means` | `( m -- m' )` | lib.l4: `column-sums` then scalar ÷ | r×c | 2×`1m(1×c)` | O(r×c) |
 
+### Reshaping, selection, statistics
+
+`c` below is the output column count; `k` the index count; `n = r×c`.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `augment` | `( a b -- m )` | Concatenate two matrices column-wise; errors unless row counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
+| `submatrix` | `( m rs re cs ce -- m )` | Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end | 5 + r·c | `1m(r×c)` | O(r·c) |
+| `select-rows` | `( m idx -- m )` | New matrix of the rows named by the float index array `idx`; errors on a non-float or out-of-range index | 2 + k·c | `1m(k×c)` | O(k·c) |
+| `var` | `( m -- f )` | Sample variance (÷ n−1) over all elements; errors with fewer than 2 | 1 + n | none | O(n) |
+| `quantile` | `( m p -- f )` | Linearly-interpolated quantile at p ∈ [0,1] over all elements (sorts a copy); errors if p out of range or empty | 2 + n log n | `malloc(n)` | O(n log n) |
+
+---
+
+## Segments
+
+Flat, fixed-length typed numeric buffers stored off the arena (one `calloc`, freed by GC). Both `int-segment` and `double-segment` store values as doubles internally; `@i` reads a float and `!i` stores a float, so they share the array index ops. Use them for FFI scratch (`segment>pointer`) and dense numeric data without per-element boxing.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `int-segment` | `( n -- seg )` | n-element int segment, zero-filled; errors if n < 0 | 1 | `1seg(n)` | O(n) |
+| `double-segment` | `( n -- seg )` | n-element double segment, zero-filled; errors if n < 0 | 1 | `1seg(n)` | O(n) |
+| `@i` | `( seg i -- f )` | Read element i as a float (see Arrays) | 3 | none | O(1) |
+| `!i` | `( seg i f -- seg )` | Store float f at index i in place; leaves seg | 4 | none | O(1) |
+| `segment>pointer` | `( seg -- ptr )` | Intern the backing buffer and return an FFI pointer handle (no copy; see Foreign function interface) | 1 | none | O(1)† |
+
+`†` amortized; the pointer-intern table grows occasionally.
+
+---
+
+## Random
+
+A thread-local xoshiro256\*\* stream; each worker derives its own stream from the shared base seed, so parallel runs are deterministic per worker.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `seed` | `( n -- )` | Set the global base seed and reset the stream counter; per-thread streams derive from it | 1 | none | O(1) |
+| `random` | `( -- f )` | Uniform float in [0,1) | 1 | none | O(1) |
+| `random-int` | `( bound -- f )` | Uniform integer in [0,bound) as a float, by rejection sampling; errors if bound ≤ 0 | 1 | none | O(1)† |
+
+`†` expected O(1); rejection sampling may retry. `sample` (Arrays) and `resample-indices` (Datasets and TSV) draw on this stream.
+
+---
+
+## Datasets and TSV
+
+A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a column-oriented frame; a *relation* is a deduped, indexed fact set (see Fact database). `r`/`c` are rows/columns, `n`/`k` observations/selected columns.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `read-tsv` | `( path -- rows )` | Read a TSV file into an array of row-arrays; an empty cell → `none`, a numeric cell → float, else a string. No header handling | 1 + bytes | `1a(r)` + one array per row + a string per text cell | O(bytes) |
+| `write-tsv` | `( rows path -- )` | Write an array of row-arrays as TSV; `none` → empty, a whole-number float → integer, strings raw; errors on a tab/newline inside a string or a non-array row | 2 + r·c | none (to file) | O(r·c) |
+| `rows>dataset` | `( table header? -- dataset )` | lib.l4: column-oriented frame from a table; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
+| `rows>relation` | `( table index-cols header? -- relation )` | lib.l4: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
+| `dataset>matrix` | `( dataset cols -- m )` | lib.l4: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
+| `resample-indices` | `( n -- arr )` | lib.l4: n indices drawn from [0,n) with replacement (bootstrap) | 2n | `2×1a(n)` | O(n) |
+
 ---
 
 ## Higher-order
@@ -534,6 +599,8 @@ A relational store built entirely from frames and sets — no new type. A **rela
 Rows live in a set, so an identical row asserted twice dedups to one (a relation is a set of tuples). A caller-supplied `:id` column keeps otherwise-identical rows distinct. Indexed columns are declared at creation and must be symbol-valued; `:index` maps each to a `{ value → <rows> }` frame whose buckets share the row frames in `:rows`.
 
 `query` is unification: a pattern frame unifies against rows as an open record — shared keys must match, a logic var matches anything (projection), extra columns are ignored — which is SQL selection and projection. It collects every match (returning an array of the matching rows) by testing each candidate with `matches?` and rolling bindings back, so the pattern is left unbound. Candidates come from the index when the pattern grounds an indexed column to a symbol (intersecting buckets across several such columns, empty when a value was never asserted); otherwise it scans `:rows`.
+
+The relation/query machinery is built from lib.l4 helpers (`bucket-of`, `candidates`, `covering?`, `smallest-set`, `tsv-keys`, `retract-row`, `update-row!`) that are internal implementation details and are not listed individually.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -634,6 +701,7 @@ A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process.
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `start-process` | `( argv -- proc )` | fork/exec `argv[0]` with `argv` as its arguments; return `{ :pid :in :out :err }` (the three streams are `T_STREAM`) | fork + 3 pipes | `1o` frame + 3 streams | O(argc) |
+| `run-result` | `( argv -- frame )` | lib.l4: run `argv` to completion and return `{ :out :err :status }`, closing the streams and reaping the child | fork + drain | `1fr` + output strings | O(output) |
 | `write` | `( s stream -- )` | Write the string's bytes to the stream; loops over partial writes, retries `EINTR` | write syscalls | none | O(\|s\|) |
 | `read` | `( stream -- s )` | Read the stream to EOF into one string | read syscalls | `1o` + buffer growth | O(bytes) |
 | `close` | `( stream -- )` | Close the fd; closing a child's `:in` sends it EOF | 1 syscall | none | O(1) |
@@ -674,6 +742,8 @@ Call C functions in any shared library at runtime via `libdl` + `libffi` — no 
 |------|-------------|----------|-----|-------|---|
 | `ffi-open` | `( path -- lib )` | `dlopen` the library at `path` and push a `T_PTR` handle; `""` opens the running process itself (`dlopen(NULL)`) for already-linked symbols. Errors if not found | dlopen | 1 handle (not GC'd) | O(1) |
 | `ffi-function` | `( lib symbol arg-types ret-type -- ) <name>` | Resolve `symbol` in `lib`, build a libffi call interface, and define the following word `<name>` to call it. `arg-types` is an array of type symbols, `ret-type` a single symbol. The interface is prepared once; calls are ~30–100 ns | dlsym + prep_cif | 1 binding | O(argc) |
+| `matrix>pointer` | `( m -- ptr )` | Intern the matrix's row-major element buffer and return a `T_PTR` handle to pass as a `:ptr` argument; no copy — aliases the live buffer (amortized intern) | 1 | none | O(1) |
+| `segment>pointer` | `( seg -- ptr )` | Intern a segment's data buffer and return a `T_PTR` handle (no copy) | 1 | none | O(1) |
 | `ffi-variadic` | `( lib symbol arg-types ret-type n-fixed -- ) <name>` | Like `ffi-function` for a variadic C function: `n-fixed` leading arguments use the fixed convention, the rest the variadic one (`ffi_prep_cif_var`). Variadic argument types are fixed per binding, so declare one word per type combination (e.g. a `:string` `setopt` and a `:long` `setopt`) | dlsym + prep_cif_var | 1 binding | O(argc) |
 | `ffi-free` | `( ptr -- )` | `free` a C buffer held as a `T_PTR` (e.g. from `malloc`) and clear its registry slot. Not for library handles | free | none | O(1) |
 
