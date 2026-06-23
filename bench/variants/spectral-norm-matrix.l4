@@ -1,0 +1,60 @@
+\ spectral_norm — matrix-based port using lforth's dgemm.
+\ A is materialized as an NxN matrix at init; the inner mat-vec products
+\ run in compiled C code (dgemm_kernel) instead of through the interpreter.
+
+variable N
+130 to N
+
+variable A_mat
+variable u_mat
+variable v_mat
+variable zero_col
+
+: eval_A ( i j -- A_ij )
+  |> i j |
+  i j +  dup f1+ *  2 /  i +  1 +  1.0 swap / ;
+
+: build-A
+  | flat |
+  0 N N * array-of to flat
+  [: |> i |
+     [: |> j |
+        flat  i N * j +  i j eval_A  !i drop
+     :] N i-times
+  :] N i-times
+  flat N N matrix to A_mat ;
+
+: build-u
+  1 N array-of  N 1 matrix to u_mat ;
+
+: prep
+  N 1 0-matrix to zero_col
+  build-A ;
+
+\ AtA_times ( x -- AtA*x ): compute A*x with dgemm-nn, then At*(...) with dgemm-tn
+: AtA_times
+  |> x |
+  1 A_mat x  0 zero_col  dgemm-nn
+  1 A_mat rot 0 zero_col dgemm-tn ;
+
+: one-loop
+  build-u
+  [: u_mat AtA_times to v_mat
+     v_mat AtA_times to u_mat :] 10 times ;
+
+: spectral-norm-run ( loops -- )
+  | n_loops t0 vBv vv |
+  to n_loops
+  prep
+  now to t0
+  [: one-loop :] n_loops times
+  "elapsed: " . now t0 - . "s" . cr
+
+  0 to vBv  0 to vv
+  [: |> i |
+     u_mat i 0 @i,j  v_mat i 0 @i,j  *  vBv + to vBv
+     v_mat i 0 @i,j  dup *  vv + to vv :] N i-times
+  "spectral norm estimate: " . vBv vv / sqrt . cr ;
+
+ITERATIONS spectral-norm-run
+bye

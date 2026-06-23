@@ -60,7 +60,7 @@ typedef int64_t cell;
 #define JSON_MAX_DEPTH (1 << 10)
 #define SELECT_MAX_DEPTH JSON_MAX_DEPTH
 #define MAX_WORKER_THREADS (1 << 6)
-#define MAX_NESTING_DEPTH (1 << 7)
+#define MAX_NESTING_DEPTH (1 << 8)
 #define MAX_CALL_DEPTH (1 << 12)
 #define PRINT_FIRST 10
 #define PRINT_LAST 3
@@ -240,13 +240,16 @@ typedef struct {
 } Pair;
 
 typedef struct {
+	_Atomic int n;
+	int cap, max, init;
+	int *free;
+	int n_free;
+} HandleSpace;
+
+typedef struct {
 	Pair *table;
-	_Atomic int n_pairs;
-	int init_n_pairs;
-	int pairs_cap;
-	unsigned char *mark;
-	int *free_list;
-	int free_count;
+	cell *mark_epoch;
+	HandleSpace space;
 } PairPool;
 extern PairPool pairs;
 
@@ -258,34 +261,30 @@ typedef struct {
 	_Atomic size_t heap_bytes_live;
 	size_t heap_gc_threshold;
 
-	Object **objects;
 	_Atomic cell current_epoch;
-	_Atomic int n_objects;
-	int init_n_objects;
-	int max_objects;
-	int objects_cap;
-
-	int *free_slots;
-	int n_free_slots;
+	Object **objects;
+	HandleSpace object_space;
 } Arena;
 extern Arena arena;
 extern int in_parallel;
+extern int parallel_region_collected;
 extern int parallel_region_object_base;
 extern int parallel_region_pair_base;
 
 typedef struct {
+	int next, end;
+	int *free;
+	int n_free, free_cap;
+	int *chunks;
+	int n_chunks, chunks_cap;
+} LocalHandles;
+
+typedef struct {
 	char *slab_next, *slab_end;
-	int slot_next, slot_end;
-	int pair_next, pair_end;
 	void *size_class_free[ARENA_SIZE_CLASSES];
 	void *freed_object_structs;
-
 	size_t heap_bytes_live, heap_gc_threshold;
-	int *free_slots, *free_pairs;
-	int n_free_slots, free_slots_cap, n_free_pairs, free_pairs_cap;
-	int *slot_chunks, *pair_chunks;
-	int n_slot_chunks, slot_chunks_cap, n_pair_chunks, pair_chunks_cap;
-
+	LocalHandles objects, pairs;
 } AllocContext;
 
 typedef struct {
@@ -349,20 +348,20 @@ typedef enum {
 
 
 #define GROW_OBJECT_TABLE(new_cap) do { \
-	int grow_old = arena.objects_cap; \
+	int grow_old = arena.object_space.cap; \
 	int grow_new = (new_cap); \
 	arena.objects = realloc(arena.objects, sizeof(Object *) * (size_t)grow_new); \
-	arena.free_slots = realloc(arena.free_slots, sizeof(int) * (size_t)grow_new); \
+	arena.object_space.free = realloc(arena.object_space.free, sizeof(int) * (size_t)grow_new); \
 	memset(arena.objects + grow_old, 0, sizeof(Object *) * (size_t)(grow_new - grow_old)); \
-	arena.objects_cap = grow_new; \
+	arena.object_space.cap = grow_new; \
 } while (0)
 
 #define GROW_PAIR_TABLE(new_cap) do { \
 	int grow_new = (new_cap); \
 	pairs.table = realloc(pairs.table, sizeof(Pair) * (size_t)grow_new); \
-	pairs.mark = realloc(pairs.mark, sizeof(unsigned char) * (size_t)grow_new); \
-	pairs.free_list = realloc(pairs.free_list, sizeof(int) * (size_t)grow_new); \
-	pairs.pairs_cap = grow_new; \
+	pairs.mark_epoch = realloc(pairs.mark_epoch, sizeof(cell) * (size_t)grow_new); \
+	pairs.space.free = realloc(pairs.space.free, sizeof(int) * (size_t)grow_new); \
+	pairs.space.cap = grow_new; \
 } while (0)
 
 #define OBJECT_AT(handle) (arena.objects[handle])
