@@ -35,6 +35,7 @@ typedef int64_t cell;
 #define OBJECTS_INIT_CAP (1 << 16)
 #define SLAB_BYTES (1 << 16)
 #define SLOTS_PER_CLAIM (1 << 10)
+#define HEAP_GC_FLOOR ((size_t)1 << 28)
 #define INPUT_BUFFER_SIZE (1 << 20)
 #define SOURCE_POOL (1 << 22)
 #define SYMBOL_POOL (1 << 22)
@@ -254,6 +255,9 @@ typedef struct {
 	_Atomic size_t used;
 	size_t reserved;
 
+	_Atomic size_t heap_bytes_live;
+	size_t heap_gc_threshold;
+
 	Object **objects;
 	cell current_epoch;
 	_Atomic int n_objects;
@@ -392,6 +396,7 @@ typedef struct Interpreter {
 	int running;
 	int error_flag;
 	int gc_disabled;
+	int gc_pending;
 
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
@@ -452,7 +457,7 @@ extern Compiler compiler;
 typedef void (*cfa_handler)(Interpreter *interp);
 
 #define DISPATCH(interp) do { \
-	if ((interp)->unwinding || (interp)->error_flag) \
+	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
 		return; \
 	__attribute__((musttail)) \
 	return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \

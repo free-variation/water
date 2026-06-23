@@ -25,6 +25,8 @@ static void arena_init(void) {
 
 	arena.used = 0;
 	arena.reserved = ARENA_RESERVE;
+	arena.heap_bytes_live = 0;
+	arena.heap_gc_threshold = HEAP_GC_FLOOR;
 	main_alloc.slab_next = main_alloc.slab_end = arena.base;
 
 	arena.max_objects = MAX_OBJECTS;
@@ -319,6 +321,9 @@ int object_new_frame(Interpreter *interp) {
 }
 
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
+	if (!in_parallel && !interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold)
+		interp->gc_pending = 1;
+
 	NEW_OBJECT(obj, OBJECT_MATRIX);
 	obj->matrix.rows = num_rows;
 	obj->matrix.columns = num_columns;
@@ -331,10 +336,16 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 		fail(interp, "matrix too large to allocate");
 		return -1;
 	}
+
+	atomic_fetch_add(&arena.heap_bytes_live, num_elements * sizeof(double));
+
 	return slot;
 }
 
 int object_new_segment(Interpreter *interp, int length, SegmentType element_type) {
+	if (!in_parallel && !interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold)
+		interp->gc_pending = 1;
+	
 	NEW_OBJECT(obj, OBJECT_SEGMENT);
 
 	obj->segment.element_type = element_type;
@@ -348,6 +359,8 @@ int object_new_segment(Interpreter *interp, int length, SegmentType element_type
 		fail(interp, "segment: out of memory (%lld bytes)", (long long)length * (long long)element_size);
 		return -1;
 	}
+
+	atomic_fetch_add(&arena.heap_bytes_live, (size_t)length * element_size);
 
 	return slot;
 }
@@ -371,6 +384,9 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->continuation.capture_generation = vocab.forget_generation;
 	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
+	
+	atomic_fetch_add(&arena.heap_bytes_live, (size_t)return_len * sizeof(Val));
+	
 	return slot;
 }
 
@@ -1061,6 +1077,11 @@ void run_inner(Interpreter *interp, int floor) {
 				continue;
 			}
 			continue;
+		}
+
+		if (interp->gc_pending && !in_parallel && !interp->gc_disabled) {
+			interp->gc_pending = 0;
+			gc(interp);
 		}
 
 		cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
@@ -2489,6 +2510,9 @@ void gc(Interpreter *interp) {
 	for (int slot = 0; slot < pairs.n_pairs; slot++)
 		if (!pairs.mark[slot])
 			pairs.free_list[pairs.free_count++] = slot;
+
+	size_t survived = arena.heap_bytes_live;
+	arena.heap_gc_threshold = MAX(survived * 2, HEAP_GC_FLOOR);
 }
 
 static const char *handler_word_name(cell handler) {
@@ -2869,9 +2893,21 @@ void free_one_object(Object *obj) {
 		case OBJECT_SET:
 		case OBJECT_ARRAY: arena_free(obj->items); break;
 		case OBJECT_FRAME: arena_free(obj->frame.keys); arena_free(obj->frame.values); break;
-		case OBJECT_MATRIX: free(obj->matrix.elements); break;
-		case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
-		case OBJECT_SEGMENT: free(obj->segment.data); break;
+		case OBJECT_MATRIX: {
+								atomic_fetch_sub(&arena.heap_bytes_live, (size_t)obj->matrix.rows * (size_t)obj->matrix.columns * sizeof(double));
+								free(obj->matrix.elements);
+							   	break;
+							}
+		case OBJECT_CONTINUATION: {
+								atomic_fetch_sub(&arena.heap_bytes_live, (size_t)obj->continuation.return_len * sizeof(Val));
+									  free(obj->continuation.return_slice); 
+									  break;
+								  }
+		case OBJECT_SEGMENT: {
+								atomic_fetch_sub(&arena.heap_bytes_live, (size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
+								 free(obj->segment.data); 
+								 break;
+							 }
 	}
 	arena_free_object(obj);
 }
@@ -3187,6 +3223,7 @@ void p_load_image(Interpreter *interp) {
 									obj->matrix.columns = cols;
 									size_t n = (size_t)rows * (size_t)cols;
 									obj->matrix.elements = calloc(MAX(n, 1), sizeof(double));
+									atomic_fetch_add(&arena.heap_bytes_live, n * sizeof(double));
 									if (n > 0 && fread(obj->matrix.elements, sizeof(double), n, file) != n) {
 										fail(interp, "%s: truncated matrix data", filename);
 										goto done;
@@ -3202,6 +3239,7 @@ void p_load_image(Interpreter *interp) {
 										  obj->continuation.return_len = return_len;
 										  obj->continuation.return_slice =
 											  malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
+										  atomic_fetch_add(&arena.heap_bytes_live, (size_t)return_len * sizeof(Val));
 										  for (int j = 0; j < return_len; j++) {
 											  if (!r_val(file, &obj->continuation.return_slice[j])) {
 												  fail(interp, "%s: truncated continuation slice", filename);
@@ -3238,6 +3276,7 @@ void p_load_image(Interpreter *interp) {
 									 obj->segment.length = length;
 									 size_t element_size = segment_element_size(element_type);
 									 obj->segment.data = calloc((size_t)MAX(length, 1), element_size);
+									 atomic_fetch_add(&arena.heap_bytes_live, (size_t)length * element_size);
 									 if (length > 0 && fread(obj->segment.data, element_size, (size_t)length, file) != (size_t)length) {
 										 fail(interp, "%s: truncated segment data", filename);
 										 goto done;
