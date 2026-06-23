@@ -1,0 +1,126 @@
+\ Statistics library. Reductions first: var (C primitive) and the std / se
+\ one-liners built on it. Deterministic on fixed inputs, so values are golden.
+"lib/statistics.l4" load
+
+\ 1..10 : var is the sample variance (n-1); std = sqrt(var); se = std / sqrt(n)
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix var . cr   \ 9.16667
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix std . cr   \ 3.02765
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix se . cr    \ 0.957427
+
+\ std is exactly sqrt(var) (same computation, so bit-identical)
+[ 2 4 6 8 ] 4 1 matrix dup var sqrt swap std = . cr   \ 1
+
+\ a constant vector has zero spread
+[ 5 5 5 5 5 ] 5 1 matrix dup dup var . swap std . se . cr   \ 0 0 0
+
+\ var depends only on the values, not the shape (1..6 as row, column, block)
+[ 1 2 3 4 5 6 ] 1 6 matrix var .
+[ 1 2 3 4 5 6 ] 6 1 matrix var .
+[ 1 2 3 4 5 6 ] 2 3 matrix var . cr
+
+\ var needs at least two elements
+[ 7 ] 1 1 matrix var . cr
+
+\ quantile ( m p -- f ): sort the values, then linearly interpolate at p*(n-1).
+\ p=0 is the min, p=1 the max, p=0.5 the median.
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 0 quantile . cr      \ 1     min
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 1 quantile . cr      \ 10    max
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 0.5 quantile . cr    \ 5.5   median (interpolated)
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 0.25 quantile . cr   \ 3.25  interpolated quartile
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 0.75 quantile . cr   \ 7.75
+
+\ odd vs even count: exact middle vs average of the two middles
+[ 1 3 5 7 9 ] 5 1 matrix 0.5 quantile . cr                \ 5
+[ 1 2 3 4 ] 4 1 matrix 0.5 quantile . cr                  \ 2.5
+
+\ input need not be sorted; quantile sorts a copy internally
+[ 5 1 3 2 4 ] 5 1 matrix 0.5 quantile . cr                \ 3
+
+\ a single element: every quantile is that element
+[ 42 ] 1 1 matrix 0.3 quantile . cr                       \ 42
+
+\ duplicates are kept (not deduped like a set)
+[ 2 2 2 8 ] 4 1 matrix 0.5 quantile . cr                  \ 2
+
+\ shape doesn't matter: quantile is over all elements (a 3x4 block)
+[ 1 2 3 4 5 6 7 8 9 10 11 12 ] 3 4 matrix 0.5 quantile . cr   \ 6.5
+
+\ misuse errors: p out of [0,1], non-float p, empty matrix
+[ 1 2 3 ] 3 1 matrix 1.5 quantile . cr
+[ 1 2 3 ] 3 1 matrix :x quantile . cr
+0 0 0-matrix 0.5 quantile . cr
+
+\ median ( m -- f ): the 0.5 quantile
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix median . cr   \ 5.5
+[ 1 2 3 4 5 6 7 8 9 ] 9 1 matrix median . cr       \ 5
+[ 1 2 3 4 ] 4 1 matrix median . cr                 \ 2.5  even -> interpolated
+[ 42 ] 1 1 matrix median . cr                      \ 42
+[ 7 2 9 4 ] 4 1 matrix dup median swap 0.5 quantile = . cr   \ 1  median == quantile 0.5
+
+\ percentile ( m pct -- f ): pct in [0,100]
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 0 percentile . cr     \ 1
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 100 percentile . cr   \ 10
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 50 percentile . cr    \ 5.5
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 25 percentile . cr    \ 3.25
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 90 percentile . cr    \ 9.1
+[ 3 1 4 1 5 ] 5 1 matrix dup 50 percentile swap median = . cr   \ 1  percentile 50 == median
+[ 1 2 3 ] 3 1 matrix 150 percentile . cr                   \ error: pct 150 -> p 1.5
+
+\ iqr ( m -- f ): Q3 - Q1
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix iqr . cr      \ 4.5
+[ 1 2 3 4 5 6 7 8 9 ] 9 1 matrix iqr . cr          \ 4
+[ 5 5 5 5 ] 4 1 matrix iqr . cr                    \ 0  constant -> no spread
+
+\ ci ( m level -- lo hi ): percentile interval, gathered into [ lo hi ]
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 0.95 ci 2 array . cr   \ [ 1.225 9.775 ]
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 0.90 ci 2 array . cr   \ [ 1.45 9.55 ]
+[ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix 1 ci 2 array . cr      \ [ 1 10 ]  full range at level 1
+
+\ ===== linear regression (LAPACKE dgelsd) + non-parametric bootstrap inference =====
+
+\ fit-linear recovers an exact line y = 2x + 1: beta = [intercept; slope] = [1; 2]
+[ 1 1  1 2  1 3 ] 3 2 matrix  [ 3 5 7 ] 3 1 matrix  fit-linear . cr
+
+\ with-intercept prepends a column of ones
+[ 5 6 7 ] 3 1 matrix with-intercept . cr   \ [[1 5][1 6][1 7]]
+
+\ regress: synthetic near-linear y ~ 2x + 1. point estimates are deterministic;
+\ the bootstrap SE/CI are deterministic too under a fixed seed.
+7 seed
+[ [ "x" "y" ]
+  [ 1 3.1 ] [ 2 4.9 ] [ 3 7.2 ] [ 4 8.8 ] [ 5 11.1 ] [ 6 12.9 ] ] 1 rows>dataset
+[ :x ] :y 300 linear-regression . cr   \ intercept ~1, slope ~2, CIs bracketing them
+
+\ regress on iris: petal_width ~ petal_length reproduces the textbook OLS,
+\ slope ~0.4158, intercept ~-0.3631, with bootstrap SE/CI from resampling
+7 seed
+"data/iris.tsv" read-tsv 1 rows>dataset
+[ :petal_length ] :petal_width 500 linear-regression . cr
+
+\ ===== logistic regression (IRLS over dgelsd) =====
+
+\ sigmoid maps 0 -> 0.5 (and is symmetric)
+[ 0 ] 1 1 matrix sigmoid . cr                    \ 0.5
+[ -2 0 2 ] 1 3 matrix sigmoid . cr               \ [0.119.. 0.5 0.880..]
+
+\ fit-logistic (Firth-penalized) on non-separable data: positive slope
+[ 1 2 3 4 5 6 7 8 ] 8 1 matrix with-intercept
+[ 0 0 1 0 1 0 1 1 ] 8 1 matrix  25 1e-8 fit-logistic . cr
+
+\ a tighter budget reaches the same fit
+[ 1 2 3 4 5 6 7 8 ] 8 1 matrix with-intercept
+[ 0 0 1 0 1 0 1 1 ] 8 1 matrix  100 1e-10 fit-logistic . cr
+
+\ the Firth penalty keeps the estimate finite even under perfect separation
+\ (plain MLE would diverge to +/- infinity)
+[ 1 2 3 4 ] 4 1 matrix with-intercept
+[ 0 0 1 1 ] 4 1 matrix  25 1e-8 fit-logistic . cr
+
+\ dataset-level logistic-regression: iris virginica-vs-versicolor by sepal length,
+\ the classic non-separable logistic. Bootstrap gives SE/CI/bias per coefficient;
+\ Firth keeps every resample finite so the bootstrap never diverges.
+"data/iris.tsv" read-tsv 1 rows>dataset :sepal_length @ 50 skip to sepal-lengths
+0 50 array-of  1 50 array-of  concat to species-y
+[ :sepal_length :y ]  sepal-lengths species-y 2 array  frame to iris-two
+7 seed
+iris-two [ :sepal_length ] :y 300 logistic-regression . cr   \ slope ~1.9

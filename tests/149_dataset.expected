@@ -1,0 +1,11 @@
+[ :name :age :city ] 
+[ "Alice" "Bob" "Cy" ] 
+[ 30 25 40 ] 
+95 
+[ 31 26 41 ] 
+[ null 22 ] 
+[ :col1 :col2 ] 
+[ 10 11 12 ] 
+2 
+[ { :city "LA" :id :u2 } ] 
+1 

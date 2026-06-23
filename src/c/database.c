@@ -2,12 +2,7 @@
 #include "sqlite3.h"
 
 #define POP_DB(name, op) \
-      Val name##_val = pop(interp); \
-      if (interp->error_flag) return; \
-      if (VAL_TAG(name##_val) != T_DB) { \
-              fail(interp, "%s: expected a database; got %s", (op), tag_name(VAL_TAG(name##_val))); \
-              return; \
-      } \
+      POP_TYPED(name, op, T_DB); \
       sqlite3 *name = interp->databases[VAL_DATA(name##_val)]
 
 void p_db_open(Interpreter *interp) {

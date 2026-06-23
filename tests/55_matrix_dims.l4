@@ -11,3 +11,11 @@
 
 \ ordinary small matrix is unaffected
 2 3 0-matrix dim . .
+
+\ size reports the element count (rows * columns) — the matrix analog of array/set size
+cr
+2 3 0-matrix size . cr                  \ 6
+100 100 0-matrix size . cr              \ 10000
+[ 1 2 3 4 5 6 ] 1 6 matrix size . cr    \ 6   row vector
+[ 1 2 3 4 5 6 ] 6 1 matrix size . cr    \ 6   column vector
+1 1 0-matrix size . cr                  \ 1   single element

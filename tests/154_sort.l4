@@ -1,0 +1,35 @@
+\ sort ( arr -- arr ): a NEW array ordered by the system total order (val_cmp) —
+\ the same order =, lt, and sets use. Duplicates are kept; the source is unchanged.
+
+\ floats: ascending, duplicates kept, negatives and non-integers
+[ 3 1 2 1 3 ] sort . cr             \ [ 1 1 2 3 3 ]
+[ 5 4 3 2 1 ] sort . cr             \ reverse input -> ascending
+[ -2 0 -5 3.5 1.5 -5 ] sort . cr    \ negatives and fractions ordered, -5 twice
+[ 42 ] sort . cr                    \ single element
+[ ] sort . cr                       \ empty
+
+\ already sorted is a fixed point
+[ 1 2 3 ] sort . cr
+
+\ idempotent: sorting twice equals sorting once
+[ 3 1 2 ] sort sort  [ 3 1 2 ] sort  = . cr   \ 1
+
+\ functional: the source array is not mutated
+[ 9 7 8 ] dup sort drop . cr        \ [ 9 7 8 ]
+
+\ strings: lexicographic; a prefix sorts before its extension; duplicates kept
+[ "pear" "apple" "ab" "a" "apple" ] sort . cr
+
+\ mixed tags group in tag order (float < string), ordered within each tag
+[ "z" 3 1 "a" 2 ] sort . cr         \ [ 1 2 3 "a" "z" ]
+
+\ nested arrays compared element-wise (val_cmp recurses; shorter prefix first)
+[ [ 2 ] [ 1 ] [ 1 0 ] [ 1 ] ] sort . cr   \ [ [ 1 ] [ 1 ] [ 1 0 ] [ 2 ] ]
+
+\ symbols order by interning order, not alphabetically (val_cmp compares the
+\ interned offset) — included to document that, not as alphabetical sorting
+[ :gamma :alpha :beta ] sort . cr
+
+\ only arrays sort
+5 sort . cr                         \ error: not an array
+< 3 1 2 > sort . cr                 \ error: a set is not an array

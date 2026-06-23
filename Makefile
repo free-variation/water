@@ -29,6 +29,22 @@ ISOCLINE_DIR    = external/isocline
 ISOCLINE_CFLAGS = -O2 -I$(ISOCLINE_DIR)/include
 ISOCLINE_OBJ    = $(ISOCLINE_DIR)/isocline.o
 
+# Vendored LAPACKE closure (see external/lapacke/PROVENANCE; refresh with
+# tools/vendor-lapacke.sh). C wrappers over Accelerate's Fortran LAPACK, built
+# into a dylib that logicforth dlopens via FFI. macOS/Accelerate-only, so this
+# is the explicit `make lapacke` target, not part of the default build.
+# Add a routine: re-vendor with it, then add a -exported_symbol below.
+LAPACKE_DIR     = external/lapacke
+LAPACKE_SRCS    = $(wildcard $(LAPACKE_DIR)/src/*.c) $(wildcard $(LAPACKE_DIR)/utils/*.c)
+LAPACKE_OBJS    = $(patsubst %.c,%.o,$(LAPACKE_SRCS))
+LAPACKE_LIB     = $(LAPACKE_DIR)/liblapacke.a
+LAPACKE_DYLIB   = $(LAPACKE_DIR)/liblapacke_accel.dylib
+LAPACKE_CFLAGS  = -O2 -DNDEBUG -DADD_ -I$(LAPACKE_DIR)/include
+LAPACKE_EXPORTS = -Wl,-exported_symbol,_LAPACKE_dgesvd \
+                  -Wl,-exported_symbol,_LAPACKE_dgelsd
+
+all: logicforth $(LAPACKE_DYLIB)
+
 logicforth: $(SRCS) $(HDRS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
 	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -I$(SQLITE_DIR) -I$(ISOCLINE_DIR)/include -o logicforth $(SRCS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LDLIBS)
 
@@ -44,6 +60,21 @@ $(SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
 $(ISOCLINE_OBJ): $(ISOCLINE_DIR)/src/isocline.c
 	$(CC) $(ISOCLINE_CFLAGS) -c $< -o $@
 
+# Build the LAPACKE-over-Accelerate dylib that FFI dlopens.
+lapacke: $(LAPACKE_DYLIB)
+
+# -exported_symbol roots the routines we expose (the linker pulls their closure
+# from the archive) and limits the dylib's exports to them; -dead_strip drops
+# anything unreachable. -framework Accelerate resolves the Fortran dgesvd_/etc.
+$(LAPACKE_DYLIB): $(LAPACKE_LIB)
+	$(CC) -dynamiclib -o $@ $(LAPACKE_EXPORTS) -Wl,-dead_strip $(LAPACKE_LIB) -framework Accelerate
+
+$(LAPACKE_LIB): $(LAPACKE_OBJS)
+	ar rcs $@ $(LAPACKE_OBJS)
+
+$(LAPACKE_DIR)/%.o: $(LAPACKE_DIR)/%.c
+	$(CC) $(LAPACKE_CFLAGS) -c $< -o $@
+
 src/c/help_table.c: docs/reference.md tools/gen-help.py
 	python3 tools/gen-help.py
 
@@ -58,6 +89,9 @@ editors src/c/repl_highlight_groups.h: docs/reference.md tools/gen-editors.py
 vendor-pcre2:
 	sh tools/vendor-pcre2.sh
 
+vendor-lapacke:
+	sh tools/vendor-lapacke.sh
+
 test: logicforth
 	sh tests/run.sh
 
@@ -65,6 +99,6 @@ bench:
 	@sh bench/run-benchmarks.sh
 
 clean:
-	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
+	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_DYLIB)
 
-.PHONY: clean test bench vendor-pcre2 editors
+.PHONY: all clean test bench vendor-pcre2 vendor-lapacke lapacke editors

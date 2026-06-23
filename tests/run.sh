@@ -14,7 +14,7 @@ here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
 bin="$root/logicforth"
 
-(cd "$root" && make logicforth) || { echo "build failed"; exit 1; }
+(cd "$root" && make all) || { echo "build failed"; exit 1; }
 
 pass=0
 fail=0

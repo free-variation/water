@@ -8,4 +8,6 @@
 [ 1 2 3 4 5 6 ] 2 3 matrix 1 2 @i,j .
 [ 1 2 3 4 5 6 ] 2 3 matrix dup 0 0 @i,j swap 1 2 @i,j + .
 3 identity-matrix 0 0 @i,j .
-3 identity-matrix 0 1 @i,j .
+3 identity-matrix 0 1 @i,j . cr
+3 double-segment 0 10 !i 1 20 !i 2 30 !i 1 @i .
+3 int-segment 0 7 !i 1 8 !i 2 9 !i 2 @i .

@@ -1,6 +1,9 @@
 variable pi
 3.141592653589793 to pi
 
+: true 1 ; inline
+: false 0 ; inline
+
 ( a b -- a b a b )
 : 2dup over over ;
 inline
@@ -50,11 +53,8 @@ inline
 ( m -- 1xN-matrix )
 : flatten dup dim * 1 swap reshape ;
 
-( m -- num-elements )
-: num-elements dim * ;
-
 ( m -- mean )
-: mean dup num-elements swap sum swap / ;
+: mean dup size swap sum swap / ;
 
 ( m -- row-means )  \ each row's sum divided by the number of columns
 : row-means dup dim swap drop swap row-sums swap / ;
@@ -311,4 +311,72 @@ inline
 		swap consumer execute
 		resume
 	again ;
+
+
+( n -- [0..n-1] ) \ empty when n <= 0
+: iota dup 0= if drop [ ] else 1- 0 swap range then ;
+
+( table header? -- keys start) \ keys from row 0, or synthesized :col1 ..; start = first data-row index
+: tsv-keys
+	| >table >header? keys |
+
+	header? if
+		table 0 @i [: string>symbol :] map to keys
+		keys 1
+	else
+		table 0 @i size 1 swap range [: "col{0}" format string>symbol :] map to keys
+		keys 0
+	then ;
+
+( table header? -- dataset) \ column frame: each key maps to that column's array
+: rows>dataset
+	| >table >header? keys start n-rows row-indices columns |
+	
+	table size 0= if { } exit then
+	
+	table header? tsv-keys to start to keys
+	table size start - to n-rows
+	
+	n-rows 0= if [ ] else start table size 1- range then to row-indices
+	keys size iota
+	[: |> j | 
+	   row-indices [: |> i | 
+					  table i @i j @i :]
+	   map :]
+	map to columns
+
+	keys columns frame ;
+	
+( table index-cols header? -- relation ) \ table to deduped relation, indexed on index-cols
+: rows>relation
+	| >table >index-cols >header? keys start n-rows row-indices rows |
+
+	table size 0= if index-cols relation exit then
+	
+	table header? tsv-keys to start to keys
+	table size start - to n-rows
+	n-rows 0= if [ ] else start table size 1- range then to row-indices
+	
+	row-indices [: |> i | keys table i @i frame :] map to rows
+	rows [: |> row | 
+			index-cols row [: |> acc col |
+							  acc col [: string>symbol :] update-at :]
+			reduce :] map to rows
+
+	index-cols relation rows bulk-load ;
+
+( dataset cols -- matrix ) \ K numeric columns -> NxK matrix, observations are row
+: dataset>matrix
+	| >dataset >cols rows-count |
+
+	dataset cols 0 @i @ size to rows-count \ counts rows from 0th column
+	cols [: |> col | dataset col @ :] map \ K column arrays
+	flatten-array \ one flat array, column-major (K*N)
+	cols size rows-count matrix \ KxN (each row a column)
+	transpose ;
+
+( n -- [indices] ) \ row indices drawn from [0, n{ with replacement
+: resample-indices
+	| >n |
+	n iota n true sample ;
 

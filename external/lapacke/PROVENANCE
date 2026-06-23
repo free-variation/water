@@ -1,0 +1,16 @@
+LAPACKE (C interface to LAPACK) -- vendored closure, not the full library.
+
+Upstream:  https://github.com/Reference-LAPACK/lapack
+Commit:    122f8924ed732ef90ebee977fcaf45b4aec4d321
+Routines:  dgesvd dgelsd
+Contents:  the exact object closure of those LAPACKE_<routine> wrappers
+           (derived from a linker dead-strip map), split into src/ and utils/,
+           plus the include/ headers they need.
+License:   modified BSD (BSD-3-Clause). See LICENSE.
+
+Build:     the top-level Makefile compiles src/ + utils/ into liblapacke.a, then
+           links liblapacke_accel.dylib with -framework Accelerate, so the
+           Fortran routines (dgesvd_, dggglm_, ...) resolve from Accelerate. The
+           dylib's -exported_symbol list is exactly the routines above.
+
+Refresh:   tools/vendor-lapacke.sh [routine ...]   (needs network + Accelerate)

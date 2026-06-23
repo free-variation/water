@@ -19,3 +19,11 @@ h 10002 "file:///tmp/lf_ffi_test.txt" curl-setopt-str drop
 h curl-perform to code
 cr code . cr
 h curl-cleanup
+
+\ segment>pointer: hand a C function a writable buffer and read the result back.
+\ modf(x, *iptr) returns the fractional part and writes the integer part to *iptr.
+"/usr/lib/libSystem.B.dylib" ffi-open to libc
+libc "modf" [ :double :ptr ] :double ffi-function modf
+1 double-segment to part
+3.75 part segment>pointer modf . cr   \ 0.75  (fractional part, returned)
+part 0 @i . cr                        \ 3     (integer part, written into the segment)

@@ -1,0 +1,16 @@
+\ sample ( collection n with-replacement? -- array ): deterministic under a fixed seed.
+\ Covers with/without replacement, full permutation, count 0, sets, empty,
+\ non-numeric elements, and the error cases.
+1 seed
+[ 10 20 30 ] 6 true sample . cr          \ with replacement: repeats allowed, n may exceed size
+[ 10 20 30 40 50 ] 3 false sample . cr   \ without replacement: distinct elements
+[ 1 2 3 4 ] 4 false sample . cr          \ full permutation (n = size, no replacement)
+[ 1 2 3 4 ] 0 true sample . cr           \ count 0 -> empty array
+< 7 8 9 > 2 false sample . cr            \ from a set -> array of elements
+[ "a" "b" "c" ] 4 true sample . cr       \ non-numeric elements, with replacement
+[ ] 5 true sample . cr                   \ empty collection -> empty array
+
+\ error cases
+[ 1 2 ] 5 false sample                   \ more than available, without replacement
+[ 1 2 3 ] -1 true sample                 \ negative count
+42 3 true sample                         \ argument is not a sequence

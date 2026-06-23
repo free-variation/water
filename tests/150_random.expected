@@ -1,0 +1,6 @@
+0.083863 0.37898 0.680043 
+0.083863 0.37898 0.680043 
+4 4 8 4 4 1 6 6 
+0.497739 
+error: random-int: bound must be positive; got 0
+error: random-int: bound must be positive; got -3

@@ -1,0 +1,3 @@
+[ [ "name" "age" ] [ "Alice" 30 ] [ "Bob" null ] ] 
+30 
+error: write-tsv: row 0 cell 0 is a set, cannot represent in TSV

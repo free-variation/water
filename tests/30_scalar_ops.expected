@@ -20,3 +20,25 @@
 <matrix 2x2>
          90         80
          70         60
+<matrix 2x2>
+         11         12
+         23         24
+<matrix 2x2>
+         10         20
+         60         80
+<matrix 2x2>
+         11         22
+         13         24
+<matrix 2x2>
+          2          6
+          6         12
+<matrix 2x2>
+         99         98
+        197        196
+<matrix 2x2>
+        -99        -98
+       -197       -196
+<matrix 2x2>
+          6          7
+          8          9
+error: +: shapes not broadcast-compatible (3x1 vs 2x2)

@@ -1,0 +1,50 @@
+<matrix 2x2>
+          2          3
+          6          7
+<matrix 3x1>
+          3
+          7
+         11
+<matrix 1x4>
+          5          6          7          8
+<matrix 0x4>
+<matrix 3x4>
+          1          2          3          4
+          5          6          7          8
+          9         10         11         12
+error: submatrix: [0,4)x[0,1) out of bounds for 3x4
+<matrix 3x4>
+          9         10         11         12
+          1          2          3          4
+          5          6          7          8
+<matrix 3x4>
+          1          2          3          4
+          1          2          3          4
+          9         10         11         12
+<matrix 1x4>
+          5          6          7          8
+<matrix 0x4>
+<matrix 3x4>
+          1          2          3          4
+          5          6          7          8
+          9         10         11         12
+error: select-rows: row 3 out of bounds (2 rows)
+error: select-rows: index 1 is a symbol, expected a float
+<matrix 2x3>
+          1          2          9
+          3          4          8
+<matrix 2x2>
+          5          7
+          6          8
+<matrix 2x5>
+          1          2          3          0          0
+          4          5          6          0          0
+<matrix 1x4>
+          1          2          3          4
+<matrix 1x3>
+          1          2          3
+<matrix 2x3>
+          7          1          2
+          8          3          4
+error: augment: row counts differ (2 vs 3)
+error: augment: expected a matrix; got an array

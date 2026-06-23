@@ -1,0 +1,31 @@
+\ Generate a large synthetic logistic-regression dataset -> data/logistic-sim.tsv
+\
+\ True model (the values fit-logistic / logistic-regression should recover):
+\   logit P(y=1) = -0.5 + 1.5 x1 - 1.0 x2 + 0.8 x3 - 0.3 x4
+\                       + 0.6 x5 - 1.2 x6 + 0.4 x7 - 0.7 x8
+\ Predictors are uniform on [-1, 1]; y ~ Bernoulli(sigmoid(eta)). 1,000,000 rows.
+\ Run:  ./logicforth -b < bench/gen-logistic-sim.l4
+
+12345 seed
+
+[ "x1" "x2" "x3" "x4" "x5" "x6" "x7" "x8" "y" ] 1 array   \ header, wrapped as [ header ]
+0 999999 range
+[: | >i x1 x2 x3 x4 x5 x6 x7 x8 eta |
+	random 2 * 1 - to x1
+	random 2 * 1 - to x2
+	random 2 * 1 - to x3
+	random 2 * 1 - to x4
+	random 2 * 1 - to x5
+	random 2 * 1 - to x6
+	random 2 * 1 - to x7
+	random 2 * 1 - to x8
+	-0.5  1.5 x1 *  +  -1.0 x2 *  +  0.8 x3 *  +  -0.3 x4 *  +
+	      0.6 x5 *  +  -1.2 x6 *  +  0.4 x7 *  +  -0.7 x8 *  +  to eta
+	x1 x2 x3 x4 x5 x6 x7 x8
+	eta negate exp 1+ 1 swap /   \ p = sigmoid(eta)
+	random swap lt               \ y = 1 with probability p
+	9 array
+:] map
+concat                                       \ [ header, row0, row1, ... ]
+"data/logistic-sim.tsv" write-tsv
+"wrote data/logistic-sim.tsv" . cr

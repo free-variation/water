@@ -1,0 +1,12 @@
+\ Availability of Accelerate's LAPACKE routines through the FFI.
+\ The dylib is built by the default `make` (target: lapacke).
+\ ffi-open resolves the library; each ffi-function dlsym's the symbol and
+\ defines a word, so a clean run proves both vendored routines are bound.
+
+"external/lapacke/liblapacke_accel.dylib" ffi-open
+dup "LAPACKE_dgesvd" [ :int :int :int :int :int :ptr :int :ptr :ptr :int :ptr :int :ptr ] :int ffi-function dgesvd
+    "LAPACKE_dgelsd" [ :int :int :int :int :ptr :int :ptr :int :ptr :double :ptr ] :int ffi-function dgelsd
+
+' dgesvd drop
+' dgelsd drop
+"LAPACKE_dgesvd LAPACKE_dgelsd bound" . cr

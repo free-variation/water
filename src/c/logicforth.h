@@ -83,7 +83,8 @@ typedef enum {
 	T_LOGIC_VAR,
 	T_UNBOUND,
 	T_DB,
-	T_PTR
+	T_PTR,
+	T_SEGMENT
 } Tag;
 
 typedef union {
@@ -149,6 +150,7 @@ static inline Val make_addr(int cell_index) { return make_tagged(T_ADDR, cell_in
 static inline Val make_stream(int file_descriptor) {return make_tagged(T_STREAM, file_descriptor); }
 static inline Val make_db(int handle) { return make_tagged(T_DB, handle); }
 static inline Val make_pointer(int handle) { return make_tagged(T_PTR, handle); }
+static inline Val make_segment(int handle) { return make_tagged(T_SEGMENT, handle); }
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_logic_var(int handle) { return make_tagged(T_LOGIC_VAR, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
@@ -167,8 +169,14 @@ typedef enum {
 	OBJECT_ARRAY,
 	OBJECT_FRAME,
 	OBJECT_MATRIX,
-	OBJECT_CONTINUATION
+	OBJECT_CONTINUATION,
+	OBJECT_SEGMENT
 } ObjectKind;
+
+typedef enum {
+	SEGMENT_INT = 0,
+	SEGMENT_DOUBLE
+} SegmentType;
 
 typedef struct Object {
 	ObjectKind kind;
@@ -192,10 +200,38 @@ typedef struct Object {
 			int local_base_offset;
 			int capture_generation;
 		} continuation;
+		struct {
+			int element_type;
+			int length;
+			void *data;
+		} segment;
 	};
 
 	cell mark_epoch;
 } Object;
+
+static inline size_t segment_element_size(SegmentType element_type) {
+	switch (element_type) {
+		case SEGMENT_DOUBLE: return sizeof(double);
+		case SEGMENT_INT:    return sizeof(int);
+	}
+	return 0;
+}
+
+static inline double segment_get(Object *segment, int index) {
+	switch (segment->segment.element_type) {
+		case SEGMENT_INT:    return ((int *)segment->segment.data)[index];
+		case SEGMENT_DOUBLE: return ((double *)segment->segment.data)[index];
+	}
+	return 0;
+}
+
+static inline void segment_set(Object *segment, int index, double value) {
+	switch (segment->segment.element_type) {
+		case SEGMENT_INT:    ((int *)segment->segment.data)[index] = (int)value; break;
+		case SEGMENT_DOUBLE: ((double *)segment->segment.data)[index] = value; break;
+	}
+}
 
 typedef struct {
 	Val head;
@@ -436,6 +472,8 @@ extern int print_truncate;
 void fail(Interpreter *interp, const char *fmt, ...);
 
 void p_sum(Interpreter *interp);
+void p_variance(Interpreter *interp);
+void p_quantile(Interpreter *interp);
 void p_max(Interpreter *interp);
 void p_min(Interpreter *interp);
 void p_row_sums(Interpreter *interp);
@@ -487,54 +525,42 @@ static inline Val rpop(Interpreter *interp) {
 
 #define POP(name) Val name = pop(interp); if (interp->error_flag) return
 
+#define POP_TYPED(name, op, type) \
+	POP(name##_val); \
+	if (VAL_TAG(name##_val) != (type)) { \
+		fail(interp, "%s: expected %s; got %s", (op), tag_name(type), tag_name(VAL_TAG(name##_val))); \
+		return; \
+	}
+
 #define POP_INT(name, op, what) \
-	Val name##_val = pop(interp); \
-	if (interp->error_flag) return; \
+	POP(name##_val); \
 	if (VAL_TAG(name##_val) != T_FLOAT) { \
 		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
 	int name = (int)VAL_NUMBER(name##_val)
 
-#define POP_XT(name, op) \
-	Val name##_val = pop(interp); \
-	if (interp->error_flag) return; \
-	if (VAL_TAG(name##_val) != T_XT) { \
-		fail(interp, "%s: expected an execution token; got %s", (op), tag_name(VAL_TAG(name##_val))); \
+#define POP_FLOAT(name, op, what) \
+	POP(name##_val); \
+	if (VAL_TAG(name##_val) != T_FLOAT) { \
+		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
-	int name = (int)VAL_DATA(name##_val)
+	double name = VAL_NUMBER(name##_val)
 
-#define POP_MATRIX(name, op) \
-	Val name##_val = pop(interp); \
-	if (interp->error_flag) return; \
-	if (VAL_TAG(name##_val) != T_MATRIX) { \
-		fail(interp, "%s: expected a matrix; got %s", (op), tag_name(VAL_TAG(name##_val))); \
-		return; \
-	} \
-	Object *name = OBJECT_AT(VAL_DATA(name##_val))
-
-#define POP_STRING(name, op) \
-	Val name##_val = pop(interp); \
-	if (interp->error_flag) return; \
-	if (VAL_TAG(name##_val) != T_STRING) { \
-		fail(interp, "%s: expected a string; got %s", (op), tag_name(VAL_TAG(name##_val))); \
-		return; \
-	} \
-	Object *name = OBJECT_AT(VAL_DATA(name##_val))
-
-#define POP_ARRAY(name, op) \
-	Val name##_val = pop(interp); \
-	if (interp->error_flag) return; \
-	if (VAL_TAG(name##_val) != T_ARRAY) { \
-		fail(interp, "%s: expected an array; got %s", (op), tag_name(VAL_TAG(name##_val))); \
-		return; \
-	} \
-	Object *name = OBJECT_AT(VAL_DATA(name##_val))
+#define POP_XT(name, op)      POP_TYPED(name, op, T_XT);      int name = (int)VAL_DATA(name##_val)
+#define POP_MATRIX(name, op)  POP_TYPED(name, op, T_MATRIX);  Object *name = OBJECT_AT(VAL_DATA(name##_val))
+#define POP_SEGMENT(name, op) POP_TYPED(name, op, T_SEGMENT); Object *name = OBJECT_AT(VAL_DATA(name##_val))
+#define POP_STRING(name, op)  POP_TYPED(name, op, T_STRING);  Object *name = OBJECT_AT(VAL_DATA(name##_val))
+#define POP_ARRAY(name, op)   POP_TYPED(name, op, T_ARRAY);   Object *name = OBJECT_AT(VAL_DATA(name##_val))
+#define POP_SET(name, op)     POP_TYPED(name, op, T_SET);     int name = (int)VAL_DATA(name##_val)
+#define POP_PAIR(name, op)    POP_TYPED(name, op, T_PAIR);    Pair *name = &pairs.table[VAL_DATA(name##_val)]
+#define POP_CONT(name, op)    POP_TYPED(name, op, T_CONT);    Object *name = OBJECT_AT(VAL_DATA(name##_val))
+#define POP_SYMBOL(name, op)  POP_TYPED(name, op, T_SYMBOL);  cell name = VAL_DATA(name##_val)
+#define POP_PTR(name, op)     POP_TYPED(name, op, T_PTR);     int name = (int)VAL_DATA(name##_val)
 
 #define POP_COLLECTION(name, op) \
-	Val name##_val = pop(interp); \
-	if (interp->error_flag) return; \
+	POP(name##_val); \
 	if (VAL_TAG(name##_val) != T_ARRAY && VAL_TAG(name##_val) != T_SET) { \
 		fail(interp, "%s: expected an array or set; got %s", (op), tag_name(VAL_TAG(name##_val))); \
 		return; \
@@ -626,10 +652,12 @@ int build_set_from_values(Interpreter *interp, const Val *values, int count);
 int object_new_array(Interpreter *interp, int num_elements);
 int object_new_frame(Interpreter *interp);
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns);
+int object_new_segment(Interpreter *interp, int length, SegmentType element_type);
 int object_new_logic_var(Interpreter *interp);
 int object_new_pair(Interpreter *interp);
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip);
 int val_cmp(Interpreter *interp, Val left, Val right);
+int double_cmp(const void *left, const void *right);
 void set_add(Interpreter *interp, int set_handle, Val value);
 void set_remove(Interpreter *interp, int set_handle, Val value);
 int set_member(Interpreter *interp, int set_handle, Val value);
@@ -839,6 +867,7 @@ void p_dgemm_tn(Interpreter *interp);
 void p_dgemm_nt(Interpreter *interp);
 void p_dgemm_tt(Interpreter *interp);
 double matrix_sum_overall(Object *source);
+double matrix_variance_overall(Object *source);
 double matrix_max_overall(Object *source);
 double matrix_min_overall(Object *source);
 int matrix_sum_rows(Interpreter *interp, Object *source);
@@ -941,10 +970,15 @@ void p_matrix_range(Interpreter *interp);
 void p_matrix(Interpreter *interp);
 void p_dim(Interpreter *interp);
 void p_array_of(Interpreter *interp);
+void p_int_segment(Interpreter *interp);
+void p_double_segment(Interpreter *interp);
 void p_take(Interpreter *interp);
 void p_reverse(Interpreter *interp);
 void p_reverse_slice(Interpreter *interp);
 void p_concat(Interpreter *interp);
+void p_flatten_array(Interpreter *interp);
+void p_sort(Interpreter *interp);
+void p_sample(Interpreter *interp);
 void p_destruct(Interpreter *interp);
 void p_destruct_to(Interpreter *interp);
 void p_slice_store(Interpreter *interp);
@@ -960,6 +994,9 @@ void p_select_keys(Interpreter *interp);
 void p_json_to_frame(Interpreter *interp);
 void p_frame_to_json(Interpreter *interp);
 void p_transpose(Interpreter *interp);
+void p_submatrix(Interpreter *interp);
+void p_select_rows(Interpreter *interp);
+void p_augment(Interpreter *interp);
 void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name);
 void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name);
 void p_abs(Interpreter *interp);
@@ -1002,6 +1039,10 @@ void p_round_down(Interpreter *interp);
 void p_inc_poly(Interpreter *interp);
 void p_dec_poly(Interpreter *interp);
 void p_sq_poly(Interpreter *interp);
+void p_seed(Interpreter *interp);
+void p_random(Interpreter *interp);
+void p_random_int(Interpreter *interp);
+int random_below(int bound);
 void p_now(Interpreter *interp);
 void p_sleep(Interpreter *interp);
 void p_env(Interpreter *interp);
@@ -1011,6 +1052,8 @@ void p_cwd(Interpreter *interp);
 void p_read_file(Interpreter *interp);
 void p_write_file(Interpreter *interp);
 void p_append_file(Interpreter *interp);
+void p_read_tsv(Interpreter *interp);
+void p_write_tsv(Interpreter *interp);
 void p_format(Interpreter *interp);
 void p_start_process(Interpreter *interp);
 void p_write(Interpreter *interp);
@@ -1023,6 +1066,8 @@ void p_ffi_function(Interpreter *interp);
 void p_ffi_variadic(Interpreter *interp);
 void p_ffi_call(Interpreter *interp);
 void p_ffi_free(Interpreter *interp);
+void p_matrix_to_pointer(Interpreter *interp);
+void p_segment_to_pointer(Interpreter *interp);
 int ffi_register_call_cfa(int cfa);
 void p_db_exec(Interpreter *interp);
 void p_db_query(Interpreter *interp);

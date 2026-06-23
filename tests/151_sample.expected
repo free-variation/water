@@ -1,0 +1,10 @@
+[ 20 20 30 30 30 20 ] 
+[ 20 30 40 ] 
+[ 1 3 2 4 ] 
+[ ] 
+[ 9 7 ] 
+[ "b" "c" "c" "b" ] 
+[ ] 
+error: sample: cannot draw 5 without replacement from 2
+error: sample: count must be non-negative; got -1
+error: sample: expected array or set; got a float

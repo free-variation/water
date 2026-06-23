@@ -705,13 +705,7 @@ void p_shift_with(Interpreter *interp) {
 }
 
 void p_resume(Interpreter *interp) {
-	POP(continuation_val);
-	if (VAL_TAG(continuation_val) != T_CONT) {
-		fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(continuation_val)));
-		return;
-	}
-
-	Object *continuation = OBJECT_AT(VAL_DATA(continuation_val));
+	POP_CONT(continuation, "resume");
 	if (continuation->continuation.capture_generation != vocab.forget_generation) {
 		fail(interp, "resume: continuation outlived its defining word");
 		return;
@@ -1796,6 +1790,85 @@ void p_fmodop(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static _Atomic uint64_t random_base_seed = 0x2545F4914F6CDD1DULL;
+static _Atomic uint64_t random_stream_counter = 0;
+static _Thread_local uint64_t random_state[4];
+static _Thread_local int random_seeded = 0;
+
+static uint64_t splitmix64(uint64_t *state) {
+	uint64_t z = (*state += 0x9E3779B97F4A7C15ULL);
+	z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;
+	z = (z ^ (z >> 27)) * 0x94D049BB133111EBULL;
+	return z ^ (z >> 31);
+}
+
+static void random_ensure_seeded(void) {
+	if (random_seeded)
+		return;
+	uint64_t stream = atomic_fetch_add(&random_stream_counter, 1);
+	uint64_t expand = atomic_load(&random_base_seed) + stream * 0x9E3779B97F4A7C15ULL;
+	for (int i = 0; i < 4; i++)
+		random_state[i] = splitmix64(&expand);
+	random_seeded = 1;
+}
+
+static inline uint64_t random_rotl(uint64_t x, int k) {
+	return (x << k) | (x >> (64 - k));
+}
+
+static uint64_t random_next(void) {
+	random_ensure_seeded();
+	uint64_t result = random_rotl(random_state[1] * 5, 7) * 9;
+	uint64_t t = random_state[1] << 17;
+	random_state[2] ^= random_state[0];
+	random_state[3] ^= random_state[1];
+	random_state[1] ^= random_state[2];
+	random_state[0] ^= random_state[3];
+	random_state[2] ^= t;
+	random_state[3] = random_rotl(random_state[3], 45);
+	return result;
+}
+
+void p_seed(Interpreter *interp) {
+	POP_INT(seed_value, "seed", "seed");
+	atomic_store(&random_base_seed, (uint64_t)seed_value);
+	atomic_store(&random_stream_counter, 0);
+	random_seeded = 0;
+	random_ensure_seeded();
+
+	DISPATCH(interp);
+}
+
+void p_random(Interpreter *interp) {
+	uint64_t bits = random_next() >> 11;
+	push(interp, make_float((double)bits * 0x1.0p-53));
+
+	DISPATCH(interp);
+}
+
+int random_below(int bound) {
+	uint64_t range = (uint64_t)bound;
+	uint64_t threshold = (0 - range) % range;
+	uint64_t value;
+
+	do {
+		value = random_next();
+	} while (value < threshold);
+
+	return (int)(value % range);
+}
+
+void p_random_int(Interpreter *interp) {
+	POP_INT(bound, "random-int", "bound");
+	if (bound <= 0) {
+		fail(interp, "random-int: bound must be positive; got %d", bound);
+		return;
+	}
+	push(interp, make_float((double)random_below(bound)));
+
+	DISPATCH(interp);
+}
+
 void p_now(Interpreter *interp) {
 	struct timespec ts;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
@@ -1923,6 +1996,183 @@ void p_write_file(Interpreter *interp) {
 
 void p_append_file(Interpreter *interp) {
 	write_file(interp, "ab", "append-file");
+
+	DISPATCH(interp);
+}
+
+static int tsv_row_to_array(Interpreter *interp, char *row, int row_length) {
+	int cell_count = 1;
+	for (int i = 0; i < row_length; i++)
+		if (row[i] == '\t')
+			cell_count++;
+
+	int array_handle = object_new_array(interp, cell_count);
+	if (interp->error_flag) return -1;
+
+	Object *array = OBJECT_AT(array_handle);
+	memset(array->items, 0, sizeof(Val) * (size_t)cell_count);
+	gc_root_push(interp, make_array(array_handle));
+
+	int cell_index = 0;
+	int cell_start = 0;
+	for (int i = 0; i <= row_length; i++) {
+			if (i < row_length && row[i] != '\t')
+				continue;
+
+			row[i] = 0;
+			char *cell = row + cell_start;
+			int cell_length = i - cell_start;
+			double number;
+
+			if (cell_length == 0)
+				array->items[cell_index] = make_tagged(T_NONE, 0);
+			else if (parse_float(cell, &number))
+				array->items[cell_index] = make_float(number);
+			else
+				array->items[cell_index] = make_string(object_new_string(interp, cell, cell_length));
+
+			if (interp->error_flag) {
+				gc_root_pop(interp);
+				return -1;
+			}
+
+			cell_index++;
+			cell_start = i + 1;
+	}
+
+	gc_root_pop(interp);
+	return array_handle;
+}
+
+void p_read_tsv(Interpreter *interp) {
+	POP_STRING(path, "read-tsv");
+
+	FILE *file = fopen(path->bytes, "rb");
+	if (file == NULL) {
+		fail(interp, "read-tsv: cannot open %s", path->bytes);
+		return;
+	}
+
+	fseek(file, 0, SEEK_END);
+	long size = ftell(file);
+	rewind(file);
+	if (size < 0 || size > INT_MAX) {
+		fclose(file);
+		fail(interp, "read-tsv: cannot size %s", path->bytes);
+		return;
+	}
+
+	char *buffer = malloc((size_t)size + 1);
+	if (buffer == NULL) {
+		fclose(file);
+		fail(interp, "read-tsv: out of memory");
+		return;
+	}
+	int length = (int)fread(buffer, 1, (size_t)size, file);
+	fclose(file);
+	buffer[length] = 0;
+
+	int row_count = 0;
+	if (length > 0) {
+		row_count = 1;
+		for (int i = 0; i < length; i++)
+			if (buffer[i] == '\n')
+				row_count++;
+		if (buffer[length - 1] == '\n')
+			row_count--;
+	}
+
+	int outer_handle = object_new_array(interp, row_count);
+	if (interp->error_flag) {
+		free(buffer);
+		return;
+	}
+	Object *outer = OBJECT_AT(outer_handle);
+	memset(outer->items, 0, sizeof(Val) * (size_t)row_count);
+	gc_root_push(interp, make_array(outer_handle));
+
+	int row_index = 0;
+	int row_start = 0;
+	for (int i = 0; i <= length; i++) {
+		if (i < length && buffer[i] != '\n')
+			continue;
+		if (i == length && i == row_start)
+			break;
+		int row_length = i - row_start;
+		if (row_length > 0 && buffer[row_start + row_length - 1] == '\r')
+			row_length--;
+		buffer[row_start + row_length] = 0;
+		int row_handle = tsv_row_to_array(interp, buffer + row_start, row_length);
+		if (interp->error_flag) {
+			gc_root_pop(interp);
+			free(buffer);
+			return;
+		}
+		outer->items[row_index++] = make_array(row_handle);
+		row_start = i + 1;
+	}
+
+	gc_root_pop(interp);
+	free(buffer);
+	push(interp, make_array(outer_handle));
+
+	DISPATCH(interp);
+}
+
+void p_write_tsv(Interpreter *interp) {
+	POP_STRING(path, "write-tsv");
+	POP_ARRAY(rows, "write-tsv");
+
+	FILE *file = fopen(path->bytes, "wb");
+	if (file == NULL) {
+		fail(interp, "write-tsv: cannot open %s", path->bytes);
+		return;
+	}
+
+	for (int r = 0; r < rows->len; r++) {
+		Val row_val = rows->items[r];
+		if (VAL_TAG(row_val) != T_ARRAY) {
+			fclose(file);
+			fail(interp, "write-tsv: row %d is %s, expected an array", r, tag_name(VAL_TAG(row_val)));
+			return;
+		}
+		Object *row = OBJECT_AT(VAL_DATA(row_val));
+		for (int c = 0; c < row->len; c++) {
+			if (c > 0)
+				fputc('\t', file);
+			Val cell = row->items[c];
+			switch (VAL_TAG(cell)) {
+				case T_NONE:
+					break;
+				case T_FLOAT: {
+					double number = VAL_NUMBER(cell);
+					if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
+						fprintf(file, "%lld", (long long)number);
+					else
+						fprintf(file, "%g", number);
+					break;
+				}
+				case T_STRING: {
+					Object *string = OBJECT_AT(VAL_DATA(cell));
+					for (int b = 0; b < string->len; b++)
+						if (string->bytes[b] == '\t' || string->bytes[b] == '\n') {
+							fclose(file);
+							fail(interp, "write-tsv: row %d cell %d contains a tab or newline", r, c);
+							return;
+						}
+					fwrite(string->bytes, 1, (size_t)string->len, file);
+					break;
+				}
+				default:
+					fclose(file);
+					fail(interp, "write-tsv: row %d cell %d is %s, cannot represent in TSV", r, c, tag_name(VAL_TAG(cell)));
+					return;
+			}
+		}
+		fputc('\n', file);
+	}
+
+	fclose(file);
 
 	DISPATCH(interp);
 }

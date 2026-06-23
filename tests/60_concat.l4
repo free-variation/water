@@ -33,3 +33,11 @@
 5 [ 1 2 3 ] concat
 [ 1 2 3 ] concat
 concat
+
+\ flatten-array: deep flatten of nested arrays; a flat array returns unchanged
+[ 1 2 3 ] flatten-array .                      \ already flat -> as-is
+[ [ 1 2 ] [ 3 ] [ 4 5 6 ] ] flatten-array .    \ array of arrays
+[ 1 [ 2 3 ] 4 ] flatten-array .                \ mixed scalars and arrays
+[ [ 1 [ 2 3 ] ] [ 4 ] ] flatten-array .        \ deeply nested
+[ ] flatten-array .                            \ empty
+5 flatten-array                                \ non-array argument errors

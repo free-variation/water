@@ -1,0 +1,10 @@
+\ RNG: deterministic from a seed (same seed -> same sequence), range-bounded,
+\ and uniform. Serial use is fully reproducible, so the sequence is golden.
+42 seed random . random . random . cr   \ a fixed sequence for seed 42
+42 seed random . random . random . cr   \ reseeding reproduces it exactly
+7 seed [: 10 random-int . :] 8 times cr \ eight draws, each in [0,10)
+1 seed 0 [: random + :] 10000 times 10000 / . cr  \ mean over 10k draws ~ 0.5
+
+\ bound must be positive
+0 random-int
+-3 random-int

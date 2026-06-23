@@ -1,0 +1,201 @@
+( matrix -- float ) \ standard deviation
+: std var sqrt ;
+
+( matrix -- float ) \ standard error of the mean: s / sqrt(n)
+: se |> mat | mat var mat size / sqrt ;
+
+( matrix -- float) \ median
+: median 0.5 quantile ;
+
+( matrix percent -- float ) \ percent, pct in [0,100]
+: percentile 100 / quantile ;
+
+( matrix -- float ) \ interquartile range, Q3 - Q1
+: iqr dup 0.75 quantile swap 0.25 quantile - ;
+
+( matrix level -- low high ) \ percentile CI: level e.g. 0.95 -> [q(0.025), q(0.975)]
+: ci
+	| >mat >level tail |
+	1 level - 2 / to tail
+
+	mat tail quantile
+	mat 1 tail - quantile ;
+
+: sample-without-replacement false sample ; inline
+: sample-with-replacement true sample ; inline
+
+( data fit-xt replications fit-mapper -- [estimates] )
+: bootstrap-with
+	| >data >fit-xt >replications >fit-mapper n resamples |
+	data dim drop to n
+	replications iota [: |> i | data n resample-indices select-rows :] map to resamples
+	resamples fit-xt fit-mapper execute ;
+
+: bootstrap ' map bootstrap-with ;
+: pbootstrap ' pmap bootstrap-with ;
+
+"external/lapacke/liblapacke_accel.dylib" ffi-open
+
+dup "LAPACKE_dgesvd" [
+						 :int :int :int \ matrix_layout jobu jobvt
+						 :int :int \ m n
+						 :ptr :int \ a (input matrix) lda
+						 :ptr \ s (singular values)
+						 :ptr :int \ u (left vectors) ldu
+						 :ptr :int \ vt (right vectors) ldvt
+						 :ptr \ superb (workspace)
+					 ] :int ffi-function dgesvd
+
+dup "LAPACKE_dgelsd" [
+						 :int :int :int :int \ matrix_layout m n nrhs
+						 :ptr :int \ a (design matrix) lda
+						 :ptr :int \ b (rhs, overwritten with the solution) ldb
+						 :ptr :double :ptr \ s (singular values) rcond rank
+					 ] :int ffi-function dgelsd
+
+: svd ( A -- U S VT )
+	| a rows cols min-dim u s vt superb info |
+	copy to a
+	a dim to cols to rows
+	rows cols lt if rows else cols then to min-dim
+	rows min-dim 0-matrix to u
+	1 min-dim 0-matrix to s
+	min-dim cols 0-matrix to vt
+	1 min-dim 1- 0-matrix to superb
+
+	101 83 83 rows cols   \ LAPACK_ROW_MAJOR, jobu='S', jobvt='S' (thin SVD)
+	a matrix>pointer cols
+	s matrix>pointer
+	u matrix>pointer min-dim
+	vt matrix>pointer cols
+	superb matrix>pointer
+
+	dgesvd to info
+	info if info "svd: dgesvd failed (info={0})" format throw then
+
+	u s vt ;
+
+( mat y -- beta ) \ ordinary least squares via LAPACKE dgelsd ; mat is m x n (m >= n)
+: fit-linear 
+	| >mat >y rows cols a b s rank info |
+	mat dim to cols to rows
+	rows cols lt if 
+		rows cols "fit-linear: need at least as many observations as predictors; got {1}x{0}" format 
+		throw
+	then
+
+	mat copy to a
+	y copy to b
+	1 cols 0-matrix to s
+	1 int-segment to rank
+
+	101 rows cols 1
+	a matrix>pointer cols
+	b matrix>pointer 1
+	s matrix>pointer
+	-1.0
+	rank segment>pointer
+
+	dgelsd to info
+	info if 
+		info "fit-linear: dgelsd failed (info={0})" format
+		throw
+	then
+
+	b 0 cols 0 1 submatrix ;
+
+( X -- X' ) \ prepend a column of 1s so beta[0] is the intercept
+: with-intercept
+	dup dim drop    
+	1 0-matrix 1 +    \ rows x 1 column of ones
+	swap augment ; 
+
+( augmented-matrix -- betas ) \ augmented is observations x (predictors + 1) ; last column is y
+: fit-augmented
+	| >aug-mat rows cols |
+
+	aug-mat dim to cols to rows
+	aug-mat 0 rows 0 cols 1- submatrix
+	aug-mat 0 rows cols 1- cols submatrix
+	fit-linear ;
+
+( betas replications j -- column )
+: coefficient-column
+	|> betas replications j |
+
+	betas [: |> b | b j 0 @i,j :] map replications 1 matrix ;
+
+( beta betas replications j -- frame )
+: coefficient-summary
+	| >beta >betas >replications >j column low high |
+
+	betas replications j coefficient-column to column
+	column 0.95 ci to high to low
+	{ :estimate beta j 0 @i,j 
+	  :se column std 
+	  :bias column mean beta j 0 @i,j -
+	  :ci-low low 
+	  :ci-high high } ;
+
+( dataset predictors response replications fit-augmented-xt -- [records] )
+\ Shared regression pipeline: build the design matrix (with intercept) and the
+\ response, point-estimate with fit on the full data, then bootstrap-resample
+\ rows and refit for per-coefficient SE/CI/bias. The fit picks linear vs logistic.
+: regress-with
+	| >dataset >predictors >response >replications >fit x y data beta betas |
+	dataset predictors dataset>matrix with-intercept to x
+	dataset response 1 array dataset>matrix to y
+	x y augment to data
+	data fit execute to beta
+	data fit replications bootstrap to betas
+	0 beta size 1- range [: |> j | beta betas replications j coefficient-summary :] map ;
+
+( dataset predictors response replications -- [records] )
+: linear-regression  ' fit-augmented regress-with ;
+
+( values -- probabilities ) \ logistic elementwise: maps reals to (0,1)
+: sigmoid negate exp 1+ 1 swap / ;
+
+( X y max-iterations tolerance -- beta ) \ logistic regression by IRLS; X is n×k (incl. intercept), y in {0,1}
+: fit-logistic
+	| >x >y >max-iterations >tolerance rows cols beta eta mu w sqrt-w xw h r z new-beta iterations delta converged |
+	x dim to cols to rows
+	cols 1 0-matrix to beta
+	0 to iterations
+	0 to converged
+
+	begin
+		1 x beta 0 rows 1 0-matrix dgemm-nn to eta \ eta = X*beta
+		eta sigmoid to mu
+		mu dup 1 swap - * to w
+		w sqrt to sqrt-w
+		sqrt-w x * to xw                       \ weighted design sqrt(w)*X
+		xw svd drop drop  dup *  row-sums to h  \ hat diagonals h_i = sum_j U_ij^2
+
+		y mu -  h 0.5 mu - *  +  to r           \ Firth residual: (y-mu) + h(0.5-mu)
+		eta r w / + to z
+		xw  sqrt-w z *  fit-linear to new-beta
+		new-beta beta - dup * sum sqrt to delta
+		new-beta to beta
+
+		++ iterations
+		delta tolerance lt to converged
+		converged  iterations max-iterations gt  or
+	until
+
+	converged not if
+		iterations "fit-logistic: did not converge in {0} iterations" format throw
+	then
+	beta ;
+
+( augmented -- beta ) \ logistic fit of an [X | y] block, standard convergence
+: fit-augmented-logistic
+	| >aug rows cols |
+	aug dim to cols to rows
+	aug 0 rows 0 cols 1- submatrix
+	aug 0 rows cols 1- cols submatrix
+	100 1e-8 fit-logistic ;
+
+( dataset predictors response replications -- [records] )
+: logistic-regression  ' fit-augmented-logistic regress-with ;
+

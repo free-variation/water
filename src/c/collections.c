@@ -272,13 +272,9 @@ void p_cons(Interpreter *interp) {
 }
 
 void p_head_tail(Interpreter *interp) {
-	POP(pair_val);
-	if (VAL_TAG(pair_val) != T_PAIR) {
-		fail(interp, "head-tail: expected a pair; got %s", tag_name(VAL_TAG(pair_val)));
-		return;
-	}
-	Val head = pairs.table[VAL_DATA(pair_val)].head;
-	Val tail = pairs.table[VAL_DATA(pair_val)].tail;
+	POP_PAIR(pair, "head-tail");
+	Val head = pair->head;
+	Val tail = pair->tail;
 	push(interp, head);
 	push(interp, tail);
 
@@ -395,17 +391,38 @@ void p_array_to_set (Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_sort(Interpreter *interp) {
+	PEEK_TYPE_AT(source_val, 0, "sort", T_ARRAY);
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+
+	NEW_ARRAY(sorted_handle, sorted, source->len);
+	memcpy(sorted->items, source->items, sizeof(Val) * (size_t)source->len);
+	if (source->len > 0)
+		qsort_r(sorted->items, (size_t)source->len, sizeof(Val), interp, val_cmp_qsort);
+	if (interp->error_flag) return;
+
+	interp->data_stack[interp->dsp - 1] = make_array(sorted_handle);
+
+	DISPATCH(interp);
+}
+
 void p_size(Interpreter *interp) {
 	POP(collection);
 
 	if (VAL_TAG(collection) == T_STRING) {
 		Object *string = OBJECT_AT(VAL_DATA(collection));
 		push(interp, make_float((double)utf8_codepoint_count(string->bytes, string->len)));
-	}	else if (VAL_TAG(collection) == T_SET ||
+	} else if (VAL_TAG(collection) == T_SEGMENT) {
+		Object *segment = OBJECT_AT(VAL_DATA(collection));
+		push(interp, make_float((double)segment->segment.length));
+	} else if (VAL_TAG(collection) == T_MATRIX) {
+		Object *matrix = OBJECT_AT(VAL_DATA(collection));
+		push(interp, make_float((double)(matrix->matrix.rows * matrix->matrix.columns)));
+	} else if (VAL_TAG(collection) == T_SET ||
 			VAL_TAG(collection) == T_ARRAY ||
 			VAL_TAG(collection) == T_FRAME)
 		push(interp, make_float((double)OBJECT_AT(VAL_DATA(collection))->len));
-	else fail(interp, "size: expected a set, array, string, or frame; got %s", tag_name(VAL_TAG(collection)));
+	else fail(interp, "size: expected a set, array, matrix, string, segment, or frame; got %s", tag_name(VAL_TAG(collection)));
 
 	DISPATCH(interp);
 }
@@ -419,12 +436,8 @@ void p_byte_size(Interpreter *interp) {
 
 void p_member(Interpreter *interp) {
 	POP(value);
-	POP(set_value);
-	if (VAL_TAG(set_value) != T_SET) {
-		fail(interp, "member?: expected a set; got %s", tag_name(VAL_TAG(set_value)));
-		return;
-	}
-	push(interp, make_bool(set_member(interp, (int)VAL_DATA(set_value), value)));
+	POP_SET(set, "member?");
+	push(interp, make_bool(set_member(interp, set, value)));
 
 	DISPATCH(interp);
 }
@@ -476,6 +489,22 @@ void p_set_remove(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+
+#define NEW_SEGMENT(name, word, element_type) \
+	void name(Interpreter *interp) { \
+		POP_INT(length, word, "length"); \
+		if (length < 0) { \
+			fail(interp, word ": length must be non-negative; got %d", length); \
+			return; \
+		} \
+		int handle = object_new_segment(interp, length, element_type); \
+		if (interp->error_flag) return; \
+		push(interp, make_segment(handle)); \
+		DISPATCH(interp); \
+	}
+
+NEW_SEGMENT(p_int_segment,    "int-segment",    SEGMENT_INT)
+NEW_SEGMENT(p_double_segment, "double-segment", SEGMENT_DOUBLE)
 
 void p_array_of(Interpreter *interp) {
 	POP_INT(array_len, "array-of", "length");
@@ -576,6 +605,114 @@ void p_concat(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
+static int flatten_count(Interpreter *interp, Object *source, int depth) {
+	if (depth > MAX_NESTING_DEPTH) {
+		fail(interp, "flatten-array: nesting too deep (cycle?)");
+		return 0;
+	}
+
+	int count = 0;
+	for (int i = 0; i < source->len; i++) {
+		Val item = source->items[i];
+		if (VAL_TAG(item) == T_ARRAY) {
+			count += flatten_count(interp, OBJECT_AT(VAL_DATA(item)), depth + 1);
+			if (interp->error_flag) return 0;
+		} else {
+			count++;
+		}
+	}
+	return count;
+}
+
+static void flatten_fill(Object *source, Object *target, int *offset) {
+   for (int i = 0; i < source->len; i++) {
+	   Val item = source->items[i];
+	   if (VAL_TAG(item) == T_ARRAY)
+		   flatten_fill(OBJECT_AT(VAL_DATA(item)), target, offset);
+	   else
+		   target->items[(*offset)++] = item;
+   }
+}
+
+void p_flatten_array(Interpreter *interp) {
+	PEEK_TYPE_AT(arrays_val, 0, "flatten-array", T_ARRAY);
+	Object *arrays = OBJECT_AT(VAL_DATA(arrays_val));
+
+	int has_nested = 0;
+	for (int i = 0; i < arrays->len; i++)
+		if (VAL_TAG(arrays->items[i]) == T_ARRAY) {
+			has_nested = 1;
+			break;
+		}
+	if (!has_nested)
+		DISPATCH(interp);
+
+	int total = flatten_count(interp, arrays, 0);
+	if (interp->error_flag) return;
+
+	NEW_ARRAY(destination_handle, destination, total);
+	int offset = 0;
+	flatten_fill(arrays, destination, &offset);
+
+	interp->data_stack[interp->dsp - 1] = make_array(destination_handle);
+
+	DISPATCH(interp);
+}
+
+void p_sample(Interpreter *interp) {
+	PEEK_SEQUENCE_AT(source_val, 2, "sample");
+	POP(replacement_val);
+	if (interp->error_flag) return;
+
+	POP_INT(count, "sample", "count");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+	int with_replacement = truthy(replacement_val);
+
+	if (count < 0) {
+		fail(interp, "sample: count must be non-negative; got %d", count);
+		return;
+	}
+
+	if (source->len == 0) {
+		int empty_handle = object_new_array(interp, 0);
+		if (interp->error_flag) return;
+
+		interp->data_stack[interp->dsp - 1] = make_array(empty_handle);
+		DISPATCH(interp);
+	}
+
+	if (!with_replacement && count > source->len) {
+		fail(interp, "sample: cannot draw %d without replacement from %d", count, source->len);
+		return;
+	}
+
+	NEW_ARRAY(sampled_handle, sampled, count);
+
+	if (with_replacement) {
+		for (int i = 0; i < count; i++)
+			sampled->items[i] = source->items[random_below(source->len)];
+	} else {
+		int *indices = malloc(sizeof(int) * (size_t)source->len);
+		for (int i = 0; i < source->len; i++)
+			indices[i] = i;
+
+		for (int i = 0; i < count; i++) {
+			int j = i + random_below(source->len - i);
+			int chosen = indices[j];
+			indices[j] = indices[i];
+			sampled->items[i] = source->items[chosen];
+		}
+		free(indices);
+	}
+
+	interp->data_stack[interp->dsp - 1] = make_array(sampled_handle);
+
+	DISPATCH(interp);
+}
+
+
+
 
 void p_range(Interpreter *interp) {
 	POP_INT(range_to, "range", "to");
@@ -1299,12 +1436,7 @@ static int row_cmp(void *interp, const void *left, const void *right) {
 }
 
 void p_group_by(Interpreter *interp) {
-	POP(col_val);
-	if (VAL_TAG(col_val) != T_SYMBOL) {
-		fail(interp, "group-by: column must be a symbol; got %s", tag_name(VAL_TAG(col_val)));
-		return;
-	}
-	cell col = VAL_DATA(col_val);
+	POP_SYMBOL(col, "group-by");
 
 	PEEK_TYPE_AT(rows_val, 0, "group-by", T_ARRAY);
 	int row_count = OBJECT_AT(VAL_DATA(rows_val))->len;

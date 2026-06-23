@@ -26,5 +26,24 @@ if exists("loaded_matchit") || exists("g:loaded_matchit")
   let b:match_ignorecase = 0
 endif
 
+" `;` is a space-delimited word (it ends a definition). Gluing it to the
+" previous token — `quantile;` instead of `quantile ;` — reads as one unknown
+" word and is a common, silent mistake. On typing ;, insert a leading space
+" unless the previous character is already whitespace or the line is empty.
+function! s:SpaceBeforeSemicolon() abort
+  let column = col('.')
+  if column <= 1
+    return ';'
+  endif
+  let previous = getline('.')[column - 2]
+  if previous ==# ' ' || previous ==# "\t"
+    return ';'
+  endif
+  return ' ;'
+endfunction
+
+inoremap <buffer><expr> ; <SID>SpaceBeforeSemicolon()
+
 let b:undo_ftplugin = "setlocal iskeyword< comments< commentstring< matchpairs<"
       \ . " | unlet! b:match_words b:match_ignorecase"
+      \ . " | silent! iunmap <buffer> ;"

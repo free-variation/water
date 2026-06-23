@@ -25,6 +25,7 @@ typedef struct {
 static void **ffi_pointers;
 static int ffi_pointers_count;
 static int ffi_pointers_cap;
+static pthread_mutex_t ffi_pointers_lock = PTHREAD_MUTEX_INITIALIZER;
 
 static FFIBinding **ffi_bindings;
 static int ffi_bindings_count;
@@ -33,17 +34,21 @@ static int ffi_bindings_cap;
 static int ffi_call_cfa;
 
 static int ffi_pointer_intern(void *pointer) {
-	for (int i = 0; i < ffi_pointers_count; i++) 
+	pthread_mutex_lock(&ffi_pointers_lock);
+	int index = -1;
+	for (int i = 0; i < ffi_pointers_count; i++)
 		if (!ffi_pointers[i]) {
 			ffi_pointers[i] = pointer;
-			return i;
+			index = i;
+			break;
 		}
-
-	GROW_IF_FULL_SYS(ffi_pointers_count, ffi_pointers_cap, ffi_pointers);
-
-	ffi_pointers[ffi_pointers_count] = pointer;
-
-	return ffi_pointers_count++;
+	if (index < 0) {
+		GROW_IF_FULL_SYS(ffi_pointers_count, ffi_pointers_cap, ffi_pointers);
+		ffi_pointers[ffi_pointers_count] = pointer;
+		index = ffi_pointers_count++;
+	}
+	pthread_mutex_unlock(&ffi_pointers_lock);
+	return index;
 }
 
 static int ffi_type_of(Interpreter *interp, Val symbol, FFITypeTag *tag, ffi_type **type, const char *op) {
@@ -233,7 +238,9 @@ void p_ffi_call(Interpreter *interp) {
 					fail(interp, "ffi-call: argument %d expected a pointer; got %s", i, tag_name(VAL_TAG(argument)));
 					return;
 				}
+				pthread_mutex_lock(&ffi_pointers_lock);
 				arg_cells[i].as_pointer = ffi_pointers[VAL_DATA(argument)];
+				pthread_mutex_unlock(&ffi_pointers_lock);
 				arg_pointers[i] = &arg_cells[i].as_pointer;
 				break;
 			case FFI_STRING:
@@ -286,13 +293,7 @@ void p_ffi_call(Interpreter *interp) {
 }
 
 void p_ffi_free(Interpreter *interp) {
-	POP(pointer_val);
-	if (VAL_TAG(pointer_val) != T_PTR) {
-		fail(interp, "ffi-free: expected a pointer handle; got %s", tag_name(VAL_TAG(pointer_val)));
-		return;
-	}
-
-	int index = (int)VAL_DATA(pointer_val);
+	POP_PTR(index, "ffi-free");
 	free(ffi_pointers[index]);
 	ffi_pointers[index] = NULL;
 
@@ -304,3 +305,16 @@ int ffi_register_call_cfa(int cfa) {
 	return cfa;
 }
 
+void p_matrix_to_pointer(Interpreter *interp) {
+	POP_MATRIX(matrix, "matrix>pointer");
+	push(interp, make_pointer(ffi_pointer_intern(matrix->matrix.elements)));
+
+	DISPATCH(interp);
+}
+
+void p_segment_to_pointer(Interpreter *interp) {
+	POP_SEGMENT(segment, "segment>pointer");
+	push(interp, make_pointer(ffi_pointer_intern(segment->segment.data)));
+
+	DISPATCH(interp);
+}

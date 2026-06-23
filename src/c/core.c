@@ -334,6 +334,24 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 	return slot;
 }
 
+int object_new_segment(Interpreter *interp, int length, SegmentType element_type) {
+	NEW_OBJECT(obj, OBJECT_SEGMENT);
+
+	obj->segment.element_type = element_type;
+	obj->segment.length = length;
+	size_t element_size = segment_element_size(element_type);
+	obj->segment.data = calloc((size_t)(length > 0 ? length : 1), element_size);
+
+	if (!obj->segment.data) {
+		arena_free_object(obj);
+		arena.objects[slot] = NULL;
+		fail(interp, "segment: out of memory (%lld bytes)", (long long)length * (long long)element_size);
+		return -1;
+	}
+
+	return slot;
+}
+
 int object_new_logic_var(Interpreter *interp) {
 	alloc_count_lvar++;
 
@@ -475,6 +493,26 @@ int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 						   }
 						   return 0;
 					   }
+		case T_SEGMENT: {
+							Object *left_segment = OBJECT_AT(VAL_DATA(left));
+							Object *right_segment = OBJECT_AT(VAL_DATA(right));
+
+							
+							if (left_segment->segment.element_type != right_segment->segment.element_type)
+								return left_segment->segment.element_type - right_segment->segment.element_type;
+							if (left_segment->segment.length != right_segment->segment.length)
+								return left_segment->segment.length - right_segment->segment.length;
+
+							for (int i = 0; i < left_segment->segment.length; i++) {
+								double a = segment_get(left_segment, i);
+								double b = segment_get(right_segment, i);
+								if (a < b)
+									return -1;
+								if (a > b)
+									return 1;
+							}
+							return 0;
+						}
 		case T_FRAME: {
 						  Object *left_frame = OBJECT_AT(VAL_DATA(left));
 						  Object *right_frame = OBJECT_AT(VAL_DATA(right));
@@ -502,13 +540,22 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 	return val_cmp_depth(interp, left, right, 0);
 }
 
+int double_cmp(const void *left, const void *right) {
+	double a = *(const double *)left;
+	double b = *(const double *)right;
+
+	if (a < b) return -1;
+	if (a > b) return 1;
+	return 0;
+}
+	
+
 void print_double(double number) {
 	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
 		printf("%lld", (long long)number);
 	else
 		printf("%g", number);
 }
-
 
 int print_truncate = 1;
 
@@ -675,6 +722,16 @@ void print_val(Interpreter *interp, Val value) {
 		case T_STREAM: printf("<stream %lld>", (long long)VAL_DATA(value)); break;
 		case T_DB: printf("<database %lld>", (long long)VAL_DATA(value)); break;
 		case T_PTR: printf("<ptr %lld>", (long long)VAL_DATA(value)); break;
+		case T_SEGMENT: {
+							Object *segment = OBJECT_AT(VAL_DATA(value));
+							const char *name = "?";
+							switch (segment->segment.element_type) {
+								case SEGMENT_INT:    name = "int"; break;
+								case SEGMENT_DOUBLE: name = "double"; break;
+							}
+							printf("<%s-segment %d>", name, segment->segment.length);
+							break;
+						}
 		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
 		case T_MATRIX: {
 						   Object *matrix = OBJECT_AT(VAL_DATA(value));
@@ -853,6 +910,16 @@ void print_val_compact(Interpreter *interp, Val value) {
 				   }
 		case T_ADDR: printf("@%lld", (long long)VAL_DATA(value)); break;
 		case T_PTR: printf("<ptr %lld>", (long long)VAL_DATA(value)); break;
+		case T_SEGMENT: {
+							Object *segment = OBJECT_AT(VAL_DATA(value));
+							char element = '?';
+							switch (segment->segment.element_type) {
+								case SEGMENT_INT:    element = 'I'; break;
+								case SEGMENT_DOUBLE: element = 'D'; break;
+							}
+							printf("*%c%d", element, segment->segment.length);
+							break;
+						}
 		case T_CONT: fputs("k", stdout); break;
 		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
 		case T_MARK: {
@@ -1250,6 +1317,7 @@ const char *tag_name(Tag t) {
 		case T_LOGIC_VAR: return "a logic variable";
 		case T_DB: return "a database";
 		case T_PTR: return "a pointer";
+		case T_SEGMENT: return "a segment";
 		default:       return "an unknown value";
 	}
 }
@@ -2008,6 +2076,7 @@ void mark_value(Interpreter *interp, Val value) {
 				VAL_TAG(value) != T_PAIR &&
 				VAL_TAG(value) != T_FRAME &&
 				VAL_TAG(value) != T_MATRIX &&
+				VAL_TAG(value) != T_SEGMENT &&
 				VAL_TAG(value) != T_CONT) return;
 
 		if (VAL_TAG(value) == T_PAIR) {
@@ -2766,6 +2835,12 @@ void p_save_image(Interpreter *interp) {
 								w_i32(file, obj->continuation.resume_ip);
 								w_i32(file, obj->continuation.local_base_offset);
 								break;
+			case OBJECT_SEGMENT:
+				w_i32(file, obj->segment.element_type);
+				w_i32(file, obj->segment.length);
+				if (obj->segment.length > 0)
+					fwrite(obj->segment.data, segment_element_size(obj->segment.element_type), (size_t)obj->segment.length, file);
+				break;
 		}
 	}
 
@@ -2796,6 +2871,7 @@ void free_one_object(Object *obj) {
 		case OBJECT_FRAME: arena_free(obj->frame.keys); arena_free(obj->frame.values); break;
 		case OBJECT_MATRIX: free(obj->matrix.elements); break;
 		case OBJECT_CONTINUATION: free(obj->continuation.return_slice); break;
+		case OBJECT_SEGMENT: free(obj->segment.data); break;
 	}
 	arena_free_object(obj);
 }
@@ -3148,6 +3224,26 @@ void p_load_image(Interpreter *interp) {
 										  obj->continuation.local_base_offset = local_base_offset;
 										  break;
 									  }
+			case OBJECT_SEGMENT: {
+									 int32_t element_type, length;
+									 if (!r_i32(file, &element_type) || !r_i32(file, &length)) {
+										 fail(interp, "%s: truncated segment header", filename);
+										 goto done;
+									 }
+									 if (length < 0 || (element_type != SEGMENT_INT && element_type != SEGMENT_DOUBLE)) {
+										 fail(interp, "%s: bad segment header", filename);
+										 goto done;
+									 }
+									 obj->segment.element_type = element_type;
+									 obj->segment.length = length;
+									 size_t element_size = segment_element_size(element_type);
+									 obj->segment.data = calloc((size_t)MAX(length, 1), element_size);
+									 if (length > 0 && fread(obj->segment.data, element_size, (size_t)length, file) != (size_t)length) {
+										 fail(interp, "%s: truncated segment data", filename);
+										 goto done;
+									 }
+									 break;
+								 }
 			default:
 									  fail(interp, "%s: unknown object kind %u", filename, kind);
 									  goto done;
@@ -3403,6 +3499,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 
 	define_primitive(interp, "array", p_array, 0);
 	define_primitive(interp, "array-of", p_array_of, 0);
+	define_primitive(interp, "int-segment", p_int_segment, 0);
+	define_primitive(interp, "double-segment", p_double_segment, 0);
 	define_primitive(interp, "array>frame", p_array_to_frame, 0);
 	define_primitive(interp, "frame>array", p_frame_to_array, 0);
 	define_primitive(interp, "select-values", p_select_values, 0);
@@ -3414,6 +3512,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "reverse", p_reverse, 0);
 	define_primitive(interp, "reverse-slice!", p_reverse_slice, 0);
 	define_primitive(interp, "concat", p_concat, 0);
+	define_primitive(interp, "flatten-array", p_flatten_array, 0);
+	define_primitive(interp, "sort", p_sort, 0);
+	define_primitive(interp, "sample", p_sample, 0);
 	define_primitive(interp, "destruct", p_destruct, 0);
 	define_primitive(interp, "destruct-to", p_destruct_to, 0);
 	define_primitive(interp, "slice!", p_slice_store, 0);
@@ -3508,6 +3609,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "matrix", p_matrix, 0);
 	define_primitive(interp, "dim", p_dim, 0);
 	define_primitive(interp, "transpose", p_transpose, 0);
+	define_primitive(interp, "submatrix", p_submatrix, 0);
+	define_primitive(interp, "select-rows", p_select_rows, 0);
+	define_primitive(interp, "augment", p_augment, 0);
 	define_primitive(interp, "diagonal-matrix", p_diagonal_matrix, 0);
 	define_primitive(interp, "@i", p_at_i, 0);
 	define_primitive(interp, "!i", p_store_i, 0);
@@ -3517,6 +3621,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "reshape", p_reshape, 0);
 	define_primitive(interp, "matrix-range", p_matrix_range, 0);
 	define_primitive(interp, "sum", p_sum, 0);
+	define_primitive(interp, "var", p_variance, 0);
+	define_primitive(interp, "quantile", p_quantile, 0);
 	define_primitive(interp, "row-sums", p_row_sums, 0);
 	define_primitive(interp, "column-sums", p_column_sums, 0);
 	define_primitive(interp, "max", p_max, 0);
@@ -3550,6 +3656,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "round-down", p_round_down, 0);
 	define_primitive(interp, "truncate", p_truncate, 0);
 
+	define_primitive(interp, "seed", p_seed, 0);
+	define_primitive(interp, "random", p_random, 0);
+	define_primitive(interp, "random-int", p_random_int, 0);
 	define_primitive(interp, "now", p_now, 0);
 	define_primitive(interp, "sleep", p_sleep, 0);
 	define_primitive(interp, "env", p_env, 0);
@@ -3559,6 +3668,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "read-file", p_read_file, 0);
 	define_primitive(interp, "write-file", p_write_file, 0);
 	define_primitive(interp, "append-file", p_append_file, 0);
+	define_primitive(interp, "read-tsv", p_read_tsv, 0);
+	define_primitive(interp, "write-tsv", p_write_tsv, 0);
 	define_primitive(interp, "start-process", p_start_process, 0);
 	define_primitive(interp, "write", p_write, 0);
 	define_primitive(interp, "read", p_read, 0);
@@ -3569,6 +3680,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "ffi-variadic", p_ffi_variadic, 0);
 	ffi_register_call_cfa(define_primitive(interp, "(ffi-call)", p_ffi_call, 4));
 	define_primitive(interp, "ffi-free", p_ffi_free, 0);
+	define_primitive(interp, "matrix>pointer", p_matrix_to_pointer, 0);
+	define_primitive(interp, "segment>pointer", p_segment_to_pointer, 0);
 	define_primitive(interp, "db-close", p_db_close, 0);
 	define_primitive(interp, "db-exec", p_db_exec, 0);
 	define_primitive(interp, "db-query", p_db_query, 0);

@@ -1,0 +1,69 @@
+9.16667 
+3.02765 
+0.957427 
+1 
+0 0 0 
+3.5 3.5 3.5 
+error: var: needs at least 2 elements; got 1
+1 
+10 
+5.5 
+3.25 
+7.75 
+5 
+2.5 
+3 
+42 
+2 
+6.5 
+error: quantile: probability must be in [0,1]; got 1.5
+error: quantile: expected a float probability; got a symbol
+error: quantile: empty matrix
+5.5 
+5 
+2.5 
+42 
+1 
+1 
+10 
+5.5 
+3.25 
+9.1 
+1 
+error: quantile: probability must be in [0,1]; got 1.5
+4.5 
+4 
+0 
+[ 1.225 9.775 ] 
+[ 1.45 9.55 ] 
+[ 1 10 ] 
+<matrix 2x1>
+          1
+          2
+
+<matrix 3x2>
+          1          5
+          1          6
+          1          7
+
+[ { :estimate 1.08 :se 0.196238 :bias -0.00328513 :ci-low 0.684698 :ci-high 1.46637 } { :estimate 1.97714 :se 0.0507583 :bias 0.00152457 :ci-low 1.89512 :ci-high 2.05 } ] 
+[ { :estimate -0.364017 :se 0.028366 :bias 4.35244e-05 :ci-low -0.419997 :ci-high -0.305073 } { :estimate 0.415932 :se 0.00991935 :bias -6.69154e-05 :ci-low 0.396305 :ci-high 0.435857 } ] 
+<matrix 1x1>
+        0.5
+
+<matrix 1x3>
+     0.1192        0.5     0.8808
+
+<matrix 2x1>
+     -1.833
+     0.4074
+
+<matrix 2x1>
+     -1.833
+     0.4074
+
+<matrix 2x1>
+     -3.275
+       1.31
+
+[ { :estimate -12.0436 :se 3.10995 :bias -0.435628 :ci-low -19.7504 :ci-high -7.90512 } { :estimate 1.92813 :se 0.495611 :bias 0.0707124 :ci-low 1.30137 :ci-high 3.10362 } ] 

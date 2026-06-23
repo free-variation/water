@@ -1,0 +1,6 @@
+\ TSV write/read round-trip: numeric cells type to floats, an empty cell
+\ round-trips through none, and a value with no clean TSV form is rejected.
+[ [ "name" "age" ] [ "Alice" 30 ] [ "Bob" null ] ] "/tmp/lf_tsv_test.tsv" write-tsv
+"/tmp/lf_tsv_test.tsv" read-tsv .a cr
+"/tmp/lf_tsv_test.tsv" read-tsv 1 @i 1 @i . cr   \ 30, parsed as a float
+[ [ < 1 2 > ] ] "/tmp/lf_tsv_test.tsv" write-tsv  \ a set has no TSV form -> error

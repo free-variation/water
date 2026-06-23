@@ -1,24 +1,39 @@
 #include "logicforth.h"
 
+/* Element-wise, with vector broadcasting: a dimension of size 1 in either
+   operand stretches to match the other (so n×1 and 1×k vectors broadcast
+   against an n×k matrix). Equal shapes take a flat, vectorizable fast path. */
 #define MATRIX_ELEMENTWISE_OP(name, opname, op) \
 	int name(Interpreter *interp, Val left_val, Val right_val) { \
 		Object *left = OBJECT_AT(VAL_DATA(left_val)); \
 		Object *right = OBJECT_AT(VAL_DATA(right_val)); \
-		if (left->matrix.rows != right->matrix.rows || left->matrix.columns != right->matrix.columns) { \
-			fail(interp, opname ": matrix shapes differ (%dx%d vs %dx%d)", \
-					left->matrix.rows, left->matrix.columns, \
-					right->matrix.rows, right->matrix.columns); \
+		int left_rows = left->matrix.rows, left_cols = left->matrix.columns; \
+		int right_rows = right->matrix.rows, right_cols = right->matrix.columns; \
+		int rows = left_rows > right_rows ? left_rows : right_rows; \
+		int cols = left_cols > right_cols ? left_cols : right_cols; \
+		if ((left_rows != rows && left_rows != 1) || (right_rows != rows && right_rows != 1) || \
+		    (left_cols != cols && left_cols != 1) || (right_cols != cols && right_cols != 1)) { \
+			fail(interp, opname ": shapes not broadcast-compatible (%dx%d vs %dx%d)", \
+					left_rows, left_cols, right_rows, right_cols); \
 			return -1; \
 		} \
-		int target_handle = object_new_matrix(interp, left->matrix.rows, left->matrix.columns); \
+		int target_handle = object_new_matrix(interp, rows, cols); \
 		if (interp->error_flag) return -1; \
 		Object *target = OBJECT_AT(target_handle); \
-		size_t n = (size_t)left->matrix.rows * (size_t)left->matrix.columns; \
-		const double * restrict l = left->matrix.elements; \
-		const double * restrict r = right->matrix.elements; \
-		double * restrict t = target->matrix.elements; \
-		for (size_t i = 0; i < n; i++) \
-			t[i] = l[i] op r[i]; \
+		if (left_rows == right_rows && left_cols == right_cols) { \
+			size_t n = (size_t)rows * (size_t)cols; \
+			const double * restrict l = left->matrix.elements; \
+			const double * restrict r = right->matrix.elements; \
+			double * restrict t = target->matrix.elements; \
+			for (size_t i = 0; i < n; i++) \
+				t[i] = l[i] op r[i]; \
+		} else { \
+			for (int i = 0; i < rows; i++) \
+				for (int j = 0; j < cols; j++) \
+					MAT(target, i, j) = \
+						MAT(left, left_rows == 1 ? 0 : i, left_cols == 1 ? 0 : j) op \
+						MAT(right, right_rows == 1 ? 0 : i, right_cols == 1 ? 0 : j); \
+		} \
 		return target_handle; \
 	}
 
@@ -52,6 +67,13 @@ void p_at_i(Interpreter *interp) {
 			MAT(row, 0, j) = MAT(source, index, j);
 
 		push(interp, make_matrix(row_handle));
+	} else if (VAL_TAG(source_val) == T_SEGMENT) {
+		Object *segment = OBJECT_AT(VAL_DATA(source_val));
+		if (index < 0 || index >= segment->segment.length) {
+			fail(interp, "@i: segment index %d out of bounds (length %d)", index, segment->segment.length);
+			return;
+		}
+		push(interp, make_float(segment_get(segment, index)));
 	} else {
 		fail(interp, "@i: expected an array or matrix; got %s", tag_name(VAL_TAG(source_val)));
 	}
@@ -60,7 +82,7 @@ void p_at_i(Interpreter *interp) {
 }
 
 void p_store_i(Interpreter *interp) {
-	PEEK_TYPE_AT(array_val, 2, "!i", T_ARRAY);
+	PEEK_AT(target_val, 2, "!i");
 	PEEK_AT(index_val, 1, "!i");
 	if (VAL_TAG(index_val) != T_FLOAT) {
 		fail(interp, "!i: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
@@ -69,12 +91,26 @@ void p_store_i(Interpreter *interp) {
 	int index = (int)VAL_NUMBER(index_val);
 	PEEK_AT(value, 0, "!i");
 
-	Object *array = OBJECT_AT(VAL_DATA(array_val));
-	if (index < 0 || index >= array->len) {
-		fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
+	if (VAL_TAG(target_val) == T_ARRAY) {
+		Object *array = OBJECT_AT(VAL_DATA(target_val));
+		if (index < 0 || index >= array->len) {
+			fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
+			return;
+		}
+		array->items[index] = value;
+	} else if (VAL_TAG(target_val) == T_SEGMENT) {
+		if (VAL_TAG(value) != T_FLOAT) {
+			fail(interp, "!i: segment stores a float; got %s", tag_name(VAL_TAG(value)));
+			return;
+		}
+		Object *segment = OBJECT_AT(VAL_DATA(target_val));
+		
+		segment_set(segment, index, VAL_NUMBER(value));
+	} else {
+		fail(interp, "!i: expected an array or segment; got %s", tag_name(VAL_TAG(target_val)));
 		return;
 	}
-	array->items[index] = value;
+
 	interp->dsp -= 2;
 
 	DISPATCH(interp);
@@ -315,6 +351,21 @@ MATRIX_REDUCE_ROWS_OP(matrix_min_rows, INFINITY, MIN)
 MATRIX_REDUCE_COLUMNS_OP(matrix_sum_columns, 0.0, ADD)
 MATRIX_REDUCE_COLUMNS_OP(matrix_max_columns, -INFINITY, MAX)
 MATRIX_REDUCE_COLUMNS_OP(matrix_min_columns, INFINITY, MIN)
+
+double matrix_variance_overall(Object *source) {
+	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
+	const double * restrict elements = source->matrix.elements;
+	double sum = 0.0;
+	double sum_of_squares = 0.0;
+
+	for (size_t i = 0; i < n; i++) {
+		double value = elements[i];
+		sum += value;
+		sum_of_squares += value * value;
+	}
+
+	return (sum_of_squares - sum * sum/(double)n) / (double)(n - 1);
+}
 #pragma float_control(pop)
 
 int create_matrix(Interpreter *interp) {
@@ -509,6 +560,34 @@ void p_transpose(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_submatrix(Interpreter *interp) {
+	POP_INT(col_end, "submatrix", "col-end");
+	POP_INT(col_start, "submatrix", "col-start");
+	POP_INT(row_end, "submatrix", "row-end");
+	POP_INT(row_start, "submatrix", "row-start");
+	POP_MATRIX(source, "submatrix");
+
+	if (row_start < 0 || row_end > source->matrix.rows || row_start > row_end
+			|| col_start < 0 || col_end > source->matrix.columns || col_start > col_end) {
+		fail(interp, "submatrix: [%d,%d)x[%d,%d) out of bounds for %dx%d",
+				row_start, row_end, col_start, col_end,
+				source->matrix.rows, source->matrix.columns);
+		return;
+	}
+
+	int slice_rows = row_end - row_start;
+	int slice_cols = col_end - col_start;
+	NEW_MATRIX(slice_handle, slice, slice_rows, slice_cols);
+
+	for (int row = 0; row < slice_rows; row++)
+		for (int col = 0; col < slice_cols; col++)
+			MAT(slice, row, col) = MAT(source, row_start + row, col_start + col);
+
+	push(interp, make_matrix(slice_handle));
+
+	DISPATCH(interp);
+}
+
 
 #define REDUCE_OVERALL_HANDLER(primitive_name, word_name, reduce_fn) \
 	void primitive_name(Interpreter *interp) { \
@@ -571,6 +650,115 @@ void p_matrix_range(Interpreter *interp) {
 		elements[i] = start + i * step;
 
 	push(interp, make_matrix(handle));
+
+	DISPATCH(interp);
+}
+
+void p_select_rows(Interpreter *interp) {
+	PEEK_TYPE_AT(indices_val, 0, "select-rows", T_ARRAY);
+	PEEK_TYPE_AT(matrix_val, 1, "select-rows", T_MATRIX);
+	Object *indices = OBJECT_AT(VAL_DATA(indices_val));
+	Object *source = OBJECT_AT(VAL_DATA(matrix_val));
+
+	 int columns = source->matrix.columns;
+	 int source_rows = source->matrix.rows;
+
+	 for (int i = 0; i < indices->len; i++) {
+		 if (VAL_TAG(indices->items[i]) != T_FLOAT) {
+			 fail(interp, "select-rows: index %d is %s, expected a float", i, tag_name(VAL_TAG(indices->items[i])));
+			 return;
+		 }
+		 int row = (int)VAL_NUMBER(indices->items[i]);
+		 if (row < 0 || row >= source_rows) {
+			 fail(interp, "select-rows: row %d out of bounds (%d rows)", row, source_rows);
+			 return;
+		 }
+	 }
+
+	 NEW_MATRIX(selected_handle, selected, indices->len, columns);
+
+	 for (int i = 0; i < indices->len; i++) {
+		 int row = (int)VAL_NUMBER(indices->items[i]);
+		 memcpy(&MAT(selected, i, 0), &MAT(source, row, 0), sizeof(double) * (size_t)columns);
+	 }
+
+	 interp->data_stack[interp->dsp - 2] = make_matrix(selected_handle);
+	 interp->dsp--;
+
+	 DISPATCH(interp);
+}
+
+void p_augment(Interpreter *interp) {
+	PEEK_TYPE_AT(b_val, 0, "augment", T_MATRIX);
+	PEEK_TYPE_AT(a_val, 1, "augment", T_MATRIX);
+	Object *a = OBJECT_AT(VAL_DATA(a_val));
+	Object *b = OBJECT_AT(VAL_DATA(b_val));
+
+	if (a->matrix.rows != b->matrix.rows) {
+		fail(interp, "augment: row counts differ (%d vs %d)", a->matrix.rows, b->matrix.rows);
+		return;
+	}
+
+	int rows = a->matrix.rows;
+	int a_columns = a->matrix.columns;
+	int b_columns = b->matrix.columns;
+	NEW_MATRIX(augmented_handle, augmented, rows, a_columns + b_columns);
+
+	for (int i = 0; i < rows; i++) {
+		memcpy(&MAT(augmented, i, 0), &MAT(a, i, 0), sizeof(double) * (size_t)a_columns);
+		memcpy(&MAT(augmented, i, a_columns), &MAT(b, i, 0), sizeof(double) * (size_t)b_columns);
+	}
+
+	interp->data_stack[interp->dsp - 2] = make_matrix(augmented_handle);
+	interp->dsp--;
+
+	DISPATCH(interp);
+}
+
+void p_variance(Interpreter *interp) {
+	POP_MATRIX(source, "var");
+	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
+	if (n < 2) {
+		fail(interp, "var: needs at least 2 elements; got %zu", n);
+		return;
+	}
+
+	push(interp, make_float(matrix_variance_overall(source)));
+
+	DISPATCH(interp);
+}
+
+void p_quantile(Interpreter *interp) {
+	POP_FLOAT(probability, "quantile", "probability");
+	if (probability < 0.0 || probability > 1.0) {
+		fail(interp, "quantile: probability must be in [0,1]; got %g", probability);
+		return;
+	}
+		
+	POP_MATRIX(source, "quantile");
+	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
+	if (n == 0) {
+		fail(interp, "quantile: empty matrix");
+		return;
+	}
+
+	double *sorted = malloc(n * sizeof(double));
+	if (!sorted) {
+		fail(interp, "quantile: out of memory");
+		return;
+	}
+	memcpy(sorted, source->matrix.elements, n * sizeof(double));
+	qsort(sorted, n, sizeof(double), double_cmp);
+
+	double rank = probability * (double)(n - 1);
+	size_t lower = (size_t)rank;
+	double fraction = rank - (double)lower;
+	double value = sorted[lower];
+	if (lower + 1 < n)
+		value += fraction * (sorted[lower + 1] - sorted[lower]);
+
+	free(sorted);
+	push(interp, make_float(value));
 
 	DISPATCH(interp);
 }

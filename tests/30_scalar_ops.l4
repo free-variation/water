@@ -8,3 +8,18 @@
 \ scalar on the left broadcasts too
 10 [ 1 2 3 4 ] 2 2 matrix + .
 100 [ 10 20 30 40 ] 2 2 matrix - .
+
+\ Vector broadcasting: a dimension of size 1 stretches to match the other.
+\ a column vector (n x 1) broadcasts across the columns
+[ 1 2  3 4 ] 2 2 matrix  [ 10 20 ] 2 1 matrix  + .   \ [[11 12][23 24]]
+[ 1 2  3 4 ] 2 2 matrix  [ 10 20 ] 2 1 matrix  * .   \ row-scaling -> [[10 20][60 80]]
+\ a row vector (1 x k) broadcasts down the rows
+[ 1 2  3 4 ] 2 2 matrix  [ 10 20 ] 1 2 matrix  + .   \ [[11 22][13 24]]
+[ 1 2  3 4 ] 2 2 matrix  [ 2 3 ] 1 2 matrix  * .     \ [[2 6][6 12]]
+\ order matters for the non-commutative ops
+[ 100 200 ] 2 1 matrix  [ 1 2  3 4 ] 2 2 matrix  - .   \ col - A -> [[99 98][197 196]]
+[ 1 2  3 4 ] 2 2 matrix  [ 100 200 ] 2 1 matrix  - .   \ A - col -> [[-99 -98][-197 -196]]
+\ a 1x1 matrix broadcasts exactly like a scalar
+[ 5 ] 1 1 matrix  [ 1 2  3 4 ] 2 2 matrix  + .         \ [[6 7][8 9]]
+\ shapes that don't conform error
+[ 1 2 3 ] 3 1 matrix  [ 1 2  3 4 ] 2 2 matrix  + .     \ error: 3x1 vs 2x2

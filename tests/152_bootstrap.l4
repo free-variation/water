@@ -1,0 +1,29 @@
+\ bootstrap ( data fit-xt B -- [estimates] ): B refits of fit-xt over row-resamples
+\ of data. Serial bootstrap is deterministic under a fixed seed; pbootstrap gives
+\ the identical distribution (serial resampling + pure fit), so going parallel is a
+\ speed-only choice. Estimate distributions converge to the data statistic.
+"lib/statistics.l4" load
+
+\ exact distribution under a fixed seed: 8 resampled column means of 1..10
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 8 bootstrap . cr
+
+\ B controls the number of replicates
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 50 bootstrap size . cr
+
+\ pbootstrap is byte-identical to bootstrap (same seed -> same resamples; pure fit)
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 30 bootstrap
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 30 pbootstrap
+= . cr
+
+\ the fit-xt is arbitrary: here the column sum rather than the mean
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: sum :] 5 bootstrap . cr
+
+\ a wider matrix: fit reads one column (sepal-like). resample keeps rows intact.
+1 seed [ 1 10  2 20  3 30  4 40 ] 4 2 matrix [: 0 @j mean :] 6 bootstrap . cr
+
+\ convergence: mean of 5000 bootstrapped means approaches the true mean 5.5
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 5000 bootstrap dup size 1 matrix mean . cr
+
+\ B = 1 is a single resample; B = 0 yields an empty distribution
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 1 bootstrap size . cr
+1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 0 bootstrap size . cr

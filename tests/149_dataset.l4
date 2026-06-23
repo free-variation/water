@@ -1,0 +1,38 @@
+\ TSV -> dataset (column frame) and -> relation (indexed, deduped).
+\ A dataset is just a frame: columns are reached with native @ / keys / values,
+\ and a numeric column flows straight into the matrix/stats side.
+
+[ [ "name" "age" "city" ]
+  [ "Alice" 30 "NYC" ]
+  [ "Bob"   25 "LA"  ]
+  [ "Cy"    40 "SF"  ] ] "/tmp/lf_ds.tsv" write-tsv
+"/tmp/lf_ds.tsv" read-tsv 1 rows>dataset
+dup keys . cr                           \ [ :name :age :city ]  column names, native frame keys
+dup :name @ . cr                        \ [ "Alice" "Bob" "Cy" ]  string column
+dup :age @ . cr                         \ [ 30 25 40 ]  numeric column
+dup :age @ dup size 1 matrix sum . cr   \ 95   column -> r x 1 matrix -> sum
+dup :age @ [: 1+ :] map . cr            \ [ 31 26 41 ]  derive a column with plain map
+drop
+
+\ empty cells round-trip through none and stay none inside the column
+[ [ "name" "age" ]
+  [ "Dan" null ]
+  [ "Eve" 22 ] ] "/tmp/lf_ds.tsv" write-tsv
+"/tmp/lf_ds.tsv" read-tsv 1 rows>dataset
+:age @ . cr                             \ [ null 22 ]
+
+\ headerless: synthesized :col1 .. :colN, every row is data
+[ [ 5 10 ] [ 6 11 ] [ 7 12 ] ] "/tmp/lf_ds.tsv" write-tsv
+"/tmp/lf_ds.tsv" read-tsv 0 rows>dataset
+dup keys . cr                           \ [ :col1 :col2 ]
+:col2 @ . cr                            \ [ 10 11 12 ]
+
+\ rows>relation: indexed on :id, deduped (the repeated u1/NYC row collapses), queryable
+[ [ "id" "city" ]
+  [ "u1" "NYC" ]
+  [ "u2" "LA"  ]
+  [ "u1" "NYC" ] ] "/tmp/lf_ds.tsv" write-tsv
+"/tmp/lf_ds.tsv" read-tsv [ :id ] 1 rows>relation
+dup { } query size . cr                 \ 2   duplicate collapsed (relation is a set)
+dup { :id :u2 } query . cr              \ [ { :city "LA" :id :u2 } ]
+{ :id :u1 } count-matches . cr          \ 1

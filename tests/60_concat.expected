@@ -2,3 +2,4 @@
 error: concat: expected array or set; got a float
 error: concat: stack too shallow
 error: concat: stack too shallow
+[ 1 2 3 ] [ 1 2 3 4 5 6 ] [ 1 2 3 4 ] [ 1 2 3 4 ] [ ] error: flatten-array: expected an array; got a float

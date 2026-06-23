@@ -3,3 +3,8 @@ error: matrix dimensions: 1000000000x1000000000 too large (element count overflo
 error: matrix dimensions: must be non-negative; got -1x3
 error: matrix dimensions: must be non-negative; got 3x-1
 100 100 3 2 
+6 
+10000 
+6 
+6 
+1 
