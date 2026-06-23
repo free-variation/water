@@ -259,7 +259,7 @@ typedef struct {
 	size_t heap_gc_threshold;
 
 	Object **objects;
-	cell current_epoch;
+	_Atomic cell current_epoch;
 	_Atomic int n_objects;
 	int init_n_objects;
 	int max_objects;
@@ -270,6 +270,8 @@ typedef struct {
 } Arena;
 extern Arena arena;
 extern int in_parallel;
+extern int parallel_region_object_base;
+extern int parallel_region_pair_base;
 
 typedef struct {
 	char *slab_next, *slab_end;
@@ -277,6 +279,13 @@ typedef struct {
 	int pair_next, pair_end;
 	void *size_class_free[ARENA_SIZE_CLASSES];
 	void *freed_object_structs;
+
+	size_t heap_bytes_live, heap_gc_threshold;
+	int *free_slots, *free_pairs;
+	int n_free_slots, free_slots_cap, n_free_pairs, free_pairs_cap;
+	int *slot_chunks, *pair_chunks;
+	int n_slot_chunks, slot_chunks_cap, n_pair_chunks, pair_chunks_cap;
+
 } AllocContext;
 
 typedef struct {
@@ -397,6 +406,8 @@ typedef struct Interpreter {
 	int error_flag;
 	int gc_disabled;
 	int gc_pending;
+	cell gc_epoch;
+	int gc_object_base, gc_pair_base;
 
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
@@ -950,6 +961,7 @@ void p_reload(Interpreter *interp);
 void mark_value(Interpreter *interp, Val value);
 void mark_body(Interpreter *interp, int body_start, int body_end);
 void gc(Interpreter *interp);
+void worker_local_gc(Interpreter *interp);
 void p_gc(Interpreter *interp);
 void p_clear(Interpreter *interp);
 void p_save(Interpreter *interp);
