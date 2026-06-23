@@ -2131,6 +2131,18 @@ void p_reload(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+#ifdef GC_DEBUG
+static int handle_in_chunks(int handle, int *chunks, int n_chunks, int last_next) {
+	for (int c = 0; c < n_chunks; c++) {
+		int start = chunks[c];
+		int end = (c == n_chunks - 1) ? last_next : start + SLOTS_PER_CLAIM;
+		if (handle >= start && handle < end)
+			return 1;
+	}
+	return 0;
+}
+#endif
+
 void mark_value(Interpreter *interp, Val value) {
 	for (;;) {
 		if (VAL_TAG(value) == T_LOGIC_VAR) {
@@ -2151,6 +2163,7 @@ void mark_value(Interpreter *interp, Val value) {
 			int slot = (int)VAL_DATA(value);
 			if (slot < interp->gc_pair_base)
 				return;
+			GC_ASSERT(!in_parallel || handle_in_chunks(slot, thread_alloc.pair_chunks, thread_alloc.n_pair_chunks, thread_alloc.pair_next), "worker marked a pair outside its own chunks");
 			if (pairs.mark[slot])
 				return;
 			pairs.mark[slot] = 1;
@@ -2163,6 +2176,7 @@ void mark_value(Interpreter *interp, Val value) {
 		if (handle < interp->gc_object_base || handle >= arena.n_objects)
 			return;
 
+		GC_ASSERT(!in_parallel || handle_in_chunks(handle, thread_alloc.slot_chunks, thread_alloc.n_slot_chunks, thread_alloc.slot_next), "worker marked an object outside its own chunks");
 		Object *obj = OBJECT_AT(handle);
 		if (!obj || obj->mark_epoch == interp->gc_epoch)
 			return;

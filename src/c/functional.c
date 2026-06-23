@@ -411,6 +411,53 @@ void p_pfilter(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+#ifdef GC_DEBUG
+static int val_refs_young(Val v, int object_base, int pair_base) {
+	Tag t = VAL_TAG(v);
+	if (t == T_PAIR)
+		return (int)VAL_DATA(v) >= pair_base;
+	if (t == T_STRING || t == T_SET || t == T_ARRAY || t == T_FRAME ||
+			t == T_MATRIX || t == T_SEGMENT || t == T_CONT)
+		return (int)VAL_DATA(v) >= object_base;
+	return 0;
+}
+
+static void debug_check_no_old_to_young(int object_base, int pair_base, int image_handle) {
+	for (int h = 0; h < object_base; h++) {
+		if (h == image_handle)
+			continue;
+		Object *obj = arena.objects[h];
+		if (!obj)
+			continue;
+		Val *vals = NULL;
+		int n = 0;
+		switch (obj->kind) {
+			case OBJECT_SET:
+			case OBJECT_ARRAY:
+				vals = obj->items;
+				n = obj->len;
+				break;
+			case OBJECT_FRAME:
+				vals = obj->frame.values;
+				n = obj->len;
+				break;
+			case OBJECT_CONTINUATION:
+				vals = obj->continuation.return_slice;
+				n = obj->continuation.return_len;
+				break;
+			default:
+				break;
+		}
+		for (int i = 0; i < n; i++)
+			GC_ASSERT(!val_refs_young(vals[i], object_base, pair_base), "old object references a young object (worker mutated shared state)");
+	}
+	for (int s = 0; s < pair_base; s++) {
+		GC_ASSERT(!val_refs_young(pairs.table[s].head, object_base, pair_base), "old pair references a young object");
+		GC_ASSERT(!val_refs_young(pairs.table[s].tail, object_base, pair_base), "old pair references a young object");
+	}
+}
+#endif
+
 void p_pmap(Interpreter *interp) {
 	POP_XT(function, "pmap-ext");
 	POP_INT(items_per_claim, "pmap-ext", "items per claim");
@@ -435,6 +482,10 @@ void p_pmap(Interpreter *interp) {
 		fail(interp, "pmap: a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
+
+#ifdef GC_DEBUG
+	debug_check_no_old_to_young(region.n_objects, region.n_pairs, image_handle);
+#endif
 
 	int rewindable = 1;
 	for (int i = 0; i < domain->len; i++)

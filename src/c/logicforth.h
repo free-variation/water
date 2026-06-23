@@ -336,6 +336,17 @@ typedef enum {
 	} \
 } while (0)
 
+#ifdef GC_DEBUG
+#define GC_ASSERT(cond, msg) do { \
+	if (!(cond)) { \
+		fprintf(stderr, "logicforth GC invariant violated: %s\n", msg); \
+		abort(); \
+	} \
+} while (0)
+#else
+#define GC_ASSERT(cond, msg) ((void)0)
+#endif
+
 
 #define GROW_OBJECT_TABLE(new_cap) do { \
 	int grow_old = arena.objects_cap; \
