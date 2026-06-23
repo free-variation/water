@@ -1,8 +1,11 @@
 variable pi
 3.141592653589793 to pi
 
+\ aliases
 : true 1 ; inline
 : false 0 ; inline
+: print . ; inline
+: print-stack .s ; inline
 
 ( a b -- a b a b )
 : 2dup over over ;

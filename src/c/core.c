@@ -9,6 +9,8 @@ Arena arena;
 PairPool pairs;
 
 int in_parallel;
+int parallel_region_object_base;
+int parallel_region_pair_base;
 static _Thread_local AllocContext thread_alloc;
 static AllocContext main_alloc;
 static pthread_mutex_t intern_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -147,6 +149,9 @@ static void arena_free_object(Object *obj) {
 
 int object_alloc_slot(Interpreter *interp) {
 	if (in_parallel) {
+		if (thread_alloc.n_free_slots > 0)
+			return thread_alloc.free_slots[--thread_alloc.n_free_slots];
+
 		if (thread_alloc.slot_next >= thread_alloc.slot_end) {
 			int claimed = atomic_fetch_add(&arena.n_objects, SLOTS_PER_CLAIM);
 			if (claimed + SLOTS_PER_CLAIM > arena.objects_cap) {
@@ -156,6 +161,8 @@ int object_alloc_slot(Interpreter *interp) {
 
 			thread_alloc.slot_next = claimed;
 			thread_alloc.slot_end = claimed + SLOTS_PER_CLAIM;
+			GROW_IF_FULL_SYS(thread_alloc.n_slot_chunks, thread_alloc.slot_chunks_cap, thread_alloc.slot_chunks);
+			thread_alloc.slot_chunks[thread_alloc.n_slot_chunks++] = claimed;
 		}
 
 		return thread_alloc.slot_next++;
@@ -209,6 +216,26 @@ void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_p
 
 void reset_thread_alloc(void) {
 	memset(&thread_alloc, 0, sizeof thread_alloc);
+}
+
+static void free_thread_alloc_lists(void) {
+	free(thread_alloc.free_slots);
+	free(thread_alloc.free_pairs);
+	free(thread_alloc.slot_chunks);
+	free(thread_alloc.pair_chunks);
+	memset(&thread_alloc, 0, sizeof thread_alloc);
+}
+
+static inline void heap_bytes_add(size_t bytes) {
+	atomic_fetch_add(&arena.heap_bytes_live, bytes);
+	if (in_parallel)
+		thread_alloc.heap_bytes_live += bytes;
+}
+
+static inline void heap_bytes_sub(size_t bytes) {
+	atomic_fetch_sub(&arena.heap_bytes_live, bytes);
+	if (in_parallel)
+		thread_alloc.heap_bytes_live -= bytes;
 }
 
 static Object *object_new(Interpreter *interp, ObjectKind kind, int *out_slot) {
@@ -272,6 +299,12 @@ int object_new_pair(Interpreter *interp) {
 	int slot;
 
 	if (in_parallel) {
+		if (thread_alloc.n_free_pairs > 0) {
+			slot = thread_alloc.free_pairs[--thread_alloc.n_free_pairs];
+			INIT_PAIR(slot);
+			return slot;
+		}
+
 		if (thread_alloc.pair_next >= thread_alloc.pair_end) {
 			int claimed = atomic_fetch_add(&pairs.n_pairs, SLOTS_PER_CLAIM);
 			if (claimed + SLOTS_PER_CLAIM > pairs.pairs_cap) {
@@ -281,6 +314,8 @@ int object_new_pair(Interpreter *interp) {
 			
 			thread_alloc.pair_next = claimed;
 			thread_alloc.pair_end = claimed + SLOTS_PER_CLAIM;
+			GROW_IF_FULL_SYS(thread_alloc.n_pair_chunks, thread_alloc.pair_chunks_cap, thread_alloc.pair_chunks);
+			thread_alloc.pair_chunks[thread_alloc.n_pair_chunks++] = claimed;
 		}
 
 		slot = thread_alloc.pair_next++;
@@ -321,8 +356,12 @@ int object_new_frame(Interpreter *interp) {
 }
 
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
-	if (!in_parallel && !interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold)
+	if (in_parallel) {
+		if (thread_alloc.heap_bytes_live > thread_alloc.heap_gc_threshold)
+			interp->gc_pending = 1;
+	} else if (!interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold) {
 		interp->gc_pending = 1;
+	}
 
 	NEW_OBJECT(obj, OBJECT_MATRIX);
 	obj->matrix.rows = num_rows;
@@ -337,14 +376,18 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 		return -1;
 	}
 
-	atomic_fetch_add(&arena.heap_bytes_live, num_elements * sizeof(double));
+	heap_bytes_add(num_elements * sizeof(double));
 
 	return slot;
 }
 
 int object_new_segment(Interpreter *interp, int length, SegmentType element_type) {
-	if (!in_parallel && !interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold)
+	if (in_parallel) {
+		if (thread_alloc.heap_bytes_live > thread_alloc.heap_gc_threshold)
+			interp->gc_pending = 1;
+	} else if (!interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold) {
 		interp->gc_pending = 1;
+	}
 	
 	NEW_OBJECT(obj, OBJECT_SEGMENT);
 
@@ -360,7 +403,7 @@ int object_new_segment(Interpreter *interp, int length, SegmentType element_type
 		return -1;
 	}
 
-	atomic_fetch_add(&arena.heap_bytes_live, (size_t)length * element_size);
+	heap_bytes_add((size_t)length * element_size);
 
 	return slot;
 }
@@ -385,7 +428,7 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
 	
-	atomic_fetch_add(&arena.heap_bytes_live, (size_t)return_len * sizeof(Val));
+	heap_bytes_add((size_t)return_len * sizeof(Val));
 	
 	return slot;
 }
@@ -401,6 +444,7 @@ static void *worker_entry(void *parallel_task) {
 			task->kernel(start_index, end_index, task->context);
 	}
 
+	free_thread_alloc_lists();
 	return NULL;
 }
 
@@ -1079,9 +1123,12 @@ void run_inner(Interpreter *interp, int floor) {
 			continue;
 		}
 
-		if (interp->gc_pending && !in_parallel && !interp->gc_disabled) {
+		if (interp->gc_pending) {
 			interp->gc_pending = 0;
-			gc(interp);
+			if (in_parallel)
+				worker_local_gc(interp);
+			else if (!interp->gc_disabled)
+				gc(interp);
 		}
 
 		cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
@@ -2102,6 +2149,8 @@ void mark_value(Interpreter *interp, Val value) {
 
 		if (VAL_TAG(value) == T_PAIR) {
 			int slot = (int)VAL_DATA(value);
+			if (slot < interp->gc_pair_base)
+				return;
 			if (pairs.mark[slot])
 				return;
 			pairs.mark[slot] = 1;
@@ -2111,13 +2160,13 @@ void mark_value(Interpreter *interp, Val value) {
 		}
 
 		int handle = (int)VAL_DATA(value);
-		if (handle < 0 || handle >= arena.n_objects)
+		if (handle < interp->gc_object_base || handle >= arena.n_objects)
 			return;
 
 		Object *obj = OBJECT_AT(handle);
-		if (!obj || obj->mark_epoch == arena.current_epoch)
+		if (!obj || obj->mark_epoch == interp->gc_epoch)
 			return;
-		obj->mark_epoch = arena.current_epoch;
+		obj->mark_epoch = interp->gc_epoch;
 
 		if (obj->kind == OBJECT_SET || obj->kind == OBJECT_ARRAY) {
 			if (obj->len == 0)
@@ -2439,7 +2488,9 @@ void gc(Interpreter *interp) {
 		return;
 	}
 
-	arena.current_epoch++;
+	interp->gc_epoch = atomic_fetch_add(&arena.current_epoch, 1) + 1;
+	interp->gc_object_base = 0;
+	interp->gc_pair_base = 0;
 	memset(pairs.mark, 0, sizeof(unsigned char) * (size_t)pairs.n_pairs);
 	pairs.free_count = 0;
 
@@ -2495,7 +2546,7 @@ void gc(Interpreter *interp) {
 	arena.n_free_slots = 0;
 	for (int handle = 0; handle < arena.n_objects; handle++) {
 		Object *obj = arena.objects[handle];
-		if (obj && obj->mark_epoch == arena.current_epoch)
+		if (obj && obj->mark_epoch == interp->gc_epoch)
 			continue;
 
 		if (obj) {
@@ -2894,22 +2945,79 @@ void free_one_object(Object *obj) {
 		case OBJECT_ARRAY: arena_free(obj->items); break;
 		case OBJECT_FRAME: arena_free(obj->frame.keys); arena_free(obj->frame.values); break;
 		case OBJECT_MATRIX: {
-								atomic_fetch_sub(&arena.heap_bytes_live, (size_t)obj->matrix.rows * (size_t)obj->matrix.columns * sizeof(double));
+								heap_bytes_sub((size_t)obj->matrix.rows * (size_t)obj->matrix.columns * sizeof(double));
 								free(obj->matrix.elements);
 							   	break;
 							}
 		case OBJECT_CONTINUATION: {
-								atomic_fetch_sub(&arena.heap_bytes_live, (size_t)obj->continuation.return_len * sizeof(Val));
+								heap_bytes_sub((size_t)obj->continuation.return_len * sizeof(Val));
 									  free(obj->continuation.return_slice); 
 									  break;
 								  }
 		case OBJECT_SEGMENT: {
-								atomic_fetch_sub(&arena.heap_bytes_live, (size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
+								heap_bytes_sub((size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
 								 free(obj->segment.data); 
 								 break;
 							 }
 	}
 	arena_free_object(obj);
+}
+
+void worker_local_gc(Interpreter *interp) {
+	int last_pair_chunk = thread_alloc.n_pair_chunks - 1;
+	for (int c = 0; c < thread_alloc.n_pair_chunks; c++) {
+		int start = thread_alloc.pair_chunks[c];
+		int end = (c == last_pair_chunk) ? thread_alloc.pair_next : start + SLOTS_PER_CLAIM;
+		for (int slot = start; slot < end; slot++)
+			pairs.mark[slot] = 0;
+	}
+
+	interp->gc_epoch = atomic_fetch_add(&arena.current_epoch, 1) + 1;
+	interp->gc_object_base = parallel_region_object_base;
+	interp->gc_pair_base = parallel_region_pair_base;
+
+	int i;
+	for (i = 0; i < interp->dsp; i++)
+		mark_value(interp, interp->data_stack[i]);
+	for (i = 0; i < interp->rsp; i++)
+		mark_value(interp, interp->return_stack[i]);
+	for (i = 0; i < interp->side_dsp; i++)
+		mark_value(interp, interp->side_stack[i]);
+	for (i = 0; i < interp->n_gc_roots; i++)
+		mark_value(interp, interp->gc_roots[i]);
+
+	thread_alloc.n_free_slots = 0;
+	int last_slot_chunk = thread_alloc.n_slot_chunks - 1;
+	for (int c = 0; c < thread_alloc.n_slot_chunks; c++) {
+		int start = thread_alloc.slot_chunks[c];
+		int end = (c == last_slot_chunk) ? thread_alloc.slot_next : start + SLOTS_PER_CLAIM;
+		for (int handle = start; handle < end; handle++) {
+			Object *obj = arena.objects[handle];
+			if (obj && obj->mark_epoch == interp->gc_epoch)
+				continue;
+			if (obj) {
+				free_one_object(obj);
+				arena.objects[handle] = NULL;
+			}
+			GROW_IF_FULL_SYS(thread_alloc.n_free_slots, thread_alloc.free_slots_cap, thread_alloc.free_slots);
+			thread_alloc.free_slots[thread_alloc.n_free_slots++] = handle;
+		}
+	}
+
+	thread_alloc.n_free_pairs = 0;
+	for (int c = 0; c < thread_alloc.n_pair_chunks; c++) {
+		int start = thread_alloc.pair_chunks[c];
+		int end = (c == last_pair_chunk) ? thread_alloc.pair_next : start + SLOTS_PER_CLAIM;
+		for (int slot = start; slot < end; slot++) {
+			if (pairs.mark[slot])
+				continue;
+			GROW_IF_FULL_SYS(thread_alloc.n_free_pairs, thread_alloc.free_pairs_cap, thread_alloc.free_pairs);
+			thread_alloc.free_pairs[thread_alloc.n_free_pairs++] = slot;
+		}
+	}
+
+	size_t live = thread_alloc.heap_bytes_live;
+	thread_alloc.heap_gc_threshold = MAX(live * 2, HEAP_GC_FLOOR);
 }
 
 void forget_user(Interpreter *interp) {
@@ -3223,7 +3331,7 @@ void p_load_image(Interpreter *interp) {
 									obj->matrix.columns = cols;
 									size_t n = (size_t)rows * (size_t)cols;
 									obj->matrix.elements = calloc(MAX(n, 1), sizeof(double));
-									atomic_fetch_add(&arena.heap_bytes_live, n * sizeof(double));
+									heap_bytes_add(n * sizeof(double));
 									if (n > 0 && fread(obj->matrix.elements, sizeof(double), n, file) != n) {
 										fail(interp, "%s: truncated matrix data", filename);
 										goto done;
@@ -3239,7 +3347,7 @@ void p_load_image(Interpreter *interp) {
 										  obj->continuation.return_len = return_len;
 										  obj->continuation.return_slice =
 											  malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
-										  atomic_fetch_add(&arena.heap_bytes_live, (size_t)return_len * sizeof(Val));
+										  heap_bytes_add((size_t)return_len * sizeof(Val));
 										  for (int j = 0; j < return_len; j++) {
 											  if (!r_val(file, &obj->continuation.return_slice[j])) {
 												  fail(interp, "%s: truncated continuation slice", filename);
@@ -3276,7 +3384,7 @@ void p_load_image(Interpreter *interp) {
 									 obj->segment.length = length;
 									 size_t element_size = segment_element_size(element_type);
 									 obj->segment.data = calloc((size_t)MAX(length, 1), element_size);
-									 atomic_fetch_add(&arena.heap_bytes_live, (size_t)length * element_size);
+									 heap_bytes_add((size_t)length * element_size);
 									 if (length > 0 && fread(obj->segment.data, element_size, (size_t)length, file) != (size_t)length) {
 										 fail(interp, "%s: truncated segment data", filename);
 										 goto done;

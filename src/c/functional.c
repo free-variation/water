@@ -257,7 +257,7 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
 			parallel_error = 1;
 			return;
 		}
-		mapping->image->items[i] = pop(worker_interp);
+		mapping->image->items[i] = worker_interp->data_stack[worker_interp->dsp - 1];
 	}
 }
 
@@ -334,6 +334,9 @@ static int parallel_apply(Object *domain, int worker_count,
 	snapshot->used = arena.used;
 	snapshot->n_objects = arena.n_objects;
 	snapshot->n_pairs = pairs.n_pairs;
+
+	parallel_region_object_base = arena.n_objects;
+	parallel_region_pair_base = pairs.n_pairs;
 
 	worker_claim = 0;
 	worker_interp = NULL;
