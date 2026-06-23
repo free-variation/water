@@ -16,7 +16,7 @@
 #   extreme-load     drives every structure to and past its limit; fills the
 #                    64M object table (~7 GB) unless MAX_OBJECTS caps it
 #   select-load      profiling load: select-values over a ~53 MB JSON fixture
-#                    (auto-generates bench/big.json; ~1e9 queries — the long one)
+#                    (auto-generates bench/fixtures/big.json; ~1e9 queries — the long one)
 #
 # Env:
 #   MAX_OBJECTS   object-table ceiling passed to extreme-load (default: full 64M)
@@ -34,17 +34,17 @@ log() { printf '%s\n' "$*" >&2; }
 log "building logicforth..."
 (cd "$root" && make) >&2 || { log "build failed"; exit 1; }
 
-# select-load reads "bench/big.json" by relative path; generate it once if absent.
+# select-load reads "bench/fixtures/big.json" by relative path; generate it once if absent.
 ensure_big_json() {
-	[ -s "$root/bench/big.json" ] && return 0
+	[ -s "$root/bench/fixtures/big.json" ] && return 0
 	command -v "$python" >/dev/null 2>&1 || { log "  $python not found; cannot generate big.json"; return 1; }
-	log "  generating bench/big.json (~53 MB, one-time)..."
-	"$python" "$here/gen-big-json.py" "$root/bench/big.json" >&2 || { log "  big.json generation failed"; return 1; }
+	log "  generating bench/fixtures/big.json (~53 MB, one-time)..."
+	"$python" "$here/fixtures/gen-big-json.py" "$root/bench/fixtures/big.json" >&2 || { log "  big.json generation failed"; return 1; }
 }
 
 run_one() {
 	local name=$1
-	local file="$here/$name.l4"
+	local file="$here/load/$name.l4"
 	[ -f "$file" ] || { log "SKIP $name (no $file)"; return; }
 
 	if [ "$name" = select-load ]; then
@@ -66,7 +66,7 @@ run_one() {
 
 tests=("$@")
 if [ "${#tests[@]}" -eq 0 ]; then
-	tests=(image-load sqlite-load parallel-stress extreme-load select-load cpu-stress-1pass)
+	tests=( $(cd "$here/load" && ls *.l4 2>/dev/null | sed 's/\.l4$//') )
 fi
 
 for t in "${tests[@]}"; do

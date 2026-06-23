@@ -85,34 +85,37 @@ ratio() {
 }
 
 # --- logicforth command wrappers (each prints a full bench run) ------------
-lf_leibniz()  { "$bin" < "$here/leibniz.l4"; }
-lf_leibniz_matrix() { "$bin" < "$here/leibniz-matrix.l4"; }
-lf_nqueens()  { "$bin" < "$here/nqueens.l4"; }
-lf_fannkuch() { "$bin" < "$here/fannkuch.l4"; }
-lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/nbody.l4"; } | "$bin"; }
-lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/spectral-norm.l4"; } | "$bin"; }
-lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/scimark-lu.l4"; } | "$bin"; }
-lf_regex_dna() { "$bin" < "$here/regex-dna.l4"; }
-lf_regex_compile() { "$bin" < "$here/regex-compile.l4"; }
-lf_regex_effbot() { "$bin" < "$here/regex-effbot.l4"; }
-lf_regex_v8() { "$bin" < "$here/regex-v8.l4"; }
-lf_deepcopy() { "$bin" < "$here/deepcopy.l4"; }
-lf_json_loads() { "$bin" < "$here/json-loads.l4"; }
-lf_json_dumps() { "$bin" < "$here/json-dumps.l4"; }
+lf_leibniz()  { "$bin" < "$here/pyperformance/leibniz.l4"; }
+lf_leibniz_matrix() { "$bin" < "$here/variants/leibniz-matrix.l4"; }
+lf_leibniz_parallel() { "$bin" < "$here/variants/leibniz-parallel.l4"; }
+lf_nqueens()  { "$bin" < "$here/pyperformance/nqueens.l4"; }
+lf_nqueens_iter() { "$bin" < "$here/variants/nqueens-iter.l4"; }
+lf_fannkuch() { "$bin" < "$here/pyperformance/fannkuch.l4"; }
+lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.l4"; } | "$bin"; }
+lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.l4"; } | "$bin"; }
+lf_spectral_matrix() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/variants/spectral-norm-matrix.l4"; } | "$bin"; }
+lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.l4"; } | "$bin"; }
+lf_regex_dna() { "$bin" < "$here/pyperformance/regex-dna.l4"; }
+lf_regex_compile() { "$bin" < "$here/pyperformance/regex-compile.l4"; }
+lf_regex_effbot() { "$bin" < "$here/pyperformance/regex-effbot.l4"; }
+lf_regex_v8() { "$bin" < "$here/pyperformance/regex-v8.l4"; }
+lf_deepcopy() { "$bin" < "$here/pyperformance/deepcopy.l4"; }
+lf_json_loads() { "$bin" < "$here/pyperformance/json-loads.l4"; }
+lf_json_dumps() { "$bin" < "$here/pyperformance/json-dumps.l4"; }
 
 # --- python command wrappers -----------------------------------------------
-py_nqueens()  { "$python" "$here/pyperf_nqueens.py" "$nqueens_n"; }
-py_fannkuch() { "$python" "$here/pyperf_fannkuch.py" "$fannkuch_n"; }
-py_nbody()    { "$python" "$here/pyperf_nbody.py" "$nbody_steps"; }
-py_spectral() { "$python" "$here/pyperf_spectral_norm.py" "$spectral_loops"; }
-py_scimark_lu() { "$python" "$here/pyperf_scimark_lu.py" "$scimark_lu_cycles"; }
-py_regex_dna() { "$python" "$here/pyperf_regex_dna.py"; }
-py_regex_compile() { "$python" "$here/pyperf_regex_compile.py"; }
-py_regex_effbot() { "$python" "$here/pyperf_regex_effbot.py"; }
-py_regex_v8() { "$python" "$here/pyperf_regex_v8.py"; }
-py_deepcopy() { "$python" "$here/pyperf_deepcopy.py"; }
-py_json_loads() { "$python" "$here/pyperf_json_loads.py"; }
-py_json_dumps() { "$python" "$here/pyperf_json_dumps.py"; }
+py_nqueens()  { "$python" "$here/pyperformance/pyperf_nqueens.py" "$nqueens_n"; }
+py_fannkuch() { "$python" "$here/pyperformance/pyperf_fannkuch.py" "$fannkuch_n"; }
+py_nbody()    { "$python" "$here/pyperformance/pyperf_nbody.py" "$nbody_steps"; }
+py_spectral() { "$python" "$here/pyperformance/pyperf_spectral_norm.py" "$spectral_loops"; }
+py_scimark_lu() { "$python" "$here/pyperformance/pyperf_scimark_lu.py" "$scimark_lu_cycles"; }
+py_regex_dna() { "$python" "$here/pyperformance/pyperf_regex_dna.py"; }
+py_regex_compile() { "$python" "$here/pyperformance/pyperf_regex_compile.py"; }
+py_regex_effbot() { "$python" "$here/pyperformance/pyperf_regex_effbot.py"; }
+py_regex_v8() { "$python" "$here/pyperformance/pyperf_regex_v8.py"; }
+py_deepcopy() { "$python" "$here/pyperformance/pyperf_deepcopy.py"; }
+py_json_loads() { "$python" "$here/pyperformance/pyperf_json_loads.py"; }
+py_json_dumps() { "$python" "$here/pyperformance/pyperf_json_dumps.py"; }
 
 # Run a wrapper N times, append each run's stdout (with a separator) to a log.
 run_reps() {
@@ -141,7 +144,7 @@ result_line() {
 leibniz_py_elapsed=""
 leibniz_py_result=""
 run_leibniz_py() {
-	local ref="$here/.leibniz_ref.py" i
+	local ref="$here/pyperformance/.leibniz_ref.py" i
 	if [ ! -s "$ref" ]; then
 		log "fetching upstream leibniz.py reference (caching at $ref)..."
 		if ! curl -fsSL "$leibniz_url" -o "$ref"; then
@@ -210,6 +213,7 @@ log "logicforth: $reps reps/bench   python: $reps_py reps/bench   ($python)"
 
 log "== nqueens =="
 run_reps nqueens_lf lf_nqueens "$reps"
+run_reps nqueens_iter_lf lf_nqueens_iter "$reps"
 run_reps nqueens_py py_nqueens "$reps_py"
 
 log "== nbody =="
@@ -222,6 +226,7 @@ run_reps fannkuch_py py_fannkuch "$reps_py"
 
 log "== spectral-norm =="
 run_reps spectral_lf lf_spectral "$reps"
+run_reps spectral_matrix_lf lf_spectral_matrix "$reps"
 run_reps spectral_py py_spectral "$reps_py"
 
 log "== scimark-lu =="
@@ -262,6 +267,7 @@ if [ "$skip_leibniz" != 1 ]; then
 	log "== leibniz + leibniz-matrix (slow) =="
 	run_reps leibniz_lf lf_leibniz "$reps"
 	run_reps leibniz_matrix_lf lf_leibniz_matrix "$reps"
+	run_reps leibniz_parallel_lf lf_leibniz_parallel "$reps"
 	if run_leibniz_py; then have_leibniz=1; fi
 	if run_leibniz_r; then have_leibniz_r=1; fi
 fi
@@ -305,11 +311,14 @@ row() {
 if [ "$have_leibniz" = 1 ]; then
 	row "leibniz" "${leibniz_rounds} iterations" leibniz_lf "$leibniz_py_elapsed"
 	row "leibniz-matrix" "${leibniz_rounds}, vectorized" leibniz_matrix_lf "$leibniz_py_elapsed"
+	row "leibniz-parallel" "${leibniz_rounds}, pmap" leibniz_parallel_lf "$leibniz_py_elapsed"
 fi
 row "nqueens" "N = $nqueens_n" nqueens_lf "$(median_elapsed nqueens_py)"
+row "nqueens-iter" "N = $nqueens_n" nqueens_iter_lf "$(median_elapsed nqueens_py)"
 row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
 row "fannkuch" "N = $fannkuch_n" fannkuch_lf "$(median_elapsed fannkuch_py)"
 row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed spectral_py)"
+row "spectral-norm-matrix" "N = 130, ${spectral_loops}×" spectral_matrix_lf "$(median_elapsed spectral_py)"
 row "scimark-lu" "N=100, ${scimark_lu_cycles}×" scimark_lu_lf "$(median_elapsed scimark_lu_py)"
 row "regex-dna" "100K → 1M" regex_dna_lf "$(median_elapsed regex_dna_py)"
 row "regex-compile" "239 patterns, cold" regex_compile_lf "$(median_elapsed regex_compile_py)"

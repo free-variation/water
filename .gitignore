@@ -64,3 +64,6 @@ bench/*.md
 
 .claude
 .logicforth_history
+
+# transient benchmark run reports / logs
+bench/results/

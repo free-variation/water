@@ -322,25 +322,26 @@ static int parallel_apply(Object *domain, int worker_count,
 		int items_per_claim, void (*kernel)(int, int, void *), void *context,
 		RegionSnapshot *snapshot) {
 	CLAMP(worker_count, 1, MAX_WORKER_THREADS);
-	int object_headroom = arena.n_objects + domain->len + worker_count * SLOTS_PER_CLAIM;
-	object_headroom = MIN(object_headroom, arena.max_objects);
-	if (object_headroom > arena.objects_cap)
+	int object_headroom = arena.object_space.n + domain->len + worker_count * SLOTS_PER_CLAIM;
+	object_headroom = MIN(object_headroom, arena.object_space.max);
+	if (object_headroom > arena.object_space.cap)
 		GROW_OBJECT_TABLE(object_headroom);
 
-	int pair_headroom = pairs.n_pairs + domain->len + worker_count * SLOTS_PER_CLAIM;
-	if (pair_headroom > pairs.pairs_cap)
+	int pair_headroom = pairs.space.n + domain->len + worker_count * SLOTS_PER_CLAIM;
+	if (pair_headroom > pairs.space.cap)
 		GROW_PAIR_TABLE(pair_headroom);
 
 	snapshot->used = arena.used;
-	snapshot->n_objects = arena.n_objects;
-	snapshot->n_pairs = pairs.n_pairs;
+	snapshot->n_objects = arena.object_space.n;
+	snapshot->n_pairs = pairs.space.n;
 
-	parallel_region_object_base = arena.n_objects;
-	parallel_region_pair_base = pairs.n_pairs;
+	parallel_region_object_base = arena.object_space.n;
+	parallel_region_pair_base = pairs.space.n;
 
 	worker_claim = 0;
 	worker_interp = NULL;
 	parallel_error = 0;
+	parallel_region_collected = 0;
 	in_parallel = 1;
 	reset_thread_alloc();
 	parallel_for(domain->len, worker_count, items_per_claim, kernel, context);
@@ -484,7 +485,8 @@ void p_pmap(Interpreter *interp) {
 	}
 
 #ifdef GC_DEBUG
-	debug_check_no_old_to_young(region.n_objects, region.n_pairs, image_handle);
+	if (parallel_region_collected)
+		debug_check_no_old_to_young(region.n_objects, region.n_pairs, image_handle);
 #endif
 
 	int rewindable = 1;
