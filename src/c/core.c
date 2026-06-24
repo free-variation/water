@@ -1613,6 +1613,20 @@ LOCAL_ACC_OP(sub, -)
 LOCAL_ACC_OP(mul, *)
 LOCAL_ACC_OP(div, /)
 
+#define LOCAL_LOCAL_OP(suffix, op) \
+	static int ll_##suffix##_0_cfa; \
+	static void p_ll_##suffix##_0(Interpreter *interp) { \
+		int slot_a = (int)vocab.dict[interp->ip++]; \
+		int slot_b = (int)vocab.dict[interp->ip++]; \
+		double a = interp->return_stack[interp->local_base + slot_a].number; \
+		double b = interp->return_stack[interp->local_base + slot_b].number; \
+		push(interp, make_float(a op b)); \
+		DISPATCH(interp); \
+	}
+LOCAL_LOCAL_OP(add, +)
+LOCAL_LOCAL_OP(sub, -)
+LOCAL_LOCAL_OP(mul, *)
+
 static int at_i_local0_cfa;
 static int at_i_lit_cfa;
 
@@ -1676,6 +1690,42 @@ int try_fuse_at_i_local(Interpreter *interp) {
 
 	return 1;
 }
+
+int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
+	if (!compiler.compiling)
+		return 0;
+
+	int fused_cfa;
+	if (op_handler == p_add_f) 
+		fused_cfa = ll_add_0_cfa;
+	else if (op_handler == p_sub_f) 
+		fused_cfa = ll_sub_0_cfa;
+	else if (op_handler == p_mul_f) 
+		fused_cfa = ll_mul_0_cfa;
+	else 
+		return 0;
+
+	cell *dict = vocab.dict;
+	int here = vocab.here;
+	if (here < 4)
+		return 0;
+	if ((cfa_handler)dict[here - 4] != p_local_fetch_0depth)
+		return 0;
+	if ((cfa_handler)dict[here - 2] != p_local_fetch_0depth)
+		return 0;
+
+	int slot_a = (int)dict[here - 3];
+	int slot_b = (int)dict[here - 1];
+	vocab.here -= 4;
+
+	emit_call(interp, fused_cfa);
+	emit(interp, (cell)slot_a);
+	emit(interp, (cell)slot_b);
+	
+	return 1;
+}
+
+
 
 int try_fuse_at_i_lit(Interpreter *interp) {
 	if (!compiler.compiling)
@@ -3765,6 +3815,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.local_fetch_0depth_cfa = define_primitive(interp, "(local@0)", p_local_fetch_0depth, 4);
 	at_i_local0_cfa = define_primitive(interp, "(@i.l0)", p_at_i_local0, 4);
 	at_i_lit_cfa = define_primitive(interp, "(@i.lit)", p_at_i_lit, 4);
+	ll_add_0_cfa = define_primitive(interp, "(ll+0)", p_ll_add_0, 4);
+	ll_sub_0_cfa = define_primitive(interp, "(ll-0)", p_ll_sub_0, 4);
+	ll_mul_0_cfa = define_primitive(interp, "(ll*0)", p_ll_mul_0, 4);
 	vocab.local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 4);
 	vocab.local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 4);
 	vocab.local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 4);

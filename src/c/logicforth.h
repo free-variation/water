@@ -520,6 +520,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot);
 int try_fuse_at_i_local(Interpreter *interp);
 int try_fuse_at_i_lit(Interpreter *interp);
+int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler);
 
 static inline void push(Interpreter *interp, Val value) {
 	if (interp->dsp < DATA_STACK_DEPTH) {

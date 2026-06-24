@@ -275,12 +275,14 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 			return 1;
 		return try_fuse_at_i_lit(interp);
 	}
-	cfa_handler op_h = (cfa_handler)vocab.dict[op_cfa];
+	cfa_handler op_handler = (cfa_handler)vocab.dict[op_cfa];
+	if (try_fuse_local_arith(interp, op_handler))
+		return 1;
 	int prev1 = compiler.fuse_prev_var;
 	int prev2 = compiler.fuse_prev2_var;
 
 #define FUSE_BIN(suffix, op, base) \
-	if (op_h == base) { \
+	if (op_handler == base) { \
 		if (prev1 && prev2) return emit_fused_two_var(interp, vv_##suffix##_cfa, prev2 + 1, prev1 + 1); \
 		if (prev1) return emit_fused_one_var(interp, vf_##suffix##_cfa, prev1 + 1); \
 		return 0; \
@@ -288,14 +290,14 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	FLOAT_BINOPS(FUSE_BIN)
 
 #define FUSE_FN(suffix, expr, base) \
-	if (op_h == base) { \
+	if (op_handler == base) { \
 		if (prev1) return emit_fused_one_var(interp, vfn_##suffix##_cfa, prev1 + 1); \
 		return 0; \
 	}
 	FLOAT_UNARY_FNS(FUSE_FN)
 
 #define FUSE_FUSED(suffix, expr, base, name) \
-	if (op_h == base) { \
+	if (op_handler == base) { \
 		if (prev1 && prev2) return emit_fused_two_var(interp, vv_##suffix##_cfa, prev2 + 1, prev1 + 1); \
 		return 0; \
 	}
