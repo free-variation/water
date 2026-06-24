@@ -1,0 +1,21 @@
+: mid
+  0: (enter-locals) 1
+  2: (local@0) 0
+  4: (local@0) 0
+  6: leaf:
+    0: (enter-locals) 2
+    2: (ll*0) 0 1
+    5: (ll+0) 0 1
+    8: (leave-locals) 2
+    10: exit
+  8: (leave-locals) 1
+  10: exit
+;
+: rec
+  0: (enter-locals) 1
+  2: (ll.lit-0) 0 1
+  5: rec ...
+  7: (leave-locals) 1
+  9: exit
+;
+V: not a colon definition

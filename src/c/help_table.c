@@ -277,6 +277,7 @@ const HelpEntry help_entries[] = {
 	{ "save-image", "( s -- )", "Binary snapshot of full state (dict, objects, stacks, continuations)", "serialize all", "file I/O", "O(objects + dict)" },
 	{ "see", "( xt -- )", "Print a word's source (: name … ;), or variable/symbol/primitive form", "dict scan", "none", "O(|dict|)" },
 	{ "see-compiled", "( xt -- )", "Disassemble a colon definition's compiled cells", "body scan", "none", "O(body)" },
+	{ "see-tree", "( xt -- )", "Like see-compiled, but each colon-word call is expanded inline, indented two spaces, recursively down to primitives; recursive calls print as name ...", "body scan", "none", "O(expanded body)" },
 	{ "seed", "( n -- )", "Set the global base seed and reset the stream counter; per-thread streams derive from it", "1", "none", "O(1)" },
 	{ "segment>pointer", "( seg -- ptr )", "Intern the backing buffer and return an FFI pointer handle (no copy; see Foreign function interface)", "1", "none", "O(1)†" },
 	{ "select-keys", "( fr path -- arr )", "The full root-to-match path (a symbol array) for every match, document order; each round-trips through @", "s", "1a + 1a per match", "O(s + total path length)" },
@@ -362,4 +363,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 356;
+const int help_entry_count = 357;

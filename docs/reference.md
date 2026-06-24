@@ -679,6 +679,7 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 | `words` | `( -- )` | List all non-internal words, newest first, 8 per line | dict scan | none | O(\|dict\|) |
 | `see` | `( xt -- )` | Print a word's source (`: name … ;`), or `variable`/`symbol`/primitive form | dict scan | none | O(\|dict\|) |
 | `see-compiled` | `( xt -- )` | Disassemble a colon definition's compiled cells | body scan | none | O(body) |
+| `see-tree` | `( xt -- )` | Like `see-compiled`, but each colon-word call is expanded inline, indented two spaces, recursively down to primitives; recursive calls print as `name ...` | body scan | none | O(expanded body) |
 | `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
 | `help` | `( "name" -- )` | lib.l4: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |

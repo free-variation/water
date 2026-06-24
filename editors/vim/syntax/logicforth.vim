@@ -55,13 +55,13 @@ syn keyword logicforthBuiltin num-elements or over parallel-run pfilter pfilter-
 syn keyword logicforthBuiltin print-stack quantile query quotient r> r@ random random-int range read read-err read-file
 syn keyword logicforthBuiltin read-out read-tsv reduce reify relation reload replace resample-indices reset reshape resume retract
 syn keyword logicforthBuiltin reverse reverse-slice! roll rot round round-down round-up row-maxes row-means row-mins row-sums rows>dataset
-syn keyword logicforthBuiltin rows>relation rshift run run-result running? sample save save-image see see-compiled seed segment>pointer
-syn keyword logicforthBuiltin select-keys select-rows select-values set set-add! set-remove! shift shift-with side-depth side-drop sin size
-syn keyword logicforthBuiltin skip sleep slice! sort split sq sqrt start-generator start-process stop string>chars string>codepoints
-syn keyword logicforthBuiltin string>symbol submatrix substring sum swap symbol? take tan tanh throw to-slice! transpose
-syn keyword logicforthBuiltin trim true truncate try-catch union update-at values var vf* vf+ vf- vf/
-syn keyword logicforthBuiltin vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh vvf* vvf*+
-syn keyword logicforthBuiltin vvf*- vvf+ vvf- vvf/ wait words write write-file write-in write-tsv yield
+syn keyword logicforthBuiltin rows>relation rshift run run-result running? sample save save-image see see-compiled see-tree seed
+syn keyword logicforthBuiltin segment>pointer select-keys select-rows select-values set set-add! set-remove! shift shift-with side-depth side-drop sin
+syn keyword logicforthBuiltin size skip sleep slice! sort split sq sqrt start-generator start-process stop string>chars
+syn keyword logicforthBuiltin string>codepoints string>symbol submatrix substring sum swap symbol? take tan tanh throw to-slice!
+syn keyword logicforthBuiltin transpose trim true truncate try-catch union update-at values var vf* vf+ vf-
+syn keyword logicforthBuiltin vf/ vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh vvf*
+syn keyword logicforthBuiltin vvf*+ vvf*- vvf+ vvf- vvf/ wait words write write-file write-in write-tsv yield
 syn match   logicforthBuiltin "|>"
 
 hi def link logicforthComment      Comment
