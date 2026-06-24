@@ -43,6 +43,8 @@ alloc-stats
 amb
 and
 append-file
+argmax
+argmin
 array
 array-of
 array>cons

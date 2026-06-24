@@ -352,6 +352,20 @@ MATRIX_REDUCE_COLUMNS_OP(matrix_sum_columns, 0.0, ADD)
 MATRIX_REDUCE_COLUMNS_OP(matrix_max_columns, -INFINITY, MAX)
 MATRIX_REDUCE_COLUMNS_OP(matrix_min_columns, INFINITY, MIN)
 
+#define MATRIX_ARG_OP(name, cmp) \
+	static int name(Object *source) { \
+		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
+		const double * restrict elements = source->matrix.elements; \
+		size_t best = 0; \
+		for (size_t i = 1; i < num_elements; i++) \
+			if (elements[i] cmp elements[best]) \
+				best = i; \
+		return (int)best; \
+	}
+
+MATRIX_ARG_OP(matrix_argmax_index, >)
+MATRIX_ARG_OP(matrix_argmin_index, <)
+
 double matrix_variance_overall(Object *source) {
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
 	const double * restrict elements = source->matrix.elements;
@@ -605,6 +619,8 @@ void p_submatrix(Interpreter *interp) {
 REDUCE_OVERALL_HANDLER(p_sum, "sum", matrix_sum_overall)
 REDUCE_OVERALL_HANDLER(p_max, "max", matrix_max_overall)
 REDUCE_OVERALL_HANDLER(p_min, "min", matrix_min_overall)
+REDUCE_OVERALL_HANDLER(p_argmax, "argmax", matrix_argmax_index)
+REDUCE_OVERALL_HANDLER(p_argmin, "argmin", matrix_argmin_index)
 REDUCE_AXIS_HANDLER(p_row_sums, "row-sums", matrix_sum_rows)
 REDUCE_AXIS_HANDLER(p_row_maxes, "row-maxes", matrix_max_rows)
 REDUCE_AXIS_HANDLER(p_row_mins, "row-mins", matrix_min_rows)

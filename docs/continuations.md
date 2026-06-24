@@ -247,10 +247,10 @@ There is no syntactic bracket here. `reset` doesn't take a body. It's just a sen
 In practice the region tends to be "the rest of the word that contained `reset`, plus everything that word's body calls." For example:
 
 ```forth
-: catch ( xt -- ... )   reset execute 0 ;
+: catch ( xt -- ... )   reset (execute-catching) 0 ;
 ```
 
-The reset region is `execute 0` plus everything `execute` invokes transitively. When EXIT for `catch`'s body eventually runs, it pops the mark on the way out and the region ends.
+The reset region is `(execute-catching) 0` plus everything it invokes transitively. When EXIT for `catch`'s body eventually runs, it pops the mark on the way out and the region ends.
 
 This is a different design from Scheme's `prompt`, which takes a body expression as an argument. The sentinel-push design is simpler to implement (one line) and integrates naturally with Forth's call/return mechanism, but it requires the unwinding logic to be slightly cleverer about figuring out where "after the reset region" is. We'll see how that works in Part 9.
 
@@ -523,7 +523,7 @@ When `reset` runs in a colon definition's body, the colon definition's own docol
 
 By popping it and setting `ip` from it, we land at the right place in the caller's code. Normal dispatch then resumes from there.
 
-In the exception case, this is exactly what we want: catch's body is `reset execute 0`. When `shift-with` fires inside the user xt, the unwind hits the matching mark; the docol frame just below it tells us where execution should resume — *outside* catch's body, back in the calling word. The `0` cell that lives in catch's body never runs.
+In the exception case, this is exactly what we want: catch's body is `reset (execute-catching) 0`. When `shift-with` fires inside the user xt, the unwind hits the matching mark; the docol frame just below it tells us where execution should resume — *outside* catch's body, back in the calling word. The `0` cell that lives in catch's body never runs.
 
 This is the whole reason the unwinding works correctly: the docol frame just below the mark contains exactly the information about "where to continue in the caller's code after the reset region completes."
 
@@ -588,7 +588,7 @@ With all that machinery, exceptions are three one-liners in `lib.l4`:
 
 ```forth
 : throw ( exc -- )                       [: drop 1 :] shift-with ;
-: catch ( xt -- result 0 | exc 1 )       reset execute 0 ;
+: catch ( xt -- result 0 | exc 1 )       reset (execute-catching) 0 ;
 : try-catch ( normal-xt error-xt -- ... )
     >side                                \ stash error-xt
     catch
@@ -597,12 +597,14 @@ With all that machinery, exceptions are three one-liners in `lib.l4`:
     then ;
 ```
 
+`(execute-catching)` is the one C primitive here — `execute` plus a check covered in *Catching interpreter errors* below. On the `throw` and success paths it behaves exactly like `execute`, so the two traces that follow read the same with either.
+
 Let's trace `[: 42 throw :] catch`:
 
 1. The quotation `[: 42 throw :]` is pushed onto the data stack as an xt.
-2. `catch` is called. Its body is `reset execute 0`.
+2. `catch` is called. Its body is `reset (execute-catching) 0`.
 3. `reset` pushes a MARK (id=N) onto the return stack.
-4. `execute` pops the xt and invokes it.
+4. `(execute-catching)` pops the xt and invokes it.
 5. The xt runs: `42` pushes 42 onto the data stack; `throw` runs.
 6. `throw`'s body is `[: drop 1 :] shift-with`. The handler quotation is pushed onto the data stack.
 7. `shift-with` pops the handler, captures the return-stack frames above the MARK, keeps the MARK in place, pushes `k` onto the data stack (now `[42, k]`), and executes the handler.
@@ -610,20 +612,28 @@ Let's trace `[: 42 throw :] catch`:
 9. `shift-with` sets `unwinding = 1`.
 10. The unwinding cascade begins. Inner-loop levels break and propagate up until reaching the level that owns the MARK.
 11. That level pops the MARK (clearing `unwinding`), pops the docol frame for `catch`, and sets `ip` to wherever catch was called from in the calling word.
-12. The `0` after `execute` in catch's body is bypassed (catch's body never runs again).
+12. The `0` after `(execute-catching)` in catch's body is bypassed (catch's body never runs again).
 13. Execution continues past catch in the calling word, with `[42, 1]` on the data stack.
 
 Now trace `[: 42 :] catch` (success path):
 
 1. The xt is pushed.
-2. catch body: `reset execute 0`.
+2. catch body: `reset (execute-catching) 0`.
 3. `reset` pushes a MARK.
-4. `execute` runs the xt. The xt pushes 42 and returns.
+4. `(execute-catching)` runs the xt. The xt pushes 42 and returns.
 5. The xt's EXIT pops its own docol frame and returns to catch's body, which continues with `0`. The `0` is pushed.
 6. Catch's body's EXIT runs. It pops the MARK (skip), pops catch's own docol frame, returns to the caller.
 7. Data stack: `[42, 0]`.
 
 So catch returns `(result, 0)` on success or `(exc, 1)` on throw. The flag distinguishes the two cases — and the unwinding mechanism ensures the `0` only runs on success.
+
+### Catching interpreter errors
+
+A `throw` is not the only thing that can interrupt the wrapped xt. An *interpreter* error — a stack underflow, a type mismatch, a division by zero, an out-of-bounds index — sets the interpreter's error flag, which short-circuits dispatch and stops the run. Because it stops the run, the `0` in `reset (execute-catching) 0` could never execute after such an error; a plain `reset execute 0` would let the error sail past `catch` straight to the REPL.
+
+`(execute-catching)` closes that gap. It runs the xt exactly as `execute` would, then — *only* if the run ended with the error flag set — converts the error into the same unwind a `throw` produces: it clears the flag, discards whatever partial values the failed xt left, leaves the error message as the exception value alongside the `1` failure flag, and unwinds to `catch`'s `reset`, bypassing the `0`. So `catch` returns `(message, 1)` and `try-catch` runs its handler with the message — for interpreter errors and user `throw`s alike. (A `throw` or interpreter error with no enclosing `catch` still surfaces at the REPL; the conversion only fires when there's an exception prompt to unwind to.)
+
+The asymmetry with a `throw` is deliberate. A user `throw` leaves the data stack as the thrower arranged it; an interpreter error leaves half-consumed operands, so `(execute-catching)` first restores the stack to its depth at `catch`-entry before pushing `(message, 1)`. And the check costs nothing on the hot path: it runs once per `catch`, after the xt returns — never per operation — so the dispatch loop is untouched.
 
 ### `try-catch`'s side stack
 
@@ -1364,7 +1374,7 @@ The mark id counter (`next_mark_id`) is global and monotonic. If you serialize a
 | Word | Stack effect | Built from |
 |---|---|---|
 | `throw` | `( exc -- )` | `[: drop 1 :] shift-with` |
-| `catch` | `( xt -- result 0 \| exc 1 )` | `reset execute 0` |
+| `catch` | `( xt -- result 0 \| exc 1 )` | `reset (execute-catching) 0` |
 | `try-catch` | `( normal-xt error-xt -- ... )` | side stack + `catch` + if/else |
 
 ### Patterns at a glance

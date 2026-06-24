@@ -3678,6 +3678,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "set-add!", p_set_add, 0);
 	define_primitive(interp, "set-remove!", p_set_remove, 0);
 	define_primitive(interp, "execute", p_execute, 0);
+	define_primitive(interp, "(execute-catching)", p_execute_catching, 4);
 	define_primitive(interp, "map", p_map, 0);
 	define_primitive(interp, "mapn", p_mapn, 0);
 	define_primitive(interp, "filter", p_filter, 0);
@@ -3775,6 +3776,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "column-sums", p_column_sums, 0);
 	define_primitive(interp, "max", p_max, 0);
 	define_primitive(interp, "min", p_min, 0);
+	define_primitive(interp, "argmax", p_argmax, 0);
+	define_primitive(interp, "argmin", p_argmin, 0);
 	define_primitive(interp, "row-maxes", p_row_maxes, 0);
 	define_primitive(interp, "row-mins", p_row_mins, 0);
 	define_primitive(interp, "column-maxes", p_column_maxes, 0);
