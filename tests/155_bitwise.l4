@@ -1,0 +1,40 @@
+\ integer bitwise operators over the double representation (exact to 2^53)
+
+\ ---- bit-and / bit-or / bit-xor ----
+12 10 bit-and .
+12 3 bit-or .
+12 10 bit-xor .
+0 255 bit-and .
+255 0 bit-or .
+
+\ ---- bit-not (two's-complement) ----
+5 bit-not .
+0 bit-not .
+-1 bit-not .
+
+\ ---- lshift ----
+1 4 lshift .
+3 2 lshift .
+1 10 lshift .
+
+\ ---- rshift (arithmetic) ----
+13 1 rshift .
+12 2 rshift .
+1024 10 rshift .
+-8 1 rshift .
+
+\ ---- bit-packing: pack two bytes, then unpack ----
+255 8 lshift 255 bit-or .
+65535 8 rshift .
+65535 8 rshift 255 bit-and .
+
+\ ---- a 50-bit mask (meteor-style) round-trips exactly ----
+1 49 lshift dup bit-or .
+
+\ ---- lowest-bit (index of lowest set bit; -1 for 0) ----
+1 lowest-bit .
+8 lowest-bit .
+12 lowest-bit .
+1024 lowest-bit .
+1 49 lshift lowest-bit .
+0 lowest-bit .

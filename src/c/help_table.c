@@ -61,6 +61,10 @@ const HelpEntry help_entries[] = {
 	{ "atan", "( a -- atan a )", "inverse tangent", "2", "matrix 1m(r×c)", "same" },
 	{ "augment", "( a b -- m )", "Concatenate two matrices column-wise; errors unless row counts match", "2 + r·c", "1m(r×c)", "O(r·c)" },
 	{ "begin", "—", "Mark a loop top", NULL, NULL, NULL },
+	{ "bit-and", "( a b -- f )", "bitwise AND", "2", "none", "O(1)" },
+	{ "bit-not", "( a -- f )", "two's-complement complement", "1", "none", "O(1)" },
+	{ "bit-or", "( a b -- f )", "bitwise OR", "2", "none", "O(1)" },
+	{ "bit-xor", "( a b -- f )", "bitwise XOR", "2", "none", "O(1)" },
 	{ "bulk-load", "( rel rows-array -- rel )", "Load all rows at once: builds :rows (a deduped set) and each declared column's index, instead of row-by-row", "—", "sets + frame", "O(n log n)" },
 	{ "bye", "( -- )", "exit(0)", "—", "—", "—" },
 	{ "byte-size", "( s -- n )", "Byte length of a string", "2", "none", "O(1)" },
@@ -189,6 +193,8 @@ const HelpEntry help_entries[] = {
 	{ "load-image", "( s -- )", "Restore a binary snapshot, replacing current state", "deserialize all", "reallocates all objects", "O(objects)" },
 	{ "log", "( a -- log₁₀ a )", "log10", "2", "matrix 1m(r×c)", "same" },
 	{ "lookup", "( \"name\" -- xt )", "Parse the following word at run time and push its xt — the non-immediate counterpart of '", NULL, NULL, NULL },
+	{ "lowest-bit", "( a -- i )", "0-indexed position of the lowest set bit (-1 if a is 0)", "1", "none", "O(1)" },
+	{ "lshift", "( a n -- f )", "left shift a by n bits", "2", "none", "O(1)" },
 	{ "lt", "( a b -- bool )", "less-than", "3 (float)", "none", "same" },
 	{ "lvar", "( -- v )", "Push a fresh, unbound logic variable", "2", "1 lvar", "O(1)" },
 	{ "man", "( xt -- fr )", "Frame of a word's reference entry (:word :effect :summary, plus :ops :alloc :order for runtime words); T_NONE if undocumented", "dict scan + log n", "1o + strings", "O(|dict|)" },
@@ -262,6 +268,7 @@ const HelpEntry help_entries[] = {
 	{ "row-sums", "( m -- m' )", "r×1 of per-row sums", "1 + r×c", "1m(r×1)", "O(r×c)" },
 	{ "rows>dataset", "( table header? -- dataset )", "lib.l4: column-oriented frame from a table; keys come from row 0 when header? is true, else :col1… are synthesized", "r·c", "k×1a(r) + 1fr", "O(r·c)" },
 	{ "rows>relation", "( table index-cols header? -- relation )", "lib.l4: deduped relation indexed on index-cols (coerced to symbols)", "r·c", "one frame per row + relation + index buckets", "O(r·c)" },
+	{ "rshift", "( a n -- f )", "arithmetic right shift, = floor(a / 2ⁿ)", "2", "none", "O(1)" },
 	{ "run", "( s -- proc )", "lib.l4: split a command string on runs of spaces and start-process it (\" +\" split start-process)", "split + fork", "1a + 1o frame + 3 streams", "O(|s| + argc)" },
 	{ "run-result", "( argv -- frame )", "lib.l4: run argv to completion and return { :out :err :status }, closing the streams and reaping the child", "fork + drain", "1fr + output strings", "O(output)" },
 	{ "running?", "( pid -- bool )", "Non-blocking liveness via waitid+WNOHANG+WNOWAIT; true while running, false once exited. Non-reaping, so a later wait still returns the status", "1 syscall", "none", "O(1)" },
@@ -355,4 +362,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 349;
+const int help_entry_count = 356;

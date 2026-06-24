@@ -163,6 +163,22 @@ Result is `1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural
 
 `truthy` of a float is `≠ 0.0`; of any heap value, its handle `≠ 0`.
 
+### Bitwise
+
+Each operand is read as a two's-complement integer (exact within the double's
+53-bit integer range), the operation is applied, and the result is pushed as a
+float. `rshift` is arithmetic (sign-preserving).
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `bit-and` | `( a b -- f )` | bitwise AND | 2 | none | O(1) |
+| `bit-or` | `( a b -- f )` | bitwise OR | 2 | none | O(1) |
+| `bit-xor` | `( a b -- f )` | bitwise XOR | 2 | none | O(1) |
+| `bit-not` | `( a -- f )` | two's-complement complement | 1 | none | O(1) |
+| `lshift` | `( a n -- f )` | left shift `a` by `n` bits | 2 | none | O(1) |
+| `rshift` | `( a n -- f )` | arithmetic right shift, = `floor(a / 2ⁿ)` | 2 | none | O(1) |
+| `lowest-bit` | `( a -- i )` | 0-indexed position of the lowest set bit (`-1` if `a` is 0) | 1 | none | O(1) |
+
 ---
 
 ## Return stack

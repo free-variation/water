@@ -55,6 +55,10 @@ assert
 atan
 augment
 begin
+bit-and
+bit-not
+bit-or
+bit-xor
 bulk-load
 bye
 byte-size
@@ -183,6 +187,8 @@ load-bag
 load-image
 log
 lookup
+lowest-bit
+lshift
 lt
 lvar
 man
@@ -256,6 +262,7 @@ row-mins
 row-sums
 rows>dataset
 rows>relation
+rshift
 run
 run-result
 running?

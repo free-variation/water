@@ -3709,6 +3709,13 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "feq", p_eq_f, 0);
 	define_primitive(interp, "flt", p_lt_f, 0);
 	define_primitive(interp, "fgt", p_gt_f, 0);
+	define_primitive(interp, "bit-and", p_bit_and, 0);
+	define_primitive(interp, "bit-or", p_bit_or, 0);
+	define_primitive(interp, "bit-xor", p_bit_xor, 0);
+	define_primitive(interp, "lshift", p_lshift, 0);
+	define_primitive(interp, "rshift", p_rshift, 0);
+	define_primitive(interp, "bit-not", p_bit_not, 0);
+	define_primitive(interp, "lowest-bit", p_lowest_bit, 0);
 	define_primitive(interp, "f/", p_div_f, 0);
 	define_primitive(interp, "f^", p_fpow, 0);
 	define_primitive(interp, "fmod", p_fmodop, 0);

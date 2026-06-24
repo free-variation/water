@@ -260,6 +260,47 @@ BINARY_FLOAT_OP(p_eq_f, "feq", ==)
 BINARY_FLOAT_OP(p_lt_f, "flt", <)
 BINARY_FLOAT_OP(p_gt_f, "fgt", >)
 
+#define BITWISE_BINARY_OP(name, opname, op) \
+	void name(Interpreter *interp) { \
+		if (interp->dsp < 2) { \
+			fail(interp, "%s: data stack underflow", opname); \
+			return; \
+		} \
+		Val *left = &interp->data_stack[interp->dsp - 2]; \
+		Val *right = &interp->data_stack[interp->dsp - 1]; \
+		int64_t a = (int64_t)left->number; \
+		int64_t b = (int64_t)right->number; \
+		left->number = (double)(a op b); \
+		interp->dsp--; \
+		DISPATCH(interp); \
+	}
+BITWISE_BINARY_OP(p_bit_and, "bit-and", &)
+BITWISE_BINARY_OP(p_bit_or, "bit-or", |)
+BITWISE_BINARY_OP(p_bit_xor, "bit-xor", ^)
+BITWISE_BINARY_OP(p_lshift, "lshift", <<)
+BITWISE_BINARY_OP(p_rshift, "rshift", >>)
+
+void p_bit_not(Interpreter *interp) {
+	if (interp->dsp < 1) {
+		fail(interp, "bit-not: data stack underflow");
+		return;
+	}
+	Val *top = &interp->data_stack[interp->dsp - 1];
+	top->number = (double)(~(int64_t)top->number);
+	DISPATCH(interp);
+}
+
+void p_lowest_bit(Interpreter *interp) {
+	if (interp->dsp < 1) {
+		fail(interp, "lowest-bit: data stack underflow");
+		return;
+	}
+	Val *top = &interp->data_stack[interp->dsp - 1];
+	uint64_t bits = (uint64_t)(int64_t)top->number;
+	top->number = bits ? (double)__builtin_ctzll(bits) : -1.0;
+	DISPATCH(interp);
+}
+
 void p_div_f(Interpreter *interp) {
 	if (interp->dsp < 2) {
 		fail(interp, "f/: data stack underflow");
