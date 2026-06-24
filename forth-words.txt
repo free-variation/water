@@ -271,6 +271,7 @@ save
 save-image
 see
 see-compiled
+see-tree
 seed
 segment>pointer
 select-keys

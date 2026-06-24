@@ -2761,57 +2761,177 @@ static const char *var_name_from_slot(cell slot) {
 	return NULL;
 }
 
+#define SEE_TREE_MAX_DEPTH 32
+
+/* Print one non-control op (name + operands) at cursor; shared by see-compiled
+ * and see-tree. cell_count is op_cell_count(cursor). */
+static void see_print_op(Interpreter *interp, int cursor, int cell_count) {
+	cell handler = vocab.dict[cursor];
+	if (superword_cell_count(handler)) {
+		printf("%s", handler_word_name(handler));
+		for (int operand_index = 1; operand_index < cell_count; operand_index++)
+			printf(" %s", var_name_from_slot(vocab.dict[cursor + operand_index]));
+	} else if (handler == vocab.dict[vocab.literal_cfa]) {
+		Val value;
+		value.bits = (uint64_t)vocab.dict[cursor + 1];
+		fputs("(lit) ", stdout);
+		print_val_compact(interp, value);
+	} else if (handler == (cell)p_ll_lit_add_0
+	           || handler == (cell)p_ll_lit_sub_0
+	           || handler == (cell)p_ll_lit_mul_0
+	           || handler == (cell)p_ll_litrev_sub_0) {
+		Val lit;
+		lit.bits = (uint64_t)vocab.dict[cursor + 2];
+		printf("%s %lld ", handler_word_name(handler), (long long)vocab.dict[cursor + 1]);
+		print_val_compact(interp, lit);
+	} else {
+		printf("%s", handler_word_name(handler));
+		for (int operand_index = 1; operand_index < cell_count; operand_index++)
+			printf(" %lld", (long long)vocab.dict[cursor + operand_index]);
+	}
+}
+
 static void see_compiled_body(Interpreter *interp, int body_start, int body_end) {
+	cell exit_handler = vocab.dict[vocab.exit_cfa];
+	cell branch_handler = vocab.dict[vocab.branch_cfa];
+	cell docol_handler = (cell)docol;
 	int cursor = body_start;
+	int depth = 0;
+	int expect_docol = 0;
 
 	while (cursor < body_end) {
 		cell handler = vocab.dict[cursor];
 		cfa_handler handler_fn = (cfa_handler)handler;
-		int cell_count = op_cell_count(cursor);
 
 		printf(" %d: ", cursor - body_start);
 
+		if (handler == exit_handler) {
+			fputs("exit\n", stdout);
+			cursor++;
+			if (depth == 0)
+				break;
+			depth--;
+			expect_docol = 0;
+			continue;
+		}
+
+		if (expect_docol && handler == docol_handler) {
+			fputs("[:\n", stdout);
+			cursor++;
+			depth++;
+			expect_docol = 0;
+			continue;
+		}
+
 		if (handler_fn == docol || handler_fn == dovar) {
 			int target = (int)vocab.dict[cursor + 1];
-			printf("%s\n", &vocab.name_pool[WORD_NAME(target)]);
+			if (target >= 4 && target < vocab.here)
+				printf("%s\n", &vocab.name_pool[WORD_NAME(target)]);
+			else
+				fputs("?\n", stdout);
 			cursor += 2;
+			expect_docol = 0;
 			continue;
 		}
 		if (handler_fn == dosym) {
 			printf(":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
 			cursor += 2;
+			expect_docol = 0;
 			continue;
 		}
 
-		if (superword_cell_count(handler)) {
-			const char *name = handler_word_name(handler);
-			printf("%s", name);
-			for (int operand_index = 1; operand_index < cell_count; operand_index++) {
-				const char *operand_var = var_name_from_slot(vocab.dict[cursor + operand_index]);
-				printf(" %s", operand_var);
-			}
-		} else if (handler == vocab.dict[vocab.literal_cfa]) {
-			Val value;
-			value.bits = (uint64_t)vocab.dict[cursor + 1];
-			fputs("(lit) ", stdout);
-			print_val_compact(interp, value);
-		} else if (handler == (cell)p_ll_lit_add_0
-		           || handler == (cell)p_ll_lit_sub_0
-		           || handler == (cell)p_ll_lit_mul_0
-		           || handler == (cell)p_ll_litrev_sub_0) {
-			Val lit;
-			lit.bits = (uint64_t)vocab.dict[cursor + 2];
-			printf("%s %lld ", handler_word_name(handler), (long long)vocab.dict[cursor + 1]);
-			print_val_compact(interp, lit);
-		} else {
-			const char *name = handler_word_name(handler);
-			printf("%s", name);
-			for (int operand_index = 1; operand_index < cell_count; operand_index++)
-				printf(" %lld", (long long)vocab.dict[cursor + operand_index]);
-		}
-
+		int cell_count = op_cell_count(cursor);
+		see_print_op(interp, cursor, cell_count);
 		putchar('\n');
 		cursor += cell_count;
+		expect_docol = (handler == branch_handler);
+	}
+}
+
+/* Like see_compiled_body, but a call to a colon word is expanded inline:
+ * its name, then its body indented two more spaces, recursively, down to
+ * primitives. `stack` holds the cfas on the current expansion path so direct
+ * or mutual recursion prints as a leaf instead of looping forever. */
+static void see_tree_body(Interpreter *interp, int body_start, int indent, int *stack, int sp) {
+	cell exit_handler = vocab.dict[vocab.exit_cfa];
+	cell branch_handler = vocab.dict[vocab.branch_cfa];
+	cell docol_handler = (cell)docol;
+	int cursor = body_start;
+	int depth = 0;
+	int expect_docol = 0;
+
+	while (cursor < vocab.here) {
+		cell handler = vocab.dict[cursor];
+		cfa_handler handler_fn = (cfa_handler)handler;
+
+		for (int s = 0; s < indent; s++)
+			putchar(' ');
+		printf("%d: ", cursor - body_start);
+
+		if (handler == exit_handler) {
+			fputs("exit\n", stdout);
+			cursor++;
+			if (depth == 0)
+				break;
+			depth--;
+			expect_docol = 0;
+			continue;
+		}
+
+		if (expect_docol && handler == docol_handler) {
+			fputs("[:\n", stdout);
+			cursor++;
+			depth++;
+			expect_docol = 0;
+			continue;
+		}
+
+		if (handler_fn == docol) {
+			int target = (int)vocab.dict[cursor + 1];
+			cursor += 2;
+			expect_docol = 0;
+			if (target < 4 || target >= vocab.here) {
+				fputs("?\n", stdout);
+				continue;
+			}
+			const char *name = &vocab.name_pool[WORD_NAME(target)];
+			int seen = 0;
+			for (int i = 0; i < sp; i++)
+				if (stack[i] == target) {
+					seen = 1;
+					break;
+				}
+			if (seen || sp >= SEE_TREE_MAX_DEPTH) {
+				printf("%s ...\n", name);
+			} else {
+				printf("%s:\n", name);
+				stack[sp] = target;
+				see_tree_body(interp, target + 1, indent + 2, stack, sp + 1);
+			}
+			continue;
+		}
+		if (handler_fn == dovar) {
+			int target = (int)vocab.dict[cursor + 1];
+			if (target >= 4 && target < vocab.here)
+				printf("%s\n", &vocab.name_pool[WORD_NAME(target)]);
+			else
+				fputs("?\n", stdout);
+			cursor += 2;
+			expect_docol = 0;
+			continue;
+		}
+		if (handler_fn == dosym) {
+			printf(":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
+			cursor += 2;
+			expect_docol = 0;
+			continue;
+		}
+
+		int cell_count = op_cell_count(cursor);
+		see_print_op(interp, cursor, cell_count);
+		putchar('\n');
+		cursor += cell_count;
+		expect_docol = (handler == branch_handler);
 	}
 }
 
@@ -2833,6 +2953,26 @@ void p_see_compiled(Interpreter *interp) {
 
 	printf(": %s   \\ %d cells\n", name, body_end - body_start);
 	see_compiled_body(interp, body_start, body_end);
+	fputs(";\n", stdout);
+	fflush(stdout);
+
+	DISPATCH(interp);
+}
+
+void p_see_tree(Interpreter *interp) {
+	POP_XT(target_cfa, "see-tree");
+	const char *name = &vocab.name_pool[WORD_NAME(target_cfa)];
+
+	if ((cfa_handler)vocab.dict[target_cfa] != docol) {
+		printf("%s: not a colon definition\n", name);
+		DISPATCH(interp);
+	}
+
+	int stack[SEE_TREE_MAX_DEPTH + 1];
+	stack[0] = target_cfa;
+
+	printf(": %s\n", name);
+	see_tree_body(interp, target_cfa + 1, 2, stack, 1);
 	fputs(";\n", stdout);
 	fflush(stdout);
 
@@ -3886,6 +4026,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "see", p_see, 0);
 	define_primitive(interp, "man", p_man, 0);
 	define_primitive(interp, "see-compiled", p_see_compiled, 0);
+	define_primitive(interp, "see-tree", p_see_tree, 0);
 
 	vocab.exit_cfa = define_primitive(interp, "exit", p_exit, 0);
 	vocab.literal_cfa = define_primitive(interp, "(lit)", p_literal, 4);
