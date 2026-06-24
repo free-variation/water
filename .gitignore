@@ -67,3 +67,4 @@ bench/*.md
 
 # transient benchmark run reports / logs
 bench/results/
+*__pycache_*
