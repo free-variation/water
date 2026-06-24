@@ -109,7 +109,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells.
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
 - **Selection** — `augment` (concatenate two matrices column-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array).
-- **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
+- **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `argmax`, `argmin` (flat row-major index of the extreme element), `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
 - **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the loadable statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, and `ci` on these.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
 - **Total ordering** — `=`/`lt`/`gt` compare matrices by shape then row-major contents, so matrices work as set members.
@@ -252,10 +252,10 @@ A third stack for stashing arbitrary Vals without disturbing the data or return 
 Built in `lib.l4` on top of the continuation primitives:
 
 - **`throw`** — non-local exit with a value.
-- **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on throw.
-- **`try-catch`** — wraps an xt with a recovery handler. Arity-agnostic.
+- **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — returning the error message as the exception value, so a runtime fault is recoverable, not just a user `throw`.
+- **`try-catch`** — wraps an xt with a recovery handler that runs on either kind of failure. Arity-agnostic.
 
-The `shift-with` handler can also resume the captured continuation, giving the Common Lisp restart pattern — exceptions can recover rather than just abort.
+An uncaught `throw` or interpreter error still surfaces at the REPL. The `shift-with` handler can also resume the captured continuation, giving the Common Lisp restart pattern — exceptions can recover rather than just abort.
 
 ### Logic
 

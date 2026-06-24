@@ -445,6 +445,8 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `sum` | `( m -- f )` | Sum of all elements (4-way unrolled, fast-math) | 1 + r×c | none | O(r×c) |
 | `max` | `( m -- f )` | Maximum element | 1 + r×c | none | O(r×c) |
 | `min` | `( m -- f )` | Minimum element | 1 + r×c | none | O(r×c) |
+| `argmax` | `( m -- f )` | Flat row-major index of the maximum element (first on ties) | 1 + r×c | none | O(r×c) |
+| `argmin` | `( m -- f )` | Flat row-major index of the minimum element (first on ties) | 1 + r×c | none | O(r×c) |
 | `row-sums` | `( m -- m' )` | r×1 of per-row sums | 1 + r×c | `1m(r×1)` | O(r×c) |
 | `row-maxes` | `( m -- m' )` | r×1 of per-row maxima | 1 + r×c | `1m(r×1)` | O(r×c) |
 | `row-mins` | `( m -- m' )` | r×1 of per-row minima | 1 + r×c | `1m(r×1)` | O(r×c) |
@@ -554,8 +556,8 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 | `shift-with` | `( xt -- )` | Capture as `shift`, then run xt in the outer context with k on the stack and begin unwinding | L + xt | `1o` (cont) | O(L + xt) |
 | `resume` | `( k -- … )` | Pop k and re-enter it (multi-shot — the continuation object survives, so a retained copy can be resumed again); pushes whatever the resumed code yields | L + resumed | none | O(L + resumed) |
 | `throw` | `( exc -- )` | lib.l4: `[: drop 1 :] shift-with` | — | `1o` (cont) | O(stack depth) |
-| `catch` | `( xt -- result 0 \| exc 1 )` | lib.l4: `reset execute 0` | — | cont if thrown | O(xt) |
-| `try-catch` | `( normal-xt err-xt -- … )` | lib.l4: run normal-xt; on throw, run err-xt with exc on the stack | — | cont if thrown | O(normal-xt) |
+| `catch` | `( xt -- result 0 \| exc 1 )` | lib.l4: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (the error message becomes the exception value) | — | cont if thrown; `1s` on a caught interpreter error | O(xt) |
+| `try-catch` | `( normal-xt err-xt -- … )` | lib.l4: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack | — | cont if thrown; `1s` on a caught interpreter error | O(normal-xt) |
 
 ---
 

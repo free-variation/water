@@ -704,6 +704,30 @@ void p_shift_with(Interpreter *interp) {
 	interp->unwinding = 1;
 }
 
+void p_execute_catching(Interpreter *interp) {
+	POP_XT(xt, "(execute-catching)");
+	int base_dsp = interp->dsp;
+
+	execute_cfa(interp, xt);
+
+	if (interp->error_flag) {
+		interp->error_flag = 0;
+		int handle = object_new_string(interp, interp->error_message,
+				(int)strlen(interp->error_message));
+		interp->dsp = base_dsp;
+		push(interp, make_string(handle));
+		push(interp, make_float(1));
+
+		int mark_index = find_prompt(interp, PROMPT_EXCEPTION);
+		if (mark_index >= 0) {
+			unwind_to(interp, mark_index);
+			interp->unwinding = 1;
+		}
+	}
+
+	DISPATCH(interp);
+}
+
 void p_resume(Interpreter *interp) {
 	POP_CONT(continuation, "resume");
 	if (continuation->continuation.capture_generation != vocab.forget_generation) {

@@ -49,6 +49,8 @@ const HelpEntry help_entries[] = {
 	{ "amb", "( xt1 xt2 -- … )", "Run xt1; if it fails (a unify mismatch or fail), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds.", "xt1", "none", "O(xt1 + xt2)" },
 	{ "and", "( a b -- bool )", "logical and of truthiness", "3", "none", "O(1)" },
 	{ "append-file", "( s path -- )", "Open in append mode, write the string's bytes", "file write", "none", "O(|s|)" },
+	{ "argmax", "( m -- f )", "Flat row-major index of the maximum element (first on ties)", "1 + r×c", "none", "O(r×c)" },
+	{ "argmin", "( m -- f )", "Flat row-major index of the minimum element (first on ties)", "1 + r×c", "none", "O(r×c)" },
 	{ "array", "( v₀ … vₙ₋₁ n -- arr )", "Gather the top n values into an array", "2 + n", "1a(n)", "O(n)" },
 	{ "array-of", "( val n -- arr )", "New n-element array, every slot = val", "3 + n", "1a(n)", "O(n)" },
 	{ "array>cons", "( arr -- list )", "Cons chain from an array's elements (last element becomes the tail; [ ] → null)", "n", "n−1 pairs", "O(n)" },
@@ -63,7 +65,7 @@ const HelpEntry help_entries[] = {
 	{ "bye", "( -- )", "exit(0)", "—", "—", "—" },
 	{ "byte-size", "( s -- n )", "Byte length of a string", "2", "none", "O(1)" },
 	{ "byte-substring", "( s start end -- sub )", "Half-open **byte** range [start, end); bounds-checked. Pairs with byte offsets from match/match-all", "2 + k", "1o", "O(k), k = end − start" },
-	{ "catch", "( xt -- result 0 | exc 1 )", "lib.l4: reset execute 0", "—", "cont if thrown", "O(xt)" },
+	{ "catch", "( xt -- result 0 | exc 1 )", "lib.l4: reset (execute-catching) 0; (result 0) on success, (exc 1) on a throw **or** an interpreter error (the error message becomes the exception value)", "—", "cont if thrown; 1s on a caught interpreter error", "O(xt)" },
 	{ "cd", "( path -- )", "Change the interpreter's working directory (chdir); process-wide, so it moves the base for relative file I/O and is inherited by subsequent start-process children", "1", "none", "O(1)" },
 	{ "char-at", "( s index -- char )", "The one-character string at codepoint index; bounds-checked against the codepoint count", "2 + n", "1o", "O(n)" },
 	{ "choose", "( list cont -- )", "lib.l4: run cont with each element of a cons list in turn, committing to the first for which it succeeds; fail if none do (n-way amb over a list)", "n·cont", "none", "O(n·cont)" },
@@ -311,7 +313,7 @@ const HelpEntry help_entries[] = {
 	{ "trim", "( s -- s' )", "Strip leading and trailing ASCII whitespace (' ' \\t \\n \\v \\f \\r); a backward/forward byte-scan, one allocation of the surviving span", "n", "1o", "O(n)" },
 	{ "true", "( -- bool )", "lib.l4: pushes 1 (inline)", "1", "none", "O(1)" },
 	{ "truncate", "( a -- trunc a )", "trunc", "2", "matrix 1m(r×c)", "same" },
-	{ "try-catch", "( normal-xt err-xt -- … )", "lib.l4: run normal-xt; on throw, run err-xt with exc on the stack", "—", "cont if thrown", "O(normal-xt)" },
+	{ "try-catch", "( normal-xt err-xt -- … )", "lib.l4: run normal-xt; on a throw or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack", "—", "cont if thrown; 1s on a caught interpreter error", "O(normal-xt)" },
 	{ "unify", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A _ on either side matches anything and binds nothing. On a mismatch, fails.", "n", "none", "O(n)" },
 	{ "union", "( s₁ s₂ -- s₃ )", "Union into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)" },
 	{ "until", "( flag -- )", "Branch back to begin if flag is falsy", NULL, NULL, NULL },
@@ -350,4 +352,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 344;
+const int help_entry_count = 346;

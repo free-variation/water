@@ -266,6 +266,7 @@ typedef struct {
 	HandleSpace object_space;
 } Arena;
 extern Arena arena;
+
 extern int in_parallel;
 extern int parallel_region_collected;
 extern int parallel_region_object_base;
@@ -502,6 +503,8 @@ void p_variance(Interpreter *interp);
 void p_quantile(Interpreter *interp);
 void p_max(Interpreter *interp);
 void p_min(Interpreter *interp);
+void p_argmax(Interpreter *interp);
+void p_argmin(Interpreter *interp);
 void p_row_sums(Interpreter *interp);
 void p_row_maxes(Interpreter *interp);
 void p_row_mins(Interpreter *interp);
@@ -909,6 +912,7 @@ void p_difference(Interpreter *interp);
 void p_set_add(Interpreter *interp);
 void p_set_remove(Interpreter *interp);
 void p_execute(Interpreter *interp);
+void p_execute_catching(Interpreter *interp);
 int push_prompt(Interpreter *interp, int kind);
 void p_reset(Interpreter *interp);
 void p_fail(Interpreter *interp);

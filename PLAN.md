@@ -6,12 +6,6 @@ A TODO list of pending work.
 
 ## Matrix
 
-### argmax / argmin
-
-Index of the maximum / minimum element (or an `(i, j)` pair).
-
-### Beyond core
-
 - **Vertical stacking** — `vstack`, concatenating two matrices row-wise (the
   row counts of the result sum; column counts must match).
 - **Element-wise comparison** — `<` etc. returning a matrix of `1`/`0`, as
@@ -39,12 +33,6 @@ Over the match/replace layer: `index-of`, `starts-with`, `ends-with`,
 ---
 
 ## Core language additions
-
-### `constant`
-
-A defining word for immutable named values: `42 constant answer` binds a
-read-only word `answer` that pushes `42`. Value-then-defword-then-name shape
-(like `to`), name read via `next_token()`. Reassignment via `to` errors.
 
 ### Bitwise operations
 
@@ -95,19 +83,6 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
   values (fds 0/1/2). Reading and writing reuse the subprocess stream
   words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
   lines, `s stdout write` emits.
-
-`argv` is out of scope; invocation is `logicforth file.l4`, and argument
-handling lives in the shell-script wrapper layer.
-
-### Error handling — `catch` intercepts `error_flag`
-
-Make interpreter-level errors (stack underflow, type mismatch, division by
-zero, bad pattern, out-of-bounds) catchable, not only user `throw`s. `catch` /
-`try-catch` run a wrapped xt; if `error_flag` is set afterward, `catch`
-clears it and returns the `error_message` as a string with the failure
-flag, exactly as a `throw` would. Uncaught errors still surface at the REPL.
-A check in the `catch` path converts a set `error_flag` into the same
-`(exc 1)` result a `throw` produces.
 
 ### Format specs
 
@@ -197,8 +172,6 @@ Building on the generator primitives:
   are the substrate; the interleaving combinators are the work.
 
 All `lib.l4` on the existing primitives — no new C.
-
-Scope: lazy data flow, not async I/O.
 
 ---
 

@@ -14,4 +14,8 @@ outer got  10
 11 
 L2 
 L1 inner-xt threw 
+1 / : division by zero 
+caught: / : division by zero 
+after 
+inner caught 
 error: shift/shift-with: no enclosing reset on the return stack
