@@ -25,6 +25,10 @@ variable N          200.0 to N
 
 variable PARTICLES  variable PFILL
 
+\ The force target's position/mass/index, invariant across one calc-force descent;
+\ set once per particle so the recursion carries only the node.
+variable TPIDX  variable TPX  variable TPY  variable TPMASS
+
 : make-node ( bx by bw bh -- node )
   | >bx >by >bw >bh |
   [ bx by bw bh 0.0  0.0 0.0 0.0  0.0  0.0 0.0 0.0 0.0  null null null null ] ;
@@ -81,25 +85,24 @@ variable PARTICLES  variable PFILL
   node 16 @i pidx insert if 1.0 exit then
   0.0 ;
 
-: calc-force ( node pidx theta -- fx fy )
-  | >node >pidx >theta p dx dy dist f fxacc fyacc fx2 fy2 |
-  node 7 @i 0.0 = if 0.0 0.0 exit then
-  node 8 @i 1.0 =  node 9 @i pidx = and if 0.0 0.0 exit then
-  PARTICLES pidx @i to p
-  node 5 @i p 0 @i f- to dx
-  node 6 @i p 1 @i f- to dy
+: calc-force ( node -- fx fy )
+  | >node dx dy dist f fxacc fyacc fx2 fy2 |
+  node 7 @i 0.0 feq if 0.0 0.0 exit then
+  node 8 @i 1.0 feq  node 9 @i TPIDX feq and if 0.0 0.0 exit then
+  node 5 @i TPX f- to dx
+  node 6 @i TPY f- to dy
   dx dx f* dy dy f* f+ fsqrt to dist
-  node 4 @i 0=  node 2 @i 2.0 f* dist f/ theta lt  or if
-     dist SOFTENING lt if SOFTENING to dist then
-     G p 6 @i f* node 7 @i f*  dist dist f* f/ to f
+  node 4 @i 0.0 feq  node 2 @i 2.0 f* dist f/ THETA flt  or if
+     dist SOFTENING flt if SOFTENING to dist then
+     G TPMASS f* node 7 @i f*  dist dist f* f/ to f
      f dx f* dist f/   f dy f* dist f/
      exit
   then
   0.0 to fxacc  0.0 to fyacc
-  node 13 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
-  node 14 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
-  node 15 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
-  node 16 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  node 13 @i calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  node 14 @i calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  node 15 @i calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  node 16 @i calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
   fxacc fyacc ;
 
 : add-particle ( px py mass -- )
@@ -184,8 +187,9 @@ variable PARTICLES  variable PFILL
   WIDTH 2.0 f/  HEIGHT 2.0 f/  WIDTH 2.0 f/  HEIGHT 2.0 f/  make-node to root
   [: |> i | root i insert drop :] N i-times
   [: | >i p fx fy |
-     root i THETA calc-force to fy to fx
      PARTICLES i @i to p
+     i to TPIDX  p 0 @i to TPX  p 1 @i to TPY  p 6 @i to TPMASS
+     root calc-force to fy to fx
      p 4  p 4 @i  fx p 6 @i f/  f+  !i drop
      p 5  p 5 @i  fy p 6 @i f/  f+  !i drop
   :] N i-times

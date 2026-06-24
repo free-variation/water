@@ -1613,6 +1613,9 @@ LOCAL_ACC_OP(sub, -)
 LOCAL_ACC_OP(mul, *)
 LOCAL_ACC_OP(div, /)
 
+static int at_i_local0_cfa;
+static int at_i_lit_cfa;
+
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot) {
 	cell *dict = vocab.dict;
 	int here = vocab.here;
@@ -1652,6 +1655,49 @@ int try_fuse_local_acc(Interpreter *interp, int depth, int slot) {
 	emit_call(interp, cfag);
 	emit(interp, (cell)depth);
 	emit(interp, (cell)slot);
+	return 1;
+}
+
+int try_fuse_at_i_local(Interpreter *interp) {
+	if (!compiler.compiling)
+		return 0;
+
+	cell *dict = vocab.dict;
+	int here = vocab.here;
+	if (here < 2)
+		return 0;
+	if ((cfa_handler)dict[here - 2] != p_local_fetch_0depth)
+		return 0;
+
+	int slot = (int)dict[here - 1];
+	vocab.here -= 2;
+	emit_call(interp, at_i_local0_cfa);
+	emit(interp, (cell)slot);
+
+	return 1;
+}
+
+int try_fuse_at_i_lit(Interpreter *interp) {
+	if (!compiler.compiling)
+		return 0;
+
+	cell *dict = vocab.dict;
+	int here = vocab.here;
+	if (here < 2)
+		return 0;
+	if ((cfa_handler)dict[here - 2] != p_literal)
+		return 0;
+
+	Val literal;
+	literal.bits = (uint64_t)dict[here - 1];
+	if (VAL_TAG(literal) != T_FLOAT)
+		return 0;
+
+	int index = (int)VAL_NUMBER(literal);
+	vocab.here -= 2;
+	emit_call(interp, at_i_lit_cfa);
+	emit(interp, (cell)index);
+
 	return 1;
 }
 
@@ -3524,6 +3570,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "f+", p_add_f, 0);
 	define_primitive(interp, "f-", p_sub_f, 0);
 	define_primitive(interp, "f*", p_mul_f, 0);
+	define_primitive(interp, "feq", p_eq_f, 0);
+	define_primitive(interp, "flt", p_lt_f, 0);
+	define_primitive(interp, "fgt", p_gt_f, 0);
 	define_primitive(interp, "f/", p_div_f, 0);
 	define_primitive(interp, "f^", p_fpow, 0);
 	define_primitive(interp, "fmod", p_fmodop, 0);
@@ -3714,6 +3763,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.local_fetch_cfa = define_primitive(interp, "(local@)", p_local_fetch, 4);
 	vocab.local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 4);
 	vocab.local_fetch_0depth_cfa = define_primitive(interp, "(local@0)", p_local_fetch_0depth, 4);
+	at_i_local0_cfa = define_primitive(interp, "(@i.l0)", p_at_i_local0, 4);
+	at_i_lit_cfa = define_primitive(interp, "(@i.lit)", p_at_i_lit, 4);
 	vocab.local_store_0depth_cfa = define_primitive(interp, "(local!0)", p_local_store_0depth, 4);
 	vocab.local_incr_0depth_cfa  = define_primitive(interp, "(local+!0)", p_local_incr_0depth, 4);
 	vocab.local_decr_0depth_cfa  = define_primitive(interp, "(local-!0)", p_local_decr_0depth, 4);
@@ -3762,7 +3813,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "select-rows", p_select_rows, 0);
 	define_primitive(interp, "augment", p_augment, 0);
 	define_primitive(interp, "diagonal-matrix", p_diagonal_matrix, 0);
-	define_primitive(interp, "@i", p_at_i, 0);
+	vocab.at_i_cfa = define_primitive(interp, "@i", p_at_i, 0);
 	define_primitive(interp, "!i", p_store_i, 0);
 	define_primitive(interp, "@j", p_at_j, 0);
 	define_primitive(interp, "@i,j", p_at_ij, 0);

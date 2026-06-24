@@ -42,10 +42,7 @@ MATRIX_ELEMENTWISE_OP(matrix_sub, "-", -)
 MATRIX_ELEMENTWISE_OP(matrix_mul, "*", *)
 MATRIX_ELEMENTWISE_OP(matrix_div, "/", /)
 
-void p_at_i(Interpreter *interp) {
-	POP_INT(index, "@i", "index");
-
-	POP(source_val);
+static void array_index_fetch(Interpreter *interp, Val source_val, int index) {
 	if (VAL_TAG(source_val) == T_ARRAY) {
 		Object *array = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= array->len) {
@@ -77,6 +74,32 @@ void p_at_i(Interpreter *interp) {
 	} else {
 		fail(interp, "@i: expected an array or matrix; got %s", tag_name(VAL_TAG(source_val)));
 	}
+}
+
+void p_at_i(Interpreter *interp) {
+	POP_INT(index, "@i", "index");
+	POP(source_val);
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_local0(Interpreter *interp) {
+	int slot = (int)vocab.dict[interp->ip++];
+	int index = (int)interp->return_stack[interp->local_base + slot].number;
+
+	POP(source_val);
+
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_lit(Interpreter *interp) {
+	int index = (int)vocab.dict[interp->ip++];
+
+	POP(source_val);
+	array_index_fetch(interp, source_val, index);
 
 	DISPATCH(interp);
 }

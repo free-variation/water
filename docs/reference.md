@@ -88,6 +88,9 @@ Operate directly on stack slots' `.number`, in place, with only a depth check �
 | `f-` | `( a b -- a-b )` ⚠ | subtract | 2 | none | O(1) |
 | `f*` | `( a b -- a*b )` ⚠ | multiply | 2 | none | O(1) |
 | `f/` | `( a b -- a/b )` ⚠ | divide; checks divisor ≠ 0 | 2 | none | O(1) |
+| `feq` | `( a b -- f )` ⚠ | float `=`, result `1.0`/`0.0`; no type check | 2 | none | O(1) |
+| `flt` | `( a b -- f )` ⚠ | float `lt`, result `1.0`/`0.0`; no type check | 2 | none | O(1) |
+| `fgt` | `( a b -- f )` ⚠ | float `gt`, result `1.0`/`0.0`; no type check | 2 | none | O(1) |
 | `f^` | `( a b -- a^b )` ⚠ | `pow` | 2 | none | O(1) |
 | `fmod` | `( a b -- fmod(a,b) )` ⚠ | `fmod` | 2 | none | O(1) |
 | `f*+` | `( a b c -- a*b+c )` ⚠ | fused multiply-add; result in slot of `a` | 3 | none | O(1) |

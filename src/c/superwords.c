@@ -270,6 +270,11 @@ int superword_cell_count(cell handler) {
 }
 
 int superword_try_fuse(Interpreter *interp, int op_cfa) {
+	if (op_cfa == vocab.at_i_cfa) {
+		if (try_fuse_at_i_local(interp))
+			return 1;
+		return try_fuse_at_i_lit(interp);
+	}
 	cfa_handler op_h = (cfa_handler)vocab.dict[op_cfa];
 	int prev1 = compiler.fuse_prev_var;
 	int prev2 = compiler.fuse_prev2_var;

@@ -387,6 +387,7 @@ typedef struct Vocabulary {
 	int local_finc_0depth_cfa, local_fdec_0depth_cfa, finc_cfa, fdec_cfa;
 	int qzbranch_cfa;
 	int eq_cfa, lt_cfa, gt_cfa, zeq_cfa;
+	int at_i_cfa;
 	int eq_zbranch_cfa, lt_zbranch_cfa, gt_zbranch_cfa, zeq_zbranch_cfa;
 	int false_symbol, true_symbol;
 	int wildcard_symbol, descendant_symbol, self_symbol;
@@ -517,6 +518,8 @@ int superword_cell_count(cell handler);
 int superword_try_fuse(Interpreter *interp, int op_cfa);
 int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot);
+int try_fuse_at_i_local(Interpreter *interp);
+int try_fuse_at_i_lit(Interpreter *interp);
 
 static inline void push(Interpreter *interp, Val value) {
 	if (interp->dsp < DATA_STACK_DEPTH) {
@@ -812,6 +815,9 @@ void p_div_inplace(Interpreter *interp);
 void p_add_f(Interpreter *interp);
 void p_sub_f(Interpreter *interp);
 void p_mul_f(Interpreter *interp);
+void p_eq_f(Interpreter *interp);
+void p_lt_f(Interpreter *interp);
+void p_gt_f(Interpreter *interp);
 void p_div_f(Interpreter *interp);
 void p_neg(Interpreter *interp);
 void p_inc(Interpreter *interp);
@@ -883,6 +889,8 @@ void p_size(Interpreter *interp);
 void p_byte_size(Interpreter *interp);
 void p_member(Interpreter *interp);
 void p_at_i(Interpreter *interp);
+void p_at_i_local0(Interpreter *interp);
+void p_at_i_lit(Interpreter *interp);
 void p_store_i(Interpreter *interp);
 void p_at_j(Interpreter *interp);
 void p_at_ij(Interpreter *interp);

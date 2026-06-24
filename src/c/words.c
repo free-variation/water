@@ -256,6 +256,10 @@ BINARY_FLOAT_OP(p_add_f, "f+", +)
 BINARY_FLOAT_OP(p_sub_f, "f-", -)
 BINARY_FLOAT_OP(p_mul_f, "f*", *)
 
+BINARY_FLOAT_OP(p_eq_f, "feq", ==)
+BINARY_FLOAT_OP(p_lt_f, "flt", <)
+BINARY_FLOAT_OP(p_gt_f, "fgt", >)
+
 void p_div_f(Interpreter *interp) {
 	if (interp->dsp < 2) {
 		fail(interp, "f/: data stack underflow");
