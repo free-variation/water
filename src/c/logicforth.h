@@ -892,6 +892,7 @@ void p_member(Interpreter *interp);
 void p_at_i(Interpreter *interp);
 void p_at_i_local0(Interpreter *interp);
 void p_at_i_lit(Interpreter *interp);
+void p_at_i_lit_local0(Interpreter *interp);
 void p_store_i(Interpreter *interp);
 void p_at_j(Interpreter *interp);
 void p_at_ij(Interpreter *interp);

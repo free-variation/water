@@ -18,3 +18,26 @@ variable B  4.0 to B
 
 \ see-compiled on a non-colon word reports it
 ' A see-compiled
+
+\ local-operand arithmetic fusion: <local> <local> op
+: ll-arith | a b | a b f+  a b f-  a b f* ;
+' ll-arith see-compiled
+
+\ local-literal arithmetic fusion: <local> <literal> op
+: lit-arith | a | a 2.0 f+  a 2.0 f-  a 2.0 f* ;
+' lit-arith see-compiled
+
+\ literal-local: commutative <lit> <local> reuse (+, *) and reversed subtract
+: rev-arith | a | 2.0 a f+  2.0 a f*  2.0 a f- ;
+' rev-arith see-compiled
+
+\ @i index fusion: local index, literal index, and local-array + literal index
+: at-local-idx | i | [ 10 20 30 ] i @i ;
+' at-local-idx see-compiled
+: at-lit-idx  [ 10 20 30 ] 1 @i ;
+' at-lit-idx see-compiled
+: at-lit-of-local | arr | arr 1 @i ;
+' at-lit-of-local see-compiled
+
+\ fusion fires inside a quotation on its own (depth-0) locals
+[: | >a >b | a b f* :] see-compiled

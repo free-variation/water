@@ -104,6 +104,15 @@ void p_at_i_lit(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_at_i_lit_local0(Interpreter *interp) {
+	int slot = (int)vocab.dict[interp->ip++];
+	int index = (int)vocab.dict[interp->ip++];
+	Val source_val = interp->return_stack[interp->local_base + slot];
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
 void p_store_i(Interpreter *interp) {
 	PEEK_AT(target_val, 2, "!i");
 	PEEK_AT(index_val, 1, "!i");
