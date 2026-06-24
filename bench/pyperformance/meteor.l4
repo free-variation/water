@@ -1,0 +1,206 @@
+\ meteor — port of pyperformance bm_meteor_contest (Computer Language
+\ Benchmarks Game). Tiles ten distinct pentominoes onto a 50-cell hexagonal
+\ board, collecting the first SOLVE_ARG (=60) solutions in discovery order.
+\
+\ Cells are integer codes (E·x + S·y + y%2); CTI maps a code to its 0..49 board
+\ index (-1 = off board). A footprint is a set of five board indices; FPS[ci][pi]
+\ lists piece pi's footprints whose minimum cell is ci, built once in the
+\ reference's exact order (board cell, then piece, then permutation) — the cap of
+\ 60 makes that order load-bearing. free / footprints / SE neighbourhoods are
+\ sets; solve backtracks, committing a piece into a footprint that fits free.
+\
+\ Solutions accumulate in a sorted set (SOLS); each solved board contributes its
+\ 50-digit string and that string reversed. The precompute (board, pieces,
+\ footprints, SE-nh) is untimed; only the solve loop is measured. LOOPS solves run.
+
+variable BOARD  variable CTI  variable PIECES  variable FPS  variable SE_NH
+variable SOLS   variable DONE
+variable NSOLS  60.0 to NSOLS
+
+: cell-index ( code -- idx )      \ board index of a cell code, or -1
+  |> code |
+  code 0.0 lt if -1.0 exit then
+  code 460.0 lt 0= if -1.0 exit then
+  CTI code @i ;
+
+: set-min ( s -- v )  1.0 take 0.0 @i ;
+: set-max ( s -- v )  dup size take reverse 0.0 @i ;
+
+\ --- direction maps (rotate / flip a single offset) ----------------------
+: rotate-dir ( o -- o' )
+  |> o |
+  o 2.0 = if -49.0 exit then
+  o -49.0 = if -51.0 exit then
+  o -51.0 = if -2.0 exit then
+  o -2.0 = if 49.0 exit then
+  o 49.0 = if 51.0 exit then
+  2.0 ;
+
+: flip-dir ( o -- o' )
+  |> o |
+  o 2.0 = if 2.0 exit then
+  o -49.0 = if 51.0 exit then
+  o -51.0 = if 49.0 exit then
+  o -2.0 = if -2.0 exit then
+  o 49.0 = if -51.0 exit then
+  -49.0 ;
+
+: rotate-list ( a -- a' )  [: rotate-dir :] map ;
+: flip-list   ( a -- a' )  [: flip-dir :] map ;
+
+\ permute one piece's incremental-direction list into all orientations,
+\ matching the reference order (rotations, then flips of each); is-c2 truncates
+\ piece 3's rotations to break the C2 symmetry.
+: permute ( ido is-c2 -- perms )
+  | >ido >is-c2 ps last snap |
+  [ ido ] to ps
+  [: ps  ps size 1.0 f- @i  rotate-list to last
+     ps [ last ] concat to ps
+     is-c2 if ps 3.0 take to ps then
+  :] 5 times
+  ps to snap
+  [: |> i | ps [ snap i @i flip-list ] concat to ps :] snap size i-times
+  ps ;
+
+\ --- incremental directions -> coordinate offsets (cumulative sums) -------
+: convert ( ido -- offsets )
+  | >ido acc out |
+  0.0 to acc  [ 0.0 ] to out
+  [: |> i | acc ido i @i f+ to acc  out [ acc ] concat to out :] ido size i-times
+  out ;
+
+\ --- footprint set: cells of `pp` placed at code `c` that land on the board -
+: foot ( c pp -- fpset )
+  | >c >pp s |
+  < > to s
+  [: |> i |
+     c pp i @i f+ cell-index
+     dup -1.0 = if drop else s swap set-add! to s then
+  :] pp size i-times
+  s ;
+
+\ --- board + code->index table -------------------------------------------
+: init-board
+  -1.0 460.0 array-of to CTI
+  0.0 50.0 array-of to BOARD
+  [: |> y |
+     [: | >x code idx |
+        2.0 x f* 50.0 y f* f+ y 2.0 mod f+ to code
+        y 5.0 f* x f+ to idx
+        BOARD idx code !i drop
+        CTI code idx !i drop
+     :] 5 i-times
+  :] 10 i-times ;
+
+\ --- pieces: convert each permutation of each incremental-direction list ---
+: init-pieces
+  [ [ 2.0 2.0 2.0 51.0 ]
+    [ 51.0 49.0 -2.0 49.0 ]
+    [ -2.0 -2.0 49.0 51.0 ]
+    [ 2.0 2.0 49.0 51.0 ]
+    [ -51.0 -2.0 -51.0 51.0 49.0 ]
+    [ 2.0 2.0 -49.0 -2.0 ]
+    [ -51.0 -49.0 -49.0 -2.0 ]
+    [ -49.0 51.0 2.0 -49.0 ]
+    [ 51.0 51.0 2.0 51.0 ]
+    [ 2.0 -51.0 -51.0 -51.0 ] ] to PIECES
+  [: | >pi conv |
+     PIECES pi @i  pi 3.0 =  permute  [: convert :] map to conv
+     PIECES pi conv !i drop
+  :] 10 i-times ;
+
+\ --- footprints: FPS[ci][pi] = list of piece pi's footprints with min cell ci
+: empty-row ( -- row )
+  | row |
+  0.0 10.0 array-of to row
+  [: |> pi | row pi [ ] !i drop :] 10 i-times
+  row ;
+
+: init-fps
+  0.0 50.0 array-of to FPS
+  [: |> ci | FPS ci empty-row !i drop :] 50 i-times ;
+
+: get-footprints
+  [: | >ci c |
+     BOARD ci @i to c
+     [: | >pi pps |
+        PIECES pi @i to pps
+        [: | >ppi fp m row nb |
+           c pps ppi @i foot to fp
+           fp size 5.0 = if
+              fp set-min to m
+              FPS m @i to row
+              row pi @i [ fp ] concat to nb
+              row pi nb !i drop
+           then
+        :] pps size i-times
+     :] 10 i-times
+  :] 50 i-times ;
+
+: get-senh
+  0.0 50.0 array-of to SE_NH
+  [: |> ci | SE_NH ci  BOARD ci @i  [ 2.0 49.0 51.0 ] foot  !i drop :] 50 i-times ;
+
+\ --- solution string from a finished board (and its reverse) --------------
+: cb>string  ( cb -- s )  [: 48.0 f+ :] map codepoints>string ;
+: cb>rstring ( cb -- s )  [: 48.0 f+ :] map reverse codepoints>string ;
+
+\ --- backtracking solver (the timed kernel) ------------------------------
+: solve ( i_min free cb pl -- )
+  | >i_min >free >cb >pl fp_i_cands p_idx p fp_cands fp_idx fp fpa n_free n_i_min ncb npl s rs |
+  FPS i_min @i to fp_i_cands
+  0.0 to p_idx
+  begin p_idx pl size lt while
+     pl p_idx @i to p
+     fp_i_cands p @i to fp_cands
+     0.0 to fp_idx
+     begin fp_idx fp_cands size lt while
+        fp_cands fp_idx @i to fp
+        fp free difference size 0= if
+           cb copy to ncb
+           fp dup size take to fpa
+           [: |> i | ncb fpa i @i p !i drop :] fpa size i-times
+           pl size 1.0 gt if
+              free fp difference to n_free
+              n_free set-min to n_i_min
+              n_free  SE_NH n_i_min @i  intersection size  0.0 gt if
+                 pl [: |> q | q p = 0= :] filter to npl
+                 n_i_min n_free ncb npl solve
+              then
+           else
+              ncb cb>string to s
+              ncb cb>rstring to rs
+              SOLS s set-add! to SOLS
+              SOLS rs set-add! to SOLS
+              SOLS size NSOLS lt 0= if 1.0 to DONE exit then
+           then
+        then
+        fp_idx 1.0 f+ to fp_idx
+     repeat
+     DONE if exit then
+     p_idx 1.0 f+ to p_idx
+  repeat ;
+
+: solve-once
+  0.0 to DONE
+  < > to SOLS
+  0.0
+  0.0 49.0 range array>set
+  -1.0 50.0 array-of
+  0.0 9.0 range
+  solve ;
+
+: meteor-bench
+  | t0 |
+  init-board init-pieces init-fps get-footprints get-senh
+  now to t0
+  [: solve-once :] LOOPS times
+  now t0 - to t0
+  "solutions: " . SOLS size . cr
+  SOLS size NSOLS = "match: {0}" format . cr
+  "first: " . SOLS set-min . cr
+  "last: " . SOLS set-max . cr
+  "elapsed: " . t0 . " s" . cr ;
+
+meteor-bench
+bye

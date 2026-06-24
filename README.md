@@ -1,22 +1,29 @@
 # logicforth
 
-A Forth-flavored language for matrix work, set/array/frame manipulation,
-string/regex processing, and logic programming. A compact C
-interpreter built with `clang -O3`.
+A Forth-flavored language for numeric and matrix work, statistics and
+regression, set/array/frame manipulation, string/regex processing, logic
+programming, and multi-core data parallelism — with embedded SQLite and a
+runtime C FFI. A compact C interpreter built with `clang -O3`.
 
 ## Building and running
 
 ```
 make           # builds ./logicforth
 make test      # runs the golden-output test suite
+make bench     # runs the benchmark suite (logicforth vs CPython)
 ./logicforth   # REPL
 ```
 
 Self-contained: its vendored dependencies — PCRE2 (regex), isocline (REPL line
 editing), and SQLite (embedded SQL) — live under `external/` and are built from
-source into the binary, so `make` needs nothing but a C compiler. Refresh them
-with `make vendor-pcre2`, `sh tools/vendor-isocline.sh`, and
-`sh tools/vendor-sqlite.sh` (see each directory's `PROVENANCE`).
+source into the binary, so `make` needs only a C compiler and the system
+`libffi`. Refresh them with `make vendor-pcre2`, `sh tools/vendor-isocline.sh`,
+and `sh tools/vendor-sqlite.sh` (see each directory's `PROVENANCE`).
+
+On macOS, `make` also builds `liblapacke_accel.dylib`, a thin LAPACK-over-
+Accelerate shared library that the statistics library `dlopen`s through the FFI
+for SVD and least-squares; only the linear-algebra fits depend on it. Re-vendor
+it with `make vendor-lapacke`.
 
 ## A taste
 
@@ -61,6 +68,18 @@ reset producer                          \ leaves (1, k) — next value via resum
 \ Logic: unify binds variables; amb is a committed choice
 [ 1 2 3 ] [ X Y Z ] ~ drop  X $ . Y $ . Z $ . cr   \ 1 2 3
 [: fail :] [: "fallback" :] amb .                  \ fallback
+
+\ Multi-core: run a quotation across the array on every core
+[ 1 2 3 4 5 6 7 8 ] [: dup * :] pmap .  \ [ 1 4 9 16 25 36 49 64 ]
+
+\ Statistics over a matrix column: mean and the median (0.5 quantile)
+[ 2 4 4 4 5 5 7 9 ] 8 1 matrix dup mean . 0.5 quantile .  \ 5  4.5
+
+\ SQLite, in-memory: create, insert a bound param, query back
+":memory:" db-open
+dup "create table t(x)" [ ] db-exec drop
+dup "insert into t values (?)" [ 42 ] db-exec drop
+"select x from t" [ ] db-query :rows @ 0 @i :x @ .   \ 42
 ```
 
 ## Features
@@ -79,7 +98,7 @@ reset producer                          \ leaves (1, k) — next value via resum
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
 - **Variables and symbols** — `variable foo` declares a global; read it by bare name, assign with `42 to foo` (`to` also auto-creates a global on first assignment at the REPL). `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
 - **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (initialized to `0.0`); read by bare name, assign with `to name`. `++ name` / `-- name` increment/decrement a local in place (`f++` / `f--` the unsafe float-only forms). Locals nest through quotations and survive continuation capture.
-- **Mark-and-sweep GC** — walks data/return/side stacks, dictionary, and a small `gc_roots` array for in-flight C-level temporaries.
+- **Mark-and-sweep GC** — walks data/return/side stacks, dictionary, and a small `gc_roots` array for in-flight C-level temporaries. It triggers on object-table pressure and on live-byte pressure, and runs at a safepoint between words so popped C-level operands stay live.
 
 ### Numeric / matrix
 
@@ -89,22 +108,40 @@ reset producer                          \ leaves (1, k) — next value via resum
 - **DGEMM** — `dgemm-nn`/`tn`/`nt`/`tt` (`αAB + βC`) for all four transpose variants. The non-transposed `nn` path is ikj-ordered with `restrict` pointers for cache-friendly access; the transposed variants use a straightforward triple loop.
 - **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells.
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
+- **Selection** — `augment` (concatenate two matrices column-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array).
 - **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
-- **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `sin`, `cos`, `tan`, `tanh`. Polymorphic over floats and matrices.
+- **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the loadable statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, and `ci` on these.
+- **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
 - **Total ordering** — `=`/`lt`/`gt` compare matrices by shape then row-major contents, so matrices work as set members.
+
+### Segments
+
+Flat, fixed-length typed numeric buffers stored off the arena (one allocation, freed by GC), for dense numeric data without per-element boxing and as FFI scratch.
+
+- **`int-segment`** / **`double-segment`** — `( n -- seg )` an n-element zero-filled buffer; both store doubles internally, so `@i` reads and `!i` writes a float, sharing the array indexing words.
+- **`segment>pointer`** — intern the backing buffer as a `T_PTR` for an FFI `:ptr` argument, no copy.
 
 ### Sets, arrays, higher-order
 
 - **Set literals** — `< 1 2 3 >`, set operations, `member?`, `size`, in-place `set-add!`/`set-remove!`, and `array>set` (sort-and-dedup an array into a set in one pass).
 - **`group-by`** — `array :col group-by` groups frames by a symbol field into a frame from each value to a set of rows (the engine behind fast indexing and aggregation).
-- **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), `range` ( from to -- arr ) for an ascending or descending integer sequence, indexed access via `@i`.
+- **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), `range` ( from to -- arr ) for an ascending or descending integer sequence, `iota` ( n -- [0..n-1] ), indexed access via `@i`, in-place store via `!i`.
+- **Array operations** — `sort` (a sorted copy in `val_cmp` order), `reverse`, `take`, `concat`, `flatten-array` (flatten one level), and `sample` ( arr count repl -- arr ) drawing elements with or without replacement.
 - **Map, fold, zip-map, filter** — `map` for a single source, `reduce` for a left fold with an accumulator, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
 - **Destructuring** — `destruct` spreads a set/array/frame's elements onto the stack (a frame as alternating symbol/value). `destruct-to` ( values names -- ) takes two equal-length arrays and assigns each value to the global variable named by the corresponding symbol, creating it if absent.
 - **In-place slicing** — `slice!` copies a strided run from one array into another, `reverse-slice!` reverses a run in place, `to-slice!` stores values from the stack into a range.
 
+### Random
+
+A thread-local xoshiro256\*\* stream. Each worker thread derives its own stream from the shared base seed, so parallel draws are deterministic per worker.
+
+- **`seed`** — `( n -- )` set the global base seed and reset the stream.
+- **`random`** — `( -- f )` a uniform float in `[0, 1)`; **`random-int`** — `( bound -- f )` a uniform integer in `[0, bound)`.
+- `sample` (arrays) and `resample-indices` (datasets) draw on this stream.
+
 ### Multi-core parallelism
 
-Worker threads over one shared object heap (not `fork`): a quotation runs across the collection on several cores, results joining back by handle with no copy.
+Worker threads over one shared object heap (not `fork`): a quotation runs across the collection on several cores, results joining back by handle with no copy. Allocation in a region is per-worker; a region whose results don't escape is rewound wholesale, and live results are retained by handle.
 
 - **`pmap`** — `( arr xt -- arr )` parallel `map`; **`pfilter`** — `( arr pred -- arr )` parallel `filter`, order preserved; **`pmap-reduce`** — `( arr id map-xt combine-xt -- val )` fused parallel map+fold, with `combine-xt` associative and `id` its neutral element.
 - **`-ext` forms** — `pmap-ext` / `pfilter-ext` / `pmap-reduce-ext` take an explicit worker count and items-per-claim; the bare forms default to `num-cores` workers.
@@ -163,6 +200,21 @@ Embedded relational storage via the vendored SQLite amalgamation — built into 
 - **Bound parameters** — `params` is an array bound positionally to the `?` placeholders (`[ ]` for none); floats, strings, symbols, and `null` bind, so string values need no hand-escaping.
 - **`create-index`** — `( rel cols -- rel )`, `lib.l4` — index a query result on `cols`, interning those columns to symbols so the fact-db index and `query` can use them.
 
+### Data: TSV, datasets, and statistics
+
+TSV is the one tabular file format (convert other formats to TSV before loading).
+
+- **`read-tsv`** / **`write-tsv`** — read a file into an array of row-arrays (a numeric cell becomes a float, an empty cell `none`, everything else a string) and write one back.
+- **`rows>dataset`** — `( table header? -- frame )` a column-oriented frame, one array per column; **`rows>relation`** — `( table index-cols header? -- relation )` a deduped, indexed fact-database relation; **`dataset>matrix`** — `( dataset cols -- m )` an observations×columns numeric matrix from named columns.
+- **`resample-indices`** — `( n -- arr )` n indices drawn from `[0,n)` with replacement, for bootstrap resampling.
+
+The statistics library (`lib/statistics.l4`, loaded on demand) builds on the matrix and FFI layers:
+
+- **Descriptive** — `std`, `se`, `median`, `percentile`, `iqr`, `ci` (percentile confidence interval).
+- **Resampling** — `bootstrap` / `pbootstrap` (parallel) over a fit quotation.
+- **Linear algebra** — `svd` and `fit-linear` (least-squares) call LAPACK's `dgesvd` / `dgelsd` through the FFI (the Accelerate-backed dylib on macOS).
+- **Regression** — `linear-regression` and `logistic-regression` (IRLS with Firth correction), each returning per-coefficient estimate, standard error, bias, and confidence interval from a bootstrap.
+
 ### Foreign function interface
 
 Call C functions in any shared library at runtime via `libffi` — no per-library glue. An opaque C pointer is a `T_PTR` handle (a registry index, since a 64-bit pointer doesn't fit a Val).
@@ -171,7 +223,8 @@ Call C functions in any shared library at runtime via `libffi` — no per-librar
 - **`ffi-function`** — `( lib symbol arg-types ret-type -- ) <name>` — resolve a symbol and define the following word `<name>` to call it. Types are symbols: `:void :int :long :double :ptr :string`. Floats marshal to/from C `int`/`long`/`double`, strings pass as `const char*` (a returned `char*` is copied back into a string), `:ptr` is an opaque handle. The call interface is prepared once; calls are ~30–100 ns.
 - **`ffi-variadic`** — `( lib symbol arg-types ret-type n-fixed -- ) <name>` — the same for a variadic C function (`ffi_prep_cif_var`); `n-fixed` leading args are fixed, the rest variadic, with the variadic types fixed per binding. Enough to drive `printf`, `curl_easy_setopt`, etc.
 - **`ffi-free`** — `( ptr -- )` — `free` a C buffer held as a `T_PTR`.
-- Example: `"/usr/lib/libcurl.4.dylib" ffi-open` then a few `ffi-function`/`ffi-variadic` declarations is enough to drive a real libcurl HTTPS request in-process, no subprocess. FFI is unsafe — a wrong signature corrupts or crashes; arg *count* is checked, types are the caller's responsibility.
+- **`matrix>pointer`** / **`segment>pointer`** — intern a matrix's or segment's element buffer as a `T_PTR` (no copy, aliasing the live buffer) to pass dense numeric data to a `:ptr` parameter.
+- Examples: `"/usr/lib/libcurl.4.dylib" ffi-open` plus a few declarations drives a real libcurl HTTPS request in-process, no subprocess; the statistics library drives LAPACK's `dgesvd`/`dgelsd` the same way (matrices in via `matrix>pointer`). FFI is unsafe — a wrong signature corrupts or crashes; arg *count* is checked, types are the caller's responsibility.
 
 ### Delimited continuations
 
@@ -210,7 +263,7 @@ Unification and committed choice, on the trail and the continuation machinery:
 
 - **Logic variables** — `lvar` makes a fresh one; a **capitalized identifier** is a logic-var literal: a persistent global at the REPL, or a fresh per-call variable when declared in `| X |` inside a definition or quotation.
 - **`unify`** (`~`) — unifies two terms, binding logic vars through a trail so they match: atoms by value, arrays element-wise, frames as open records (shared keys must unify, extras allowed); on a mismatch it fails. **`deref`** (`$`) follows a variable's binding chain.
-- **`amb`** / **`fail`** — committed choice: run the first branch; if it fails (a `unify` mismatch or an explicit `fail`), roll its bindings back through the trail and run the second, committing to whichever succeeds.
+- **`amb`** / **`fail`** — committed choice: run the first branch; if it fails (a `unify` mismatch or an explicit `fail`), roll its bindings back through the trail and run the second, committing to whichever succeeds. **`choose`** generalizes it to a cons list, running a continuation with each element until one succeeds.
 - **`_`** — the anonymous wildcard: unifies with anything, binds nothing, and allocates nothing.
 - **`matches?`** — a non-destructive `unify` test: marks the trail, unifies, rolls back, and pushes whether the two unified — so it composes in straight-line code.
 - **Cons lists** — `[( a b c )]` builds cons pairs and `[( H T )]` is the `[H|T]` head/tail pattern under `unify`; with `cons`, `head-tail`, and `array`↔`cons` conversions.
@@ -242,10 +295,14 @@ src/c/superwords.c     — compile-time instruction fusion (superwords)
 src/c/strings.c        — string and PCRE2 regex operations
 src/c/logic.c          — logic variables, unification, amb, fact database
 src/c/database.c       — SQLite integration
+src/c/foreign.c        — FFI (libffi), pointer registry, matrix/segment bridges
 src/c/help_table.c     — generated help/man text (from docs/reference.md)
-src/forth/lib.l4       — standard library (auto-loaded at startup)
+src/forth/lib.l4       — standard library (embedded, auto-loaded at startup)
+lib/                   — loadable libraries: statistics.l4, files.l4, claude.l4
+external/              — vendored deps: pcre2, sqlite, isocline, lapacke
 tests/                 — golden-output test files
-docs/                  — design documents
+bench/                 — benchmark suite (logicforth vs CPython) and inventory
+docs/                  — design documents and the word reference
 examples/              — sample programs
 PLAN.md                — future work
 ```

@@ -30,10 +30,23 @@ reps_compile=${REPS_COMPILE:-25}
 skip_leibniz=${SKIP_LEIBNIZ:-0}
 
 nbody_steps=20000
+raytrace_loops=10
+float_points=100000
+float_repeat=20
 spectral_loops=50
 scimark_lu_cycles=100
 nqueens_n=8
 fannkuch_n=9
+scimark_sor_loops=100
+scimark_sparse_cycles=500
+fft_loops=5
+fft_cycles=50
+barnes_iterations=50
+barnes_loops=2
+montecarlo_samples=1000000
+montecarlo_loops=3
+meteor_loops=10
+hexiom_loops=50
 leibniz_rounds=1000000000
 leibniz_url="https://raw.githubusercontent.com/niklas-heer/speed-comparison/master/src/leibniz.py"
 leibniz_r_url="https://raw.githubusercontent.com/niklas-heer/speed-comparison/master/src/leibniz.r"
@@ -92,9 +105,19 @@ lf_nqueens()  { "$bin" < "$here/pyperformance/nqueens.l4"; }
 lf_nqueens_iter() { "$bin" < "$here/variants/nqueens-iter.l4"; }
 lf_fannkuch() { "$bin" < "$here/pyperformance/fannkuch.l4"; }
 lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.l4"; } | "$bin"; }
+lf_raytrace() { { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.l4"; } | "$bin"; }
+lf_float()    { "$bin" < "$here/pyperformance/float.l4"; }
 lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.l4"; } | "$bin"; }
 lf_spectral_matrix() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/variants/spectral-norm-matrix.l4"; } | "$bin"; }
 lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.l4"; } | "$bin"; }
+lf_scimark_sor() { { echo "variable ITERATIONS $scimark_sor_loops to ITERATIONS"; cat "$here/pyperformance/scimark-sor.l4"; } | "$bin"; }
+lf_scimark_sparse() { { echo "variable CYCLES $scimark_sparse_cycles to CYCLES"; cat "$here/pyperformance/scimark-sparse.l4"; } | "$bin"; }
+lf_scimark_fft() { { echo "variable LOOPS $fft_loops to LOOPS"; echo "variable CYCLES $fft_cycles to CYCLES"; cat "$here/pyperformance/scimark-fft.l4"; } | "$bin"; }
+lf_barnes()   { { echo "variable ITERATIONS $barnes_iterations to ITERATIONS"; echo "variable LOOPS $barnes_loops to LOOPS"; cat "$here/pyperformance/barnes-hut.l4"; } | "$bin"; }
+lf_scimark_mc() { { echo "variable SAMPLES $montecarlo_samples to SAMPLES"; echo "variable LOOPS $montecarlo_loops to LOOPS"; cat "$here/pyperformance/scimark-montecarlo.l4"; } | "$bin"; }
+lf_montecarlo_par() { { echo "variable SAMPLES $((montecarlo_samples * montecarlo_loops)) to SAMPLES"; echo "variable WORKERS 10 to WORKERS"; cat "$here/variants/monte-carlo-parallel.l4"; } | "$bin"; }
+lf_meteor()   { { echo "variable LOOPS $meteor_loops to LOOPS"; cat "$here/pyperformance/meteor.l4"; } | "$bin"; }
+lf_hexiom()   { { echo "variable LOOPS $hexiom_loops to LOOPS"; cat "$here/pyperformance/hexiom.l4"; } | "$bin"; }
 lf_regex_dna() { "$bin" < "$here/pyperformance/regex-dna.l4"; }
 lf_regex_compile() { "$bin" < "$here/pyperformance/regex-compile.l4"; }
 lf_regex_effbot() { "$bin" < "$here/pyperformance/regex-effbot.l4"; }
@@ -107,8 +130,17 @@ lf_json_dumps() { "$bin" < "$here/pyperformance/json-dumps.l4"; }
 py_nqueens()  { "$python" "$here/pyperformance/pyperf_nqueens.py" "$nqueens_n"; }
 py_fannkuch() { "$python" "$here/pyperformance/pyperf_fannkuch.py" "$fannkuch_n"; }
 py_nbody()    { "$python" "$here/pyperformance/pyperf_nbody.py" "$nbody_steps"; }
+py_raytrace() { "$python" "$here/pyperformance/pyperf_raytrace.py" "$raytrace_loops"; }
+py_float()    { "$python" "$here/pyperformance/pyperf_float.py" "$float_points" "$float_repeat"; }
 py_spectral() { "$python" "$here/pyperformance/pyperf_spectral_norm.py" "$spectral_loops"; }
 py_scimark_lu() { "$python" "$here/pyperformance/pyperf_scimark_lu.py" "$scimark_lu_cycles"; }
+py_scimark_sor() { "$python" "$here/pyperformance/pyperf_scimark_sor.py" "$scimark_sor_loops"; }
+py_scimark_sparse() { "$python" "$here/pyperformance/pyperf_scimark_sparse.py" "$scimark_sparse_cycles"; }
+py_scimark_fft() { "$python" "$here/pyperformance/pyperf_scimark_fft.py" "$fft_loops" "$fft_cycles"; }
+py_barnes()   { "$python" "$here/pyperformance/pyperf_barnes_hut.py" "$barnes_loops" "$barnes_iterations"; }
+py_scimark_mc() { "$python" "$here/pyperformance/pyperf_scimark_montecarlo.py" "$montecarlo_samples" "$montecarlo_loops"; }
+py_meteor()   { "$python" "$here/pyperformance/pyperf_meteor.py" "$meteor_loops"; }
+py_hexiom()   { "$python" "$here/pyperformance/pyperf_hexiom.py" "$hexiom_loops"; }
 py_regex_dna() { "$python" "$here/pyperformance/pyperf_regex_dna.py"; }
 py_regex_compile() { "$python" "$here/pyperformance/pyperf_regex_compile.py"; }
 py_regex_effbot() { "$python" "$here/pyperformance/pyperf_regex_effbot.py"; }
@@ -220,6 +252,14 @@ log "== nbody =="
 run_reps nbody_lf lf_nbody "$reps"
 run_reps nbody_py py_nbody "$reps_py"
 
+log "== raytrace =="
+run_reps raytrace_lf lf_raytrace "$reps"
+run_reps raytrace_py py_raytrace "$reps_py"
+
+log "== float =="
+run_reps float_lf lf_float "$reps"
+run_reps float_py py_float "$reps_py"
+
 log "== fannkuch =="
 run_reps fannkuch_lf lf_fannkuch "$reps"
 run_reps fannkuch_py py_fannkuch "$reps_py"
@@ -232,6 +272,35 @@ run_reps spectral_py py_spectral "$reps_py"
 log "== scimark-lu =="
 run_reps scimark_lu_lf lf_scimark_lu "$reps"
 run_reps scimark_lu_py py_scimark_lu "$reps_py"
+
+log "== scimark-sparse =="
+run_reps scimark_sparse_lf lf_scimark_sparse "$reps"
+run_reps scimark_sparse_py py_scimark_sparse "$reps_py"
+
+log "== scimark-fft =="
+run_reps scimark_fft_lf lf_scimark_fft "$reps"
+run_reps scimark_fft_py py_scimark_fft "$reps_py"
+
+log "== barnes-hut =="
+run_reps barnes_lf lf_barnes "$reps"
+run_reps barnes_py py_barnes "$reps_py"
+
+log "== scimark-sor =="
+run_reps scimark_sor_lf lf_scimark_sor "$reps"
+run_reps scimark_sor_py py_scimark_sor "$reps_py"
+
+log "== scimark-montecarlo =="
+run_reps scimark_mc_lf lf_scimark_mc "$reps"
+run_reps montecarlo_par_lf lf_montecarlo_par "$reps"
+run_reps scimark_mc_py py_scimark_mc "$reps_py"
+
+log "== meteor =="
+run_reps meteor_lf lf_meteor "$reps"
+run_reps meteor_py py_meteor "$reps_py"
+
+log "== hexiom =="
+run_reps hexiom_lf lf_hexiom "$reps"
+run_reps hexiom_py py_hexiom "$reps_py"
 
 log "== regex-dna =="
 run_reps regex_dna_lf lf_regex_dna "$reps"
@@ -316,10 +385,20 @@ fi
 row "nqueens" "N = $nqueens_n" nqueens_lf "$(median_elapsed nqueens_py)"
 row "nqueens-iter" "N = $nqueens_n" nqueens_iter_lf "$(median_elapsed nqueens_py)"
 row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
+row "raytrace" "${raytrace_loops}× 100×100" raytrace_lf "$(median_elapsed raytrace_py)"
+row "float" "${float_points} pts × ${float_repeat}" float_lf "$(median_elapsed float_py)"
 row "fannkuch" "N = $fannkuch_n" fannkuch_lf "$(median_elapsed fannkuch_py)"
 row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed spectral_py)"
 row "spectral-norm-matrix" "N = 130, ${spectral_loops}×" spectral_matrix_lf "$(median_elapsed spectral_py)"
 row "scimark-lu" "N=100, ${scimark_lu_cycles}×" scimark_lu_lf "$(median_elapsed scimark_lu_py)"
+row "scimark-sparse" "N=1000, ${scimark_sparse_cycles}×" scimark_sparse_lf "$(median_elapsed scimark_sparse_py)"
+row "scimark-fft" "N=1024, ${fft_loops}×${fft_cycles}" scimark_fft_lf "$(median_elapsed scimark_fft_py)"
+row "barnes-hut" "200 bodies, ${barnes_loops}×${barnes_iterations}" barnes_lf "$(median_elapsed barnes_py)"
+row "scimark-sor" "N=100, 10 cyc × ${scimark_sor_loops}" scimark_sor_lf "$(median_elapsed scimark_sor_py)"
+row "scimark-montecarlo" "${montecarlo_samples} × ${montecarlo_loops}" scimark_mc_lf "$(median_elapsed scimark_mc_py)"
+row "montecarlo-parallel" "$((montecarlo_samples * montecarlo_loops)) tot, pmap 10w" montecarlo_par_lf "$(median_elapsed scimark_mc_py)"
+row "meteor" "${meteor_loops} solves" meteor_lf "$(median_elapsed meteor_py)"
+row "hexiom" "level 25, ${hexiom_loops} solves" hexiom_lf "$(median_elapsed hexiom_py)"
 row "regex-dna" "100K → 1M" regex_dna_lf "$(median_elapsed regex_dna_py)"
 row "regex-compile" "239 patterns, cold" regex_compile_lf "$(median_elapsed regex_compile_py)"
 row "regex-effbot" "21 pat × 0..10k" regex_effbot_lf "$(median_elapsed regex_effbot_py)"
@@ -346,9 +425,18 @@ emit "| benchmark | logicforth | python |"
 emit "|:----------|:-----------|:-------|"
 emit "| nqueens | $(result_line nqueens_lf 'solutions') | $(result_line nqueens_py 'solutions') |"
 emit "| nbody | $(result_line nbody_lf 'final energy') | $(result_line nbody_py 'final energy') |"
+emit "| raytrace | $(result_line raytrace_lf 'checksum') | $(result_line raytrace_py 'checksum') |"
+emit "| float | $(result_line float_lf 'result:') | $(result_line float_py 'result:') |"
 emit "| fannkuch | $(result_line fannkuch_lf 'max flips') | $(result_line fannkuch_py 'max flips') |"
 emit "| spectral-norm | $(result_line spectral_lf 'estimate') | $(result_line spectral_py 'estimate') |"
 emit "| scimark-lu | $(result_line scimark_lu_lf 'checksum') | $(result_line scimark_lu_py 'checksum') |"
+emit "| scimark-sparse | $(result_line scimark_sparse_lf 'checksum') | $(result_line scimark_sparse_py 'checksum') |"
+emit "| scimark-fft | $(result_line scimark_fft_lf 'checksum') | $(result_line scimark_fft_py 'checksum') |"
+emit "| barnes-hut | $(result_line barnes_lf 'final energy') | $(result_line barnes_py 'final energy') |"
+emit "| scimark-sor | $(result_line scimark_sor_lf 'checksum') | $(result_line scimark_sor_py 'checksum') |"
+emit "| scimark-montecarlo | $(result_line scimark_mc_lf 'estimate') | $(result_line scimark_mc_py 'estimate') |"
+emit "| meteor | $(result_line meteor_lf 'last:') | $(result_line meteor_py 'last:') |"
+emit "| hexiom | $(result_line hexiom_lf 'signature') | $(result_line hexiom_py 'signature') |"
 emit "| regex-dna | $(result_line regex_dna_lf 'result:') | $(result_line regex_dna_py 'result:') |"
 emit "| regex-compile | $(result_line regex_compile_lf 'patterns:') | $(result_line regex_compile_py 'patterns:') |"
 emit "| regex-effbot | $(result_line regex_effbot_lf 'matches:') | $(result_line regex_effbot_py 'matches:') |"

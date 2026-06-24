@@ -172,20 +172,9 @@ The side stack is a small additional piece for situations where library code nee
 
 ## Part 4: The inner interpreter
 
-Forth's execution model is built around an *inner interpreter* — a small loop that dispatches one word at a time. Here's the basic structure:
+Forth's execution model is built around an *inner interpreter* — a small loop, `run_inner`, that dispatches one word at a time. It reads the next compiled cell, advances the instruction pointer, and calls the handler stored there; the instruction pointer walks a flat array where all compiled code lives. (logicforth is direct-threaded — each cell holds its handler directly; `threading.md` covers dispatch in full.)
 
-```c
-while (interp->running && !interp->error_flag) {
-    cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
-    handler(interp);            /* the handler tail-calls the next */
-}
-```
-
-`ip` is the instruction pointer — an integer index into `dict[]`, the flat array where all compiled code lives. Each cell of a compiled body holds a handler function pointer directly (logicforth is direct-threaded; threading.md covers dispatch in detail). The loop reads the next cell, advances `ip`, and calls the handler.
-
-A handler doesn't return to this loop between ops: it ends by tail-calling the next handler (the `DISPATCH` macro), so a run of compiled code executes as a chain of jumps, and control only comes back here when something halts, errors, or unwinds. For a primitive (like `+`), the handler does its work and dispatches on. For a colon-defined word, the handler is `docol`, which saves the current `ip` onto the return stack and points `ip` at the word's body before dispatching into it.
-
-When the body's EXIT runs, it pops the saved `ip` from the return stack and restores it, so the next iteration continues where we were before the call.
+A handler doesn't return to this loop between ops: it ends by tail-calling the next handler, so a run of compiled code executes as a chain of jumps, and control only comes back to the loop when something halts, errors, or unwinds. For a primitive (like `+`) the handler does its work and dispatches on. For a colon-defined word the handler saves the current instruction pointer onto the return stack and points the pointer at the word's body before dispatching into it; the body's closing EXIT pops that saved pointer back, so execution continues where it left off before the call.
 
 The return stack therefore directly reflects the call chain. If word A calls word B which calls word C, the return stack has three frames stacked up, each pointing to where execution should resume in the caller. EXIT cascading unwinds these frames one at a time.
 
@@ -211,24 +200,9 @@ Each of the four primitives we'll meet (`reset`, `shift`, `shift-with`, `resume`
 
 ## Part 5: RESET — installing a boundary
 
-`reset` is the simplest of the four continuation primitives. It does just one thing: push a `T_MARK` value onto the return stack, with a unique numeric id.
+`reset` is the simplest of the four continuation primitives. It does just one thing: push a MARK value onto the return stack and dispatch on. The mark then sits there, mixed in with the regular saved-ip frames from the call chain.
 
-```c
-int push_prompt(Interpreter *interp, int kind) {
-    Val mark = make_tagged(T_MARK, (interp->next_mark_id++ << 1) | kind);
-    rpush(interp, mark);
-    return (int)VAL_DATA(mark);
-}
-
-void p_reset(Interpreter *interp) {
-    push_prompt(interp, PROMPT_EXCEPTION);
-    DISPATCH(interp);
-}
-```
-
-That's the entire implementation. `reset` pushes the mark and dispatches on. The mark sits on the return stack, mixed in with the regular saved-ip frames from the call chain.
-
-The mark's data field is `(id << 1) | kind`: a monotonic id in the high bits and a one-bit *prompt kind* in the low bit. There are two kinds — `PROMPT_EXCEPTION`, which `reset`/`shift`/`shift-with` use, and `PROMPT_CHOICE`, which the backtracking primitives `amb`/`fail` use (Part 14). Encoding the kind in the mark lets `shift` scan past choice marks to find the nearest *exception* prompt, and `fail` scan past exception marks to find the nearest *choice* prompt, so the two control mechanisms can nest without colliding.
+A mark carries two things packed into its payload: a monotonic *id* (a fresh one per `reset`) and a one-bit *prompt kind*. There are two kinds — an *exception* prompt, which `reset`/`shift`/`shift-with` use, and a *choice* prompt, which the backtracking primitives `amb`/`fail` use (Part 14). Encoding the kind in the mark lets `shift` scan past choice marks to the nearest exception prompt, and `fail` scan past exception marks to the nearest choice prompt, so the two control mechanisms nest without colliding.
 
 Why is it harmless to leave a marker on the return stack? Because EXIT is taught to skip MARK frames. When EXIT pops a frame and sees that it's a MARK, it discards the mark and pops the next frame instead — the real saved-ip that EXIT needs to jump back to. The mark is invisible to normal control flow; it's just a tag that says "this is a reset boundary."
 
@@ -292,59 +266,12 @@ This is a different design from Scheme's `prompt`, which takes a body expression
 4. **Push k** onto the data stack: a `T_CONT` Val that wraps the captured slice.
 5. **Return** to the inner interpreter loop.
 
-Here's the implementation. The capture logic is factored into a helper because `shift-with` reuses it:
+The find-and-capture logic is shared with `shift-with`. Finding the mark takes a *kind*: `shift` scans past any intervening choice marks to the nearest exception prompt (and errors if there's no enclosing `reset`). Capturing the frames above the mark also records where the word-locals frame sits relative to the captured region, and the live locals-frame pointer is rewound to before the discarded frames — so a slice captured mid-word restores its locals correctly when resumed.
 
-```c
-static int find_prompt(Interpreter *interp, int kind) {
-    int mark_index = interp->rsp - 1;
-    while (mark_index >= 0 &&
-            !(VAL_TAG(interp->return_stack[mark_index]) == T_MARK
-                && (VAL_DATA(interp->return_stack[mark_index]) & 1) == kind)) {
-        mark_index--;                       /* skip frames and other-kind marks */
-    }
-    if (mark_index < 0) {
-        fail(interp, kind == PROMPT_CHOICE
-                ? "no enclosing amb to backtrack to"
-                : "shift/shift-with: no enclosing reset on the return stack");
-        return -1;
-    }
-    return mark_index;
-}
+The captured continuation, a heap object, contains:
 
-int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index) {
-    int mark_index = find_prompt(interp, what_kind);
-    if (mark_index < 0) return -1;
-
-    int return_len = interp->rsp - mark_index - 1;
-    int resume_ip = interp->ip;
-    int slot = object_new_continuation(interp, &interp->return_stack[mark_index + 1],
-                                       return_len, resume_ip);
-    if (interp->error_flag) return -1;
-
-    OBJECT_AT(slot)->continuation.local_base_offset =
-        interp->local_base - (mark_index + 1);
-    *out_mark_index = mark_index;
-    return slot;
-}
-
-void p_shift(Interpreter *interp) {
-    int mark_index;
-    int cont_slot = capture_continuation(interp, PROMPT_EXCEPTION, &mark_index);
-    if (cont_slot < 0) return;
-
-    interp->rsp = mark_index;               /* discard the mark and frames above */
-    restore_local_base_below(interp, mark_index);
-    push(interp, make_continuation(cont_slot));
-    DISPATCH(interp);
-}
-```
-
-`find_prompt` takes a *kind*: `p_shift` asks for `PROMPT_EXCEPTION`, so it scans past any intervening `PROMPT_CHOICE` marks to the nearest reset. `capture_continuation` also records `local_base`, the word-locals frame pointer, relative to the captured region, and `restore_local_base_below` rewinds the live `local_base` to before the discarded frames — so a slice captured mid-word restores its locals correctly when resumed.
-
-The captured continuation, stored in an `OBJECT_CONTINUATION`, contains:
-
-- A copy of the captured return-stack frames (a `Val *return_slice` of length `return_len`).
-- The `resume_ip` — the dict offset of the cell that would have executed next if shift hadn't fired (in practice, the cell after `shift` in whatever body called it).
+- A copy of the captured return-stack frames.
+- The *resume point* — the offset of the cell that would have executed next if shift hadn't fired (in practice, the cell after `shift` in whatever body called it).
 
 The data stack now has the `T_CONT` value `k`. The return stack has been pruned — both the mark and all the call frames that were sitting above it are gone.
 
@@ -454,53 +381,16 @@ The captured frames (R_producer and R_yield) plus the MARK are gone from the liv
 
 `resume` takes a `T_CONT` on the data stack and re-enters the captured slice. The data stack is left otherwise alone — whatever the caller has arranged is what the slice sees as it resumes.
 
-```c
-void p_resume(Interpreter *interp) {
-    POP(continuation_val);
-    if (VAL_TAG(continuation_val) != T_CONT) {
-        fail(interp, "resume: expected a continuation; got %s", tag_name(VAL_TAG(continuation_val)));
-        return;
-    }
-    Object *continuation = OBJECT_AT(VAL_DATA(continuation_val));
-
-    int saved_ip = interp->ip;
-    int saved_running = interp->running;
-    int saved_local_base = interp->local_base;
-
-    /* Trampoline-stop frame so the slice's EXIT chain terminates here. */
-    rpush(interp, make_addr(interp->trampoline_base + 2));
-
-    /* Plain id-0 MARK delimits the resumed slice. */
-    rpush(interp, make_mark());
-
-    /* Splice the captured frames on top, re-anchoring the locals frame. */
-    int slice_base = interp->rsp;
-    for (int i = 0; i < continuation->continuation.return_len; i++)
-        rpush(interp, continuation->continuation.return_slice[i]);
-    if (continuation->continuation.local_base_offset >= 0)
-        interp->local_base = slice_base + continuation->continuation.local_base_offset;
-
-    interp->ip = continuation->continuation.resume_ip;
-    interp->running = 1;
-    run_inner(interp);
-
-    interp->running = saved_running;
-    interp->ip = saved_ip;
-    interp->local_base = saved_local_base;
-    DISPATCH(interp);
-}
-```
-
-The steps:
+The mechanism, step by step:
 
 1. **Pop k** from the data stack.
-2. **Save** the current `ip` and `running` flag so we can restore them after the slice finishes.
-3. **Push a trampoline-stop frame** onto the return stack. This is the saved-ip that the slice's eventual EXIT chain will land at, ending the slice's execution cleanly.
-4. **Push a fresh MARK** above the trampoline-stop frame. This delimits the resumed slice — any `shift` fired inside the slice will target *this* mark, not whatever outer reset might still be active. Note this mark is a plain delimiter: `make_mark()` is `make_tagged(T_MARK, 0)`, so its id is 0 and its kind bit is exception — it is not an addressable prompt with a fresh `next_mark_id` the way `reset` (Part 5) allocates one. A `shift` in the slice finds it by kind, not by id.
-5. **Splice the captured frames** above the new mark. The slice's saved-ip's are now on the return stack, ready to be popped by EXITs as the slice unwinds.
-6. **Set `ip`** to the slice's resume point — the dict offset of the cell right after the original `shift`.
+2. **Save** the current instruction pointer and running flag so they can be restored after the slice finishes.
+3. **Push a trampoline-stop frame** onto the return stack. This is the saved-ip the slice's eventual EXIT chain lands at, ending the slice's execution cleanly (the trampoline is `threading.md`'s subject).
+4. **Push a fresh MARK** above it. This delimits the resumed slice — any `shift` fired inside the slice targets *this* mark, not some outer reset. It's a plain delimiter, found by kind rather than by a unique id, not an addressable prompt the way `reset` (Part 5) allocates one.
+5. **Splice the captured frames** above the new mark. The slice's saved-ips are now on the return stack, ready to be popped by EXITs as the slice unwinds, with its locals frame re-anchored to its new position.
+6. **Set the instruction pointer** to the slice's resume point — the cell right after the original `shift`.
 7. **Run the inner interpreter** in this resumed context.
-8. When the slice's EXIT chain unwinds through the spliced frames, reaches the fresh MARK (which EXIT skips), and then the trampoline-stop frame, the loop ends. `resume` restores `ip` and `running` and returns.
+8. When the slice's EXIT chain unwinds through the spliced frames, reaches the fresh MARK (which EXIT skips), and then the trampoline-stop frame, the loop ends. `resume` restores the saved instruction pointer and running flag and returns.
 
 ### A picture of resume's setup
 
@@ -575,31 +465,7 @@ For most exception-style and coroutine uses, every continuation is one-shot in p
 ( handler-xt -- ... )   shift-with
 ```
 
-The implementation reuses `shift`'s capture logic, then does additional work:
-
-```c
-static void unwind_to(Interpreter *interp, int mark_index) {
-    interp->unwind_target = (int)VAL_DATA(interp->return_stack[mark_index]);
-    interp->rsp = mark_index + 1;     /* keep the mark; run_inner pops it */
-    restore_local_base_below(interp, mark_index);
-}
-
-void p_shift_with(Interpreter *interp) {
-    POP_XT(handler, "shift-with");
-
-    int mark_index;
-    int cont_slot = capture_continuation(interp, PROMPT_EXCEPTION, &mark_index);
-    if (cont_slot < 0) return;
-
-    unwind_to(interp, mark_index);
-    push(interp, make_continuation(cont_slot));
-
-    execute_cfa(interp, handler);
-    if (interp->error_flag) return;
-
-    interp->unwinding = 1;
-}
-```
+It reuses `shift`'s capture logic, then does more. Where `shift` discards the mark, `shift-with` *keeps* it and records it as the unwind target. It pushes the captured continuation, then runs the handler immediately — in the still-live outer context, before any unwinding — so the handler can inspect `k` and even resume it. Only once the handler returns does `shift-with` raise the `unwinding` flag, which sets the stack-unwinding cascade of Part 9 in motion.
 
 The differences from `shift`:
 
@@ -635,42 +501,7 @@ The bare `shift` is the right primitive for coroutines because the *caller of th
 
 This is the subtle piece that makes exception-style flow work.
 
-After `shift-with`'s handler returns, the `unwinding` flag is set. But just setting a flag doesn't accomplish anything — we need the interpreter to *react* to it. The `run_inner` loop has been modified to check the flag at the top of every iteration:
-
-```c
-void run_inner(Interpreter *interp) {
-    int initial_rsp = interp->rsp;             /* remember entry-depth */
-    while (interp->running && !interp->error_flag) {
-        if (interp->unwinding) {
-            /* If the target mark is below this level's entry depth,
-             * it belongs to an outer run_inner — break to propagate. */
-            if (interp->rsp <= initial_rsp) break;
-
-            Val frame = interp->return_stack[--interp->rsp];
-            if (VAL_TAG(frame) == T_MARK && (int)VAL_DATA(frame) == interp->unwind_target) {
-                /* Found the target. Clear the flag, pop the docol frame
-                 * just below, and use its saved ip to resume past the
-                 * reset region. */
-                interp->unwinding = 0;
-                if (interp->rsp > 0) {
-                    Val ret = interp->return_stack[--interp->rsp];
-                    interp->ip = (int)VAL_DATA(ret);
-                }
-                continue;
-            }
-            /* Some other frame (a non-matching mark or a saved ip) —
-             * discard and keep unwinding within this level. */
-            continue;
-        }
-
-        /* Normal dispatch — the handler tail-calls onward via DISPATCH */
-        cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
-        handler(interp);
-    }
-}
-```
-
-Each invocation of `run_inner` records its `initial_rsp` — the return-stack depth at the moment it started. The loop's behavior in unwinding mode is:
+After `shift-with`'s handler returns, the `unwinding` flag is set — but a flag alone does nothing; the interpreter has to *react* to it. So `run_inner` checks the flag at the top of every iteration, and each invocation remembers the return-stack depth at which it started (its *entry depth*). In unwinding mode the loop:
 
 - **Mark below this level's entry**: break out, propagate to the enclosing `run_inner`.
 - **Pop a frame**. If it's the target MARK: clear the flag, pop the next frame (which will be the docol return frame of whoever called reset), set `ip` to that frame's saved ip (which points past the reset region in the caller's body), continue normal dispatch.
@@ -1301,40 +1132,7 @@ That sketch — capture a continuation, stash it with the untried options, resum
 
 `amb` and `fail` are C primitives, not library words. They reuse the return-stack-mark machinery of Part 5, but with the *other* prompt kind: `amb` pushes a `PROMPT_CHOICE` mark, and `fail` targets that kind, so choice points and the `PROMPT_EXCEPTION` marks of `reset`/`shift` nest without interfering.
 
-`amb` takes two branch quotations and tries them in order:
-
-```c
-void p_amb(Interpreter *interp) {
-    POP_XT(branch2, "amb");
-    POP_XT(branch1, "amb");
-
-    int saved_dsp   = interp->dsp;          /* snapshot the choice point */
-    int saved_trail = interp->bind_trail_top;
-    int saved_lvar  = interp->lvar_top;
-
-    int mark_index = interp->rsp;
-    int mark_id = push_prompt(interp, PROMPT_CHOICE);
-
-    execute_cfa(interp, branch1);           /* try the first branch */
-
-    if (interp->unwinding && interp->unwind_target == mark_id) {
-        interp->unwinding = 0;              /* a fail backtracked to us */
-        interp->rsp = mark_index;
-        interp->dsp = saved_dsp;            /* restore the snapshot ... */
-        trail_undo_to(interp, saved_trail);
-        interp->lvar_top = saved_lvar;
-        execute_cfa(interp, branch2);       /* ... and try the second */
-    } else if (!interp->unwinding) {
-        interp->rsp = mark_index;           /* branch1 succeeded; drop the prompt */
-    }
-    DISPATCH(interp);
-}
-
-void p_fail(Interpreter *interp) {
-    backtrack(interp);                      /* unwind to the nearest PROMPT_CHOICE */
-    DISPATCH(interp);
-}
-```
+`amb` takes two branch quotations and tries them in order. It snapshots the choice point, pushes a choice-kind mark, and runs the first branch; a `fail` that unwinds back to the mark restores the snapshot and runs the second branch, while a first branch that succeeds drops the mark and commits. `fail` simply unwinds to the nearest choice mark.
 
 Two things distinguish this from the continuation-capture sketch above:
 
@@ -1587,17 +1385,11 @@ The mark id counter (`next_mark_id`) is global and monotonic. If you serialize a
 
 ## Part 20: Where to look
 
-If you want to dig into the C code, the continuation primitives are in **`src/c/words.c`**, the inner loop and trampoline are in **`src/c/core.c`**, and `p_amb` is in **`src/c/logic.c`**:
-
-- **`p_reset`** (`words.c`) — the simplest primitive.
-- **`capture_continuation`** (`words.c`) — shared helper for shift and shift-with.
-- **`p_shift`** (`words.c`) — calls the helper, truncates the return stack including the mark.
-- **`p_shift_with`** (`words.c`) — calls the helper, keeps the mark, runs the handler, sets unwinding.
-- **`p_resume`** (`words.c`) — splices captured frames back onto the return stack, re-anchors the locals frame, runs the nested inner loop.
-- **`run_inner`** (`core.c`) — the unwinding-aware loop. Look at the top-of-loop check.
-- **`p_amb`** (`logic.c`) **/ `p_fail` / `backtrack`** (`words.c`) — backtracking on the choice-kind prompt; `amb` snapshots and restores the data stack, unification trail, and logic-var stack across a `fail`.
-- **`push_prompt` / `find_prompt`** (`words.c`) — push a kind-tagged MARK; scan for the nearest MARK of a given kind.
-- **`object_new_continuation`** (`core.c`) — allocates the `OBJECT_CONTINUATION` holding a captured slice (`return_slice`, `resume_ip`, `local_base_offset`).
+The continuation primitives and the unwinding-aware inner loop live in
+**`src/c/words.c`** and **`src/c/core.c`**, and the backtracking pair `amb`/`fail`
+is in **`src/c/logic.c`** — `reset` pushing a mark, `shift`/`shift-with` capturing
+and unwinding, `resume` splicing a slice back, and the inner loop's top-of-loop
+unwinding check are the pieces this document walked through.
 
 If you want to read the library code:
 
