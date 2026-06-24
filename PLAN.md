@@ -12,26 +12,11 @@ Index of the maximum / minimum element (or an `(i, j)` pair).
 
 ### Beyond core
 
-- **Slicing** — submatrix by `(row-start, row-end, col-start, col-end)`.
-- **Concatenation** — `hstack` (side by side), `vstack` (stacked).
+- **Vertical stacking** — `vstack`, concatenating two matrices row-wise (the
+  row counts of the result sum; column counts must match).
 - **Element-wise comparison** — `<` etc. returning a matrix of `1`/`0`, as
   a polymorphic extension of the comparison words.
 - **Norms** — `norm` (L2), `frobenius-norm`.
-- **SVD** — one-sided Jacobi. ~50–100 lines.
-
-### Optional BLAS/LAPACK build
-
-An opt-in build switch that swaps the matrix kernels for BLAS/LAPACK,
-leaving the `Matrix` representation, the word surface, and the test corpus
-unchanged.
-
-- **BLAS** for the compute kernels: DGEMM (all four transpose variants) →
-  `cblas_dgemm`, and the reduction / element-wise loops.
-- **LAPACK** for SVD, solve / least-squares, inverse, eigen.
-
-To settle at implementation: interface (reference CBLAS/LAPACKE vs
-OpenBLAS / MKL / Accelerate); how the switch is wired (a `Makefile` target
-and/or `#ifdef`); row-major vs column-major handling at the boundary.
 
 ---
 
@@ -61,6 +46,23 @@ A defining word for immutable named values: `42 constant answer` binds a
 read-only word `answer` that pushes `42`. Value-then-defword-then-name shape
 (like `to`), name read via `next_token()`. Reassignment via `to` errors.
 
+### Bitwise operations
+
+Integer bitwise operators over the float representation: a value is read as a
+two's-complement integer (exact within the double's 53-bit integer range), the
+operation runs, and the result is pushed back as a float.
+
+- AND, OR, XOR, complement, left shift, logical right shift. The names must not
+  collide with the logical `and` / `or` / `not` (truthiness) words — e.g.
+  `bit-and` / `bit-or` / `bit-xor` / `bit-not` / `lshift` / `rshift`.
+
+Enables byte- and bit-level algorithms (base64, block ciphers, bit-stream
+codecs) and a native Mersenne Twister.
+
+To settle: the word names; the integer width (64-bit throughout vs a 32-bit
+masking word for codecs that need wraparound at `2^32`); whether right shift is
+logical only or also offers an arithmetic variant.
+
 ### Path queries — follow-ups
 
 - **Wildcard mutation** — `*` / `//` in `!` / `delete-at` / `update-at` for
@@ -79,23 +81,13 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
 - `"2026-05-25" time-parse` — strptime-style parsing.
 - `"%Y-%m-%dT%H:%M:%SZ"` is the recommended ISO 8601 format string.
 
-### Random numbers
+### Sort and shuffle with a rule
 
-Small high-quality PRNG (xoshiro256++ or PCG, ~30 lines).
-
-- `random-float` — uniform `[0, 1)`.
-- `min max random-int` — uniform integer in `[min, max]`.
-- `seed seed!` — set the RNG seed for reproducibility.
-- `array shuffle` — new array, elements randomly permuted (Fisher-Yates).
-- `array sample` — a uniformly random element (`lib.l4` over `random-int`).
-
-### Sort
-
-- `array sort` — new array sorted by the `val_cmp` ordering; input
-  untouched.
-- `array [ x y -- cmp ] sort-with` — same, with a user comparator quotation
-  that pops two Vals and pushes `-1` / `0` / `1`.
-- Algorithm: introsort or libc `qsort` with a comparator thunk. ~30 lines.
+- `array [ x y -- cmp ] sort-with` — sorted copy under a user comparator
+  quotation that pops two Vals and pushes `-1` / `0` / `1`; input untouched.
+  Algorithm: introsort or libc `qsort` with a comparator thunk.
+- `array shuffle` — new array, elements randomly permuted (Fisher-Yates over
+  the PRNG stream); input untouched.
 
 ### Standard streams
 
@@ -109,13 +101,13 @@ handling lives in the shell-script wrapper layer.
 
 ### Error handling — `catch` intercepts `error_flag`
 
-Interpreter-level errors (stack underflow, type mismatch, division by zero,
-bad pattern, out-of-bounds) become catchable, not only user `throw`s. `catch` /
+Make interpreter-level errors (stack underflow, type mismatch, division by
+zero, bad pattern, out-of-bounds) catchable, not only user `throw`s. `catch` /
 `try-catch` run a wrapped xt; if `error_flag` is set afterward, `catch`
 clears it and returns the `error_message` as a string with the failure
 flag, exactly as a `throw` would. Uncaught errors still surface at the REPL.
-~10 lines: a check in the `catch` path that converts a set `error_flag`
-into the same `(exc 1)` result a `throw` produces.
+A check in the `catch` path converts a set `error_flag` into the same
+`(exc 1)` result a `throw` produces.
 
 ### Format specs
 
@@ -132,24 +124,6 @@ string literal, resolve each `{name}` in scope, rewrite to the positional
 `{n}` form) under an explicit opt-in marker so raw strings and regex like
 `\d{3}` stay literal, or a runtime frame-keyed `format-with`
 (`{ :dir d } "{dir}" format-with`).
-
----
-
-## TSV file I/O
-
-Read and write tab-separated-value files, numeric and non-numeric. TSV will
-be the only tabular format; no CSV, JSON, Parquet, Arrow, or HDF5 reader —
-convert other formats to TSV before loading.
-
-- Reader: `"file.tsv" read-tsv` → array of arrays, one per row. Numeric-
-  looking cells become `T_FLOAT`; everything else stays a string.
-- Writer: `arr-of-arrs "file.tsv" write-tsv`. Vals are printed with the
-  `print_val` logic; a tab or newline inside a cell errors out.
-- Header row is pass-through (just another row); a named-column table is a
-  user-level word on top.
-
-To settle at implementation: representation of Vals with no clean TSV form
-(sets, arrays, xt's, matrices) — sentinel or error, not lossy.
 
 ---
 
@@ -199,8 +173,6 @@ builders are `lib.l4`.
 
 - **Callbacks** — C → logicforth function pointers (`qsort` comparators,
   `CURLOPT_WRITEFUNCTION` to capture a response body into a string).
-- **Buffer bridge** — typed alloc plus element poke/peek and matrix↔buffer
-  copy, to pass arrays in and out (LAPACK, any out-parameter API).
 - **Struct-by-value** arguments and returns.
 - **Per-call varargs** — variadic arg types chosen at the call site rather
   than fixed per declared word.
@@ -234,22 +206,15 @@ Scope: lazy data flow, not async I/O.
 
 In rough priority:
 
-- **Persistent worker-thread pool.** Spawning and joining worker threads per
-  region amortizes to nothing for one big region (a single `pmap` over a huge
-  domain saturates the cores), but the spawn/join dominates for many small
-  regions — system time, not compute. A pool that parks threads and dispatches
-  per call fixes it. Co-design with the rewind: pooled threads keep their
-  `AllocContext` across regions, so teardown has to reset every worker's context,
-  not just the caller's.
+- **Persistent worker-thread pool.** Spawning and joining OS threads per region
+  amortizes to nothing for one big region (a single `pmap` over a huge domain
+  saturates the cores), but the spawn/join dominates for many small regions —
+  system time, not compute. A pool that parks threads and dispatches per call
+  fixes it. Co-design with the rewind: pooled threads keep their `AllocContext`
+  across regions, so teardown has to reset every worker's context, not just the
+  caller's.
 
-- **Reclamation for live-heap-result regions.** A region returning live heap
-  objects can't be rewound; its dropped output is ordinary garbage, but GC
-  triggers on slot count and is blind to byte pressure, so a big-payload churn
-  can exhaust the arena before GC fires. Add a byte-pressure GC trigger (rare,
-  not a cadence). Not parallel-specific — a sequential big-payload loop has the
-  same gap.
-
-- **De-fragilize the region rewind.** The rewind restores three counters and
+- **De-fragilize the region rewind.** The rewind restores several counters and
   resets the calling thread's context by hand; correctness depends on invariants
   maintained across files (the `in_parallel` gating, the per-region thread
   lifecycle). Fold the region's mutated state into one begin/commit/abort owner
@@ -287,7 +252,4 @@ a scalar, element, or boolean belong in `lib.l4`.
 - **`partition`** — `arr [: pred :] partition` → matches and non-matches.
 
 Composable in one line: `count` (`[: pred :] filter size`), `min-by` / `max-by`
-(`reduce` with comparison), `sum` / `product` (`0 [: + :] reduce`).
-
-**Cost:** `find`, `any?`, `all?`, `flat-map`, `sort-by`, `each` → ~60 lines
-of `lib.l4`; `group-by` / `partition` build on frames.
+(`reduce` with comparison).

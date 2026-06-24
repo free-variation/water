@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.8.0"
+#define VERSION "0.9.0"
 
 #include <stdio.h>
 #include <stdlib.h>

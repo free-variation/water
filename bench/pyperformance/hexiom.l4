@@ -1,0 +1,219 @@
+\ hexiom — port of pyperformance bm_hexiom (level 25), a Hexiom board solver.
+\ Constraint propagation + backtracking. Each board cell holds a set of still-
+\ possible values (0..6, or EMPTY=7); the reference uses a list, but it only ever
+\ shrinks from the sorted initial set and is read in sorted order, so a sorted
+\ set matches it exactly. The hex topology enters solely as each cell's neighbour
+\ list, so the grid construction and the board parser (both untimed setup) are
+\ replaced by the precomputed LINKS table and TILES counts for level 25.
+\
+\ Verification: the solved board's 19 cell values in id order (EMPTY shown as 7)
+\ must equal "3422447777427243727". Only the solve loop is timed (LOOPS solves).
+
+variable COUNT  19.0 to COUNT
+variable EMPTY  7.0 to EMPTY
+variable LINKS  variable TILES
+variable SOLUTION_SIG
+
+: init-data
+  [ [ 1.0 3.0 4.0 ]
+    [ 2.0 0.0 4.0 5.0 ]
+    [ 1.0 5.0 6.0 ]
+    [ 4.0 7.0 0.0 8.0 ]
+    [ 5.0 3.0 8.0 1.0 9.0 0.0 ]
+    [ 6.0 4.0 9.0 2.0 10.0 1.0 ]
+    [ 5.0 10.0 11.0 2.0 ]
+    [ 8.0 3.0 12.0 ]
+    [ 9.0 7.0 12.0 4.0 13.0 3.0 ]
+    [ 10.0 8.0 13.0 5.0 14.0 4.0 ]
+    [ 11.0 9.0 14.0 6.0 15.0 5.0 ]
+    [ 10.0 15.0 6.0 ]
+    [ 13.0 8.0 16.0 7.0 ]
+    [ 14.0 12.0 16.0 9.0 17.0 8.0 ]
+    [ 15.0 13.0 17.0 10.0 18.0 9.0 ]
+    [ 14.0 18.0 11.0 10.0 ]
+    [ 17.0 13.0 12.0 ]
+    [ 18.0 16.0 14.0 13.0 ]
+    [ 17.0 15.0 14.0 ] ] to LINKS
+  [ 0.0 0.0 5.0 2.0 5.0 0.0 0.0 7.0 ] to TILES ;
+
+\ --- per-cell set helpers (cells = array of 19 candidate-value sets) -------
+: already-done? ( cells i -- f )  @i size 1.0 = ;
+: cell-val      ( cells i -- v )  @i 1.0 take 0.0 @i ;
+: member-cell?  ( cells i v -- f )  | >cells >i >v |  cells i @i v member? ;
+: set-done      ( cells i v -- )  1.0 set !i drop ;
+
+: cell-remove ( cells i v -- removed? )      \ remove v from cell i; was it present?
+  | >cells >i >v c |
+  cells i @i to c
+  c v member? if c v set-remove! drop 1.0 else 0.0 then ;
+
+\ vmin/vmax over cell i's neighbours (done+nonEMPTY bump both, free bumps vmax)
+: nb-vminvmax ( cells i -- vmin vmax )
+  | >cells >i vmin vmax links |
+  0.0 to vmin  0.0 to vmax
+  LINKS i @i to links
+  [: | >k nid |
+     links k @i to nid
+     cells nid already-done? if
+        cells nid cell-val EMPTY = 0= if vmin 1.0 f+ to vmin  vmax 1.0 f+ to vmax then
+     else vmax 1.0 f+ to vmax then
+  :] links size i-times
+  vmin vmax ;
+
+: count-possible ( cells v -- n )            \ how many cells still allow v
+  | >cells >v n |
+  0.0 to n
+  [: | >i | cells i v member-cell? if n 1.0 f+ to n then :] COUNT i-times
+  n ;
+
+: remove-unfixed ( cells v -- changed )      \ drop v from every not-yet-fixed cell
+  | >cells >v changed |
+  0.0 to changed
+  [: | >i | cells i already-done? 0= if cells i v cell-remove if 1.0 to changed then then :] COUNT i-times
+  changed ;
+
+\ --- constraint propagation (one pass; returns whether anything changed) ---
+: constraint-pass ( cells last-move -- changed )
+  | >cells >last-move changed left freecells filledcells v possible |
+  0.0 to changed
+  TILES copy to left
+  last-move -1.0 = if 0.0 COUNT 1.0 f- range else LINKS last-move @i then to freecells
+  \ 1. remove values impossible by neighbour counts
+  [: | >fi i vmin vmax |
+     freecells fi @i to i
+     cells i already-done? 0= if
+        cells i nb-vminvmax to vmax to vmin
+        [: | >num |
+           num vmin lt num vmax gt or if
+              cells i num cell-remove if 1.0 to changed then
+           then
+        :] 7.0 i-times
+     then
+  :] freecells size i-times
+  \ 2. how many of each value remain free
+  [: | >i cv | cells i already-done? if cells i cell-val to cv  left cv  left cv @i 1.0 f-  !i drop then :] COUNT i-times
+  \ 3. exhaust or force values
+  [: | >v |
+     TILES v @i 0.0 gt  left v @i 0.0 = and if
+        cells v remove-unfixed if 1.0 to changed then
+     else
+        cells v count-possible TILES v @i = if
+           [: | >i | cells i already-done? 0=  cells i v member-cell? and if cells i v set-done 1.0 to changed then :] COUNT i-times
+        then
+     then
+  :] 8.0 i-times
+  \ 4. force empty / non-empty around filled cells
+  last-move -1.0 = if 0.0 COUNT 1.0 f- range else [ last-move ] then to filledcells
+  [: | >fi i num filled unk links |
+     filledcells fi @i to i
+     cells i already-done? if
+        cells i cell-val to num
+        0.0 to filled  [ ] to unk
+        LINKS i @i to links
+        [: | >k nid |
+           links k @i to nid
+           cells nid already-done? if
+              cells nid cell-val EMPTY = if else filled 1.0 f+ to filled then
+           else unk [ nid ] concat to unk then
+        :] links size i-times
+        unk size 0.0 gt if
+           num filled = if
+              [: | >uk u | unk uk @i to u  cells u EMPTY member-cell? if cells u EMPTY set-done 1.0 to changed then :] unk size i-times
+           else num filled unk size f+ = if
+              [: | >uk u | unk uk @i to u  cells u EMPTY cell-remove if 1.0 to changed then :] unk size i-times
+           then then
+        then
+     then
+  :] filledcells size i-times
+  changed ;
+
+\ --- record the solved board's 19 cell values (id order) ------------------
+: capture-sig ( cells -- )
+  | >cells |
+  [: | >i | cells i cell-val 48.0 f+ :] COUNT i-times
+  COUNT array codepoints>string to SOLUTION_SIG ;
+
+\ --- solved? : OPEN=0 SOLVED=1 IMPOSSIBLE=-1 ------------------------------
+: solved ( cells -- status )
+  | >cells left exact all-done sz num vmin vmax i |
+  TILES copy to left
+  1.0 to exact  1.0 to all-done
+  0.0 to i
+  begin i COUNT lt while
+     cells i @i size to sz
+     sz 0.0 = if -1.0 exit then
+     sz 1.0 = if
+        cells i cell-val to num
+        left num  left num @i 1.0 f-  !i drop
+        left num @i 0.0 lt if -1.0 exit then
+        num EMPTY = 0= if
+           cells i nb-vminvmax to vmax to vmin
+           num vmin lt num vmax gt or if -1.0 exit then
+           num vmin = 0= if 0.0 to exact then
+        then
+     else 0.0 to all-done then
+     i 1.0 f+ to i
+  repeat
+  all-done 0= exact 0= or if 0.0 exit then
+  cells capture-sig
+  1.0 ;
+
+\ --- find moves: FIRST_STRATEGY cell, DESCENDING order --------------------
+: first-cell ( cells -- id )       \ first not-yet-fixed cell, or -1
+  | >cells i |
+  0.0 to i
+  begin i COUNT lt while
+     cells i already-done? 0= if i exit then
+     i 1.0 f+ to i
+  repeat
+  -1.0 ;
+
+\ returns ( cell-id moves-array ); moves empty when no free cell
+: find-moves ( cells -- cid moves )
+  | >cells cid c arr moves |
+  cells first-cell to cid
+  cid 0.0 lt if cid [ ] exit then
+  cells cid @i to c
+  c dup size take to arr
+  arr [: EMPTY = 0= :] filter reverse to moves
+  c EMPTY member? if moves [ EMPTY ] concat to moves then
+  cid moves ;
+
+\ --- backtracking solver (the timed kernel) ------------------------------
+: solve-step ( cells first? -- status )
+  | >cells >first pos cid moves v new status ret i |
+  first if cells copy to pos  begin pos -1.0 constraint-pass while repeat
+  else cells to pos then
+  pos find-moves to moves to cid
+  moves size 0= if pos solved exit then
+  0.0 to i
+  begin i moves size lt while
+     moves i @i to v
+     pos copy to new
+     new cid v set-done
+     begin new cid constraint-pass while repeat
+     new solved to status
+     status 0.0 = 0= if status to ret
+     else new 0.0 solve-step to ret then
+     ret 1.0 = if 1.0 exit then
+     i 1.0 f+ to i
+  repeat
+  -1.0 ;
+
+: solve-once
+  | cells |
+  0.0 COUNT array-of to cells
+  [: | >i | cells i < 2.0 3.0 4.0 7.0 > !i drop :] COUNT i-times
+  cells 1.0 solve-step drop ;
+
+: hexiom-bench
+  | t0 |
+  init-data
+  now to t0
+  [: solve-once :] LOOPS times
+  now t0 - to t0
+  "signature: " . SOLUTION_SIG . cr
+  "elapsed: " . t0 . " s" . cr ;
+
+hexiom-bench
+bye

@@ -1,0 +1,239 @@
+\ raytrace — port of pyperformance bm_raytrace (a toy recursive ray tracer).
+\ Renders a scene of 8 objects (a big sphere, 6 small spheres, a checkerboard
+\ plane) under 2 point lights, with specular reflection to recursion depth 3.
+\
+\ Vectors and points are carried as three stack cells (x y z); the Point/Vector
+\ type distinction in the original only guards type errors and never changes a
+\ numeric result, so it is dropped. Scene objects are flat 18-element arrays
+\ (built once); the render loop only reads them, so the hot path allocates
+\ nothing. Every pixel is plotted, so the canvas is unnecessary: the checksum is
+\ the order-independent sum of the per-channel bytes, accumulated directly.
+\
+\ colourAt is inlined into ray-colour because the two are mutually recursive
+\ (reflection) and only direct self-recursion is available. ambientCoefficient
+\ is computed as 1 - specular - lambert, matching the reference bit-for-bit
+\ (1.0 - 0.2 - 0.6 is not exactly 0.2 in double precision).
+
+variable OBJECTS  variable LIGHTS
+variable NOBJ      8.0 to NOBJ
+variable NLIGHTS   2.0 to NLIGHTS
+variable WIDTH     100.0 to WIDTH
+variable HEIGHT    100.0 to HEIGHT
+variable EPSILON   0.00001 to EPSILON
+variable NEGEPS    -0.00001 to NEGEPS
+variable RDEPTH
+variable CHECKSUM
+
+variable EPX  variable EPY  variable EPZ        \ eye point
+variable EVX  variable EVY  variable EVZ        \ eye (view) direction, unit
+variable RX   variable RY   variable RZ         \ viewport right, unit
+variable UX   variable UY   variable UZ         \ viewport up, unit
+variable FOVR variable HALFW variable HALFH
+variable PIXW variable PIXH
+
+\ --- vector helpers (x y z carried as three cells) -----------------------
+: vnorm ( x y z -- x' y' z' )
+  | >x >y >z mag |
+  x x f* y y f* f+ z z f* f+ fsqrt to mag
+  1.0 mag f/ to mag
+  x mag f*  y mag f*  z mag f* ;
+
+: vcross ( ax ay az bx by bz -- cx cy cz )
+  |> ax ay az bx by bz |
+  ay bz f* az by f* f-
+  az bx f* ax bz f* f-
+  ax by f* ay bx f* f- ;
+
+: vreflect ( sx sy sz nx ny nz -- rx ry rz )    \ self - 2·(self·n)·n
+  | >sx >sy >sz >nx >ny >nz dotv |
+  sx nx f* sy ny f* f+ sz nz f* f+ to dotv
+  sx  nx dotv f* 2.0 f* f-
+  sy  ny dotv f* 2.0 f* f-
+  sz  nz dotv f* 2.0 f* f- ;
+
+\ --- clamp one colour channel to a 0..255 byte ---------------------------
+: clamp-byte ( v -- f )
+  |> v |
+  v 255.0 f* ftruncate to v
+  v 0.0 lt if 0.0 exit then
+  v 255.0 gt if 255.0 exit then
+  v ;
+
+\ --- scene construction --------------------------------------------------
+\ object layout (18 floats):
+\   0 kind (0=sphere 1=halfspace)
+\   1 2 3 centre/point   4 radius | 4 5 6 normal (unit)
+\   7 specular  8 lambert  9 ambient
+\   10 11 12 baseColour   13 isChecker   14 15 16 otherColour   17 checkSize
+: sphere-obj ( cx cy cz rad spec lamb br bg bb -- arr )
+  | >cx >cy >cz >rad >spec >lamb >br >bg >bb amb |
+  1.0 spec f- lamb f- to amb
+  [ 0.0 cx cy cz rad 0.0 0.0 spec lamb amb br bg bb 0.0 0.0 0.0 0.0 1.0 ] ;
+
+: checker-plane ( -- arr )
+  | amb |
+  1.0 0.2 f- 0.6 f- to amb
+  [ 1.0 0.0 0.0 0.0  0.0 1.0 0.0  0.2 0.6 amb  1.0 1.0 1.0  1.0  0.0 0.0 0.0  1.0 ] ;
+
+: init-objects
+  1.0 3.0 -10.0 2.0  0.2 0.6  1.0 1.0 0.0 sphere-obj
+  [: |> y |
+     -3.0 y 0.4 f* f-  2.3  -5.0  0.4  0.2 0.6
+     y 6.0 f/  1.0 y 6.0 f/ f-  0.5  sphere-obj
+  :] 6 i-times
+  checker-plane
+  8 array to OBJECTS ;
+
+: init-lights
+  [ 30.0 30.0 10.0 ]  [ -10.0 100.0 30.0 ]  2 array to LIGHTS ;
+
+\ --- intersection: returns ( t hit ); t valid only when hit is 1 ----------
+: obj-intersect ( obj px py pz dx dy dz -- t hit )
+  | >obj >px >py >pz >dx >dy >dz cx cy cz rad nx ny nz v disc |
+  obj 0 @i 0.0 = if
+     obj 1 @i px f- to cx
+     obj 2 @i py f- to cy
+     obj 3 @i pz f- to cz
+     obj 4 @i to rad
+     cx dx f* cy dy f* f+ cz dz f* f+ to v
+     rad rad f*  cx cx f* cy cy f* f+ cz cz f* f+  v v f* f-  f- to disc
+     disc 0.0 lt if 0.0 0.0
+     else disc fsqrt  v swap f-  1.0 then
+  else
+     obj 4 @i to nx  obj 5 @i to ny  obj 6 @i to nz
+     dx nx f* dy ny f* f+ dz nz f* f+ to v
+     v 0= if 0.0 0.0
+     else 1.0 v fnegate f/  1.0 then
+  then ;
+
+\ --- is a light visible from a surface point along a unit shadow ray? -----
+: light-visible? ( hx hy hz sdx sdy sdz -- flag )
+  | >hx >hy >hz >sdx >sdy >sdz vis |
+  1.0 to vis
+  [: |> oi |
+     OBJECTS oi @i  hx hy hz sdx sdy sdz  obj-intersect
+     if EPSILON gt if 0.0 to vis then
+     else drop then
+  :] NOBJ i-times
+  vis ;
+
+\ --- trace one ray to a colour (specular reflection recurses) -------------
+: ray-colour ( px py pz dx dy dz -- r g b )
+  | >px >py >pz >dx >dy >dz found besti bestt obj hx hy hz nrmx nrmy nrmz br bg bb cr cg cb spec lamb amb lam lf rr rg rb rfx rfy rfz lightarr sdx sdy sdz |
+  RDEPTH 3.0 gt if 0.0 0.0 0.0 exit then
+  RDEPTH 1+ to RDEPTH
+  0.0 to found  0.0 to besti  0.0 to bestt
+  [: |> oi |
+     OBJECTS oi @i  px py pz dx dy dz  obj-intersect
+     if
+        dup NEGEPS gt if
+           found 0= if to bestt oi to besti 1.0 to found
+           else dup bestt lt if to bestt oi to besti else drop then then
+        else drop then
+     else drop then
+  :] NOBJ i-times
+  found 0= if
+     0.0 to cr 0.0 to cg 0.0 to cb
+  else
+     OBJECTS besti @i to obj
+     px dx bestt f* f+ to hx
+     py dy bestt f* f+ to hy
+     pz dz bestt f* f+ to hz
+     obj 0 @i 0.0 = if
+        hx obj 1 @i f-  hy obj 2 @i f-  hz obj 3 @i f-  vnorm to nrmz to nrmy to nrmx
+     else
+        obj 4 @i to nrmx  obj 5 @i to nrmy  obj 6 @i to nrmz
+     then
+     obj 13 @i if
+        hx fabs 0.5 f+ ftruncate
+        hy fabs 0.5 f+ ftruncate f+
+        hz fabs 0.5 f+ ftruncate f+
+        2.0 mod 0.0 = if
+           obj 10 @i to br obj 11 @i to bg obj 12 @i to bb
+        else
+           obj 14 @i to br obj 15 @i to bg obj 16 @i to bb
+        then
+     else
+        obj 10 @i to br obj 11 @i to bg obj 12 @i to bb
+     then
+     0.0 to cr 0.0 to cg 0.0 to cb
+     obj 7 @i to spec
+     spec 0.0 gt if
+        dx dy dz nrmx nrmy nrmz vreflect vnorm to rfz to rfy to rfx
+        hx hy hz rfx rfy rfz ray-colour to rb to rg to rr
+        spec rr f* to cr
+        spec rg f* to cg
+        spec rb f* to cb
+     then
+     obj 8 @i to lamb
+     lamb 0.0 gt if
+        0.0 to lam
+        [: |> li |
+           LIGHTS li @i to lightarr
+           lightarr 0 @i hx f- to sdx
+           lightarr 1 @i hy f- to sdy
+           lightarr 2 @i hz f- to sdz
+           sdx sdy sdz vnorm to sdz to sdy to sdx
+           hx hy hz sdx sdy sdz light-visible? if
+              sdx nrmx f* sdy nrmy f* f+ sdz nrmz f* f+
+              dup 0.0 gt if lam f+ to lam else drop then
+           then
+        :] NLIGHTS i-times
+        lam 1.0 gt if 1.0 to lam then
+        lamb lam f* to lf
+        cr lf br f* f+ to cr
+        cg lf bg f* f+ to cg
+        cb lf bb f* f+ to cb
+     then
+     obj 9 @i to amb
+     amb 0.0 gt if
+        cr amb br f* f+ to cr
+        cg amb bg f* f+ to cg
+        cb amb bb f* f+ to cb
+     then
+  then
+  RDEPTH 1- to RDEPTH
+  cr cg cb ;
+
+\ --- camera setup (matches Scene.render's eye/viewport math) --------------
+: setup-eye
+  0.0 to EPX 1.8 to EPY 10.0 to EPZ
+  0.0 0.0 f-  3.0 1.8 f-  0.0 10.0 f-  vnorm to EVZ to EVY to EVX
+  EVX EVY EVZ 0.0 1.0 0.0 vcross vnorm to RZ to RY to RX
+  RX RY RZ EVX EVY EVZ vcross vnorm to UZ to UY to UX
+  pi 45.0 2.0 f/ f* 180.0 f/ to FOVR
+  FOVR ftan to HALFW
+  0.75 HALFW f* to HALFH
+  HALFW 2.0 f* WIDTH 1.0 f- f/ to PIXW
+  HALFH 2.0 f* HEIGHT 1.0 f- f/ to PIXH ;
+
+\ --- render one frame, summing pixel bytes into CHECKSUM ------------------
+: render-frame
+  | sx sy rdx rdy rdz pr pg pb |
+  0.0 to CHECKSUM
+  [: |> y |
+     [: |> x |
+        x PIXW f* HALFW f- to sx
+        y PIXH f* HALFH f- to sy
+        RX sx f* EVX f+ UX sy f* f+ to rdx
+        RY sx f* EVY f+ UY sy f* f+ to rdy
+        RZ sx f* EVZ f+ UZ sy f* f+ to rdz
+        rdx rdy rdz vnorm to rdz to rdy to rdx
+        EPX EPY EPZ rdx rdy rdz ray-colour to pb to pg to pr
+        pr clamp-byte  pg clamp-byte f+  pb clamp-byte f+  CHECKSUM f+ to CHECKSUM
+     :] WIDTH i-times
+  :] HEIGHT i-times ;
+
+: raytrace-run ( loops -- )
+  | >loops t0 |
+  init-objects
+  init-lights
+  setup-eye
+  now to t0
+  [: render-frame :] loops times
+  now t0 - to t0
+  "checksum: " . CHECKSUM . cr
+  "elapsed: " . t0 . " s" . cr ;
+
+LOOPS raytrace-run
+bye

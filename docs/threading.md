@@ -1,177 +1,114 @@
-# Threaded Code in logicforth
+# Threaded code in logicforth
 
-This is a primer on how logicforth's inner dispatch loop is organized, and
-why it's organized that way. By the end you should understand:
+This is a primer on how logicforth's inner dispatch loop is organized, and why.
+By the end you should understand:
 
-- What "threaded code" means, why it has nothing to do with concurrency,
-  and where it sits between an AST walker and a JIT compiler
-- How logicforth lays out a compiled word and dispatches through it
-- How *direct threading* and *tail-call dispatch* combine to make each
-  virtual operation cost about one memory read plus one jump
-- What that organization implies for the rest of the interpreter: the
-  compiler that emits code, the GC's walk over compiled bodies, the
-  trampoline that calls words from C, and the image save/load format
+- What "threaded code" means — and that it has nothing to do with concurrency —
+  and where it sits between an AST walker and a JIT
+- How a compiled word is laid out and dispatched through
+- How *direct threading* and *tail-call dispatch* combine to make each virtual
+  operation cost about one memory read plus one jump
+- What that organization implies for the compiler, the GC's walk over compiled
+  bodies, the trampoline that calls words from C, and the image format
 
-The code lives in `src/c/core.c` (`run_inner`, `execute_cfa`, `docol`,
-`dovar`, `dosym`, `op_cell_count`, `mark_body`) and `src/c/logicforth.h`
-(the `DISPATCH` macro, the `WORD_*` accessors).
+It's a conceptual tour. The dispatch machinery lives in `src/c/core.c`; this
+document explains the ideas, not their field names.
 
 ---
 
 ## Part 1: The inner loop
 
-Take a simple Forth-style program: `1 2 3 4 + + +`. It pushes four
-numbers, applies `+` three times, and leaves their sum on the stack.
+Take a small Forth-style program: `1 2 3 4 + + +`. It pushes four numbers and
+adds three times. Inside the interpreter that's seven virtual operations — push,
+push, push, push, add, add, add — and to run the program the interpreter executes
+them in order. For each one it has to get from "the next operation in the
+compiled stream" to "the first machine instruction of the C code that implements
+it."
 
-Inside the interpreter, this program is a sequence of seven virtual
-operations: push 1, push 2, push 3, push 4, add, add, add. To run the
-program, the interpreter executes them in order. For each one, it has to
-get from "the next operation in the compiled stream" to "the first
-machine instruction of the C code that implements it."
-
-That transition is the whole subject of this document. The handler's own
-work — popping operands, computing, pushing a result — is unavoidable.
-What's avoidable, or at least minimizable, is the per-operation overhead
-of *reaching* the handler. In a program of any size that cost is paid
-millions or billions of times, so a load saved per operation, or a
-branch the CPU can predict instead of mispredict, shows up directly in
-wall-clock time.
+That transition is this document's whole subject. The handler's own work —
+popping operands, computing, pushing a result — is unavoidable. What's avoidable
+is the per-operation overhead of *reaching* the handler, and in a program of any
+size that cost is paid millions or billions of times, so a load saved per
+operation, or a branch the CPU predicts instead of mispredicts, shows up directly
+in wall-clock time.
 
 ---
 
 ## Part 2: What "threaded" means here
 
-The word "thread" in *threaded code* has nothing to do with concurrency. It
-comes from textile imagery: a thread connecting beads on a string. A
-"threaded program" is one whose executable form is a sequence of small
-cells — each one a bead — that the interpreter chases like sliding along a
-string.
+The "thread" in *threaded code* has nothing to do with concurrency. It's textile
+imagery — a thread connecting beads on a string — for a program whose executable
+form is a sequence of small cells the interpreter chases one after another. The
+usage comes from early Forth, where memory was tiny: a program encoded as a list
+of "addresses of routines" was both compact (one cell per op) and fast to
+dispatch (no parsing, no integer-keyed lookup).
 
-The usage predates the modern concurrency sense by decades. It came out of
-the early Forth implementations, where memory was tiny and every byte
-mattered. A program encoded as a list of "addresses of routines" was both
-compact (each op is one cell) and fast to dispatch (no parsing, no
-integer-keyed lookup).
+The spectrum of ways to run a program:
 
-Here is the spectrum of how a program can be interpreted:
+- **AST walker.** Walk a tree of parsed nodes, dispatching on each node's type.
+  Simple, but every step chases pointers between scattered heap nodes and every
+  type test is a branch.
+- **Bytecode interpreter.** Compile to a flat array of integer opcodes; a loop
+  reads the next opcode and switches on it. Cache-friendly, but every dispatch
+  pays an opcode→handler lookup.
+- **Threaded code.** Each op in the compiled stream is *itself* the dispatch
+  target — the opcode→handler lookup is gone. This is what logicforth uses.
+- **JIT.** Emit machine code and let the CPU run it directly. Fastest, but
+  requires native codegen, executable memory, and patching.
 
-- **AST walker.** Parse the source into a tree of nodes; walk the tree,
-  dispatching on each node's type. Simple to implement, very slow: every
-  step chases pointers between scattered heap nodes, and every node-type
-  test is a switch or a virtual call.
-
-- **Bytecode interpreter.** Compile to a flat array of small integer
-  opcodes. The dispatch loop reads the next opcode and switches on it.
-  Cache-friendly, but every dispatch pays for an integer-opcode → handler
-  lookup, usually a jump table.
-
-- **Threaded code.** Instead of integers that index a handler table, each
-  op in the compiled stream is *itself* the dispatch target. The
-  integer-to-handler lookup a bytecode interpreter pays per op is gone.
-  This is what logicforth uses.
-
-- **JIT compilation.** Generate machine code on the fly; the CPU executes
-  it directly, with no interpretation loop. Fastest, but requires emitting
-  native instructions, managing executable memory, and patching code as
-  words are defined.
-
-Threaded code sits between bytecode and JIT: it gets some of JIT's speed
-(no integer dispatch) without JIT's complexity (no native codegen). It's
-also the natural fit for a Forth-family language — the dictionary itself
-becomes the executable, with no separate opcode space or handler table on
-the side.
-
-Within threaded code, two flavors matter: **indirect** and **direct**. They
-differ in how each op in the compiled stream points at its handler.
+Threaded code sits between bytecode and JIT: some of JIT's speed (no integer
+dispatch) without its complexity (no codegen). It's also the natural fit for a
+Forth-family language — the dictionary itself becomes the executable, with no
+separate opcode space on the side. Within threaded code, two flavors differ in
+how each op points at its handler: *indirect* and *direct*.
 
 ---
 
 ## Part 3: A useful anchor — subroutine threading
 
-Before the flavor logicforth uses, consider the extreme case: what if we
-didn't interpret at all, and the compiled program *was* native code?
-
-That's *subroutine threading* (STC): each op becomes a literal CPU `CALL`
-instruction pointing at its handler, and the compiled body of a word is a
-sequence of those CALLs emitted into executable memory. The CPU's own
-program counter walks from CALL to CALL; there is no dispatch loop. Each
-handler ends in `RET`, returning to the instruction after the CALL.
-
-"Dispatch" here is what the CPU does for free between instructions, so the
-per-op cost is just a CALL+RET round-trip. The reasons not to do it:
-
-1. **You have to generate native code** — target calling conventions, the
-   right bytes per CALL, executable memory pages. Per-architecture,
-   per-OS, unportable.
-2. **Code isn't relocatable.** CALL targets are absolute or PC-relative
-   addresses; move a handler and every compiled body referencing it
-   breaks. Saving an image becomes hard.
-3. **You can't easily inspect or hook dispatch** — profiling, tracing,
-   single-stepping — without injecting trampolines.
-
-Interpreted threading keeps dispatch in software, in one place we control,
-for a few nanoseconds per op. logicforth's tail-call dispatch (Part 8)
-recovers much of STC's speed while keeping the op stream as inspectable,
-relocatable data.
+Consider the extreme: don't interpret at all, and let the compiled program *be*
+native code. That's *subroutine threading* — each op becomes a literal CPU `CALL`
+to its handler, and the CPU's own program counter walks from CALL to CALL with no
+dispatch loop. It's fast, but it means generating native code (per-architecture,
+per-OS, unportable), it isn't relocatable (CALL targets are addresses, so a saved
+image breaks when code moves), and you can't hook dispatch for profiling or
+tracing without injecting trampolines. Interpreted threading keeps dispatch in
+software, in one place, for a few nanoseconds per op; logicforth's tail-call
+dispatch (Part 7) recovers much of subroutine threading's speed while keeping the
+op stream as inspectable, relocatable data.
 
 ---
 
 ## Part 4: Indirect versus direct threading
 
-In *indirect-threaded code* (ITC), a compiled body holds *dispatch tokens*.
-A token doesn't name a handler directly — it names a *code field*, a memory
-cell that holds the handler. Dispatch is two reads:
+In *indirect*-threaded code a compiled body holds dispatch *tokens*. A token
+doesn't name a handler — it names a code field, a cell that holds the handler — so
+dispatch is two reads: token → code field → handler → call. The extra read buys
+two things: every word kind looks identical at the call site (the handler at the
+code field disambiguates a colon definition from a variable from a symbol), and
+tokens are small stable indices that survive being written to disk.
 
-```
-read body cell        → token (an index)
-read code-field[token] → handler (a function pointer)
-call handler
-```
+In *direct*-threaded code a body holds the handler addresses themselves — one read
+instead of two. logicforth uses direct threading, and pays for the saved read in
+two places, each handled elsewhere in this document:
 
-The "indirect" part is the second read. It buys two things: every word kind
-looks identical at the call site (the handler at the code field
-disambiguates colon defs from variables from symbols), and tokens can be
-small stable indices that survive being written to disk and reloaded.
-
-In *direct-threaded code* (DTC), a body holds the *handler addresses
-themselves*. The token-to-code-field indirection is gone:
-
-```
-read body cell → handler (a function pointer)
-call handler
-```
-
-One read instead of two. logicforth uses direct threading. The cost it
-pays for the saved read is twofold, and both costs are paid elsewhere in
-this document:
-
-- Body cells now hold raw function pointers, which are not stable across
-  process launches (address-space layout randomization moves them). The
-  image format translates them on save and load (Part 11).
-- A handler like `dovar` can no longer recover "which variable?" from the
-  token, because there's no token — so call sites that need to name a
-  target carry it as an extra operand cell (Part 6).
+- Body cells now hold raw function pointers, which aren't stable across launches
+  (address-space randomization moves them). The image format translates them on
+  save and load (Part 10).
+- A handler can no longer recover *which* word it's acting on from a token,
+  because there is no token — so a call site that needs to name a target carries
+  it as an extra operand cell (Part 6).
 
 ---
 
 ## Part 5: A word's anatomy
 
-The dictionary is one large `cell[]` array, where `cell` is `int64_t`. It's a
-fixed-size inline array on a single file-scope global `Vocabulary vocab`, not a
-heap pointer — never reallocated, just bump-allocated into and bounds-checked:
+The dictionary is one large array of cells (64-bit each). It's a fixed-size inline
+buffer — bump-allocated into and bounds-checked, never reallocated — so a cell's
+position is its permanent identity.
 
-```c
-typedef struct Vocabulary {
-    cell dict[VOCABULARY_INIT_SIZE];   // the dictionary: one giant int64 array
-    int here;          // bump-allocator high-water mark: next free cell
-    int latest_cfa;    // head of the dictionary chain
-    /* ... pools for names, source, symbols ... */
-} Vocabulary;
-
-extern Vocabulary vocab;
-```
-
-Each word occupies a run of cells:
+Each word occupies a run of cells: a four-cell header, then the *code field* (the
+CFA), then the body.
 
 ```
 position:   N-4  N-3  N-2  N-1   N+0     N+1    N+2   ...
@@ -182,402 +119,175 @@ contents: │LINK│FLAGS│NAME│SRC │handler│ body │ body │ ...
                                     CFA = N
 ```
 
-The 4-cell header (LINK, FLAGS, NAME and SOURCE pool offsets) sits at
-negative offsets from the *code field address* (CFA). The CFA cell holds
-the word's *handler* — a C function pointer. The body follows. The
-`WORD_*` macros read the header relative to the CFA:
+The header sits at negative offsets from the CFA: a LINK to the previous word
+(so the whole dictionary is a list walkable from its head), FLAGS (immediate /
+inline / internal bits), and offsets into the name and source pools. The CFA cell
+holds the word's *handler* — a C function pointer — and the body follows. The CFA
+is the word's identity: it's what a lookup returns, what tick (`'`) captures into
+an execution token, and what compiled bodies reference.
 
-```c
-#define WORD_LINK(cfa)   (vocab.dict[(cfa) - 4])
-#define WORD_FLAGS(cfa)  (vocab.dict[(cfa) - 3])
-#define WORD_NAME(cfa)   (vocab.dict[(cfa) - 2])
-#define WORD_SOURCE(cfa) (vocab.dict[(cfa) - 1])
-```
+The CFA holds one of four handler kinds:
 
-LINK chains each word to the previous one, so the whole dictionary is a
-singly-linked list walkable from `latest_cfa`. The CFA is the word's
-identity: it's what `find` returns, what `'` (tick) captures into an
-execution token, and what compiled bodies reference.
+- **A primitive** — a C function like the one behind `+` or `dup`. The body is
+  empty; the handler does the work, pulling operands from the data stack.
+- **The colon handler** — for `: … ;` words. The body is a stream of compiled
+  ops, and the handler begins walking it.
+- **The variable handler** — the body is one cell, the variable's value as a
+  packed `Val`.
+- **The symbol handler** — the body is one cell, the symbol-pool offset of the
+  interned name.
 
-### Four handler kinds
-
-The CFA cell holds one of four handlers:
-
-- **A primitive handler** — a C function like `p_add` or `p_dup`. The body
-  is empty; the handler does the work itself, pulling arguments from the
-  data stack.
-- **`docol`** — the handler for colon-defined words. The body is a stream of
-  compiled ops; `docol` begins walking it.
-- **`dovar`** — the handler for variables. The body is one cell: the
-  variable's value as a packed `Val`.
-- **`dosym`** — the handler for symbol words. The body is one cell: the
-  symbol-pool offset of the interned name.
-
-`define_primitive` builds the simplest case — a word whose entire
-definition is a handler in the code field:
-
-```c
-int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int flags) {
-    int cfa = create_header(interp, name, flags);
-    emit(interp, (cell)handler);     // the CFA cell holds the handler directly
-    /* ... register the handler for image translation (Part 11) ... */
-    return cfa;
-}
-```
-
-`flags` is a bitmask: bit 1 immediate, bit 2 inline, bit 4 internal (the
-`WORD_IS_IMMEDIATE` / `WORD_IS_INLINE` / `WORD_IS_INTERNAL` macros test
-them). The cast `(cell)handler` stores a C function pointer in an `int64_t`
-cell; on the 64-bit targets logicforth supports, function pointers fit and
-survive the round-trip.
+Defining a primitive is the simplest case: create the header and store the
+handler in the code field, with nothing after it.
 
 ---
 
 ## Part 6: Body layout
 
-A `Val` is a single 64-bit cell — it's NaN-boxed, so tag and payload both
-fit in one `cell` (see nan-boxing.md). That keeps body layout simple: every
-cell is either a *dispatch cell* (a handler pointer) or an *operand cell*
-(a plain value the preceding handler consumes).
+A `Val` is one cell (it's NaN-boxed; see `nan-boxing.md`), which keeps the body
+simple: every cell is either a *dispatch cell* (a handler pointer) or an *operand
+cell* (a plain value the preceding handler consumes).
 
-### Dispatch cells
-
-A reference to another word compiles to its handler pointer. For a
-primitive, that one cell is the whole op — `+` compiles to one cell,
-`&p_add`. The dispatcher reads it and calls it; the handler takes its
-arguments from the data stack.
-
-A reference to a colon def, a variable, or a symbol needs one more thing:
-the handler (`docol`, `dovar`, `dosym`) has to know *which* target it's
-acting on. So the call site carries the target's CFA as an operand cell
-right after the handler pointer. `emit_call` is the helper that emits the
-right shape:
-
-```c
-void emit_call(Interpreter *interp, int target_cfa) {
-    cfa_handler handler = (cfa_handler)vocab.dict[target_cfa];
-    emit(interp, (cell)handler);                       // handler pointer
-    if (handler == docol || handler == dovar || handler == dosym)
-        emit(interp, (cell)target_cfa);                // target CFA as operand
-}
-```
-
-So a colon call is `[&docol][target_cfa]`, a variable read is
-`[&dovar][var_cfa]`, a symbol push is `[&dosym][sym_cfa]`, and a primitive
-call is just `[&p_add]`.
-
-### Operand cells
+A reference to a primitive compiles to one dispatch cell — the dispatcher reads it
+and calls it. A reference to a colon definition, a variable, or a symbol needs one
+more thing: the handler has to know *which* target it's acting on, and with no
+token to carry that, the call site stores the target's CFA in an operand cell
+right after the handler. So a colon call, a variable read, and a symbol push are
+each a handler cell followed by a target-CFA cell, while a primitive call is a
+lone handler cell.
 
 Several primitives carry inline operands of their own. The prototype is the
-literal:
+literal: its compiled form is the literal handler followed by the packed `Val`,
+and the handler reads that operand from the instruction stream and advances past
+it. The same shape — read operands from the stream, advancing — is shared by every
+operand-bearing op: string literals (a string handle), the branches (a jump
+offset), the word-local-variable ops (depth and slot numbers), and the fused
+superwords.
 
-```c
-void emit_val_literal(Interpreter *interp, Val value) {
-    emit_call(interp, vocab.literal_cfa);              // emits the (literal) handler pointer
-    emit(interp, (cell)value.bits);                    // the packed Val
-}
-
-void p_literal(Interpreter *interp) {
-    Val value;
-    value.bits = (uint64_t)vocab.dict[interp->ip++];   // read operand, advance
-    push(interp, value);
-    DISPATCH(interp);
-}
-```
-
-The pattern — read operands from `dict[ip++]`, advancing past them — is
-shared by every operand-bearing op: string literals (`(dostr)`, a string
-handle), the branches (`(branch)` / `(0branch)` and an offset), the
-word-local variable ops (`(enter-locals)`, `(local@)`, `(local!)`, and
-their depth/slot operands), `(to-var)`, and the fused superword and
-local-accumulator ops.
-
-### Knowing each op's width: `op_cell_count`
-
-Anything that walks a body without executing it — the GC's `mark_body`, the
-inliner, the image translator — has to know how many cells each op occupies,
-so it advances to the next dispatch cell instead of misreading an operand as
-a handler. `op_cell_count` is that single source of truth: given the cell at
-a cursor, it returns the op's total width (dispatch cell plus operands). It
-keys off the handler value, recognizing literals, strings, branches, the
-locals ops (including the variable-width `(enter-locals-mixed)`, whose width
-depends on its operand), and the fused superwords.
-
-`docol`, `dovar`, and `dosym` get one cell from `op_cell_count`, and a
-trailing target-CFA cell follows at a call site. A body walker that only
-needs to skip cells (like `mark_body`) treats that trailing CFA as its own
-one-cell unit and moves on, which lands it correctly on the next op either
-way. A walker that has to classify every cell exactly (the image
-translator) treats the CFA as the operand it is — see Part 11.
+That raises a requirement: anything that walks a body *without executing it* — the
+GC's body scan, the inliner, the image translator — must know how many cells each
+op occupies, so it lands on the next dispatch cell instead of misreading an
+operand as a handler. A single function is the source of truth for that
+per-op width; it keys off the handler value and accounts for every operand-bearing
+op (including the one variable-width op, whose width depends on its operand). It is
+the first thing to update when a new operand-carrying op is added — get it wrong
+and a body walk either runs off the end or reads an operand as code.
 
 ---
 
 ## Part 7: The dispatch chain
 
-Because body cells hold handler pointers directly, "dispatch" is: read the
-cell, call it. logicforth does that with no central loop in the hot path —
-each handler ends by tail-calling the next, through the `DISPATCH` macro:
+Because body cells hold handler pointers directly, "dispatch" is: read the cell,
+call it. logicforth does that with no central loop in the hot path — each handler
+ends by **tail-calling the next**. A small macro (`DISPATCH`) is the shared tail:
+it reads the handler at the current instruction pointer, advances the pointer, and
+jumps to that handler with a forced tail call (`musttail`), so the next handler
+reuses the current stack frame rather than nesting. A run of compiled ops
+therefore executes as a chain of jumps through handler bodies at constant stack
+depth, however many ops run.
 
-```c
-#define DISPATCH(interp) do { \
-    if ((interp)->unwinding || (interp)->error_flag) \
-        return; \
-    __attribute__((musttail)) \
-    return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \
-} while (0)
-```
+The dictionary is a single process-global, so the dispatch read is one indexed
+load off a known base — no `interpreter → dictionary` pointer chase. That matters
+because the load happens on every dispatch.
 
-`vocab` is a single file-scope global, so the dispatch read is `vocab.dict[ip]`:
-one address computation off a known global base, then the index. There's no
-`interp → vocab → dict` pointer chase, because the dictionary isn't reached
-through the `Interpreter` at all — it's its own global. That matters because
-this load happens on *every* dispatch. The hot reads below (`docol`, `dovar`,
-`dosym`, `run_inner`, `execute_cfa`, the operand fetches) all index `vocab.dict`
-directly.
+The chain has to break cleanly when something interrupts ordinary flow. Before
+jumping, the dispatch tail checks a few interpreter flags and *returns* instead of
+chaining if any is set:
 
-`__attribute__((musttail))` forces the compiler to emit a jump rather than a
-call+return: the next handler reuses the current stack frame. A run of
-compiled ops executes as a chain of jumps through handler bodies at constant
-stack depth, no matter how many ops run.
+- **an error** — a fault has set the error flag;
+- **unwinding** — `shift`/`shift-with` or a backtrack is unwinding the return
+  stack (see `continuations.md`);
+- **a pending collection** — a byte-pressure GC has been requested and deferred to
+  a safepoint (see `gc.md`).
 
-Every non-halting handler ends with `DISPATCH(interp)`. The check at the top
-is how the chain breaks cleanly: `fail` sets `error_flag` and `shift-with`
-sets `unwinding`, and the next `DISPATCH` sees the flag and returns instead
-of chaining.
+Returning hands control back to `run_inner`, the loop that started the chain.
+`run_inner` is the entry and cleanup point: in steady state its body runs *once* —
+it reads the first handler and calls it, and the tail-call chain takes over until
+something returns. When the chain breaks, `run_inner` is where the consequence is
+handled: it services a pending collection at this between-words safepoint (the
+deferral is what keeps a collection from freeing operands a primitive has popped
+into C locals but not yet rooted), advances an in-progress unwind toward its
+target, or exits on a halt or error.
 
-### `run_inner` — the entry and cleanup point
-
-`run_inner` is where the chain starts and where control returns when it
-breaks:
-
-```c
-void run_inner(Interpreter *interp) {
-    int initial_rsp = interp->rsp;
-    while (interp->running && !interp->error_flag) {
-        if (interp->unwinding) {
-            /* pop the return stack looking for the target mark; resume
-               there, or stop if we've unwound past where we started */
-            ...
-        }
-        cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
-        handler(interp);
-    }
-}
-```
-
-In steady state the loop body runs *once*: it reads the first handler and
-calls it, and the tail-call chain takes over until something returns —
-a halt (`running = 0`), an error, or an unwind. Then control falls back to
-this loop, which either resumes (after handling an unwind) or exits.
-
-### The handlers that thread a target through
-
-`docol`, `dovar`, and `dosym` read their target CFA from the operand cell,
-advance past it, and do their work:
-
-```c
-void docol(Interpreter *interp) {
-    int target_cfa = (int)vocab.dict[interp->ip++];    // operand
-    rpush(interp, make_addr(interp->ip));              // return address
-    interp->ip = target_cfa + 1;                       // jump to body
-    DISPATCH(interp);
-}
-
-void dovar(Interpreter *interp) {
-    int var_cfa = (int)vocab.dict[interp->ip++];
-    push_variable(interp, var_cfa);                    // pushes vocab.dict[var_cfa + 1] as a Val
-    DISPATCH(interp);
-}
-
-void dosym(Interpreter *interp) {
-    int sym_cfa = (int)vocab.dict[interp->ip++];
-    push_symbol(interp, sym_cfa);                      // pushes the symbol at vocab.dict[sym_cfa + 1]
-    DISPATCH(interp);
-}
-```
-
-`docol` saves the post-operand `ip` as the return address (where `(exit)`
-will pop back to) and jumps to the target's body. The body's final `(exit)`
-pops that address, and the chain continues in the caller.
+The colon, variable, and symbol handlers each read their target CFA from the
+operand cell and act: the colon handler saves a return address and jumps to the
+target's body (its closing exit pops back); the variable and symbol handlers push
+the stored value. Each then dispatches on.
 
 ---
 
 ## Part 8: Why tail-call dispatch is fast
 
-Two effects, beyond direct threading's one-read-per-op:
+Beyond direct threading's one-read-per-op, two effects:
 
-- **Per-op branch prediction.** Each `DISPATCH` site is a distinct
-  indirect-jump instruction at a distinct address. The CPU's
-  indirect-branch predictor builds a separate profile per site, so the jump
-  out of a local-fetch op predicts its own typical successor, independent of
-  the jump out of an arithmetic op. A single central dispatch site (one jump
-  with dozens of possible targets) predicts far worse.
-- **No prologue/epilogue between ops.** With `musttail` the chain is a
-  sequence of unconditional jumps through handler bodies — no register
-  save/restore per op, and hot interpreter state can stay in registers
-  across handlers.
+- **Per-op branch prediction.** Each dispatch site is a distinct indirect jump at
+  a distinct address, so the CPU's indirect-branch predictor keeps a separate
+  profile per site: the jump out of a local-fetch op predicts its own typical
+  successor, independent of the jump out of an arithmetic op. A single central
+  dispatch site — one jump with dozens of targets — predicts far worse.
+- **No prologue/epilogue between ops.** With forced tail calls the chain is a
+  sequence of unconditional jumps through handler bodies — no per-op register
+  save/restore, and hot interpreter state stays in registers across handlers.
 
-The cost is a per-op branch on the unwinding/error flags (a predicted,
-almost-always-not-taken test) and a compiler requirement: `musttail` requires a
-compiler that supports it (clang or gcc).
-
-A computed-goto interpreter (`goto *dict[ip++]` at the end of each handler)
-gets the same per-site prediction benefit, but requires every handler to
-live as a label inside one giant function. Tail-call dispatch keeps each
-handler as its own C function — spread across `core.c`, `words.c`,
-`collections.c`, `matrix.c`, `functional.c` — while still ending each in its
-own indirect jump.
+The cost is a per-op test of the break flags (predicted, almost always not taken)
+and a compiler that supports guaranteed tail calls. A computed-goto interpreter
+gets the same per-site prediction, but requires every handler to be a label inside
+one giant function; tail-call dispatch keeps each handler as its own C function,
+spread across several source files, while still ending in its own indirect jump.
 
 ---
 
 ## Part 9: Calling a word from C — the trampoline
 
-`run_inner` drives the in-loop chain. When C code needs to invoke a word
-directly — to run a quotation, say — it calls `execute_cfa`. Variables and
-symbols are handled inline, since they only push a value:
+`run_inner` drives the in-loop chain. When C code needs to invoke a word directly
+— to run a quotation — it goes through a small trampoline. Variables and symbols
+are handled inline (they only push a value), but a colon-defined word can't just
+be called: its handler sets the instruction pointer and returns, and outside
+`run_inner` nothing would dispatch the body. A primitive can't be called bare
+either, because its closing dispatch would tail-jump to whatever cell the pointer
+happens to land on. Both need a defined "next cell" that stops the chain.
 
-```c
-void execute_cfa(Interpreter *interp, int cfa) {
-    cfa_handler handler = (cfa_handler)vocab.dict[cfa];
-    if (handler == dovar) { push_variable(interp, cfa); return; }
-    if (handler == dosym) { push_symbol(interp, cfa);   return; }
-    /* docol and primitives go through the trampoline below */
-}
-```
-
-A `docol`-handled word can't just be called directly: `docol` sets `ip` and
-returns, but outside `run_inner` nothing would dispatch the body. And a
-primitive can't be called bare either, because its closing `DISPATCH` would
-tail-jump to whatever cell `ip` happens to point at. Both need a defined
-"next cell" that stops the chain.
-
-The mechanism is a tiny *trampoline*: a run of cells reserved at the bottom of
-the dictionary, held back from word storage by `DICT_RESERVED`. Each
-`Interpreter` owns its own three-cell trio, named by `interp->trampoline_base`
-— the main interpreter at base 0, and each worker interpreter at a disjoint
-base (`3 * worker_index`), so interpreters running concurrently never write
-each other's trampoline. `DICT_RESERVED` is `3 * (MAX_WORKER_THREADS + 1)`,
-enough for the main interpreter plus every worker. `execute_cfa` writes the
-call into its own trio, points `ip` at it, runs `run_inner` once, and restores
-the saved state:
-
-```c
-cell stop_handler = vocab.dict[vocab.stop_cfa];
-if (handler == docol) {
-    vocab.dict[interp->trampoline_base]     = (cell)docol;       // dispatch docol
-    vocab.dict[interp->trampoline_base + 1] = (cell)cfa;         //   with this target
-    vocab.dict[interp->trampoline_base + 2] = stop_handler;      // exit returns here → stop
-} else {
-    vocab.dict[interp->trampoline_base]     = (cell)handler;     // dispatch the primitive
-    vocab.dict[interp->trampoline_base + 1] = stop_handler;      // its DISPATCH lands here → stop
-    vocab.dict[interp->trampoline_base + 2] = stop_handler;
-}
-interp->ip = interp->trampoline_base;
-interp->running = 1;
-run_inner(interp);
-```
-
-`(stop)` sets `running = 0`, so the loop in `run_inner` exits and control
-returns to `execute_cfa`, which restores the previous `ip`, `running`, and
-trampoline cells. Each interpreter's trio is three cells wide because the docol
-case needs handler, target, and stop. (Why each worker needs its own base — the
-worker-interpreter model — is `docs/multicore.md`'s subject.)
-
-For tight loops that call a word once per iteration (the combinators in
-`functional.c`), `call_open` / `call_invoke` / `call_close` split this up so
-the trampoline is set up once and only `run_inner` is paid per iteration.
+The trampoline is a few cells reserved at the bottom of the dictionary. The C
+caller writes a call into them — the target's handler, its operand if it needs
+one, and then a *stop* op — points the instruction pointer at them, and runs the
+chain once; the stop op halts the loop and control returns to the caller, which
+restores the saved state. Each interpreter owns its own disjoint trampoline cells
+(named by a per-interpreter base, with enough reserved for the coordinator and
+every worker), so interpreters running concurrently never write each other's — the
+worker model is `multicore.md`'s subject. For tight loops that call a word once per
+iteration (the combinators), the setup is split out so the trampoline is written
+once and only the chain is paid per iteration.
 
 ---
 
-## Part 10: The GC's view of a body
+## Part 10: The GC's view, and the image format
 
-The garbage collector has to find every `Val` reachable from compiled code —
-literals and variable values embedded in word bodies — without misreading a
-dispatch cell or an operand as something it isn't. `mark_body` walks each
-body with `op_cell_count`, marks the operands of `(literal)` and `(dostr)`
-ops, and skips everything else. The full treatment is in gc.md; the point
-here is that the body layout of Part 6 is exactly what makes that walk
-possible, and `op_cell_count` is the shared definition of each op's width.
+**The GC** has to find every `Val` reachable from compiled code — literals and
+variable values embedded in word bodies — without misreading a dispatch cell or an
+operand. It walks each body using the same per-op width function as Part 6, marks
+the operands of the literal and string-literal ops, and skips the rest. The body
+layout is exactly what makes that walk possible; `gc.md` has the full treatment.
 
----
-
-## Part 11: The image format
-
-`save-image` and `load-image` snapshot and restore the full interpreter
-state — dictionary, objects, stacks — as a binary file. Most of the
-dictionary is position-independent and saved verbatim: header cells are
-indices and pool offsets, operand cells are CFA indices, branch offsets,
-slot numbers, and packed `Val`s. None of those move between runs.
-
-Handler pointers are the exception. A dispatch cell holds a raw C function
-address, and address-space layout randomization places the code segment at a
-different base every launch. Saved verbatim and reloaded in another process,
-those addresses would be garbage. So the image translates them.
-
-### The handler registry
-
-Every handler that can appear in a body is a known, finite quantity. Each is
-created through `define_primitive`, which appends it to the registry held on the
-global `Compiler compiler` (the `compiler.handler_registry[]` array, counted by
-`compiler.n_handlers`), plus `docol`, `dovar`, and `dosym`, which are appended
-explicitly during bootstrap. A handler's *id* is its index in that array —
-stable across runs because the bootstrap that builds the registry is
-deterministic. `handler_to_id` maps a pointer to its id (a scan, used only while
-saving); the reverse is an array index.
-
-### Translating bodies
-
-On save, each colon word's body is walked with `op_cell_count`: every
-dispatch cell is written as its handler id, and operand cells are written
-verbatim. On load, the walk runs again and each id is mapped back to the
-current process's handler pointer. A word's CFA cell (`docol`/`dovar`/
-`dosym`) is carried in a small separate table and resolved the same way;
-variable and symbol bodies are data and are copied through untouched.
-
-One op needs care: `docol` is variable-width in a body. At a call site it's
-two cells, `[&docol][target_cfa]`. But the inliner (`inline_word_body`, which
-splices a word's body into another to avoid a call) emits a bare one-cell
-`docol` to mark the entry of an inlined nested block, with no operand. The
-two are told apart by the cell that follows. At a call site it's the
-target's CFA — a dictionary index larger than any handler id, since words
-are laid down only after the handler registry is built. At an inlined block
-it's the block's first op. So the translator peeks: on save, whether that
-cell is a registered handler pointer; on load, whether its value is below
-the number of registered handlers. Either test sizes the `docol` as one
-cell or two.
-
-### What an image contains, and the bootstrap match
-
-The dictionary is rebuilt from scratch every launch: `define_primitive` lays
-down the primitives, then lib.l4 is compiled. The `init_*` watermarks are
-captured *after* that, so the base — primitives and lib.l4 — is never saved.
-An image carries only the words defined afterward, and their references into
-the base resolve correctly because the base is rebuilt identically. `load`
-checks the saved watermarks against the running interpreter's and refuses an
-image whose base doesn't match (a different build), and the format carries a
-version number so incompatible images are rejected rather than misread.
+**The image format** (`save-image` / `load-image`) snapshots and restores the full
+interpreter state as a binary file. Most of the dictionary is position-independent
+and saved verbatim — header cells, CFA-index operands, branch offsets, slot
+numbers, packed `Val`s; none of those move between runs. The exception is dispatch
+cells, which hold raw function addresses that randomization places differently
+each launch. So the image translates them: every handler that can appear in a body
+is registered at bootstrap and assigned a stable id (its index in the registry,
+stable because the bootstrap is deterministic); on save each dispatch cell is
+written as its handler id, on load each id is mapped back to this process's
+pointer. One op needs care — the colon handler is two cells at a call site (handler
++ target CFA) but a bare one cell where the inliner uses it to mark an inlined
+block — and the two are told apart by whether the following cell is a registered
+handler or a dictionary index. Finally, the base dictionary (primitives + the
+standard library) is rebuilt identically every launch and never saved; an image
+carries only the words defined afterward, and load refuses an image whose recorded
+base watermarks or format version don't match the running build.
 
 ---
 
-## Part 12: Where to look in the source
-
-- **`DISPATCH(interp)`** in `logicforth.h` — the tail-call dispatcher every
-  non-halting handler ends with: the unwinding/error check, then a `musttail`
-  jump to the next handler.
-- **`run_inner`** in `core.c` — entry point and cleanup point for the chain;
-  the hot path runs its body once and the tail-call chain takes over.
-- **`docol` / `dovar` / `dosym`** in `core.c` — read their target CFA from the
-  operand cell, act, then `DISPATCH`.
-- **`execute_cfa`**, **`call_open` / `call_invoke` / `call_close` /
-  `call_step`** in `core.c` — invoking a word from C through the interpreter's
-  `trampoline_base` reserved cells; the split form amortizes setup across a
-  combinator's loop.
-- **`define_primitive`** in `core.c` — defines a primitive and registers its
-  handler for image translation.
-- **`emit_call`**, **`emit_val_literal`**, **`p_literal`** in `core.c` — the
-  compile-time emission of dispatch cells and inline operands.
-- **`op_cell_count`** in `core.c` — the per-op width used by the GC walker,
-  the inliner, and the image translator.
-- **`mark_body`** in `core.c` — the GC's body walk (see gc.md).
-- **`p_save_image` / `p_load_image`** in `core.c` — the image format and the
-  handler-id translation.
+For broader context: `nan-boxing.md` is the one-cell `Val` the body layout relies
+on; `gc.md` is the collector whose safepoint breaks the dispatch chain and whose
+body walk this layout enables; `multicore.md` is the per-interpreter trampoline and
+the worker model.

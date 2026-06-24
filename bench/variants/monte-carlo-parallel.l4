@@ -1,0 +1,40 @@
+\ MonteCarlo pi, parallel — pmap variant of the scimark MonteCarlo kernel.
+\ Estimates pi by sampling the unit square and counting points inside the
+\ quarter circle: estimate = 4 · (#inside / #samples).
+\
+\ scimark's own RNG is a strict serial sequence (see pyperformance/scimark-
+\ montecarlo.l4), so it can't be parallelised. This variant instead draws from
+\ logicforth's native random stream, which gives each worker its own
+\ deterministic sub-stream from the shared base seed. WORKERS chunks are run one
+\ per worker (CHUNKS = WORKERS, claim 1), so every worker samples exactly one
+\ chunk from its own stream and the total is independent of scheduling order —
+\ the estimate is reproducible run to run.
+
+\ SAMPLES (total) and WORKERS are supplied by the caller (the runner injects
+\ them; for a standalone run prepend e.g. `variable SAMPLES 20000000 to SAMPLES`
+\ and `variable WORKERS 10 to WORKERS`). CHUNKS = WORKERS, claim 1, so each
+\ worker samples exactly one chunk from its own stream and the estimate is
+\ reproducible.
+variable CHUNK
+variable EST
+variable T0
+
+: partial ( j -- hits )
+  | >j hits |
+  0.0 to hits
+  [: random random fsq swap fsq f+ 1.0 gt 0= if f++ hits then :] CHUNK times
+  hits ;
+
+: pmonte
+  SAMPLES WORKERS / to CHUNK
+  12345 seed
+  now to T0
+  0 WORKERS 1- range
+  WORKERS 1 ' partial pmap-ext
+  0.0 [: f+ :] reduce
+  SAMPLES f/ 4.0 f* to EST
+  now T0 - "elapsed: {0} s" format . cr
+  EST "estimate: {0}" format . cr ;
+
+pmonte
+bye

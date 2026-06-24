@@ -18,13 +18,13 @@ understand:
 - Why the fused cells need care to stay safe for the garbage collector's
   body-walk, and how `see-compiled` lets you see the fused form
 
-The variable superinstructions live in `src/c/superwords.c`; the accumulator
-(local) fusion lives in `src/c/core.c`, since it reads and writes the locals
-frame rather than dictionary slots. Both plug into the same compile-time hooks:
-the emit-time lookback in `run_outer` and the store/accumulate checks in `p_to`,
-with operand-width entries in `op_cell_count`. The aim of this document is to
-make the fusion feel like an obvious bookkeeping trick rather than a special
-case — because that is all it is.
+The variable superinstructions and the accumulator (local) fusion live in
+`src/c/superwords.c` and `src/c/core.c` — the accumulator form in core because it
+reads and writes the locals frame rather than dictionary slots. Both plug into the
+same compile-time hooks: a lookback over what was just emitted as a word compiles,
+a check when a `to` store is compiled, and the operand-width bookkeeping the
+body-walk depends on. The aim is to make the fusion feel like an obvious
+bookkeeping trick rather than a special case — because that is all it is.
 
 ---
 
@@ -125,10 +125,10 @@ dx fsq dy fsq f+ dz fsq f+ to d2
 and the compiler rewrites the fusable runs into superinstructions as it emits
 them. There is no new syntax.
 
-The mechanism is an emit-time lookback in `run_outer`. As a colon definition
-compiles, the interpreter keeps a two-deep history of what it just emitted: for
-each, either "a push of variable `V`" or "a barrier." When the next token is a
-float operator, it consults that history before emitting the operator plainly:
+The mechanism is an emit-time lookback. As a colon definition compiles, the
+interpreter keeps a two-deep history of what it just emitted: for each, either "a
+push of variable `V`" or "a barrier." When the next token is a float operator, it
+consults that history before emitting the operator plainly:
 
 - `f-`/`f+`/`f*`/`f/` after two variable pushes → rewind the four cells of the
   two pushes and emit the `vv` form;
@@ -164,11 +164,11 @@ directly.
 Each superinstruction has a **store variant** carrying one extra inline operand,
 the destination slot. Instead of pushing its result it writes `dict[dst]`.
 
-The fusion happens in `p_to`. When `to <var>` compiles, it inspects the tail of
-the code just emitted: if a superinstruction sits there (a three-cell form
-ending at the current position, or a two-cell form), it rewinds that op and
-re-emits its store variant with the destination slot appended — and skips
-emitting `(to-var)` entirely.
+The fusion happens when `to <var>` compiles: it inspects the tail of the code just
+emitted, and if a superinstruction sits there (a three-cell form ending at the
+current position, or a two-cell form), it rewinds that op and re-emits its store
+variant with the destination slot appended — and skips emitting the separate store
+op entirely.
 
 So `x1 x2 f- to dx` ends up as a single op:
 
@@ -262,59 +262,48 @@ A superinstruction is not one piece of code; it is six. Each needs:
 2. a store-variant handler,
 3. a compile-time word (so it can be typed),
 4. registration in the dictionary,
-5. an entry in `op_cell_count` so the body-walk knows its width (Part 8),
+5. a width entry so the body-walk knows how many cells it spans (Part 8),
 6. a line in the fuse logic mapping a base operator to the superinstruction.
 
-Maintaining six parallel lists by hand is how a subtle bug enters: forget the
-`op_cell_count` entry and the garbage collector silently mis-walks the body.
-logicforth avoids that by deriving all six from a single operator list per
-family, using X-macros:
-
-```c
-#define FLOAT_BINOPS(X) \
-	X(add, +, p_add_f) \
-	X(sub, -, p_sub_f) \
-	X(mul, *, p_mul_f) \
-	X(div, /, p_div_f)
-```
-
-The operator token does triple duty: it is the C operator in the handler
-(`a.number op b.number`), it stringizes into the word name (`"vvf" #op` →
-`"vvf+"`), and the third argument names the base handler the fuse logic keys on.
-A template macro expands the list once per purpose — handler, compile word,
-registration, cell count, fuse mapping, store variant — so the six parts cannot
-drift apart. Adding `vfcbrt` or a new operator is one row, fully wired.
-
-There are three lists: `FLOAT_BINOPS` (which drives both the `vv` and `vf`
-binary forms), `FLOAT_UNARY_FNS` (the unary functions), and `FLOAT_FUSED` (the
-fused multiplies).
+Maintaining six parallel parts by hand is how a subtle bug enters: forget the
+width entry and the garbage collector silently mis-walks the body. logicforth
+avoids that by deriving all six from a single per-family list of operators. Each
+list entry is just an operator plus the base float op it builds on, and a template
+expands the list once for each purpose — the runtime handler, the store-variant
+handler, the compile-time word, its registration, its width entry, and the fuse
+mapping. The operator token does triple duty in that expansion: it is the
+arithmetic operator inside the handler, it stringizes into the word's name (the
+subtract entry becomes `vvf-`, `vf-`, `vvf-!`, and so on), and it names the base op
+the fuse logic keys on. Because every part is generated from the one list they
+cannot drift apart, and adding an operator — or a whole new unary function — is a
+single row, fully wired. There are three such lists: one driving both binary forms
+(`vv` and `vf`), one for the unary functions, and one for the fused multiplies.
 
 ---
 
 ## Part 8: Keeping the body-walk correct
 
 A compiled body is a flat array of cells, and nothing in a cell marks it as a
-handler versus an inline operand. Code that walks a body — the garbage
-collector's `mark_body`, looking for object references baked into the body, and
-`inline_word_body`, copying a word for inlining — reconstructs the structure by
-knowing, for each handler, how many operand cells follow it. That knowledge lives
-in one function, `op_cell_count`.
+handler versus an inline operand. Code that walks a body without executing it —
+the garbage collector looking for object references baked into the body, the
+inliner copying a word — reconstructs the structure by knowing, for each handler,
+how many operand cells follow it. That width knowledge lives in one place, the
+single source of truth `threading.md` and `gc.md` both lean on.
 
-Superinstructions carry inline operand cells (one to three of them), so
-`op_cell_count` must report their true widths, or the walk desynchronizes the
-moment it crosses one. `op_cell_count` asks `superword_cell_count` first, which
-returns the width of any superinstruction (3 for a two-var push, 2 for a one-var
-push, 4 for a two-var store, and so on) and 0 for anything else.
+Superinstructions carry one to three inline operand cells, so that width table must
+report them, or the walk desynchronizes the moment it crosses one; it defers to a
+superinstruction-width helper that returns the right width for each fused op (three
+for a two-var push, two for a one-var push, four for a two-var store, and so on)
+and zero for anything else.
 
 This works because each superinstruction has a *unique* handler and a *fixed*
-width. That is worth contrasting with `docol`, the colon-word entry handler,
-which deliberately is *not* in `op_cell_count`: a `docol` cell is two cells when
-it is a call to another word but one cell when it marks the start of an embedded
-quotation, and the two are indistinguishable by their handler pointer. The
-body-walk tolerates that ambiguity for `docol` because its stray operand is a
-small integer that never collides with the object-bearing handlers `mark_body`
-acts on. Superinstructions have no such ambiguity, so adding them to
-`op_cell_count` is both necessary and safe.
+width. That is worth contrasting with the colon-word entry handler, which
+deliberately is *not* in the width table: it occupies two cells when it's a call to
+another word but one cell when it marks the start of an embedded quotation, and the
+two are indistinguishable by their handler pointer. The body-walk tolerates that
+ambiguity there because the stray operand is a small integer that never collides
+with the object-bearing handlers the collector acts on. Superinstructions have no
+such ambiguity, so giving them width entries is both necessary and safe.
 
 ---
 
@@ -325,10 +314,10 @@ word's stored source text, so it shows exactly what the programmer typed —
 `x1 x2 f- to dx`. That is usually what you want, but it does not tell you whether
 fusion fired.
 
-`see-compiled` decompiles the actual cell body instead. It walks the body with
-`op_cell_count` (so it agrees with the GC about where each op begins), prints
-`docol`/`dovar`/`dosym` calls by their target's name, literals by value, and
-superinstructions by name with their variable operands resolved back to names:
+`see-compiled` decompiles the actual cell body instead. It walks the body with the
+same width table the collector uses (so the two agree about where each op begins),
+prints calls by their target's name, literals by value, and superinstructions by
+name with their variable operands resolved back to names:
 
 ```
 : pair-step   \ ...
@@ -362,29 +351,15 @@ because there is less dispatch to remove.
 
 ---
 
-## Part 11: Where to look in the source
-
-- **`src/c/superwords.c`** — the variable superinstructions: the three operator
-  lists, the template macros that generate the handlers / compile words / store
-  variants, `superword_cell_count`, `superword_try_fuse` (the auto-fusion logic),
-  and `superword_try_fuse_store` (the store-fusion logic).
-- **`src/c/core.c`** — the accumulator-fusion ops (a macro over the four float
-  operators generating the depth-0 and nested read-modify-write handlers) and
-  `try_fuse_local_acc`, the match-and-rewind for `<value> acc <fop> to acc`.
-  These live here, not in `superwords.c`, because they read and write the locals
-  frame rather than dictionary slots.
-- **`run_outer`** in `src/c/core.c` — the emit-time lookback that maintains the
-  variable-push history and calls `superword_try_fuse` before emitting a plain
-  operator.
-- **`p_to`** in `src/c/words.c` — calls `superword_try_fuse_store` (variable
-  stores) and `try_fuse_local_acc` (local accumulators) before emitting a plain
-  store.
-- **`op_cell_count`** in `src/c/core.c` — defers to `superword_cell_count` so
-  the GC body-walk and the inliner step over superinstructions correctly.
-- **`p_see_compiled`** in `src/c/core.c` — the `see-compiled` decompiler.
+The variable superinstructions — the operator lists, the templates that generate
+the handlers and store variants, the auto-fusion lookback, and the store-fusion
+check — are in `src/c/superwords.c`; the emit-time lookback that feeds them and
+the accumulator (local) fusion are in `src/c/core.c`, the latter there because it
+touches the locals frame rather than dictionary slots; and the `to`-store hook
+that triggers both kinds of store fusion is in `src/c/words.c`.
 
 For broader context:
 
-- **`docs/threading.md`** — the dispatch model these ops live in, and the
-  trampoline `execute_cfa` uses.
-- **`docs/gc.md`** — the body-walk (`mark_body`) that `op_cell_count` serves.
+- **`docs/threading.md`** — the dispatch model these ops live in, and the width
+  table they extend.
+- **`docs/gc.md`** — the body-walk that table serves.

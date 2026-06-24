@@ -1,0 +1,213 @@
+\ barnes-hut — port of pyperformance bm_barnes_hut, a quadtree N-body simulation
+\ of a deterministic galaxy (200 particles). Each step rebuilds a Barnes-Hut
+\ quadtree, approximates the gravitational force on each particle (opening angle
+\ theta), then integrates. No RNG — the galaxy is laid out with cos/sin spirals.
+\
+\ A particle is a 7-element array [px py vx vy ax ay mass]; PARTICLES holds N of
+\ them and the tree stores particle indices (so the "skip self" test is index
+\ equality). A quadtree node is a 17-slot array:
+\   0..3 boundary (cx cy hw hh)  4 divided  5..7 com-x com-y total-mass
+\   8 particle-count  9..12 particle-index slots (capacity 4)  13..16 NE NW SE SW
+\ subdivide is inlined into insert to avoid mutual recursion. Verification is the
+\ total system energy (all-pairs potential + kinetic). Build is untimed.
+
+variable G          6.67430e-11 to G
+variable SOFTENING  5.0 to SOFTENING
+variable TIME_STEP  0.1 to TIME_STEP
+variable THETA      0.5 to THETA
+variable WIDTH      1000.0 to WIDTH
+variable HEIGHT     800.0 to HEIGHT
+variable CX         500.0 to CX
+variable CY         400.0 to CY
+variable RADIUS     300.0 to RADIUS
+variable SPIRAL     0.1 to SPIRAL
+variable N          200.0 to N
+
+variable PARTICLES  variable PFILL
+
+: make-node ( bx by bw bh -- node )
+  | >bx >by >bw >bh |
+  [ bx by bw bh 0.0  0.0 0.0 0.0  0.0  0.0 0.0 0.0 0.0  null null null null ] ;
+
+: contains? ( node px py -- f )
+  | >node >px >py |
+  px  node 0 @i node 2 @i f-  lt 0=
+  px  node 0 @i node 2 @i f+  lt        and
+  py  node 1 @i node 3 @i f-  lt 0=     and
+  py  node 1 @i node 3 @i f+  lt        and ;
+
+: update-mass ( node pidx -- )
+  | >node >pidx p pmass px py tm tnew |
+  PARTICLES pidx @i to p
+  p 6 @i to pmass  p 0 @i to px  p 1 @i to py
+  node 7 @i to tm
+  tm pmass f+ to tnew
+  tnew 0.0 gt if
+     node 5  node 5 @i tm f* px pmass f* f+ tnew f/  !i drop
+     node 6  node 6 @i tm f* py pmass f* f+ tnew f/  !i drop
+  then
+  node 7 tnew !i drop ;
+
+: insert ( node pidx -- placed? )
+  | >node >pidx p px py x y w h oldn |
+  PARTICLES pidx @i to p  p 0 @i to px  p 1 @i to py
+  node px py contains? 0= if 0.0 exit then
+  node 8 @i 4.0 lt  node 4 @i 0= and if
+     node  9.0 node 8 @i f+  pidx  !i drop
+     node 8  node 8 @i 1.0 f+  !i drop
+     node pidx update-mass
+     1.0 exit
+  then
+  node 4 @i 0= if
+     node 0 @i to x  node 1 @i to y  node 2 @i 2.0 f/ to w  node 3 @i 2.0 f/ to h
+     node 13  x w f+ y h f- w h make-node  !i drop
+     node 14  x w f- y h f- w h make-node  !i drop
+     node 15  x w f+ y h f+ w h make-node  !i drop
+     node 16  x w f- y h f+ w h make-node  !i drop
+     node 4 1.0 !i drop
+     node 8 @i to oldn
+     [: | >k pid |
+        node 9.0 k f+ @i to pid
+        node 13 @i pid insert drop
+        node 14 @i pid insert drop
+        node 15 @i pid insert drop
+        node 16 @i pid insert drop
+     :] oldn i-times
+     node 8 0.0 !i drop
+  then
+  node 13 @i pidx insert if 1.0 exit then
+  node 14 @i pidx insert if 1.0 exit then
+  node 15 @i pidx insert if 1.0 exit then
+  node 16 @i pidx insert if 1.0 exit then
+  0.0 ;
+
+: calc-force ( node pidx theta -- fx fy )
+  | >node >pidx >theta p dx dy dist f fxacc fyacc fx2 fy2 |
+  node 7 @i 0.0 = if 0.0 0.0 exit then
+  node 8 @i 1.0 =  node 9 @i pidx = and if 0.0 0.0 exit then
+  PARTICLES pidx @i to p
+  node 5 @i p 0 @i f- to dx
+  node 6 @i p 1 @i f- to dy
+  dx dx f* dy dy f* f+ fsqrt to dist
+  node 4 @i 0=  node 2 @i 2.0 f* dist f/ theta lt  or if
+     dist SOFTENING lt if SOFTENING to dist then
+     G p 6 @i f* node 7 @i f*  dist dist f* f/ to f
+     f dx f* dist f/   f dy f* dist f/
+     exit
+  then
+  0.0 to fxacc  0.0 to fyacc
+  node 13 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  node 14 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  node 15 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  node 16 @i pidx theta calc-force to fy2 to fx2  fxacc fx2 f+ to fxacc  fyacc fy2 f+ to fyacc
+  fxacc fyacc ;
+
+: add-particle ( px py mass -- )
+  | >px >py >mass |
+  PARTICLES PFILL [ px py 0.0 0.0 0.0 0.0 mass ] !i drop
+  PFILL 1.0 f+ to PFILL ;
+
+: create-galaxy
+  | bulge spiral per-arm remaining |
+  0.0 N array-of to PARTICLES
+  0.0 to PFILL
+  N 0.3 f* ftruncate to bulge
+  [: | >i df r angle x y mass |
+     i bulge f/ to df
+     RADIUS 5.0 f/ df f* to r
+     2.0 pi f* i f* bulge f/ 7.0 f* to angle
+     CX r angle fcos f* f+ to x
+     CY r angle fsin f* f+ to y
+     50.0  50.0 1.0 df f- f*  f+ to mass
+     x y mass add-particle
+  :] bulge i-times
+  N bulge f- to spiral
+  spiral 2.0 / ftruncate to per-arm
+  [: | >arm |
+     [: | >i df dist angle x y mass base |
+        2.0 pi f* arm f* 2.0 f/ to base
+        i per-arm f/ to df
+        RADIUS  0.2 0.8 df f* f+  f* to dist
+        base  SPIRAL dist f* f+  0.2 i 0.1 f* fsin f* f+ to angle
+        CX dist angle fcos f* f+ to x
+        CY dist angle fsin f* f+ to y
+        1.0  9.0 1.0 df f- f*  f+ to mass
+        x y mass add-particle
+     :] per-arm i-times
+  :] 2.0 i-times
+  spiral per-arm 2.0 f* f- to remaining
+  [: | >i angle dist x y |
+     2.0 pi f* i f* remaining f/ to angle
+     RADIUS 0.5 f* to dist
+     CX dist angle fcos f* f+ to x
+     CY dist angle fsin f* f+ to y
+     x y 5.0 add-particle
+  :] remaining i-times
+  [: | >i p dx dy dist perpx perpy orbv |
+     PARTICLES i @i to p
+     p 0 @i CX f- to dx
+     p 1 @i CY f- to dy
+     dx dx f* dy dy f* f+ fsqrt to dist
+     dist 0.0 gt if
+        dy fnegate dist f/ to perpx
+        dx dist f/ to perpy
+        0.1 dist 100.0 f+ f* fsqrt 0.3 f* to orbv
+        p 2  perpx orbv f*  !i drop
+        p 3  perpy orbv f*  !i drop
+     then
+  :] N i-times ;
+
+: system-energy ( -- e )
+  | e pi pj dx dy dist p v2 |
+  0.0 to e
+  [: | >i |
+     [: | >j |
+        j i gt if
+           PARTICLES i @i to pi  PARTICLES j @i to pj
+           pi 0 @i pj 0 @i f- to dx
+           pi 1 @i pj 1 @i f- to dy
+           dx dx f* dy dy f* f+ fsqrt to dist
+           dist SOFTENING lt if SOFTENING to dist then
+           e  G pi 6 @i f* pj 6 @i f*  dist f/  f-  to e
+        then
+     :] N i-times
+  :] N i-times
+  [: | >i |
+     PARTICLES i @i to p
+     p 2 @i p 2 @i f*  p 3 @i p 3 @i f* f+ to v2
+     e  0.5 p 6 @i f* v2 f*  f+  to e
+  :] N i-times
+  e ;
+
+: advance-system
+  | root |
+  WIDTH 2.0 f/  HEIGHT 2.0 f/  WIDTH 2.0 f/  HEIGHT 2.0 f/  make-node to root
+  [: |> i | root i insert drop :] N i-times
+  [: | >i p fx fy |
+     root i THETA calc-force to fy to fx
+     PARTICLES i @i to p
+     p 4  p 4 @i  fx p 6 @i f/  f+  !i drop
+     p 5  p 5 @i  fy p 6 @i f/  f+  !i drop
+  :] N i-times
+  [: | >i p |
+     PARTICLES i @i to p
+     p 2  p 2 @i  p 4 @i TIME_STEP f* f+  !i drop
+     p 3  p 3 @i  p 5 @i TIME_STEP f* f+  !i drop
+     p 0  p 0 @i  p 2 @i TIME_STEP f* f+  !i drop
+     p 1  p 1 @i  p 3 @i TIME_STEP f* f+  !i drop
+     p 4 0.0 !i drop  p 5 0.0 !i drop
+  :] N i-times ;
+
+: barnes-bench
+  | t0 ie fe |
+  create-galaxy
+  system-energy to ie
+  now to t0
+  [: |> lp | [: advance-system :] ITERATIONS times  system-energy to fe :] LOOPS i-times
+  now t0 - to t0
+  "initial energy: " . [ ie ] frame>json . cr
+  "final energy: " . [ fe ] frame>json . cr
+  "elapsed: " . t0 . " s" . cr ;
+
+barnes-bench
+bye
