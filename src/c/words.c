@@ -1233,8 +1233,11 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 	int n_received = 0;
 
 	while (1) {
+		skip_whitespace_and_comments();
 		char *token = next_token();
 		if (!token) {
+			if (refill_input())
+				continue;
 			fail(interp, "%s: unterminated locals declaration (no closing |)", opener);
 			return;
 		}
