@@ -83,6 +83,120 @@ string literal, resolve each `{name}` in scope, rewrite to the positional
 `\d{3}` stay literal, or a runtime frame-keyed `format-with`
 (`{ :dir d } "{dir}" format-with`).
 
+### Number parsing and stringify
+
+Reading a number out of a string, and capturing a value as the text `.` would
+print, are both indirect today: numeric literals are parsed only at read time,
+and a value renders to a string only through `format`'s placeholders (scalars)
+or `frame>json` (structured values).
+
+- `string>number` ( s -- n ) — parse a decimal/float string to a float.
+- `>string` ( v -- s ) — the rendering `.` produces, returned as a string rather
+  than printed: floats in shortest round-trip form, strings raw, symbols by
+  name, arrays/frames/matrices/sets in the same laid-out form.
+
+To settle: how `string>number` signals a non-numeric input (an error, a trailing
+success flag, or the none value); whether `>string` mirrors `.`'s display
+(truncation and all) or always emits the full value; whether a separate
+re-readable `repr` (quoted strings, `[ ]`/`{ }`/`< >` literals) earns its place
+given `frame>json` already round-trips structured data.
+
+### Loop ergonomics
+
+Counted iteration is `times` / `i-times` (with or without a pushed index) and the
+`begin … until` / `begin … while … repeat` / `again` family; leaving a loop early
+is hand-rolled by threading a flag through the condition. Missing is structured
+early exit and a counted index loop.
+
+- `leave` — exit the innermost counted loop immediately; `?leave` ( flag -- ) the
+  conditional form; a skip-to-next-iteration (`continue`).
+- `do … loop` ( limit start -- ) with the index available as `i` (and `j` one
+  level out), and `+loop` for a custom step.
+
+To settle: whether to add `do … loop` as a second counted form or instead give
+`i-times` / `begin` a `leave` / `continue`; the index model (`do…loop`'s `i`/`j`
+read the return stack, where `i-times` pushes its index to the data stack — two
+conventions to reconcile or keep apart); how `leave` / `continue` compile
+(forward/back branch patching) and unwind cleanly past loop-local frames.
+
+---
+
+## Symbol collection
+
+Interned symbols are never reclaimed: `:foo` literals, `string>symbol`, and
+`json>frame` object keys all add to the symbol table for the life of the
+process. For a bounded, static set of names — source identifiers, fixed-schema
+keys — that is correct and cheap. But symbols minted at run time from dynamic or
+user-supplied strings (parsing JSON whose keys are unbounded, interning
+arbitrary input) grow the table without limit, because the everyday associative
+type — the frame — is symbol-keyed.
+
+Make runtime-minted symbols collectible by reachability, the contract strings
+and arrays already follow: a symbol keeps its identity (and its O(1) index
+equality) for as long as something live refers to it, and is reclaimed once
+nothing does. A string re-interned after its symbol was collected gets a fresh
+identity, which is sound because no live value held the old one.
+
+Two classes:
+
+- **Pinned** — any symbol a compiled cell can name (`:foo` literals, `symbol`
+  definitions, source identifiers). Interned at read/compile time; never
+  collected. Bounded, so it does not grow.
+- **Collectible** — symbols created at run time from computed strings. Reachable
+  only from live values, never embedded in compiled code. The collector marks
+  them while walking its existing roots and retires the unmarked ones, freeing
+  the name and reusing the slot.
+
+The partition keeps it cheap and safe: the collector never scans compiled code
+for symbol references, and a baked-in literal can never dangle. When a computed
+string matches a name already pinned, the pinned symbol wins, so a collectible
+symbol never shares a name with a pinned one.
+
+To settle: how symbols are represented (dictionary entries vs a separate
+interned pool) and therefore how a slot is retired and reused; how `save-image`
+serializes a collectible symbol (by name, re-interned on load, since its index
+is not stable); whether pinned-vs-collectible is decided at the intern call site
+or inferred from whether interning happens during compilation.
+
+---
+
+## Guaranteed cleanup
+
+`catch`/`try-catch` recover the throw path — user `throw`s and interpreter
+errors both unwind to the enclosing `reset`. What's absent is a cleanup hook
+guaranteed to run however the protected region is left: normally, by throw, by
+backtrack, or by a captured continuation. Resource handles make this concrete —
+a `db`/stream/FFI handle is a registry slot with no GC finalization, so any
+non-local exit past its close leaks it until the process ends.
+
+**Tier 1 — `ensure` over throw and normal exit.** Cleanup that runs on both the
+normal and the throw/interpreter-error path, expressible today on `catch`:
+
+```
+: ensure ( body-xt cleanup-xt -- … )
+    >side  catch  side> execute  if throw then ;
+```
+
+plus resource `with-` helpers — `with-db`, `with-stream`, `with-file` — that
+open, run a body, and close on either exit. Provide these as standard words
+rather than leaving each program to hand-roll the pattern. This tier covers the
+common case (open, use, release-even-on-error in straight-line code).
+
+**Tier 2 — `dynamic-wind` across every exit.** A `before body after` whose
+`after` also runs on a `fail` backtrack and a `shift` capture, and whose
+`before` re-runs on `resume` re-entry. A `catch` wrapper can't reach these:
+`fail` unwinds to the nearest *choice* prompt, past `catch`'s *exception*
+prompt, and a region re-entered by `resume` needs setup per entry, not a
+once-only handler. The mechanism is a *wind mark* — a return-stack mark, kin to
+`reset`'s, carrying the before/after thunks, recognized by both unwind cascades
+in the inner loop (exception and choice prompts) and by `resume`'s splice so
+re-entry re-runs `before`.
+
+To settle: whether `after` firing once per failed alternative of a multi-shot
+region is the wanted semantics or a footgun; how a wind mark interleaves with
+the locals-frame and trail rewind the unwind already carries; whether
+`before`/`after` observe the region's data stack or run isolated.
+
 ---
 
 ## FastCGI service
@@ -179,6 +293,35 @@ In rough priority:
 - **Numeric disjoint-write buffer / work-stealing.** Lower priority: a shared
   unboxed-`double` output buffer threaded under the matrix kernels, and
   work-stealing for skewed workloads.
+
+---
+
+## Dynamic vector
+
+Arrays are fixed-length and O(1)-indexed; cons lists grow by O(1) prepend but
+read sequentially. Neither grows at the end *and* indexes cheaply — the shape
+incremental, natural-order construction wants. Today that means accumulating
+onto a cons list and freezing with `cons>array`, or pre-sizing with `array-of`
+and filling by `!i`: a phase boundary, not one structure that is cheap to both
+grow and index.
+
+A fill-pointer vector closes it — a mutable, contiguous buffer with
+amortized-doubling append/remove at the end and O(1) index, update, and length.
+
+- `vector` / `vector-of` — empty, or pre-sized with a fill value.
+- `push` ( vec v -- vec ) append, doubling the backing buffer when full;
+  `pop` ( vec -- v ) remove and return the last element.
+- `@i` / `!i` / `size` extend to the live region (slots past the fill pointer
+  stay invisible), so indexing and update stay O(1).
+- `vector>array` freezes a copy of the live region; an array converts in.
+
+The pieces to hand-roll it already exist (`array-of`, `!i`, `size`, `slice!` /
+`to-slice!`, manual doubling); the value is a standard wordset, so every program
+isn't re-implementing the doubling buffer.
+
+To settle: a distinct type vs a growable mode of the array object (a fill-pointer
+field, so `@i`/`size` work unchanged); whether `push`/`pop` mutate and return the
+vector (like `set-add!`) or are value-returning; the word names.
 
 ---
 
