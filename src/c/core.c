@@ -1543,6 +1543,14 @@ void p_local_fetch(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_local_fetch_1depth(Interpreter *interp) {
+	int slot = (int)vocab.dict[interp->ip++];
+	int base = saved_local_base(interp->return_stack[interp->local_base - 1]);
+	push(interp, interp->return_stack[base + slot]);
+
+	DISPATCH(interp);
+}
+
 void p_local_store(Interpreter *interp) {
 	*local_slot(interp) = pop(interp);
 
@@ -1802,13 +1810,12 @@ int try_fuse_at_i_ll(Interpreter *interp) {
 		return 1;
 	}
 
-	if (here >= 5 && here - 5 >= compiler.fuse_floor
-	    && (cfa_handler)dict[here - 5] == p_local_fetch
-	    && (int)dict[here - 4] == 1
+	if (here >= 4 && here - 4 >= compiler.fuse_floor
+	    && (cfa_handler)dict[here - 4] == p_local_fetch_1depth
 	    && (cfa_handler)dict[here - 2] == p_local_fetch_0depth) {
 		int arr_slot = (int)dict[here - 3];
 		int idx_slot = (int)dict[here - 1];
-		vocab.here -= 5;
+		vocab.here -= 4;
 		emit_call(interp, at_i_l1l0_cfa);
 		emit(interp, (cell)arr_slot);
 		emit(interp, (cell)idx_slot);
@@ -2249,6 +2256,9 @@ void run_outer(Interpreter *interp) {
 						emit_call(interp, vocab.local_fetch_0depth_cfa);
 						emit(interp, (cell)local_slot_idx);
 					}
+				} else if (local_depth == 1) {
+					emit_call(interp, vocab.local_fetch_1depth_cfa);
+					emit(interp, (cell)local_slot_idx);
 				} else {
 					emit_call(interp, vocab.local_fetch_cfa);
 					emit(interp, (cell)local_depth);
@@ -2791,6 +2801,7 @@ static int op_cell_count(int cursor) {
 	    || handler == vocab.dict[vocab.enter_locals_to_cfa]
 	    || handler == vocab.dict[vocab.leave_locals_cfa]
 	    || handler == vocab.dict[vocab.local_fetch_0depth_cfa]
+	    || handler == vocab.dict[vocab.local_fetch_1depth_cfa]
 	    || handler == vocab.dict[vocab.local_store_0depth_cfa]
 	    || handler == vocab.dict[vocab.local_incr_0depth_cfa]
 	    || handler == vocab.dict[vocab.local_decr_0depth_cfa]
@@ -4250,6 +4261,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.local_fetch_cfa = define_primitive(interp, "(local@)", p_local_fetch, 4);
 	vocab.local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 4);
 	vocab.local_fetch_0depth_cfa = define_primitive(interp, "(local@0)", p_local_fetch_0depth, 4);
+	vocab.local_fetch_1depth_cfa = define_primitive(interp, "(local@1)", p_local_fetch_1depth, 4);
 	load2_cfa = define_primitive(interp, "(load2)", p_load2, 4);
 	load3_cfa = define_primitive(interp, "(load3)", p_load3, 4);
 	at_i_local0_cfa = define_primitive(interp, "(@i.l0)", p_at_i_local0, 4);
