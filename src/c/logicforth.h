@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.9.0"
+#define VERSION "0.9.1"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -936,6 +936,12 @@ void p_at_i_l1l0(Interpreter *interp);
 void p_gather_local0(Interpreter *interp);
 void p_store_i(Interpreter *interp);
 void p_store_i_drop(Interpreter *interp);
+void p_inc_store_i(Interpreter *interp);
+void p_dec_store_i(Interpreter *interp);
+void p_add_store_i(Interpreter *interp);
+void p_sub_store_i(Interpreter *interp);
+void p_mul_store_i(Interpreter *interp);
+void p_div_store_i(Interpreter *interp);
 void p_at_j(Interpreter *interp);
 void p_at_ij(Interpreter *interp);
 int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,

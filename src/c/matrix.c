@@ -240,6 +240,80 @@ void p_store_i_drop(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+#define ARRAY_STEP_OP(fn, word, delta) \
+void fn(Interpreter *interp) { \
+	PEEK_AT(target_val, 1, word); \
+	PEEK_AT(index_val, 0, word); \
+	int index = (int)VAL_NUMBER(index_val); \
+	if (VAL_TAG(target_val) == T_ARRAY) { \
+		Object *array = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= array->len) { \
+			fail(interp, word ": array index %d out of bounds (length %d)", index, array->len); \
+			return; \
+		} \
+		Val *element = &array->items[index]; \
+		if (VAL_TAG(*element) != T_FLOAT) { \
+			fail(interp, word ": array element is not a float; got %s", tag_name(VAL_TAG(*element))); \
+			return; \
+		} \
+		*element = make_float(VAL_NUMBER(*element) + (delta)); \
+	} else if (VAL_TAG(target_val) == T_SEGMENT) { \
+		Object *segment = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= segment->segment.length) { \
+			fail(interp, word ": segment index %d out of bounds (length %d)", index, segment->segment.length); \
+			return; \
+		} \
+		segment_set(segment, index, segment_get(segment, index) + (delta)); \
+	} else { \
+		fail(interp, word ": expected an array or segment; got %s", tag_name(VAL_TAG(target_val))); \
+		return; \
+	} \
+	interp->dsp -= 2; \
+	DISPATCH(interp); \
+}
+
+ARRAY_STEP_OP(p_inc_store_i, "(inc!i)", 1.0)
+ARRAY_STEP_OP(p_dec_store_i, "(dec!i)", -1.0)
+
+#define ARRAY_INPLACE_OP(fn, word, op) \
+void fn(Interpreter *interp) { \
+	PEEK_AT(target_val, 2, word); \
+	PEEK_AT(index_val, 1, word); \
+	PEEK_AT(delta_val, 0, word); \
+	int index = (int)VAL_NUMBER(index_val); \
+	double delta = VAL_NUMBER(delta_val); \
+	if (VAL_TAG(target_val) == T_ARRAY) { \
+		Object *array = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= array->len) { \
+			fail(interp, word ": array index %d out of bounds (length %d)", index, array->len); \
+			return; \
+		} \
+		Val *element = &array->items[index]; \
+		if (VAL_TAG(*element) != T_FLOAT) { \
+			fail(interp, word ": array element is not a float; got %s", tag_name(VAL_TAG(*element))); \
+			return; \
+		} \
+		*element = make_float(VAL_NUMBER(*element) op delta); \
+	} else if (VAL_TAG(target_val) == T_SEGMENT) { \
+		Object *segment = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= segment->segment.length) { \
+			fail(interp, word ": segment index %d out of bounds (length %d)", index, segment->segment.length); \
+			return; \
+		} \
+		segment_set(segment, index, segment_get(segment, index) op delta); \
+	} else { \
+		fail(interp, word ": expected an array or segment; got %s", tag_name(VAL_TAG(target_val))); \
+		return; \
+	} \
+	interp->dsp -= 3; \
+	DISPATCH(interp); \
+}
+
+ARRAY_INPLACE_OP(p_add_store_i, "(+!i)", +)
+ARRAY_INPLACE_OP(p_sub_store_i, "(-!i)", -)
+ARRAY_INPLACE_OP(p_mul_store_i, "(*!i)", *)
+ARRAY_INPLACE_OP(p_div_store_i, "(/!i)", /)
+
 void p_at_j(Interpreter *interp) {
 	POP_INT(index, "@j", "index");
 	POP_MATRIX(source, "@j");

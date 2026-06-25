@@ -34,23 +34,6 @@ Over the match/replace layer: `index-of`, `starts-with`, `ends-with`,
 
 ## Core language additions
 
-### Bitwise operations
-
-Integer bitwise operators over the float representation: a value is read as a
-two's-complement integer (exact within the double's 53-bit integer range), the
-operation runs, and the result is pushed back as a float.
-
-- AND, OR, XOR, complement, left shift, logical right shift. The names must not
-  collide with the logical `and` / `or` / `not` (truthiness) words — e.g.
-  `bit-and` / `bit-or` / `bit-xor` / `bit-not` / `lshift` / `rshift`.
-
-Enables byte- and bit-level algorithms (base64, block ciphers, bit-stream
-codecs) and a native Mersenne Twister.
-
-To settle: the word names; the integer width (64-bit throughout vs a 32-bit
-masking word for codecs that need wraparound at `2^32`); whether right shift is
-logical only or also offers an arithmetic variant.
-
 ### Path queries — follow-ups
 
 - **Wildcard mutation** — `*` / `//` in `!` / `delete-at` / `update-at` for

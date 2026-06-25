@@ -63,7 +63,7 @@ inline
     repeat
 
     \ Skip equivalent perms
-    *perm1* 0 @i 0 = 0 = if
+    *perm1* 0 @i if
       *perm1* *n* f1- @i *n* f1- = 0 = if
         copy-perm1
         count-flips update-max
