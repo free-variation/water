@@ -905,6 +905,7 @@ void p_at_i_local0(Interpreter *interp);
 void p_at_i_lit(Interpreter *interp);
 void p_at_i_lit_local0(Interpreter *interp);
 void p_store_i(Interpreter *interp);
+void p_store_i_drop(Interpreter *interp);
 void p_at_j(Interpreter *interp);
 void p_at_ij(Interpreter *interp);
 int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,

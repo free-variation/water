@@ -269,6 +269,8 @@ int superword_cell_count(cell handler) {
 	return 0;
 }
 
+static int store_i_drop_cfa;
+
 int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_cfa == vocab.at_i_cfa) {
 		if (try_fuse_at_i_local(interp))
@@ -276,6 +278,15 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 		return try_fuse_at_i_lit(interp);
 	}
 	cfa_handler op_handler = (cfa_handler)vocab.dict[op_cfa];
+
+	if (op_handler == p_drop
+	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
+	    && (cfa_handler)vocab.dict[vocab.here - 1] == p_store_i) {
+		vocab.here -= 1;
+		emit_call(interp, store_i_drop_cfa);
+		return 1;
+	}
+
 	if (try_fuse_local_arith(interp, op_handler))
 		return 1;
 	int prev1 = compiler.fuse_prev_var;
@@ -354,6 +365,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 void define_superwords(Interpreter *interp) {
 	define_primitive(interp, "f*+", p_fmul_add, 0);
 	define_primitive(interp, "f*-", p_fmul_sub, 0);
+	store_i_drop_cfa = define_primitive(interp, "(!i-drop)", p_store_i_drop, 0);
 
 #define REG_VV(suffix, op, base) \
 	vv_##suffix##_cfa = define_primitive(interp, "(vvf" #op ")", p_vv_##suffix, 4); \

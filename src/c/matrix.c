@@ -148,6 +148,40 @@ void p_store_i(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_store_i_drop(Interpreter *interp) {
+	PEEK_AT(target_val, 2, "!i");
+	PEEK_AT(index_val, 1, "!i");
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		fail(interp, "!i: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+	int index = (int)VAL_NUMBER(index_val);
+	PEEK_AT(value, 0, "!i");
+
+	if (VAL_TAG(target_val) == T_ARRAY) {
+		Object *array = OBJECT_AT(VAL_DATA(target_val));
+		if (index < 0 || index >= array->len) {
+			fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
+			return;
+		}
+		array->items[index] = value;
+	} else if (VAL_TAG(target_val) == T_SEGMENT) {
+		if (VAL_TAG(value) != T_FLOAT) {
+			fail(interp, "!i: segment stores a float; got %s", tag_name(VAL_TAG(value)));
+			return;
+		}
+		Object *segment = OBJECT_AT(VAL_DATA(target_val));
+		segment_set(segment, index, VAL_NUMBER(value));
+	} else {
+		fail(interp, "!i: expected an array or segment; got %s", tag_name(VAL_TAG(target_val)));
+		return;
+	}
+
+	interp->dsp -= 3;
+
+	DISPATCH(interp);
+}
+
 void p_at_j(Interpreter *interp) {
 	POP_INT(index, "@j", "index");
 	POP_MATRIX(source, "@j");
