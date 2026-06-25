@@ -413,6 +413,8 @@ typedef struct Interpreter {
 	int loop_local_base;
 	int loop_local_refill;
 	int run_floor;
+	int loop_body_start;
+	int loop_n;
 	
 	int *bind_trail;
 	int bind_trail_top, bind_trail_cap;
@@ -735,6 +737,11 @@ typedef struct {
 	int fast;
 	int reuses_locals;
 	int saved_loop_local_base;
+
+	int saved_loop_body_start;
+	int saved_loop_n;
+	int leave_ip;
+	cell saved_leave;
 } CallContext;
 
 void call_open(Interpreter *interp, int cfa, CallContext *ctx);

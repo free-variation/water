@@ -1190,6 +1190,10 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 	context->saved_slot_1 = vocab.dict[interp->trampoline_base + 1];
 	context->saved_slot_2 = vocab.dict[interp->trampoline_base + 2];
 
+	context->saved_loop_body_start = interp->loop_body_start;
+	context->saved_loop_n = interp->loop_n;
+	interp->loop_body_start = 0;
+
 	cell stop_handler = vocab.dict[vocab.stop_cfa];
 	if (handler == docol) {
 		vocab.dict[interp->trampoline_base] = (cell)docol;
@@ -1201,11 +1205,22 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 			if (interp->rsp + n_locals + 1 <= RETURN_STACK_DEPTH) {
 				interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
 
-			context->saved_loop_local_base = interp->loop_local_base;
-			interp->local_base = interp->rsp;
-			interp->loop_local_base = interp->rsp;
-			interp->rsp += n_locals;
-			context->reuses_locals = 1;
+				context->saved_loop_local_base = interp->loop_local_base;
+				interp->local_base = interp->rsp;
+				interp->loop_local_base = interp->rsp;
+				interp->rsp += n_locals;
+				context->reuses_locals = 1;
+
+				interp->loop_n = n_locals;
+				context->leave_ip = 0;
+
+				if ((cfa_handler)vocab.dict[cfa - 2] == (cfa_handler)vocab.dict[vocab.branch_cfa]) {
+					int leave_ip = cfa + (int)vocab.dict[cfa - 1] - 4;
+					context->leave_ip = leave_ip;
+					context->saved_leave = vocab.dict[leave_ip];
+					vocab.dict[leave_ip] = stop_handler;
+					interp->loop_body_start = cfa + 3;
+				}
 			}
 		}
 	} else {
@@ -1216,6 +1231,23 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 }
 
 void call_invoke(Interpreter *interp) {
+	if (interp->loop_body_start) {
+		interp->loop_local_refill = 0;
+
+		int n = interp->loop_n;
+		int base = interp->loop_local_base;
+		int data_start = interp->dsp - n;
+		
+		for (int i = 0; i < n; i++)
+			interp->return_stack[base + i] = interp->data_stack[data_start + i];
+
+		interp->dsp -= n;
+		interp->ip = interp->loop_body_start;
+		interp->running = 1;
+		run_inner(interp, interp->rsp);
+		return;
+	}
+
 	interp->ip = interp->trampoline_base;
 	interp->running = 1;
 	run_inner(interp, interp->rsp);
@@ -1230,7 +1262,13 @@ void call_close(Interpreter *interp, CallContext *context) {
 	vocab.dict[interp->trampoline_base + 1] = context->saved_slot_1;
 	vocab.dict[interp->trampoline_base + 2] = context->saved_slot_2;
 
+	interp->loop_body_start = context->saved_loop_body_start;
+	interp->loop_n = context->saved_loop_n;
+
 	if (context->reuses_locals) {
+		if (context->leave_ip)
+			vocab.dict[context->leave_ip] = context->saved_leave;
+
 		Val locals_header = interp->return_stack[interp->loop_local_base - 1];
 		interp->rsp = interp->loop_local_base - 1;
 		interp->local_base = saved_local_base(locals_header);
