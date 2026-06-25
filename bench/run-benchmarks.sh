@@ -21,6 +21,15 @@ root=$(cd "$here/.." && pwd)
 bin="$root/logicforth"
 
 python=${PYTHON:-python3.14}
+# crypto-pyaes needs the pure-Python `pyaes` module; prefer the repo .venv
+# (where it is installed) over the default interpreter. Override with CRYPTO_PYTHON.
+if [ -n "${CRYPTO_PYTHON:-}" ]; then
+	crypto_python=$CRYPTO_PYTHON
+elif [ -x "$root/.venv/bin/python" ]; then
+	crypto_python="$root/.venv/bin/python"
+else
+	crypto_python=$python
+fi
 reps=${REPS:-5}
 reps_py=${REPS_PY:-3}
 # regex-compile is an inherently single-shot cold measure (~1 ms; the cache
@@ -33,6 +42,7 @@ nbody_steps=20000
 raytrace_loops=10
 float_points=100000
 float_repeat=20
+crypto_loops=10
 spectral_loops=50
 scimark_lu_cycles=100
 nqueens_n=8
@@ -107,6 +117,7 @@ lf_fannkuch() { "$bin" < "$here/pyperformance/fannkuch.l4"; }
 lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.l4"; } | "$bin"; }
 lf_raytrace() { { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.l4"; } | "$bin"; }
 lf_float()    { "$bin" < "$here/pyperformance/float.l4"; }
+lf_crypto()   { "$bin" < "$here/pyperformance/crypto-pyaes.l4"; }
 lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.l4"; } | "$bin"; }
 lf_spectral_matrix() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/variants/spectral-norm-matrix.l4"; } | "$bin"; }
 lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.l4"; } | "$bin"; }
@@ -132,6 +143,7 @@ py_fannkuch() { "$python" "$here/pyperformance/pyperf_fannkuch.py" "$fannkuch_n"
 py_nbody()    { "$python" "$here/pyperformance/pyperf_nbody.py" "$nbody_steps"; }
 py_raytrace() { "$python" "$here/pyperformance/pyperf_raytrace.py" "$raytrace_loops"; }
 py_float()    { "$python" "$here/pyperformance/pyperf_float.py" "$float_points" "$float_repeat"; }
+py_crypto()   { "$crypto_python" "$here/pyperformance/pyperf_crypto_pyaes.py" "$crypto_loops"; }
 py_spectral() { "$python" "$here/pyperformance/pyperf_spectral_norm.py" "$spectral_loops"; }
 py_scimark_lu() { "$python" "$here/pyperformance/pyperf_scimark_lu.py" "$scimark_lu_cycles"; }
 py_scimark_sor() { "$python" "$here/pyperformance/pyperf_scimark_sor.py" "$scimark_sor_loops"; }
@@ -260,6 +272,10 @@ log "== float =="
 run_reps float_lf lf_float "$reps"
 run_reps float_py py_float "$reps_py"
 
+log "== crypto-pyaes =="
+run_reps crypto_lf lf_crypto "$reps"
+run_reps crypto_py py_crypto "$reps_py"
+
 log "== fannkuch =="
 run_reps fannkuch_lf lf_fannkuch "$reps"
 run_reps fannkuch_py py_fannkuch "$reps_py"
@@ -387,6 +403,7 @@ row "nqueens-iter" "N = $nqueens_n" nqueens_iter_lf "$(median_elapsed nqueens_py
 row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
 row "raytrace" "${raytrace_loops}× 100×100" raytrace_lf "$(median_elapsed raytrace_py)"
 row "float" "${float_points} pts × ${float_repeat}" float_lf "$(median_elapsed float_py)"
+row "crypto-pyaes" "8192 B, ${crypto_loops}× enc+dec" crypto_lf "$(median_elapsed crypto_py)"
 row "fannkuch" "N = $fannkuch_n" fannkuch_lf "$(median_elapsed fannkuch_py)"
 row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed spectral_py)"
 row "spectral-norm-matrix" "N = 130, ${spectral_loops}×" spectral_matrix_lf "$(median_elapsed spectral_py)"
@@ -427,6 +444,7 @@ emit "| nqueens | $(result_line nqueens_lf 'solutions') | $(result_line nqueens_
 emit "| nbody | $(result_line nbody_lf 'final energy') | $(result_line nbody_py 'final energy') |"
 emit "| raytrace | $(result_line raytrace_lf 'checksum') | $(result_line raytrace_py 'checksum') |"
 emit "| float | $(result_line float_lf 'result:') | $(result_line float_py 'result:') |"
+emit "| crypto-pyaes | $(result_line crypto_lf 'checksum:') | $(result_line crypto_py 'checksum:') |"
 emit "| fannkuch | $(result_line fannkuch_lf 'max flips') | $(result_line fannkuch_py 'max flips') |"
 emit "| spectral-norm | $(result_line spectral_lf 'estimate') | $(result_line spectral_py 'estimate') |"
 emit "| scimark-lu | $(result_line scimark_lu_lf 'checksum') | $(result_line scimark_lu_py 'checksum') |"
