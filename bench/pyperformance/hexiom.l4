@@ -9,10 +9,11 @@
 \ Verification: the solved board's 19 cell values in id order (EMPTY shown as 7)
 \ must equal "3422447777427243727". Only the solve loop is timed (LOOPS solves).
 
-variable COUNT  19.0 to COUNT
-variable EMPTY  7.0 to EMPTY
-variable LINKS  variable TILES
-variable SOLUTION_SIG
+50 to *loops*
+19.0 constant *count*
+7.0 constant *empty*
+variable *links*  variable *tiles*
+variable *solution-sig*
 
 : init-data
   [ [ 1.0 3.0 4.0 ]
@@ -33,8 +34,8 @@ variable SOLUTION_SIG
     [ 14.0 18.0 11.0 10.0 ]
     [ 17.0 13.0 12.0 ]
     [ 18.0 16.0 14.0 13.0 ]
-    [ 17.0 15.0 14.0 ] ] to LINKS
-  [ 0.0 0.0 5.0 2.0 5.0 0.0 0.0 7.0 ] to TILES ;
+    [ 17.0 15.0 14.0 ] ] to *links*
+  [ 0.0 0.0 5.0 2.0 5.0 0.0 0.0 7.0 ] to *tiles* ;
 
 \ --- per-cell set helpers (cells = array of 19 candidate-value sets) -------
 : already-done? ( cells i -- f )  @i size 1.0 = ;
@@ -51,11 +52,11 @@ variable SOLUTION_SIG
 : nb-vminvmax ( cells i -- vmin vmax )
   | >cells >i vmin vmax links |
   0.0 to vmin  0.0 to vmax
-  LINKS i @i to links
+  *links* i @i to links
   [: | >k nid |
      links k @i to nid
      cells nid already-done? if
-        cells nid cell-val EMPTY = 0= if vmin 1.0 f+ to vmin  vmax 1.0 f+ to vmax then
+        cells nid cell-val *empty* = 0= if vmin 1.0 f+ to vmin  vmax 1.0 f+ to vmax then
      else vmax 1.0 f+ to vmax then
   :] links size i-times
   vmin vmax ;
@@ -63,21 +64,21 @@ variable SOLUTION_SIG
 : count-possible ( cells v -- n )            \ how many cells still allow v
   | >cells >v n |
   0.0 to n
-  [: | >i | cells i v member-cell? if n 1.0 f+ to n then :] COUNT i-times
+  [: | >i | cells i v member-cell? if n 1.0 f+ to n then :] *count* i-times
   n ;
 
 : remove-unfixed ( cells v -- changed )      \ drop v from every not-yet-fixed cell
   | >cells >v changed |
   0.0 to changed
-  [: | >i | cells i already-done? 0= if cells i v cell-remove if 1.0 to changed then then :] COUNT i-times
+  [: | >i | cells i already-done? 0= if cells i v cell-remove if 1.0 to changed then then :] *count* i-times
   changed ;
 
 \ --- constraint propagation (one pass; returns whether anything changed) ---
 : constraint-pass ( cells last-move -- changed )
   | >cells >last-move changed left freecells filledcells v possible |
   0.0 to changed
-  TILES copy to left
-  last-move -1.0 = if 0.0 COUNT 1.0 f- range else LINKS last-move @i then to freecells
+  *tiles* copy to left
+  last-move -1.0 = if 0.0 *count* 1.0 f- range else *links* last-move @i then to freecells
   \ 1. remove values impossible by neighbour counts
   [: | >fi i vmin vmax |
      freecells fi @i to i
@@ -91,36 +92,36 @@ variable SOLUTION_SIG
      then
   :] freecells size i-times
   \ 2. how many of each value remain free
-  [: | >i cv | cells i already-done? if cells i cell-val to cv  left cv  left cv @i 1.0 f-  !i drop then :] COUNT i-times
+  [: | >i cv | cells i already-done? if cells i cell-val to cv  left cv  left cv @i 1.0 f-  !i drop then :] *count* i-times
   \ 3. exhaust or force values
   [: | >v |
-     TILES v @i 0.0 gt  left v @i 0.0 = and if
+     *tiles* v @i 0.0 gt  left v @i 0.0 = and if
         cells v remove-unfixed if 1.0 to changed then
      else
-        cells v count-possible TILES v @i = if
-           [: | >i | cells i already-done? 0=  cells i v member-cell? and if cells i v set-done 1.0 to changed then :] COUNT i-times
+        cells v count-possible *tiles* v @i = if
+           [: | >i | cells i already-done? 0=  cells i v member-cell? and if cells i v set-done 1.0 to changed then :] *count* i-times
         then
      then
   :] 8.0 i-times
   \ 4. force empty / non-empty around filled cells
-  last-move -1.0 = if 0.0 COUNT 1.0 f- range else [ last-move ] then to filledcells
+  last-move -1.0 = if 0.0 *count* 1.0 f- range else [ last-move ] then to filledcells
   [: | >fi i num filled unk links |
      filledcells fi @i to i
      cells i already-done? if
         cells i cell-val to num
         0.0 to filled  [ ] to unk
-        LINKS i @i to links
+        *links* i @i to links
         [: | >k nid |
            links k @i to nid
            cells nid already-done? if
-              cells nid cell-val EMPTY = if else filled 1.0 f+ to filled then
+              cells nid cell-val *empty* = if else filled 1.0 f+ to filled then
            else unk [ nid ] concat to unk then
         :] links size i-times
         unk size 0.0 gt if
            num filled = if
-              [: | >uk u | unk uk @i to u  cells u EMPTY member-cell? if cells u EMPTY set-done 1.0 to changed then :] unk size i-times
+              [: | >uk u | unk uk @i to u  cells u *empty* member-cell? if cells u *empty* set-done 1.0 to changed then :] unk size i-times
            else num filled unk size f+ = if
-              [: | >uk u | unk uk @i to u  cells u EMPTY cell-remove if 1.0 to changed then :] unk size i-times
+              [: | >uk u | unk uk @i to u  cells u *empty* cell-remove if 1.0 to changed then :] unk size i-times
            then then
         then
      then
@@ -130,23 +131,23 @@ variable SOLUTION_SIG
 \ --- record the solved board's 19 cell values (id order) ------------------
 : capture-sig ( cells -- )
   | >cells |
-  [: | >i | cells i cell-val 48.0 f+ :] COUNT i-times
-  COUNT array codepoints>string to SOLUTION_SIG ;
+  [: | >i | cells i cell-val 48.0 f+ :] *count* i-times
+  *count* array codepoints>string to *solution-sig* ;
 
 \ --- solved? : OPEN=0 SOLVED=1 IMPOSSIBLE=-1 ------------------------------
 : solved ( cells -- status )
   | >cells left exact all-done sz num vmin vmax i |
-  TILES copy to left
+  *tiles* copy to left
   1.0 to exact  1.0 to all-done
   0.0 to i
-  begin i COUNT lt while
+  begin i *count* lt while
      cells i @i size to sz
      sz 0.0 = if -1.0 exit then
      sz 1.0 = if
         cells i cell-val to num
         left num  left num @i 1.0 f-  !i drop
         left num @i 0.0 lt if -1.0 exit then
-        num EMPTY = 0= if
+        num *empty* = 0= if
            cells i nb-vminvmax to vmax to vmin
            num vmin lt num vmax gt or if -1.0 exit then
            num vmin = 0= if 0.0 to exact then
@@ -162,7 +163,7 @@ variable SOLUTION_SIG
 : first-cell ( cells -- id )       \ first not-yet-fixed cell, or -1
   | >cells i |
   0.0 to i
-  begin i COUNT lt while
+  begin i *count* lt while
      cells i already-done? 0= if i exit then
      i 1.0 f+ to i
   repeat
@@ -175,8 +176,8 @@ variable SOLUTION_SIG
   cid 0.0 lt if cid [ ] exit then
   cells cid @i to c
   c dup size take to arr
-  arr [: EMPTY = 0= :] filter reverse to moves
-  c EMPTY member? if moves [ EMPTY ] concat to moves then
+  arr [: *empty* = 0= :] filter reverse to moves
+  c *empty* member? if moves [ *empty* ] concat to moves then
   cid moves ;
 
 \ --- backtracking solver (the timed kernel) ------------------------------
@@ -202,17 +203,17 @@ variable SOLUTION_SIG
 
 : solve-once
   | cells |
-  0.0 COUNT array-of to cells
-  [: | >i | cells i < 2.0 3.0 4.0 7.0 > !i drop :] COUNT i-times
+  0.0 *count* array-of to cells
+  [: | >i | cells i < 2.0 3.0 4.0 7.0 > !i drop :] *count* i-times
   cells 1.0 solve-step drop ;
 
 : hexiom-bench
   | t0 |
   init-data
   now to t0
-  [: solve-once :] LOOPS times
+  [: solve-once :] *loops* times
   now t0 - to t0
-  "signature: " . SOLUTION_SIG . cr
+  "signature: " . *solution-sig* . cr
   "elapsed: " . t0 . " s" . cr ;
 
 hexiom-bench

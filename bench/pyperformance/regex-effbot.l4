@@ -3,57 +3,56 @@
 \ shapes, over 7 prefix/suffix lengths (0..10000) = 147 (pattern, string)
 \ pairs; each searched 10 times. Pure search throughput vs string length.
 
-\ the 21 patterns (index-aligned with FILLS / WORDS below)
+\ the 21 patterns (index-aligned with *fills* / *words* below)
 [ "Python|Perl" "Python|Perl" "(Python|Perl)" "(?:Python|Perl)"
   "Python" "Python" ".*Python" ".*Python.*" ".*(Python)" ".*(?:Python)"
   "Python|Perl|Tcl" "Python|Perl|Tcl" "(Python|Perl|Tcl)" "(?:Python|Perl|Tcl)"
   "(Python)\1" "(Python)\1"
   "([0a-z][a-z0-9]*,)+" "(?:[0a-z][a-z0-9]*,)+" "([a-z][a-z0-9]*,)+" "(?:[a-z][a-z0-9]*,)+"
-  ".*P.*y.*t.*h.*o.*n.*" ] to PATTERNS
+  ".*P.*y.*t.*h.*o.*n.*" ] constant *patterns*
 
-\ each string is FILLS[id]*n + WORDS[id] + FILLS[id]*n
-[ "-" "P" "-" "-" "-" "P" "-" "-" "-" "-" "-" "P" "-" "-" "-" "P" "-" "-" "-" "-" "-" ] to FILLS
+\ each string is *fills*[id]*n + *words*[id] + *fills*[id]*n
+[ "-" "P" "-" "-" "-" "P" "-" "-" "-" "-" "-" "P" "-" "-" "-" "P" "-" "-" "-" "-" "-" ] constant *fills*
 [ "Perl" "Perl" "Perl" "Perl" "Python" "Python" "Python" "Python" "Python" "Python"
   "Perl" "Perl" "Perl" "Perl" "PythonPython" "PythonPython"
-  "a5,b7,c9," "a5,b7,c9," "a5,b7,c9," "a5,b7,c9," "Python" ] to WORDS
+  "a5,b7,c9," "a5,b7,c9," "a5,b7,c9," "a5,b7,c9," "Python" ] constant *words*
 
-[ 0 5 50 250 1000 5000 10000 ] to NVALUES
+[ 0 5 50 250 1000 5000 10000 ] constant *nvalues*
 
 \ a string repeated n times
 : rep ( s n -- s' )  array-of "" join ;
 
-\ FILLS[id]*n + WORDS[id] + FILLS[id]*n
+\ *fills*[id]*n + *words*[id] + *fills*[id]*n
 : make-string ( fill word n -- s )
   |> fill word n |
   fill n rep  word +  fill n rep + ;
 
-\ build the 147 strings: kk in 0..146, id = kk mod 21, n = NVALUES[kk / 21]
+\ build the 147 strings: kk in 0..146, id = kk mod 21, n = *nvalues*[kk / 21]
 : build-strings ( -- arr )
   | arr |
   "" 147 array-of to arr
   [: |> kk |
      arr kk
-       FILLS kk 21 mod @i
-       WORDS kk 21 mod @i
-       NVALUES kk 21 quotient @i
+       *fills* kk 21 mod @i
+       *words* kk 21 mod @i
+       *nvalues* kk 21 quotient @i
        make-string
      !i drop
   :] 147 i-times
   arr ;
 
-variable STRS
-build-strings to STRS
+build-strings constant *strs*
 
 \ search the kk-th (pattern, string) pair 10 times
 : search10 ( string pattern -- )  [: 2dup has? drop :] 10 times  drop drop ;
 
 : search-all ( -- )
-  [: |> kk |  STRS kk @i  PATTERNS kk 21 mod @i  search10 :] 147 i-times ;
+  [: |> kk |  *strs* kk @i  *patterns* kk 21 mod @i  search10 :] 147 i-times ;
 
 \ verification: how many of the 147 pairs match (each counted once)
 : count-matches ( -- n )
   | n |  0 to n
-  [: |> kk |  STRS kk @i  PATTERNS kk 21 mod @i  has?  n + to n :] 147 i-times
+  [: |> kk |  *strs* kk @i  *patterns* kk 21 mod @i  has?  n + to n :] 147 i-times
   n ;
 
 count-matches "matches: {0}" format . cr

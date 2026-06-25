@@ -3,7 +3,6 @@
 \ each first-seen in a single pass — one pass per fresh process measures
 \ cold compile + JIT with no cache reuse.
 
-variable PATTERNS
 [
   "^ba"
   "(((\w+):\/\/)([^\/:]*)(:(\d+))?)?([^#?]*)(\?([^#]*))?(#(.*))?"
@@ -244,8 +243,8 @@ variable PATTERNS
   "fnsnev"
   "jva"
   "jvaqbjf"
-] to PATTERNS
+] constant *patterns*
 
-: compile-all  PATTERNS size [: PATTERNS swap @i  "" swap has? drop :] swap i-times ;
-PATTERNS size "patterns: {0}" format . cr
+: compile-all  *patterns* size [: *patterns* swap @i  "" swap has? drop :] swap i-times ;
+*patterns* size "patterns: {0}" format . cr
 now compile-all now swap - "elapsed: {0} s" format . cr

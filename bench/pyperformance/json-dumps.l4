@@ -5,26 +5,24 @@
 \ through json>frame so no boolean literal is needed in source; the timed phase
 \ is frame>json over them, 250 passes (matches bench/pyperf_json_dumps.py).
 
-variable EMPTY  variable SIMPLE  variable NESTED  variable HUGE
-
-"{}" json>frame to EMPTY
-"{""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}" json>frame to SIMPLE
-"{""key"": ""ąćż"", ""key1"": 0, ""key2"": {""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}, ""key3"": ""value"", ""key4"": {""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}, ""key5"": {""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}}" json>frame to NESTED
+"{}" json>frame constant *empty*
+"{""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}" json>frame constant *simple*
+"{""key"": ""ąćż"", ""key1"": 0, ""key2"": {""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}, ""key3"": ""value"", ""key4"": {""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}, ""key5"": {""key1"": 0, ""key2"": true, ""key3"": ""value"", ""key4"": ""foo"", ""key5"": ""string""}}" json>frame constant *nested*
 
 \ HUGE = a 1000-element array of the NESTED frame (mirrors [NESTED]*1000)
-NESTED 1000 array-of to HUGE
+*nested* 1000 array-of constant *huge*
 
 : run-dumps ( -- )
-  [: EMPTY frame>json drop :] 2000 times
-  [: SIMPLE frame>json drop :] 1000 times
-  [: NESTED frame>json drop :] 1000 times
-  HUGE frame>json drop ;
+  [: *empty* frame>json drop :] 2000 times
+  [: *simple* frame>json drop :] 1000 times
+  [: *nested* frame>json drop :] 1000 times
+  *huge* frame>json drop ;
 
 \ verification: total canonical length, expect 314389 (2 + 75 + 312 + 314000)
-EMPTY frame>json size
-SIMPLE frame>json size +
-NESTED frame>json size +
-HUGE frame>json size +
+*empty* frame>json size
+*simple* frame>json size +
+*nested* frame>json size +
+*huge* frame>json size +
 "bytes: {0}" format . cr
 
 now [: run-dumps :] 250 times now swap - "elapsed: {0} s" format . cr

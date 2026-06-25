@@ -6,77 +6,78 @@
 \ the checksum (sum of the result vector) verify real arithmetic.
 \ Build is untimed; only the CYCLES sweeps are measured.
 
-variable M  variable RI  variable RJ
-variable M1   2147483647.0 to M1
-variable DM1  1.0 2147483647.0 f/ to DM1
+500 to *cycles*
+variable *m*  variable *ri*  variable *rj*
+2147483647.0 constant *m1*
+1.0 2147483647.0 f/ constant *dm1*
 
-variable ROW  variable COL  variable VAL  variable X  variable Y
-variable N    1000.0 to N
-variable NZ   50000.0 to NZ
-variable NR   50.0 to NR
-variable ANZ  50000.0 to ANZ
+variable *row*  variable *col*  variable *val*  variable *x*  variable *y*
+1000.0 constant *n*
+50000.0 constant *nz*
+50.0 constant *nr*
+50000.0 constant *anz*
 
 : rng-init ( seed -- )
   | >seed jseed k0 k1 j0 j1 |
   seed fabs to seed
-  seed M1 lt 0= if M1 to seed then
+  seed *m1* lt 0= if *m1* to seed then
   seed 2.0 mod 0.0 = if seed 1.0 f- to seed then
   9069.0 65536.0 mod to k0
   9069.0 65536.0 f/ to k1
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
-  17.0 double-segment to M
+  17.0 double-segment to *m*
   [: |> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     M iloop  j0 65536.0 j1 f* f+  !i drop
+     *m* iloop  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
-  4.0 to RI  16.0 to RJ ;
+  4.0 to *ri*  16.0 to *rj* ;
 
 : next-double ( -- d )
   | k ii jj |
-  RI to ii  RJ to jj
-  M ii @i  M jj @i f- to k
-  k 0.0 lt if k M1 f+ to k then
-  M jj k !i drop
-  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to RI
-  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to RJ
-  DM1 k f* ;
+  *ri* to ii  *rj* to jj
+  *m* ii @i  *m* jj @i f- to k
+  k 0.0 lt if k *m1* f+ to k then
+  *m* jj k !i drop
+  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to *ri*
+  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to *rj*
+  *dm1* k f* ;
 
 : build-sparse
-  N 1.0 f+ double-segment to ROW
-  NZ double-segment to COL
-  ANZ double-segment to VAL
-  N double-segment to X
-  N double-segment to Y
+  *n* 1.0 f+ double-segment to *row*
+  *nz* double-segment to *col*
+  *anz* double-segment to *val*
+  *n* double-segment to *x*
+  *n* double-segment to *y*
   101.0 rng-init
-  [: |> i | X i next-double !i drop :] N i-times
-  [: |> i | VAL i next-double !i drop :] ANZ i-times
-  ROW 0.0 0.0 !i drop
+  [: |> i | *x* i next-double !i drop :] *n* i-times
+  [: |> i | *val* i next-double !i drop :] *anz* i-times
+  *row* 0.0 0.0 !i drop
   [: | >r rowr step |
-     ROW r @i to rowr
-     ROW r 1.0 f+  rowr NR f+  !i drop
-     r NR / ftruncate to step
+     *row* r @i to rowr
+     *row* r 1.0 f+  rowr *nr* f+  !i drop
+     r *nr* / ftruncate to step
      step 1.0 lt if 1.0 to step then
-     [: |> i | COL rowr i f+  i step f*  !i drop :] NR i-times
-  :] N i-times ;
+     [: |> i | *col* rowr i f+  i step f*  !i drop :] *nr* i-times
+  :] *n* i-times ;
 
 : sparse-matmult
   [:
      [: | >r sa lo hi |
         0.0 to sa
-        ROW r @i to lo
-        ROW r 1.0 f+ @i to hi
-        [: | >k i | lo k f+ to i  X COL i @i @i  VAL i @i f*  sa f+ to sa :] hi lo f- i-times
-        Y r sa !i drop
-     :] N i-times
-  :] CYCLES times ;
+        *row* r @i to lo
+        *row* r 1.0 f+ @i to hi
+        [: | >k i | lo k f+ to i  *x* *col* i @i @i  *val* i @i f*  sa f+ to sa :] hi lo f- i-times
+        *y* r sa !i drop
+     :] *n* i-times
+  :] *cycles* times ;
 
 : sparse-checksum ( -- s )
   | s |
   0.0 to s
-  [: |> r | Y r @i s f+ to s :] N i-times
+  [: |> r | *y* r @i s f+ to s :] *n* i-times
   s ;
 
 : sparse-bench

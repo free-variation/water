@@ -1,0 +1,14 @@
+\ constant ( value -- ): define an inline word that pushes the value as a
+\ literal, so it folds into call sites instead of fetching at run time.
+
+5 constant *softening*
+*softening* .  cr
+*softening* 3.0 f* .  cr
+
+\ any value works, not just numbers
+"abc" constant *tag*
+*tag* .  cr
+
+\ inside a compiled word the constant folds to a literal — no call, no fetch
+: scale  *softening* 3.0 f* ;
+' scale see-compiled

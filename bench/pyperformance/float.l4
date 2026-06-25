@@ -8,41 +8,41 @@
 \ fusion targets. The whole benchmark is repeated REPEAT times for a stable
 \ measurement; the reported result is the final maximized point.
 
-variable POINTS  100000.0 to POINTS
-variable REPEAT  20.0 to REPEAT
+100000.0 constant *points*
+20.0 constant *repeat*
 
-variable XS  variable YS  variable ZS
-variable MAXX variable MAXY variable MAXZ
+variable *xs*  variable *ys*  variable *zs*
+variable *maxx* variable *maxy* variable *maxz*
 
 : build-points
   [: | >i sxi |
      i fsin to sxi
-     XS i sxi !i drop
-     YS i  i fcos 3.0 f*  !i drop
-     ZS i  sxi sxi f* 2.0 f/  !i drop
-  :] POINTS i-times ;
+     *xs* i sxi !i drop
+     *ys* i  i fcos 3.0 f*  !i drop
+     *zs* i  sxi sxi f* 2.0 f/  !i drop
+  :] *points* i-times ;
 
 : normalize-points
   [: | >i xi yi zi norm |
-     XS i @i to xi  YS i @i to yi  ZS i @i to zi
+     *xs* i @i to xi  *ys* i @i to yi  *zs* i @i to zi
      xi xi f* yi yi f* f+ zi zi f* f+ fsqrt to norm
-     XS i  xi norm f/  !i drop
-     YS i  yi norm f/  !i drop
-     ZS i  zi norm f/  !i drop
-  :] POINTS i-times ;
+     *xs* i  xi norm f/  !i drop
+     *ys* i  yi norm f/  !i drop
+     *zs* i  zi norm f/  !i drop
+  :] *points* i-times ;
 
 : maximize-points
-  XS 0 @i to MAXX  YS 0 @i to MAXY  ZS 0 @i to MAXZ
+  *xs* 0 @i to *maxx*  *ys* 0 @i to *maxy*  *zs* 0 @i to *maxz*
   [: | >i xi |
-     XS i @i to xi  MAXX xi gt 0= if xi to MAXX then
-     YS i @i to xi  MAXY xi gt 0= if xi to MAXY then
-     ZS i @i to xi  MAXZ xi gt 0= if xi to MAXZ then
-  :] POINTS i-times ;
+     *xs* i @i to xi  *maxx* xi gt 0= if xi to *maxx* then
+     *ys* i @i to xi  *maxy* xi gt 0= if xi to *maxy* then
+     *zs* i @i to xi  *maxz* xi gt 0= if xi to *maxz* then
+  :] *points* i-times ;
 
 : float-once
-  POINTS double-segment to XS
-  POINTS double-segment to YS
-  POINTS double-segment to ZS
+  *points* double-segment to *xs*
+  *points* double-segment to *ys*
+  *points* double-segment to *zs*
   build-points
   normalize-points
   maximize-points ;
@@ -50,9 +50,9 @@ variable MAXX variable MAXY variable MAXZ
 : float-run
   | t0 |
   now to t0
-  [: float-once :] REPEAT times
+  [: float-once :] *repeat* times
   now t0 - to t0
-  "result: " . [ MAXX MAXY MAXZ ] frame>json . cr
+  "result: " . [ *maxx* *maxy* *maxz* ] frame>json . cr
   "elapsed: " . t0 . " s" . cr ;
 
 float-run

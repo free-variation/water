@@ -11,21 +11,21 @@
 \   6 26 86 58 113 31 31 32 43               the nine variant counts
 \   1336326                                  final length
 
-100000 to N
+100000 constant *n*
 
 \ a one-character newline string (string literals are raw; the newline is
 \ the literal character between the quotes)
 "
-" to nl
+" constant nl
 
 \ ALU source (287 characters)
-"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA" to alu
+"GGCCGGGCGCGGTGGCTCACGCCTGTAATCCCAGCACTTTGGGAGGCCGAGGCGGGCGGATCACCTGAGGTCAGGAGTTCGAGACCAGCCTGGCCAACATGGTGAAACCCCGTCTCTACTAAAAATACAAAAATTAGCCGGGCGTGGTGGCGCGCGCCTGTAATCCCAGCTACTCGGGAGGCTGAGGCAGGAGAATCGCTTGAACCCGGGAGGCGGAGGTTGCAGTGAGCCGAGATCGCGCCACTGCACTCCAGCCTGGGCGACAGAGCGAGACTCCGTCTCAAAAA" constant alu
 
 \ frequency tables: base probabilities in table order, parallel char arrays
-[ 0.27 0.12 0.12 0.27 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 ] to iub-base
-[ "a" "c" "g" "t" "B" "D" "H" "K" "M" "N" "R" "S" "V" "W" "Y" ] to iub-chars
-[ 0.3029549426680 0.1979883004921 0.1975473066391 0.3015094502008 ] to homo-base
-[ "a" "c" "g" "t" ] to homo-chars
+[ 0.27 0.12 0.12 0.27 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 0.02 ] constant iub-base
+[ "a" "c" "g" "t" "B" "D" "H" "K" "M" "N" "R" "S" "V" "W" "Y" ] constant iub-chars
+[ 0.3029549426680 0.1979883004921 0.1975473066391 0.3015094502008 ] constant homo-base
+[ "a" "c" "g" "t" ] constant homo-chars
 
 variable iub-cum
 variable homo-cum
@@ -99,11 +99,11 @@ variable rng-seed
   42.0 to rng-seed
 
   ">ONE Homo sapiens alu" header  to seq
-  seq  alu N 2 * tile  60 wrap  +  to seq
+  seq  alu *n* 2 * tile  60 wrap  +  to seq
   seq  ">TWO IUB ambiguity codes" header  +  to seq
-  seq  iub-cum iub-chars  N 3 *  random-content  60 wrap  +  to seq
+  seq  iub-cum iub-chars  *n* 3 *  random-content  60 wrap  +  to seq
   seq  ">THREE Homo sapiens frequency" header  +  to seq
-  seq  homo-cum homo-chars  N 5 *  random-content  60 wrap  +  to seq
+  seq  homo-cum homo-chars  *n* 5 *  random-content  60 wrap  +  to seq
   seq ;
 
 \ match-all returns 0 (not an array) on no match

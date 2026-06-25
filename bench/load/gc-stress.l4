@@ -4,51 +4,51 @@
 \ GC, deep traversal, reify/copy (gc-disabled path), worker-local GC (pmap heavy),
 \ region rewind (pmap light) and region keep (pmap escaping results).
 
-: N 200000 ;      \ inner element count
-: R 300 ;         \ rounds for arena/pair/copy churn
-: BIG 2000000 ;   \ large-matrix element count (serial byte-trigger)
-: MR 800 ;        \ matrix rounds
-: B 600 ;         \ pmap domain size (drives each worker past its GC threshold)
+200000 constant *elems*     \ inner element count
+300 constant *rounds*        \ rounds for arena/pair/copy churn
+2000000 constant *big-elems*  \ large-matrix element count (serial byte-trigger)
+800 constant *matrix-rounds*       \ matrix rounds
+600 constant *domain*        \ pmap domain size (drives each worker past its GC threshold)
 
 : sum1n ( n -- s ) dup 1 + * 2 / ;
 : ck ( got want -- ) = . cr ;
 
 \ A: arena array churn + reduce, R rounds  (forces array alloc/discard + gc)
-1 R range 0 [: |> a e | a  1 N range 0 [: + :] reduce  + :] reduce
-N sum1n R *  ck
+1 *rounds* range 0 [: |> a e | a  1 *elems* range 0 [: + :] reduce  + :] reduce
+*elems* sum1n *rounds* *  ck
 gc
 
 \ B: large matrices, MR rounds  (heap payloads + serial byte-trigger GC + reuse)
-1 MR range 0 [: |> a e | a  1 BIG range BIG 1 matrix sum  + :] reduce
-BIG sum1n MR *  ck
+1 *matrix-rounds* range 0 [: |> a e | a  1 *big-elems* range *big-elems* 1 matrix sum  + :] reduce
+*big-elems* sum1n *matrix-rounds* *  ck
 gc
 
 \ C: cons lists, R rounds  (pair alloc + epoch mark + pair GC + traversal)
-1 R range 0 [: |> a e | a  1 N range array>cons cons>array 0 [: + :] reduce  + :] reduce
-N sum1n R *  ck
+1 *rounds* range 0 [: |> a e | a  1 *elems* range array>cons cons>array 0 [: + :] reduce  + :] reduce
+*elems* sum1n *rounds* *  ck
 gc
 
 \ D: deep copy, R rounds  (reify/copy gc-disabled path; copy must sum-equal original)
-1 R range 0 [: |> a e | a  1 N range copy 0 [: + :] reduce  + :] reduce
-N sum1n R *  ck
+1 *rounds* range 0 [: |> a e | a  1 *elems* range copy 0 [: + :] reduce  + :] reduce
+*elems* sum1n *rounds* *  ck
 gc
 
 \ E: pmap heavy == serial  (each item builds a big matrix -> worker-local GC)
-1 B range [: |> i | i  1 BIG range BIG 1 matrix sum  * :] map
-1 B range 6 1 [: |> i | i  1 BIG range BIG 1 matrix sum  * :] pmap-ext
+1 *domain* range [: |> i | i  1 *big-elems* range *big-elems* 1 matrix sum  * :] map
+1 *domain* range 6 1 [: |> i | i  1 *big-elems* range *big-elems* 1 matrix sum  * :] pmap-ext
 =  . cr
 gc
 
 \ F: pmap light == serial  (scalar results never reference the region -> rewind)
-1 B range [: 1 + :] map
-1 B range 6 1 [: 1 + :] pmap-ext
+1 *domain* range [: 1 + :] map
+1 *domain* range 6 1 [: 1 + :] pmap-ext
 =  . cr
 gc
 
 \ G: pmap escaping == serial  (each item returns one region pair -> region kept.
 \ One escaping allocation per item stays within pmap's pre-grown headroom.)
-1 B range [: |> i | i 0 cons :] map
-1 B range 6 1 [: |> i | i 0 cons :] pmap-ext
+1 *domain* range [: |> i | i 0 cons :] map
+1 *domain* range 6 1 [: |> i | i 0 cons :] pmap-ext
 =  . cr
 gc
 

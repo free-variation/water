@@ -85,6 +85,7 @@ const HelpEntry help_entries[] = {
 	{ "concat", "( arr/set arr/set -- arr )", "Concatenated copy", "2 + m + n", "1a(m+n)", "O(m+n)" },
 	{ "cons", "( head tail -- pair )", "Build a cons cell", "2", "1 pair", "O(1)" },
 	{ "cons>array", "( list -- arr )", "Walk a cons chain into an array, **dereferencing** the spine and each element and including the terminal (works on relational results)", "n", "1a(n)", "O(n)" },
+	{ "constant", "( val -- )", "Pop a value and read the following name; define an inline word that pushes it as a literal, so call sites fold to the literal with no run-time fetch. Fixed at definition — to cannot reassign it", NULL, NULL, NULL },
 	{ "copy", "( a -- a' )", "Deep copy of any value, copy_term-style: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations, pairs; identity for scalars. Defined generally, not frame-specific.", "tree size", "one object per node", "O(tree size)" },
 	{ "cos", "( a -- cos a )", "cosine (radians)", "2", "matrix 1m(r×c)", "same" },
 	{ "count-matches", "( rel pattern -- n )", "How many rows match; for a covering query this is the bucket's size with no scan, otherwise query size", "—", "(covering: none)", "O(candidates)" },
@@ -363,4 +364,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 357;
+const int help_entry_count = 358;

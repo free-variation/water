@@ -8,41 +8,43 @@
 \ sum of DATA after the timed loop (a forward+inverse pair is the identity up to
 \ rounding, accumulated identically in both runtimes). Build is untimed.
 
-variable M  variable RI  variable RJ
-variable M1   2147483647.0 to M1
-variable DM1  1.0 2147483647.0 f/ to DM1
+5 to *loops*
+50 to *cycles*
+variable *m*  variable *ri*  variable *rj*
+2147483647.0 constant *m1*
+1.0 2147483647.0 f/ constant *dm1*
 
-variable INIT  variable DATA
-variable NPTS  1024.0 to NPTS          \ complex points
-variable NLEN  2048.0 to NLEN          \ data length = 2·NPTS
+variable *init*  variable *data*
+1024.0 constant *npts*          \ complex points
+2048.0 constant *nlen*          \ data length = 2·NPTS
 
 : rng-init ( seed -- )
   | >seed jseed k0 k1 j0 j1 |
   seed fabs to seed
-  seed M1 lt 0= if M1 to seed then
+  seed *m1* lt 0= if *m1* to seed then
   seed 2.0 mod 0.0 = if seed 1.0 f- to seed then
   9069.0 65536.0 mod to k0
   9069.0 65536.0 f/ to k1
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
-  17.0 double-segment to M
+  17.0 double-segment to *m*
   [: |> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     M iloop  j0 65536.0 j1 f* f+  !i drop
+     *m* iloop  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
-  4.0 to RI  16.0 to RJ ;
+  4.0 to *ri*  16.0 to *rj* ;
 
 : next-double ( -- d )
   | k ii jj |
-  RI to ii  RJ to jj
-  M ii @i  M jj @i f- to k
-  k 0.0 lt if k M1 f+ to k then
-  M jj k !i drop
-  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to RI
-  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to RJ
-  DM1 k f* ;
+  *ri* to ii  *rj* to jj
+  *m* ii @i  *m* jj @i f- to k
+  k 0.0 lt if k *m1* f+ to k then
+  *m* jj k !i drop
+  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to *ri*
+  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to *rj*
+  *dm1* k f* ;
 
 : int-log2 ( n -- log )
   | >n k log |
@@ -52,7 +54,7 @@ variable NLEN  2048.0 to NLEN          \ data length = 2·NPTS
 
 : fft-bitreverse ( -- )            \ permute DATA into bit-reversed order
   | n nm1 j i ii jj k tr ti |
-  NLEN 2.0 / to n
+  *nlen* 2.0 / to n
   n 1.0 f- to nm1
   0.0 to j  0.0 to i
   begin i nm1 lt while
@@ -60,12 +62,12 @@ variable NLEN  2048.0 to NLEN          \ data length = 2·NPTS
      j 2.0 f* to jj
      n 2.0 / ftruncate to k
      i j lt if
-        DATA ii @i to tr
-        DATA ii 1.0 f+ @i to ti
-        DATA ii  DATA jj @i  !i drop
-        DATA ii 1.0 f+  DATA jj 1.0 f+ @i  !i drop
-        DATA jj tr !i drop
-        DATA jj 1.0 f+ ti !i drop
+        *data* ii @i to tr
+        *data* ii 1.0 f+ @i to ti
+        *data* ii  *data* jj @i  !i drop
+        *data* ii 1.0 f+  *data* jj 1.0 f+ @i  !i drop
+        *data* jj tr !i drop
+        *data* jj 1.0 f+ ti !i drop
      then
      begin j k lt 0= while  j k f- to j  k 2.0 / ftruncate to k  repeat
      j k f+ to j
@@ -74,7 +76,7 @@ variable NLEN  2048.0 to NLEN          \ data length = 2·NPTS
 
 : fft-transform-internal ( direction -- )
   | >direction n logn bit dual wr wi theta s t s2 b a ii jj wdr wdi z1r z1i |
-  NLEN 2.0 / to n
+  *nlen* 2.0 / to n
   n 1.0 = if exit then
   n int-log2 to logn
   fft-bitreverse
@@ -89,12 +91,12 @@ variable NLEN  2048.0 to NLEN          \ data length = 2·NPTS
      begin b n lt while
         b 2.0 f* to ii
         b dual f+ 2.0 f* to jj
-        DATA jj @i to wdr
-        DATA jj 1.0 f+ @i to wdi
-        DATA jj  DATA ii @i wdr f-  !i drop
-        DATA jj 1.0 f+  DATA ii 1.0 f+ @i wdi f-  !i drop
-        DATA ii  DATA ii @i wdr f+  !i drop
-        DATA ii 1.0 f+  DATA ii 1.0 f+ @i wdi f+  !i drop
+        *data* jj @i to wdr
+        *data* jj 1.0 f+ @i to wdi
+        *data* jj  *data* ii @i wdr f-  !i drop
+        *data* jj 1.0 f+  *data* ii 1.0 f+ @i wdi f-  !i drop
+        *data* ii  *data* ii @i wdr f+  !i drop
+        *data* ii 1.0 f+  *data* ii 1.0 f+ @i wdi f+  !i drop
         b dual 2.0 f* f+ to b
      repeat
      1.0 to a
@@ -106,14 +108,14 @@ variable NLEN  2048.0 to NLEN          \ data length = 2·NPTS
         begin b n lt while
            b a f+ 2.0 f* to ii
            b a f+ dual f+ 2.0 f* to jj
-           DATA jj @i to z1r
-           DATA jj 1.0 f+ @i to z1i
+           *data* jj @i to z1r
+           *data* jj 1.0 f+ @i to z1i
            wr z1r f* wi z1i f* f- to wdr
            wr z1i f* wi z1r f* f+ to wdi
-           DATA jj  DATA ii @i wdr f-  !i drop
-           DATA jj 1.0 f+  DATA ii 1.0 f+ @i wdi f-  !i drop
-           DATA ii  DATA ii @i wdr f+  !i drop
-           DATA ii 1.0 f+  DATA ii 1.0 f+ @i wdi f+  !i drop
+           *data* jj  *data* ii @i wdr f-  !i drop
+           *data* jj 1.0 f+  *data* ii 1.0 f+ @i wdi f-  !i drop
+           *data* ii  *data* ii @i wdr f+  !i drop
+           *data* ii 1.0 f+  *data* ii 1.0 f+ @i wdi f+  !i drop
            b dual 2.0 f* f+ to b
         repeat
         a 1.0 f+ to a
@@ -125,23 +127,23 @@ variable NLEN  2048.0 to NLEN          \ data length = 2·NPTS
 : fft-inverse ( -- )
   | norm |
   1.0 fft-transform-internal
-  1.0  NLEN 2.0 f/  f/ to norm
-  [: |> i | DATA i  DATA i @i norm f*  !i drop :] NLEN i-times ;
+  1.0  *nlen* 2.0 f/  f/ to norm
+  [: |> i | *data* i  *data* i @i norm f*  !i drop :] *nlen* i-times ;
 
 : fft-bench
   | t0 s |
-  NLEN double-segment to INIT
-  NLEN double-segment to DATA
+  *nlen* double-segment to *init*
+  *nlen* double-segment to *data*
   7.0 rng-init
-  [: |> i | INIT i next-double !i drop :] NLEN i-times
+  [: |> i | *init* i next-double !i drop :] *nlen* i-times
   now to t0
   [: |> lp |
-     [: |> i | DATA i INIT i @i !i drop :] NLEN i-times
-     [: -1.0 fft-transform-internal fft-inverse :] CYCLES times
-  :] LOOPS i-times
+     [: |> i | *data* i *init* i @i !i drop :] *nlen* i-times
+     [: -1.0 fft-transform-internal fft-inverse :] *cycles* times
+  :] *loops* i-times
   now t0 - to t0
   0.0 to s
-  [: |> i | DATA i @i s f+ to s :] NLEN i-times
+  [: |> i | *data* i @i s f+ to s :] *nlen* i-times
   "elapsed: " . t0 . " s" . cr
   s "checksum: {0}" format . cr ;
 

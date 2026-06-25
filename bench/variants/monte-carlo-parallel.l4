@@ -15,26 +15,28 @@
 \ and `variable WORKERS 10 to WORKERS`). CHUNKS = WORKERS, claim 1, so each
 \ worker samples exactly one chunk from its own stream and the estimate is
 \ reproducible.
-variable CHUNK
-variable EST
-variable T0
+3000000 to *samples*
+10 to *workers*
+variable *chunk*
+variable *est*
+variable *t0*
 
 : partial ( j -- hits )
   | >j hits |
   0.0 to hits
-  [: random random fsq swap fsq f+ 1.0 gt 0= if f++ hits then :] CHUNK times
+  [: random random fsq swap fsq f+ 1.0 gt 0= if f++ hits then :] *chunk* times
   hits ;
 
 : pmonte
-  SAMPLES WORKERS / to CHUNK
+  *samples* *workers* / to *chunk*
   12345 seed
-  now to T0
-  0 WORKERS 1- range
-  WORKERS 1 ' partial pmap-ext
+  now to *t0*
+  0 *workers* 1- range
+  *workers* 1 ' partial pmap-ext
   0.0 [: f+ :] reduce
-  SAMPLES f/ 4.0 f* to EST
-  now T0 - "elapsed: {0} s" format . cr
-  EST "estimate: {0}" format . cr ;
+  *samples* f/ 4.0 f* to *est*
+  now *t0* - "elapsed: {0} s" format . cr
+  *est* "estimate: {0}" format . cr ;
 
 pmonte
 bye

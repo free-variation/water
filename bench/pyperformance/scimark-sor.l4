@@ -8,81 +8,82 @@
 \ checksum is verifiable. Outer repeat count comes from ITERATIONS; the inner
 \ relaxation runs CYCLES sweeps, as in the reference (cycles = 10).
 
-variable M  variable RI  variable RJ
-variable M1   2147483647.0 to M1
-variable DM1  1.0 2147483647.0 f/ to DM1
+100 to *iterations*
+variable *m*  variable *ri*  variable *rj*
+2147483647.0 constant *m1*
+1.0 2147483647.0 f/ constant *dm1*
 
-variable G
-variable N    100.0 to N
-variable NM1  99.0 to NM1
-variable NN   10000.0 to NN
-variable CYCLES  10.0 to CYCLES
+variable *g*
+100.0 constant *n*
+99.0 constant *nm1*
+10000.0 constant *nn*
+10.0 constant *cycles*
 
 : rng-init ( seed -- )
   | >seed jseed k0 k1 j0 j1 |
   seed fabs to seed
-  seed M1 lt 0= if M1 to seed then
+  seed *m1* lt 0= if *m1* to seed then
   seed 2.0 mod 0.0 = if seed 1.0 f- to seed then
   9069.0 65536.0 mod to k0
   9069.0 65536.0 f/ to k1
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
-  17.0 double-segment to M
+  17.0 double-segment to *m*
   [: |> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     M iloop  j0 65536.0 j1 f* f+  !i drop
+     *m* iloop  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
-  4.0 to RI  16.0 to RJ ;
+  4.0 to *ri*  16.0 to *rj* ;
 
 : next-double ( -- d )
   | k ii jj |
-  RI to ii  RJ to jj
-  M ii @i  M jj @i f- to k
-  k 0.0 lt if k M1 f+ to k then
-  M jj k !i drop
-  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to RI
-  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to RJ
-  DM1 k f* ;
+  *ri* to ii  *rj* to jj
+  *m* ii @i  *m* jj @i f- to k
+  k 0.0 lt if k *m1* f+ to k then
+  *m* jj k !i drop
+  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to *ri*
+  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to *rj*
+  *dm1* k f* ;
 
-: build-G
-  NN double-segment to G
+: build-*g*
+  *nn* double-segment to *g*
   101.0 rng-init
-  [: |> idx | G idx next-double !i drop :] NN i-times ;
+  [: |> idx | *g* idx next-double !i drop :] *nn* i-times ;
 
 : sor-execute
   | y x idx nv |
   [:
      1.0 to y
-     begin y NM1 lt while
+     begin y *nm1* lt while
         1.0 to x
-        begin x NM1 lt while
-           y N f* x f+ to idx
+        begin x *nm1* lt while
+           y *n* f* x f+ to idx
            1.25 0.25 f*
-           G idx N f- @i
-           G idx N f+ @i f+
-           G idx 1.0 f- @i f+
-           G idx 1.0 f+ @i f+
+           *g* idx *n* f- @i
+           *g* idx *n* f+ @i f+
+           *g* idx 1.0 f- @i f+
+           *g* idx 1.0 f+ @i f+
            f*
-           1.0 1.25 f-  G idx @i f*  f+  to nv
-           G idx nv !i drop
+           1.0 1.25 f-  *g* idx @i f*  f+  to nv
+           *g* idx nv !i drop
            x 1.0 f+ to x
         repeat
         y 1.0 f+ to y
      repeat
-  :] CYCLES times ;
+  :] *cycles* times ;
 
 : sor-checksum ( -- s )
   | s |
   0.0 to s
-  [: |> idx | G idx @i s f+ to s :] NN i-times
+  [: |> idx | *g* idx @i s f+ to s :] *nn* i-times
   s ;
 
 : sor-bench
   | t0 |
   now to t0
-  [: build-G sor-execute :] ITERATIONS times
+  [: build-*g* sor-execute :] *iterations* times
   now t0 - to t0
   "elapsed: " . t0 . " s" . cr
   sor-checksum "checksum: {0}" format . cr ;

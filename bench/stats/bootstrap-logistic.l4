@@ -6,25 +6,25 @@
 
 "lib/statistics.l4" load
 
-: REPS 50 ;
-: WORKERS 6 ;
+50 constant *reps*
+6 constant *workers*
 
 "data/logistic-sim.tsv" read-tsv 1 rows>dataset to ds
-ds [ :x1 :x2 :x3 :x4 :x5 :x6 :x7 :x8 ] dataset>matrix with-intercept to X
-ds [ :y ] dataset>matrix to Y
-X Y augment to data
+ds [ :x1 :x2 :x3 :x4 :x5 :x6 :x7 :x8 ] dataset>matrix with-intercept to *x*
+ds [ :y ] dataset>matrix to *y*
+*x* *y* augment to data
 data dim drop to n
 
 7 seed
-REPS iota [: |> i | data n resample-indices select-rows :] map to resamples
+*reps* iota [: |> i | data n resample-indices select-rows :] map to resamples
 
 now to t0
 resamples ' fit-augmented-logistic map to serial-betas
 now to t1
-resamples WORKERS 1 ' fit-augmented-logistic pmap-ext to pmap-betas
+resamples *workers* 1 ' fit-augmented-logistic pmap-ext to pmap-betas
 now to t2
 
-"rows=" . n . "reps=" . REPS . "workers=" . WORKERS . cr
+"rows=" . n . "reps=" . *reps* . "workers=" . *workers* . cr
 "serial   (s):" . t1 t0 - . cr
 "parallel (s):" . t2 t1 - . cr
 "speedup     :" . t1 t0 - t2 t1 - / . cr

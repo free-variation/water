@@ -6,24 +6,24 @@
 \ Mirrors benchmark(N) with N=20000; per N it does 30
 \ copies of `a` plus 3×5×2 = 30 copies of the mutated `dc` = 60 copies.
 
-variable A  variable DC  variable COLORS
+variable *dc*
 
-{ :list [ 1 2 3 43 ] :str "hello" :subdict { :a :1 } :t [ 1 2 3 ] } to A
-{ :string "hello" :lst [ 1 2 3 ] :boolean :1 } to DC
-[ "red" "blue" "green" ] to COLORS
+{ :list [ 1 2 3 43 ] :str "hello" :subdict { :a :1 } :t [ 1 2 3 ] } constant *a*
+{ :string "hello" :lst [ 1 2 3 ] :boolean :1 } to *dc*
+[ "red" "blue" "green" ] constant *colors*
 
 : run-deepcopy ( -- )
-  [: A copy drop :] 30 times
+  [: *a* copy drop :] 30 times
   [: |> ci |
-     DC :string COLORS ci @i ! drop
+     *dc* :string *colors* ci @i ! drop
      [: |> kk |
-        DC :lst @ 0 kk !i drop
-        DC :boolean :1 ! drop  DC copy drop
-        DC :boolean :0 ! drop  DC copy drop
+        *dc* :lst @ 0 kk !i drop
+        *dc* :boolean :1 ! drop  *dc* copy drop
+        *dc* :boolean :0 ! drop  *dc* copy drop
      :] 5 i-times
   :] 3 i-times ;
 
 \ verification: a deep copy equals its original, expect 1
-A copy A = "equal: {0}" format . cr
+*a* copy *a* = "equal: {0}" format . cr
 
 now [: run-deepcopy :] 20000 times now swap - "elapsed: {0} s" format . cr

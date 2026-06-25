@@ -79,6 +79,7 @@ column-sums
 concat
 cons
 cons>array
+constant
 copy
 cos
 count-matches

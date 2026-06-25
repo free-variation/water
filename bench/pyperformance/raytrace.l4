@@ -14,22 +14,23 @@
 \ is computed as 1 - specular - lambert, matching the reference bit-for-bit
 \ (1.0 - 0.2 - 0.6 is not exactly 0.2 in double precision).
 
-variable OBJECTS  variable LIGHTS
-variable NOBJ      8.0 to NOBJ
-variable NLIGHTS   2.0 to NLIGHTS
-variable WIDTH     100.0 to WIDTH
-variable HEIGHT    100.0 to HEIGHT
-variable EPSILON   0.00001 to EPSILON
-variable NEGEPS    -0.00001 to NEGEPS
-variable RDEPTH
-variable CHECKSUM
+10 to *loops*
+variable *objects*  variable *lights*
+8.0 constant *nobj*
+2.0 constant *nlights*
+100.0 constant *width*
+100.0 constant *height*
+0.00001 constant *epsilon*
+-0.00001 constant *negeps*
+variable *rdepth*
+variable *checksum*
 
-variable EPX  variable EPY  variable EPZ        \ eye point
-variable EVX  variable EVY  variable EVZ        \ eye (view) direction, unit
-variable RX   variable RY   variable RZ         \ viewport right, unit
-variable UX   variable UY   variable UZ         \ viewport up, unit
-variable FOVR variable HALFW variable HALFH
-variable PIXW variable PIXH
+variable *epx*  variable *epy*  variable *epz*        \ eye point
+variable *evx*  variable *evy*  variable *evz*        \ eye (view) direction, unit
+variable *rx*   variable *ry*   variable *rz*         \ viewport right, unit
+variable *ux*   variable *uy*   variable *uz*         \ viewport up, unit
+variable *fovr* variable *halfw* variable *halfh*
+variable *pixw* variable *pixh*
 
 \ --- vector helpers (x y z carried as three cells) -----------------------
 : vnorm ( x y z -- x' y' z' )
@@ -82,10 +83,10 @@ variable PIXW variable PIXH
      y 6.0 f/  1.0 y 6.0 f/ f-  0.5  sphere-obj
   :] 6 i-times
   checker-plane
-  8 array to OBJECTS ;
+  8 array to *objects* ;
 
 : init-lights
-  [ 30.0 30.0 10.0 ]  [ -10.0 100.0 30.0 ]  2 array to LIGHTS ;
+  [ 30.0 30.0 10.0 ]  [ -10.0 100.0 30.0 ]  2 array to *lights* ;
 
 \ --- intersection: returns ( t hit ); t valid only when hit is 1 ----------
 : obj-intersect ( obj px py pz dx dy dz -- t hit )
@@ -111,31 +112,31 @@ variable PIXW variable PIXH
   | >hx >hy >hz >sdx >sdy >sdz vis |
   1.0 to vis
   [: |> oi |
-     OBJECTS oi @i  hx hy hz sdx sdy sdz  obj-intersect
-     if EPSILON gt if 0.0 to vis then
+     *objects* oi @i  hx hy hz sdx sdy sdz  obj-intersect
+     if *epsilon* gt if 0.0 to vis then
      else drop then
-  :] NOBJ i-times
+  :] *nobj* i-times
   vis ;
 
 \ --- trace one ray to a colour (specular reflection recurses) -------------
 : ray-colour ( px py pz dx dy dz -- r g b )
   | >px >py >pz >dx >dy >dz found besti bestt obj hx hy hz nrmx nrmy nrmz br bg bb cr cg cb spec lamb amb lam lf rr rg rb rfx rfy rfz lightarr sdx sdy sdz |
-  RDEPTH 3.0 gt if 0.0 0.0 0.0 exit then
-  RDEPTH 1+ to RDEPTH
+  *rdepth* 3.0 gt if 0.0 0.0 0.0 exit then
+  *rdepth* 1+ to *rdepth*
   0.0 to found  0.0 to besti  0.0 to bestt
   [: |> oi |
-     OBJECTS oi @i  px py pz dx dy dz  obj-intersect
+     *objects* oi @i  px py pz dx dy dz  obj-intersect
      if
-        dup NEGEPS gt if
+        dup *negeps* gt if
            found 0= if to bestt oi to besti 1.0 to found
            else dup bestt lt if to bestt oi to besti else drop then then
         else drop then
      else drop then
-  :] NOBJ i-times
+  :] *nobj* i-times
   found 0= if
      0.0 to cr 0.0 to cg 0.0 to cb
   else
-     OBJECTS besti @i to obj
+     *objects* besti @i to obj
      px dx bestt f* f+ to hx
      py dy bestt f* f+ to hy
      pz dz bestt f* f+ to hz
@@ -169,7 +170,7 @@ variable PIXW variable PIXH
      lamb 0.0 gt if
         0.0 to lam
         [: |> li |
-           LIGHTS li @i to lightarr
+           *lights* li @i to lightarr
            lightarr 0 @i hx f- to sdx
            lightarr 1 @i hy f- to sdy
            lightarr 2 @i hz f- to sdz
@@ -178,7 +179,7 @@ variable PIXW variable PIXH
               sdx nrmx f* sdy nrmy f* f+ sdz nrmz f* f+
               dup 0.0 gt if lam f+ to lam else drop then
            then
-        :] NLIGHTS i-times
+        :] *nlights* i-times
         lam 1.0 gt if 1.0 to lam then
         lamb lam f* to lf
         cr lf br f* f+ to cr
@@ -192,37 +193,37 @@ variable PIXW variable PIXH
         cb amb bb f* f+ to cb
      then
   then
-  RDEPTH 1- to RDEPTH
+  *rdepth* 1- to *rdepth*
   cr cg cb ;
 
 \ --- camera setup (matches Scene.render's eye/viewport math) --------------
 : setup-eye
-  0.0 to EPX 1.8 to EPY 10.0 to EPZ
-  0.0 0.0 f-  3.0 1.8 f-  0.0 10.0 f-  vnorm to EVZ to EVY to EVX
-  EVX EVY EVZ 0.0 1.0 0.0 vcross vnorm to RZ to RY to RX
-  RX RY RZ EVX EVY EVZ vcross vnorm to UZ to UY to UX
-  pi 45.0 2.0 f/ f* 180.0 f/ to FOVR
-  FOVR ftan to HALFW
-  0.75 HALFW f* to HALFH
-  HALFW 2.0 f* WIDTH 1.0 f- f/ to PIXW
-  HALFH 2.0 f* HEIGHT 1.0 f- f/ to PIXH ;
+  0.0 to *epx* 1.8 to *epy* 10.0 to *epz*
+  0.0 0.0 f-  3.0 1.8 f-  0.0 10.0 f-  vnorm to *evz* to *evy* to *evx*
+  *evx* *evy* *evz* 0.0 1.0 0.0 vcross vnorm to *rz* to *ry* to *rx*
+  *rx* *ry* *rz* *evx* *evy* *evz* vcross vnorm to *uz* to *uy* to *ux*
+  pi 45.0 2.0 f/ f* 180.0 f/ to *fovr*
+  *fovr* ftan to *halfw*
+  0.75 *halfw* f* to *halfh*
+  *halfw* 2.0 f* *width* 1.0 f- f/ to *pixw*
+  *halfh* 2.0 f* *height* 1.0 f- f/ to *pixh* ;
 
 \ --- render one frame, summing pixel bytes into CHECKSUM ------------------
 : render-frame
   | sx sy rdx rdy rdz pr pg pb |
-  0.0 to CHECKSUM
+  0.0 to *checksum*
   [: |> y |
      [: |> x |
-        x PIXW f* HALFW f- to sx
-        y PIXH f* HALFH f- to sy
-        RX sx f* EVX f+ UX sy f* f+ to rdx
-        RY sx f* EVY f+ UY sy f* f+ to rdy
-        RZ sx f* EVZ f+ UZ sy f* f+ to rdz
+        x *pixw* f* *halfw* f- to sx
+        y *pixh* f* *halfh* f- to sy
+        *rx* sx f* *evx* f+ *ux* sy f* f+ to rdx
+        *ry* sx f* *evy* f+ *uy* sy f* f+ to rdy
+        *rz* sx f* *evz* f+ *uz* sy f* f+ to rdz
         rdx rdy rdz vnorm to rdz to rdy to rdx
-        EPX EPY EPZ rdx rdy rdz ray-colour to pb to pg to pr
-        pr clamp-byte  pg clamp-byte f+  pb clamp-byte f+  CHECKSUM f+ to CHECKSUM
-     :] WIDTH i-times
-  :] HEIGHT i-times ;
+        *epx* *epy* *epz* rdx rdy rdz ray-colour to pb to pg to pr
+        pr clamp-byte  pg clamp-byte f+  pb clamp-byte f+  *checksum* f+ to *checksum*
+     :] *width* i-times
+  :] *height* i-times ;
 
 : raytrace-run ( loops -- )
   | >loops t0 |
@@ -232,8 +233,8 @@ variable PIXW variable PIXH
   now to t0
   [: render-frame :] loops times
   now t0 - to t0
-  "checksum: " . CHECKSUM . cr
+  "checksum: " . *checksum* . cr
   "elapsed: " . t0 . " s" . cr ;
 
-LOOPS raytrace-run
+*loops* raytrace-run
 bye

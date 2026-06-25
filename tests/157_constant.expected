@@ -1,0 +1,9 @@
+5 
+15 
+abc 
+: scale   \ 6 cells
+ 0: (lit) 5
+ 2: (lit) 3
+ 4: f*
+ 5: exit
+;

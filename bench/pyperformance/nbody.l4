@@ -4,61 +4,57 @@
 \ same 7 global variables. Subsequent uses are direct variable reads.
 \ Target arrays are pre-built so the symbol-to-XT resolution happens once.
 
-variable PI
-3.14159265358979323846 to PI
-
-variable SOLAR_MASS
-PI PI * 4 * to SOLAR_MASS
-
-variable DAYS_PER_YEAR
-365.24 to DAYS_PER_YEAR
+20000 to *iterations*
+3.14159265358979323846 constant *pi*
+*pi* *pi* * 4 * constant *solar-mass*
+365.24 constant *days-per-year*
 
 \ Body layout: 0=x 1=y 2=z 3=vx 4=vy 5=vz 6=mass
 : make-body ( x y z vx vy vz mass -- arr )  7 array ;
 
-variable BODIES
-variable B0  variable B1  variable B2  variable B3  variable B4
+variable *bodies*
+variable *b0*  variable *b1*  variable *b2*  variable *b3*  variable *b4*
 
 : init-bodies
-  0 0 0  0 0 0  SOLAR_MASS  make-body
+  0 0 0  0 0 0  *solar-mass*  make-body
   4.84143144246472090
   -1.16032004402742839
   -0.103622044471123109
-   1.66007664274403694e-03 DAYS_PER_YEAR *
-   7.69901118419740425e-03 DAYS_PER_YEAR *
-  -6.90460016972063023e-05 DAYS_PER_YEAR *
-   9.54791938424326609e-04 SOLAR_MASS *
+   1.66007664274403694e-03 *days-per-year* *
+   7.69901118419740425e-03 *days-per-year* *
+  -6.90460016972063023e-05 *days-per-year* *
+   9.54791938424326609e-04 *solar-mass* *
    make-body
    8.34336671824457987
    4.12479856412430479
   -0.403523417114321381
-  -2.76742510726862411e-03 DAYS_PER_YEAR *
-   4.99852801234917238e-03 DAYS_PER_YEAR *
-   2.30417297573763929e-05 DAYS_PER_YEAR *
-   2.85885980666130812e-04 SOLAR_MASS *
+  -2.76742510726862411e-03 *days-per-year* *
+   4.99852801234917238e-03 *days-per-year* *
+   2.30417297573763929e-05 *days-per-year* *
+   2.85885980666130812e-04 *solar-mass* *
    make-body
    12.8943695621391310
   -15.1111514016986312
   -0.223307578892655734
-   2.96460137564761618e-03 DAYS_PER_YEAR *
-   2.37847173959480950e-03 DAYS_PER_YEAR *
-  -2.96589568540237556e-05 DAYS_PER_YEAR *
-   4.36624404335156298e-05 SOLAR_MASS *
+   2.96460137564761618e-03 *days-per-year* *
+   2.37847173959480950e-03 *days-per-year* *
+  -2.96589568540237556e-05 *days-per-year* *
+   4.36624404335156298e-05 *solar-mass* *
    make-body
    15.3796971148509165
   -25.9193146099879641
    0.179258772950371181
-   2.68067772490389322e-03 DAYS_PER_YEAR *
-   1.62824170038242295e-03 DAYS_PER_YEAR *
-  -9.51592254519715870e-05 DAYS_PER_YEAR *
-   5.15138902046611451e-05 SOLAR_MASS *
+   2.68067772490389322e-03 *days-per-year* *
+   1.62824170038242295e-03 *days-per-year* *
+  -9.51592254519715870e-05 *days-per-year* *
+   5.15138902046611451e-05 *solar-mass* *
    make-body
-  5 array to BODIES
-  BODIES 0 @i to B0
-  BODIES 1 @i to B1
-  BODIES 2 @i to B2
-  BODIES 3 @i to B3
-  BODIES 4 @i to B4 ;
+  5 array to *bodies*
+  *bodies* 0 @i to *b0*
+  *bodies* 1 @i to *b1*
+  *bodies* 2 @i to *b2*
+  *bodies* 3 @i to *b3*
+  *bodies* 4 @i to *b4* ;
 
 \ Pre-declare the per-pair globals so the colon definitions below can
 \ reference them at compile time. destruct-to will still find and use them
@@ -82,15 +78,15 @@ variable b2-targets
 : offset-momentum
   | px py pz sun |
   0 to px  0 to py  0 to pz
-  BODIES 0 @i to sun
+  *bodies* 0 @i to sun
   [: |> i |
-     BODIES i @i 3 @i  BODIES i @i 6 @i *  px + to px
-     BODIES i @i 4 @i  BODIES i @i 6 @i *  py + to py
-     BODIES i @i 5 @i  BODIES i @i 6 @i *  pz + to pz
+     *bodies* i @i 3 @i  *bodies* i @i 6 @i *  px + to px
+     *bodies* i @i 4 @i  *bodies* i @i 6 @i *  py + to py
+     *bodies* i @i 5 @i  *bodies* i @i 6 @i *  pz + to pz
   :] 5 i-times
-  sun 3  px negate SOLAR_MASS /  !i drop
-  sun 4  py negate SOLAR_MASS /  !i drop
-  sun 5  pz negate SOLAR_MASS /  !i drop ;
+  sun 3  px negate *solar-mass* /  !i drop
+  sun 4  py negate *solar-mass* /  !i drop
+  sun 5  pz negate *solar-mass* /  !i drop ;
 
 : kinetic ( b -- ke )
   |> b |
@@ -108,11 +104,11 @@ variable b2-targets
 : energy ( -- e )
   | e |
   0 to e
-  [: BODIES swap @i kinetic e + to e :] 5 i-times
+  [: *bodies* swap @i kinetic e + to e :] 5 i-times
   [: |> i |
      [: |> j |
         i j lt if
-          BODIES i @i  BODIES j @i  pair-potential  e + to e
+          *bodies* i @i  *bodies* j @i  pair-potential  e + to e
         then :]
      5 i-times
   :] 5 i-times
@@ -146,21 +142,21 @@ variable b2-targets
 
 : advance ( dt -- )
   |> dt |
-  B0 B1 dt pair-force
-  B0 B2 dt pair-force
-  B0 B3 dt pair-force
-  B0 B4 dt pair-force
-  B1 B2 dt pair-force
-  B1 B3 dt pair-force
-  B1 B4 dt pair-force
-  B2 B3 dt pair-force
-  B2 B4 dt pair-force
-  B3 B4 dt pair-force
-  B0 dt integrate-pos
-  B1 dt integrate-pos
-  B2 dt integrate-pos
-  B3 dt integrate-pos
-  B4 dt integrate-pos ;
+  *b0* *b1* dt pair-force
+  *b0* *b2* dt pair-force
+  *b0* *b3* dt pair-force
+  *b0* *b4* dt pair-force
+  *b1* *b2* dt pair-force
+  *b1* *b3* dt pair-force
+  *b1* *b4* dt pair-force
+  *b2* *b3* dt pair-force
+  *b2* *b4* dt pair-force
+  *b3* *b4* dt pair-force
+  *b0* dt integrate-pos
+  *b1* dt integrate-pos
+  *b2* dt integrate-pos
+  *b3* dt integrate-pos
+  *b4* dt integrate-pos ;
 
 : nbody-run ( steps -- )
   | n t0 | to n
@@ -173,5 +169,5 @@ variable b2-targets
   "elapsed: " . now t0 - . "s" . cr
   "final energy:   " . energy . cr ;
 
-ITERATIONS nbody-run
+*iterations* nbody-run
 bye

@@ -5,34 +5,26 @@
 \
 \ Run:  ./logicforth -b < bench/cpu-stress-1pass.l4
 
-variable ITERS
-variable WORKERS
-variable DOMAIN
-variable SEEDS
-variable T0
-variable ELAPSED
-variable CHECK
-
-20000000 to ITERS
-num-cores to WORKERS
-num-cores 128 * to DOMAIN
-1 DOMAIN range to SEEDS
+20000000 constant *iters*
+num-cores to *workers*
+num-cores 128 * to *domain*
+1 *domain* range to *seeds*
 
 ( seed -- result )  \ a long, allocation-free float mill (2 FLOPs/iter)
 : crunch
 	| acc >seed |
 	seed 1.0 + to acc
-	[: acc seed + 0.5 * to acc :] ITERS times
+	[: acc seed + 0.5 * to acc :] *iters* times
 	acc ;
 
-WORKERS "cpu-stress-1pass: one pmap over all cores ({0} workers)" format . cr
-DOMAIN ITERS "  {1} items x {0} float-iters in a single region" format . cr
+*workers* "cpu-stress-1pass: one pmap over all cores ({0} workers)" format . cr
+*domain* *iters* "  {1} items x {0} float-iters in a single region" format . cr
 cr
 
-now to T0
-SEEDS WORKERS 1 [: crunch :] pmap-ext 0.0 [: + :] reduce to CHECK
-now T0 - to ELAPSED
+now to *t0*
+*seeds* *workers* 1 [: crunch :] pmap-ext 0.0 [: + :] reduce to *check*
+now *t0* - to *elapsed*
 
-ELAPSED "elapsed   : {0} s" format . cr
-DOMAIN ITERS * 2.0 * ELAPSED / 1000000000.0 / "aggregate : {0} GFLOP/s (interpreted scalar)" format . cr
-CHECK "checksum  : {0}" format . cr
+*elapsed* "elapsed   : {0} s" format . cr
+*domain* *iters* * 2.0 * *elapsed* / 1000000000.0 / "aggregate : {0} GFLOP/s (interpreted scalar)" format . cr
+*check* "checksum  : {0}" format . cr

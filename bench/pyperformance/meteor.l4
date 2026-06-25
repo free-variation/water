@@ -13,15 +13,16 @@
 \ 50-digit string and that string reversed. The precompute (board, pieces,
 \ footprints, SE-nh) is untimed; only the solve loop is measured. LOOPS solves run.
 
-variable BOARD  variable CTI  variable PIECES  variable FPS  variable SE_NH
-variable SOLS   variable DONE
-variable NSOLS  60.0 to NSOLS
+10 to *loops*
+variable *board*  variable *cti*  variable *pieces*  variable *fps*  variable *se-nh*
+variable *sols*   variable *done*
+60.0 constant *nsols*
 
 : cell-index ( code -- idx )      \ board index of a cell code, or -1
   |> code |
   code 0.0 lt if -1.0 exit then
   code 460.0 lt 0= if -1.0 exit then
-  CTI code @i ;
+  *cti* code @i ;
 
 : set-min ( s -- v )  1.0 take 0.0 @i ;
 : set-max ( s -- v )  dup size take reverse 0.0 @i ;
@@ -89,14 +90,14 @@ variable NSOLS  60.0 to NSOLS
 
 \ --- board + code->index table -------------------------------------------
 : init-board
-  -1.0 460.0 array-of to CTI
-  0.0 50.0 array-of to BOARD
+  -1.0 460.0 array-of to *cti*
+  0.0 50.0 array-of to *board*
   [: |> y |
      [: | >x code idx |
         2.0 x f* 50.0 y f* f+ y 2.0 mod f+ to code
         y 5.0 f* x f+ to idx
-        BOARD idx code !i drop
-        CTI code idx !i drop
+        *board* idx code !i drop
+        *cti* code idx !i drop
      :] 5 i-times
   :] 10 i-times ;
 
@@ -111,10 +112,10 @@ variable NSOLS  60.0 to NSOLS
     [ -51.0 -49.0 -49.0 -2.0 ]
     [ -49.0 51.0 2.0 -49.0 ]
     [ 51.0 51.0 2.0 51.0 ]
-    [ 2.0 -51.0 -51.0 -51.0 ] ] to PIECES
+    [ 2.0 -51.0 -51.0 -51.0 ] ] to *pieces*
   [: | >pi conv |
-     PIECES pi @i  pi 3.0 =  permute  [: convert :] map to conv
-     PIECES pi conv !i drop
+     *pieces* pi @i  pi 3.0 =  permute  [: convert :] map to conv
+     *pieces* pi conv !i drop
   :] 10 i-times ;
 
 \ --- footprints: FPS[ci][pi] = list of piece pi's footprints with min cell ci
@@ -125,19 +126,19 @@ variable NSOLS  60.0 to NSOLS
   row ;
 
 : init-fps
-  0.0 50.0 array-of to FPS
-  [: |> ci | FPS ci empty-row !i drop :] 50 i-times ;
+  0.0 50.0 array-of to *fps*
+  [: |> ci | *fps* ci empty-row !i drop :] 50 i-times ;
 
 : get-footprints
   [: | >ci c |
-     BOARD ci @i to c
+     *board* ci @i to c
      [: | >pi pps |
-        PIECES pi @i to pps
+        *pieces* pi @i to pps
         [: | >ppi fp m row nb |
            c pps ppi @i foot to fp
            fp size 5.0 = if
               fp set-min to m
-              FPS m @i to row
+              *fps* m @i to row
               row pi @i [ [ fp set>mask  fp dup size take ] ] concat to nb
               row pi nb !i drop
            then
@@ -146,8 +147,8 @@ variable NSOLS  60.0 to NSOLS
   :] 50 i-times ;
 
 : get-senh
-  0.0 50.0 array-of to SE_NH
-  [: |> ci | SE_NH ci  BOARD ci @i  [ 2.0 49.0 51.0 ] foot set>mask  !i drop :] 50 i-times ;
+  0.0 50.0 array-of to *se-nh*
+  [: |> ci | *se-nh* ci  *board* ci @i  [ 2.0 49.0 51.0 ] foot set>mask  !i drop :] 50 i-times ;
 
 \ --- solution string from a finished board (and its reverse) --------------
 : cb>string  ( cb -- s )  [: 48.0 f+ :] map codepoints>string ;
@@ -156,7 +157,7 @@ variable NSOLS  60.0 to NSOLS
 \ --- backtracking solver (the timed kernel) ------------------------------
 : solve ( i_min free cb pl -- )
   | >i_min >free >cb >pl_mask fp_i_cands tmp p fp_cands fp_idx fp fp_mask fp_cells n_free n_i_min npl_mask s rs |
-  FPS i_min @i to fp_i_cands
+  *fps* i_min @i to fp_i_cands
   pl_mask to tmp
   begin tmp 0.0 = 0= while
      tmp lowest-bit to p
@@ -172,27 +173,27 @@ variable NSOLS  60.0 to NSOLS
            pl_mask  pl_mask 1.0 f- bit-and  0.0 = 0= if
               free fp_mask bit-xor to n_free
               n_free lowest-bit to n_i_min
-              n_free  SE_NH n_i_min @i  bit-and  0.0 = 0= if
+              n_free  *se-nh* n_i_min @i  bit-and  0.0 = 0= if
                  pl_mask  1.0 p lshift  bit-xor to npl_mask
                  n_i_min n_free cb npl_mask solve
               then
            else
               cb cb>string to s
               cb cb>rstring to rs
-              SOLS s set-add! to SOLS
-              SOLS rs set-add! to SOLS
-              SOLS size NSOLS lt 0= if 1.0 to DONE exit then
+              *sols* s set-add! to *sols*
+              *sols* rs set-add! to *sols*
+              *sols* size *nsols* lt 0= if 1.0 to *done* exit then
            then
            [: |> i | cb fp_cells i @i -1.0 !i drop :] fp_cells size i-times
         then
         fp_idx 1.0 f+ to fp_idx
      repeat
-     DONE if exit then
+     *done* if exit then
   repeat ;
 
 : solve-once
-  0.0 to DONE
-  < > to SOLS
+  0.0 to *done*
+  < > to *sols*
   0.0
   1.0 50.0 lshift 1.0 f-
   -1.0 50.0 array-of
@@ -203,12 +204,12 @@ variable NSOLS  60.0 to NSOLS
   | t0 |
   init-board init-pieces init-fps get-footprints get-senh
   now to t0
-  [: solve-once :] LOOPS times
+  [: solve-once :] *loops* times
   now t0 - to t0
-  "solutions: " . SOLS size . cr
-  SOLS size NSOLS = "match: {0}" format . cr
-  "first: " . SOLS set-min . cr
-  "last: " . SOLS set-max . cr
+  "solutions: " . *sols* size . cr
+  *sols* size *nsols* = "match: {0}" format . cr
+  "first: " . *sols* set-min . cr
+  "last: " . *sols* set-max . cr
   "elapsed: " . t0 . " s" . cr ;
 
 meteor-bench

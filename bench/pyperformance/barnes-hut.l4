@@ -11,23 +11,25 @@
 \ subdivide is inlined into insert to avoid mutual recursion. Verification is the
 \ total system energy (all-pairs potential + kinetic). Build is untimed.
 
-variable G          6.67430e-11 to G
-variable SOFTENING  5.0 to SOFTENING
-variable TIME_STEP  0.1 to TIME_STEP
-variable THETA      0.5 to THETA
-variable WIDTH      1000.0 to WIDTH
-variable HEIGHT     800.0 to HEIGHT
-variable CX         500.0 to CX
-variable CY         400.0 to CY
-variable RADIUS     300.0 to RADIUS
-variable SPIRAL     0.1 to SPIRAL
-variable N          200.0 to N
+2 to *loops*
+50 to *iterations*
+6.67430e-11 constant *g*
+5.0 constant *softening*
+0.1 constant *time-step*
+0.5 constant *theta*
+1000.0 constant *width*
+800.0 constant *height*
+500.0 constant *cx*
+400.0 constant *cy*
+300.0 constant *radius*
+0.1 constant *spiral*
+200.0 constant *n*
 
-variable PARTICLES  variable PFILL
+variable *particles*  variable *pfill*
 
 \ The force target's position/mass/index, invariant across one calc-force descent;
 \ set once per particle so the recursion carries only the node.
-variable TPIDX  variable TPX  variable TPY  variable TPMASS
+variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
 
 : make-node ( bx by bw bh -- node )
   | >bx >by >bw >bh |
@@ -42,7 +44,7 @@ variable TPIDX  variable TPX  variable TPY  variable TPMASS
 
 : update-mass ( node pidx -- )
   | >node >pidx p pmass px py tm tnew |
-  PARTICLES pidx @i to p
+  *particles* pidx @i to p
   p 6 @i to pmass  p 0 @i to px  p 1 @i to py
   node 7 @i to tm
   tm pmass f+ to tnew
@@ -54,7 +56,7 @@ variable TPIDX  variable TPX  variable TPY  variable TPMASS
 
 : insert ( node pidx -- placed? )
   | >node >pidx p px py x y w h oldn |
-  PARTICLES pidx @i to p  p 0 @i to px  p 1 @i to py
+  *particles* pidx @i to p  p 0 @i to px  p 1 @i to py
   node px py contains? 0= if 0.0 exit then
   node 8 @i 4.0 lt  node 4 @i 0= and if
      node  9.0 node 8 @i f+  pidx  !i drop
@@ -88,13 +90,13 @@ variable TPIDX  variable TPX  variable TPY  variable TPMASS
 : calc-force ( node -- fx fy )
   | >node dx dy dist f fxacc fyacc fx2 fy2 |
   node 7 @i 0.0 feq if 0.0 0.0 exit then
-  node 8 @i 1.0 feq  node 9 @i TPIDX feq and if 0.0 0.0 exit then
-  node 5 @i TPX f- to dx
-  node 6 @i TPY f- to dy
+  node 8 @i 1.0 feq  node 9 @i *tpidx* feq and if 0.0 0.0 exit then
+  node 5 @i *tpx* f- to dx
+  node 6 @i *tpy* f- to dy
   dx dx f* dy dy f* f+ fsqrt to dist
-  node 4 @i 0.0 feq  node 2 @i 2.0 f* dist f/ THETA flt  or if
-     dist SOFTENING flt if SOFTENING to dist then
-     G TPMASS f* node 7 @i f*  dist dist f* f/ to f
+  node 4 @i 0.0 feq  node 2 @i 2.0 f* dist f/ *theta* flt  or if
+     dist *softening* flt if *softening* to dist then
+     *g* *tpmass* f* node 7 @i f*  dist dist f* f/ to f
      f dx f* dist f/   f dy f* dist f/
      exit
   then
@@ -107,33 +109,33 @@ variable TPIDX  variable TPX  variable TPY  variable TPMASS
 
 : add-particle ( px py mass -- )
   | >px >py >mass |
-  PARTICLES PFILL [ px py 0.0 0.0 0.0 0.0 mass ] !i drop
-  PFILL 1.0 f+ to PFILL ;
+  *particles* *pfill* [ px py 0.0 0.0 0.0 0.0 mass ] !i drop
+  *pfill* 1.0 f+ to *pfill* ;
 
 : create-galaxy
   | bulge spiral per-arm remaining |
-  0.0 N array-of to PARTICLES
-  0.0 to PFILL
-  N 0.3 f* ftruncate to bulge
+  0.0 *n* array-of to *particles*
+  0.0 to *pfill*
+  *n* 0.3 f* ftruncate to bulge
   [: | >i df r angle x y mass |
      i bulge f/ to df
-     RADIUS 5.0 f/ df f* to r
+     *radius* 5.0 f/ df f* to r
      2.0 pi f* i f* bulge f/ 7.0 f* to angle
-     CX r angle fcos f* f+ to x
-     CY r angle fsin f* f+ to y
+     *cx* r angle fcos f* f+ to x
+     *cy* r angle fsin f* f+ to y
      50.0  50.0 1.0 df f- f*  f+ to mass
      x y mass add-particle
   :] bulge i-times
-  N bulge f- to spiral
+  *n* bulge f- to spiral
   spiral 2.0 / ftruncate to per-arm
   [: | >arm |
      [: | >i df dist angle x y mass base |
         2.0 pi f* arm f* 2.0 f/ to base
         i per-arm f/ to df
-        RADIUS  0.2 0.8 df f* f+  f* to dist
-        base  SPIRAL dist f* f+  0.2 i 0.1 f* fsin f* f+ to angle
-        CX dist angle fcos f* f+ to x
-        CY dist angle fsin f* f+ to y
+        *radius*  0.2 0.8 df f* f+  f* to dist
+        base  *spiral* dist f* f+  0.2 i 0.1 f* fsin f* f+ to angle
+        *cx* dist angle fcos f* f+ to x
+        *cy* dist angle fsin f* f+ to y
         1.0  9.0 1.0 df f- f*  f+ to mass
         x y mass add-particle
      :] per-arm i-times
@@ -141,15 +143,15 @@ variable TPIDX  variable TPX  variable TPY  variable TPMASS
   spiral per-arm 2.0 f* f- to remaining
   [: | >i angle dist x y |
      2.0 pi f* i f* remaining f/ to angle
-     RADIUS 0.5 f* to dist
-     CX dist angle fcos f* f+ to x
-     CY dist angle fsin f* f+ to y
+     *radius* 0.5 f* to dist
+     *cx* dist angle fcos f* f+ to x
+     *cy* dist angle fsin f* f+ to y
      x y 5.0 add-particle
   :] remaining i-times
   [: | >i p dx dy dist perpx perpy orbv |
-     PARTICLES i @i to p
-     p 0 @i CX f- to dx
-     p 1 @i CY f- to dy
+     *particles* i @i to p
+     p 0 @i *cx* f- to dx
+     p 1 @i *cy* f- to dy
      dx dx f* dy dy f* f+ fsqrt to dist
      dist 0.0 gt if
         dy fnegate dist f/ to perpx
@@ -158,7 +160,7 @@ variable TPIDX  variable TPX  variable TPY  variable TPMASS
         p 2  perpx orbv f*  !i drop
         p 3  perpy orbv f*  !i drop
      then
-  :] N i-times ;
+  :] *n* i-times ;
 
 : system-energy ( -- e )
   | e pi pj dx dy dist p v2 |
@@ -166,48 +168,48 @@ variable TPIDX  variable TPX  variable TPY  variable TPMASS
   [: | >i |
      [: | >j |
         j i gt if
-           PARTICLES i @i to pi  PARTICLES j @i to pj
+           *particles* i @i to pi  *particles* j @i to pj
            pi 0 @i pj 0 @i f- to dx
            pi 1 @i pj 1 @i f- to dy
            dx dx f* dy dy f* f+ fsqrt to dist
-           dist SOFTENING lt if SOFTENING to dist then
-           e  G pi 6 @i f* pj 6 @i f*  dist f/  f-  to e
+           dist *softening* lt if *softening* to dist then
+           e  *g* pi 6 @i f* pj 6 @i f*  dist f/  f-  to e
         then
-     :] N i-times
-  :] N i-times
+     :] *n* i-times
+  :] *n* i-times
   [: | >i |
-     PARTICLES i @i to p
+     *particles* i @i to p
      p 2 @i p 2 @i f*  p 3 @i p 3 @i f* f+ to v2
      e  0.5 p 6 @i f* v2 f*  f+  to e
-  :] N i-times
+  :] *n* i-times
   e ;
 
 : advance-system
   | root |
-  WIDTH 2.0 f/  HEIGHT 2.0 f/  WIDTH 2.0 f/  HEIGHT 2.0 f/  make-node to root
-  [: |> i | root i insert drop :] N i-times
+  *width* 2.0 f/  *height* 2.0 f/  *width* 2.0 f/  *height* 2.0 f/  make-node to root
+  [: |> i | root i insert drop :] *n* i-times
   [: | >i p fx fy |
-     PARTICLES i @i to p
-     i to TPIDX  p 0 @i to TPX  p 1 @i to TPY  p 6 @i to TPMASS
+     *particles* i @i to p
+     i to *tpidx*  p 0 @i to *tpx*  p 1 @i to *tpy*  p 6 @i to *tpmass*
      root calc-force to fy to fx
      p 4  p 4 @i  fx p 6 @i f/  f+  !i drop
      p 5  p 5 @i  fy p 6 @i f/  f+  !i drop
-  :] N i-times
+  :] *n* i-times
   [: | >i p |
-     PARTICLES i @i to p
-     p 2  p 2 @i  p 4 @i TIME_STEP f* f+  !i drop
-     p 3  p 3 @i  p 5 @i TIME_STEP f* f+  !i drop
-     p 0  p 0 @i  p 2 @i TIME_STEP f* f+  !i drop
-     p 1  p 1 @i  p 3 @i TIME_STEP f* f+  !i drop
+     *particles* i @i to p
+     p 2  p 2 @i  p 4 @i *time-step* f* f+  !i drop
+     p 3  p 3 @i  p 5 @i *time-step* f* f+  !i drop
+     p 0  p 0 @i  p 2 @i *time-step* f* f+  !i drop
+     p 1  p 1 @i  p 3 @i *time-step* f* f+  !i drop
      p 4 0.0 !i drop  p 5 0.0 !i drop
-  :] N i-times ;
+  :] *n* i-times ;
 
 : barnes-bench
   | t0 ie fe |
   create-galaxy
   system-energy to ie
   now to t0
-  [: |> lp | [: advance-system :] ITERATIONS times  system-energy to fe :] LOOPS i-times
+  [: |> lp | [: advance-system :] *iterations* times  system-energy to fe :] *loops* i-times
   now t0 - to t0
   "initial energy: " . [ ie ] frame>json . cr
   "final energy: " . [ fe ] frame>json . cr

@@ -1,71 +1,64 @@
 \ nqueens — iterative permutation enumeration via itertools-style cycles
 \ algorithm. No recursion; one swap (or one rotate) per generated permutation.
 
-variable QUEENS
-8 to QUEENS
-variable SOLUTIONS
-variable BOARD
-variable CYCLES
+8 constant *queens*
+variable *solutions*
+variable *board*
+variable *cycles*
 
 : bswap ( a b -- )
   |> a b |
-  BOARD a @i
-  BOARD a  BOARD b @i  !i drop
-  BOARD b  rot         !i drop ;
+  *board* a @i
+  *board* a  *board* b @i  !i drop
+  *board* b  rot         !i drop ;
 
 : valid?
-  | n |
-  QUEENS to n
-  < [: |> i | BOARD i @i i + :] n i-times > size n =
-  < [: |> i | BOARD i @i i - :] n i-times > size n =
+  < [: |> i | *board* i @i i + :] *queens* i-times > size *queens* =
+  < [: |> i | *board* i @i i - :] *queens* i-times > size *queens* =
   * ;
 
 : check-perm
-  valid? if SOLUTIONS f1+ to SOLUTIONS then ;
+  valid? if *solutions* f1+ to *solutions* then ;
 
 : rotate-left ( i -- )
-  | >i n tmp j |
-  QUEENS to n
-  i n 1 - = if
+  | >i tmp j |
+  i *queens* 1 - = if
     \ single-element rotate is a no-op
   else
-    BOARD i @i to tmp
+    *board* i @i to tmp
     i to j
     begin
-      BOARD j  BOARD j f1+ @i  !i drop
+      *board* j  *board* j f1+ @i  !i drop
       ++ j
-      j n 1 - =
+      j *queens* 1 - =
     until
-    BOARD n 1 -  tmp  !i drop
+    *board* *queens* 1 -  tmp  !i drop
   then ;
 
 : init-arrays
-  | n |
-  QUEENS to n
-  0 n array-of to BOARD
-  [: |> k | BOARD k k !i drop :] n i-times
-  0 n array-of to CYCLES
-  [: |> k | CYCLES k  n k -  !i drop :] n i-times ;
+  0 *queens* array-of to *board*
+  [: |> k | *board* k k !i drop :] *queens* i-times
+  0 *queens* array-of to *cycles*
+  [: |> k | *cycles* k  *queens* k -  !i drop :] *queens* i-times ;
 
 : permute-all
-  | n i j yielded done inner-done |
-  QUEENS to n
+  | i j yielded done inner-done |
   init-arrays
   check-perm
   0 to done
   begin
-    n 1 - to i
+    *queens* 1 - to i
     0 to yielded
     0 to inner-done
     begin
-      CYCLES i  CYCLES i @i 1 -  !i drop
-      CYCLES i @i 0 = if
+      *cycles* i  *cycles* i @i 1 -  !i drop
+      *cycles* i @i 0 = if
         i rotate-left
-        CYCLES i  n i -  !i drop
+        *cycles* i  *queens* i -  !i drop
         i 1 - to i
       else
-        CYCLES i @i to j
-        i  n j -  bswap
+        *cycles* i @i to j
+        i  *queens* j -  bswap
         check-perm
         1 to yielded
       then
@@ -79,11 +72,11 @@ variable CYCLES
 
 : nqueens-run
   | t0 |
-  0 to SOLUTIONS
+  0 to *solutions*
   now to t0
   permute-all
   "elapsed: " . now t0 - . "s" . cr
-  "solutions: " . SOLUTIONS . cr ;
+  "solutions: " . *solutions* . cr ;
 
 nqueens-run
 bye

@@ -14,10 +14,9 @@
 \          recursion in select_descendants.
 
 variable org
-variable HOT   variable WIDE   variable DEEP
-250000000 to HOT
-3000 to WIDE
-3000 to DEEP
+250000000 constant *hot*
+3000 constant *wide*
+3000 constant *deep*
 
 "bench/fixtures/big.json" read-file json>frame to org
 
@@ -33,21 +32,21 @@ now
   org /meta/generator        select-values drop
   org /meta/*                select-values drop
   org /wide_object/key_11999 select-values drop
-:] HOT times
-now swap -  HOT 4 *  "{0} hot queries in {1} s" format . cr
+:] *hot* times
+now swap -  *hot* 4 *  "{0} hot queries in {1} s" format . cr
 
 \ wide: 12k-child wildcard and a self-predicate over it — set build + predicate
 now
 [:
   org /wide_object/*          select-values drop
   org /wide_object/*[.>6000]  select-values drop
-:] WIDE times
-now swap -  WIDE 2 *  "{0} wide queries in {1} s" format . cr
+:] *wide* times
+now swap -  *wide* 2 *  "{0} wide queries in {1} s" format . cr
 
 \ deep: descendant-or-self over the 800-level chain — deep recursion
 now
 [:
   org /deep//tag   select-values drop
   org /deep//depth select-values drop
-:] DEEP times
-now swap -  DEEP 2 *  "{0} deep queries in {1} s" format . cr
+:] *deep* times
+now swap -  *deep* 2 *  "{0} deep queries in {1} s" format . cr

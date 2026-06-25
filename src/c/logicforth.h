@@ -972,6 +972,7 @@ void p_tick(Interpreter *interp);
 void p_lookup(Interpreter *interp);
 void p_colon(Interpreter *interp);
 void p_variable(Interpreter *interp);
+void p_constant(Interpreter *interp);
 void p_to(Interpreter *interp);
 void p_to_var(Interpreter *interp);
 void p_bar(Interpreter *interp);

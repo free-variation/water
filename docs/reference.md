@@ -232,6 +232,7 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 | `:` | — | Begin a colon definition; read the following name; enter compile mode |
 | `;` | — | End a colon definition; emit `exit`; store the source text for `see` |
 | `variable` | — | Read the following name; declare a global variable initialized to `0.0` |
+| `constant` | `( val -- )` | Pop a value and read the following name; define an inline word that pushes it as a literal, so call sites fold to the literal with no run-time fetch. Fixed at definition — `to` cannot reassign it |
 | `to` | `( val -- )` | Assign to the named local (in a definition) or global. At the REPL, auto-creates the global if absent. In a definition, the variable must already exist. May trigger superword store-fusion while compiling. |
 | `symbol` | — | Read the following name; declare a word that pushes a specific interned symbol |
 | `:name` | `( -- sym )` | Symbol literal; interns the name at read time |

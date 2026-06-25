@@ -4075,6 +4075,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 
 	define_primitive(interp, ":", p_colon, 0);
 	define_primitive(interp, "variable", p_variable, 0);
+	define_primitive(interp, "constant", p_constant, 0);
 	define_primitive(interp, "symbol", p_symbol, 0);
 	define_primitive(interp, "string>symbol", p_string_to_symbol, 0);
 	define_primitive(interp, "forget", p_forget, 0);

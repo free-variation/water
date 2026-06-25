@@ -2,45 +2,45 @@
 \ A is materialized as an NxN matrix at init; the inner mat-vec products
 \ run in compiled C code (dgemm_kernel) instead of through the interpreter.
 
-variable N
-130 to N
+50 to *iterations*
+130 constant *n*
 
-variable A_mat
-variable u_mat
-variable v_mat
-variable zero_col
+variable *a-mat*
+variable *u-mat*
+variable *v-mat*
+variable *zero-col*
 
-: eval_A ( i j -- A_ij )
+: eval-a ( i j -- a_ij )
   |> i j |
   i j +  dup f1+ *  2 /  i +  1 +  1.0 swap / ;
 
-: build-A
+: build-a
   | flat |
-  0 N N * array-of to flat
+  0 *n* *n* * array-of to flat
   [: |> i |
      [: |> j |
-        flat  i N * j +  i j eval_A  !i drop
-     :] N i-times
-  :] N i-times
-  flat N N matrix to A_mat ;
+        flat  i *n* * j +  i j eval-a  !i drop
+     :] *n* i-times
+  :] *n* i-times
+  flat *n* *n* matrix to *a-mat* ;
 
 : build-u
-  1 N array-of  N 1 matrix to u_mat ;
+  1 *n* array-of  *n* 1 matrix to *u-mat* ;
 
 : prep
-  N 1 0-matrix to zero_col
-  build-A ;
+  *n* 1 0-matrix to *zero-col*
+  build-a ;
 
-\ AtA_times ( x -- AtA*x ): compute A*x with dgemm-nn, then At*(...) with dgemm-tn
-: AtA_times
+\ ata-times ( x -- AtA*x ): compute A*x with dgemm-nn, then At*(...) with dgemm-tn
+: ata-times
   |> x |
-  1 A_mat x  0 zero_col  dgemm-nn
-  1 A_mat rot 0 zero_col dgemm-tn ;
+  1 *a-mat* x  0 *zero-col*  dgemm-nn
+  1 *a-mat* rot 0 *zero-col* dgemm-tn ;
 
 : one-loop
   build-u
-  [: u_mat AtA_times to v_mat
-     v_mat AtA_times to u_mat :] 10 times ;
+  [: *u-mat* ata-times to *v-mat*
+     *v-mat* ata-times to *u-mat* :] 10 times ;
 
 : spectral-norm-run ( loops -- )
   | n_loops t0 vBv vv |
@@ -52,9 +52,9 @@ variable zero_col
 
   0 to vBv  0 to vv
   [: |> i |
-     u_mat i 0 @i,j  v_mat i 0 @i,j  *  vBv + to vBv
-     v_mat i 0 @i,j  dup *  vv + to vv :] N i-times
+     *u-mat* i 0 @i,j  *v-mat* i 0 @i,j  *  vBv + to vBv
+     *v-mat* i 0 @i,j  dup *  vv + to vv :] *n* i-times
   "spectral norm estimate: " . vBv vv / sqrt . cr ;
 
-ITERATIONS spectral-norm-run
+*iterations* spectral-norm-run
 bye

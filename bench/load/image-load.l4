@@ -4,26 +4,25 @@
 \ checksum recomputed from the restored data plus a probed string field.
 \ Each verification line prints 1 on success. Run: ./logicforth -b < this
 
-variable DATA variable N variable SUM
-100000 to N
-0 N array-of to DATA
-[: |> i | DATA i { :id i :name i "n{0}" format :sq i i * :tags < i 7 mod i 11 mod > :nested { :half i 2 quotient } } !i drop :] N i-times
-0 to SUM
-[: |> i | SUM DATA i @i :id @ + DATA i @i :sq @ + DATA i @i :nested @ :half @ + to SUM :] N i-times
+100000 constant *n*
+0 *n* array-of to *data*
+[: |> i | *data* i { :id i :name i "n{0}" format :sq i i * :tags < i 7 mod i 11 mod > :nested { :half i 2 quotient } } !i drop :] *n* i-times
+0 to *sum*
+[: |> i | *sum* *data* i @i :id @ + *data* i @i :sq @ + *data* i @i :nested @ :half @ + to *sum* :] *n* i-times
 
 "/tmp/lf-image-stress.image" save-image
 
 clear
-0 N array-of to DATA  0 to SUM
+0 *n* array-of to *data*  0 to *sum*
 
 "/tmp/lf-image-stress.image" load-image
 
-variable S2 0 to S2
-[: |> i | S2 DATA i @i :id @ + DATA i @i :sq @ + DATA i @i :nested @ :half @ + to S2 :] N i-times
+0 to *s2*
+[: |> i | *s2* *data* i @i :id @ + *data* i @i :sq @ + *data* i @i :nested @ :half @ + to *s2* :] *n* i-times
 
-DATA size N = . cr
-SUM S2 = . cr
-DATA 54321 @i :name @ "n54321" = . cr
-DATA 54321 @i :tags @ size 2 = . cr
-DATA 54321 @i :nested @ :half @ 27160 = . cr
+*data* size *n* = . cr
+*sum* *s2* = . cr
+*data* 54321 @i :name @ "n54321" = . cr
+*data* 54321 @i :tags @ size 2 = . cr
+*data* 54321 @i :nested @ :half @ 27160 = . cr
 bye

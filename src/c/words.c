@@ -1192,6 +1192,20 @@ void p_variable(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_constant(Interpreter *interp) {
+	POP(value);
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "constant: expected a name");
+		return;
+	}
+	create_header(interp, token, 2);
+	emit(interp, (cell)&docol);
+	emit_val_literal(interp, value);
+	emit_call(interp, vocab.exit_cfa);
+	DISPATCH(interp);
+}
+
 static void compile_locals_decl(Interpreter *interp, const char *opener, int force_all_receive) {
 	if (!compiler.compiling || compiler.n_local_scopes <= 0) {
 		fail(interp, "%s: only valid inside a colon definition or quotation", opener);

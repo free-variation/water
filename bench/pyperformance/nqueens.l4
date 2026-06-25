@@ -4,41 +4,38 @@
 \ |BOARD[i] - BOARD[j]| != |i - j| for all i < j. The permutation property
 \ guarantees rows/columns; the diagonal check is the only validity test.
 
-variable QUEENS
-8 to QUEENS
+8 constant *queens*
 
-variable SOLUTIONS
-variable BOARD
+variable *solutions*
+variable *board*
 
 : bswap ( a b -- )
   |> a b |
-  BOARD a @i
-  BOARD a  BOARD b @i  !i drop
-  BOARD b  rot         !i drop ;
+  *board* a @i
+  *board* a  *board* b @i  !i drop
+  *board* b  rot         !i drop ;
 inline
 
 : valid? ( -- flag )
-  | n i j ok |
-  QUEENS to n
+  | i j ok |
   -1 to ok
   0 to i
   begin
     i f1+ to j
     begin
-      BOARD i @i  BOARD j @i  -  abs   j i -  =  not   ok and to ok
+      *board* i @i  *board* j @i  -  abs   j i -  =  not   ok and to ok
       j f1+ to j
-      j n =  ok not  or
+      j *queens* =  ok not  or
     until
     i f1+ to i
-    i n 1 - =  ok not  or
+    i *queens* 1 - =  ok not  or
   until
   ok ;
 
 : permute
-  | >start n i |
-  QUEENS to n
-  start n 1 - = if
-    valid? if  SOLUTIONS f1+ to SOLUTIONS  then
+  | >start i |
+  start *queens* 1 - = if
+    valid? if  *solutions* f1+ to *solutions*  then
   else
     start to i
     begin
@@ -46,19 +43,19 @@ inline
       start f1+ permute
       start i bswap
       f++ i
-      i n =
+      i *queens* =
     until
   then ;
 
 : nqueens-run
   | t0 |
-  0 QUEENS array-of to BOARD
-  [: |> i | BOARD i i !i drop :] QUEENS i-times
-  0 to SOLUTIONS
+  0 *queens* array-of to *board*
+  [: |> i | *board* i i !i drop :] *queens* i-times
+  0 to *solutions*
   now to t0
   0 permute
   "elapsed: " . now t0 - . "s" . cr
-  "solutions: " . SOLUTIONS . cr ;
+  "solutions: " . *solutions* . cr ;
 
 nqueens-run
 bye

@@ -1,0 +1,180 @@
+\ crypto-pyaes — AES-128 in CTR mode, a port of pyperformance bm_crypto_pyaes,
+\ enabled by the integer bitwise ops (bit-and/or/xor, lshift/rshift). This mirrors
+\ pyaes's *table-driven* cipher: the round transform is four 32-bit T-table lookups
+\ XORed per column (combining SubBytes+ShiftRows+MixColumns), with a special final
+\ round using the S-box. The S-box, the T-tables, and the round keys are all
+\ computed from the GF(2^8) field math (no transcription).
+\
+\ Verification: the FIPS-197 AES-128 known-answer test (key 000102..0f, plaintext
+\ 00112233..ff -> ciphertext 69c4e0d8 6a7b0430 d8cdb780 70b4c55a). CTR's counter
+\ starts at 1 to match pyaes, so the round-trip checksum equals the reference's.
+\ Words are unsigned 32-bit numbers; bytes are extracted with rshift + (255 bit-and).
+
+variable *loops*  10 to *loops*
+
+\ --- GF(2^8) helpers ---------------------------------------------------------
+: byte    ( n -- b )    255 bit-and ;
+: xtime   ( b -- 2b )   |> b |  b 1 lshift  b 128 bit-and if 27 bit-xor then  byte ;
+: gmul3   ( b -- 3b )   |> b |  b xtime  b bit-xor ;
+: rotl8   ( x n -- y )  |> x n |  x n lshift  x 8 n - rshift  bit-or  byte ;
+
+\ --- S-box from the GF(2^8) inverse + affine transform -----------------------
+variable *exp*  variable *log*  variable *sbox*  variable *acc*
+
+: build-gf
+  0 256 array-of to *exp*
+  0 256 array-of to *log*
+  1 to *acc*
+  [: |> i |
+     *exp* i *acc* !i drop
+     *log* *acc* i !i drop
+     *acc* gmul3 to *acc*
+  :] 255 i-times ;
+
+: ginv ( x -- inv )
+  |> x |  x 0 = if 0 else  *exp*  255 *log* x @i -  255 mod  @i  then ;
+
+: affine ( s -- b )
+  |> s |
+  s  s 1 rotl8 bit-xor  s 2 rotl8 bit-xor  s 3 rotl8 bit-xor  s 4 rotl8 bit-xor  99 bit-xor ;
+
+: build-sbox
+  build-gf
+  0 256 array-of to *sbox*
+  [: |> i | *sbox* i  i ginv affine  !i drop :] 256 i-times ;
+
+\ --- T-tables: T1[a]=[2s,s,s,3s] (s=sbox[a]); T2..T4 are byte-rotations --------
+variable *t1*  variable *t2*  variable *t3*  variable *t4*
+
+: build-ttables
+  | s s2 s3 |
+  0 256 array-of to *t1*  0 256 array-of to *t2*
+  0 256 array-of to *t3*  0 256 array-of to *t4*
+  [: |> a |
+     *sbox* a @i to s  s xtime to s2  s gmul3 to s3
+     *t1* a  s2 24 lshift  s  16 lshift bit-or  s  8 lshift bit-or  s3 bit-or  !i drop
+     *t2* a  s3 24 lshift  s2 16 lshift bit-or  s  8 lshift bit-or  s  bit-or  !i drop
+     *t3* a  s  24 lshift  s3 16 lshift bit-or  s2 8 lshift bit-or  s  bit-or  !i drop
+     *t4* a  s  24 lshift  s  16 lshift bit-or  s3 8 lshift bit-or  s2 bit-or  !i drop
+  :] 256 i-times ;
+
+\ --- key schedule: 16-byte key -> 44 round-key words (*ke*[round*4 + i]) -------
+[ 1 2 4 8 16 32 64 128 27 54 ] constant *rcon*
+variable *ke*
+
+: be-word ( arr off -- w )
+  |> arr off |
+  arr off 0 + @i 24 lshift
+  arr off 1 + @i 16 lshift bit-or
+  arr off 2 + @i 8 lshift  bit-or
+  arr off 3 + @i           bit-or ;
+
+: key-expand ( key -- )
+  | >key tk0 tk1 tk2 tk3 tt base |
+  0 44 array-of to *ke*
+  key 0 be-word to tk0  key 4 be-word to tk1  key 8 be-word to tk2  key 12 be-word to tk3
+  *ke* 0 tk0 !i drop  *ke* 1 tk1 !i drop  *ke* 2 tk2 !i drop  *ke* 3 tk3 !i drop
+  [: |> it |
+     tk3 to tt
+     tk0
+       *sbox* tt 16 rshift byte @i 24 lshift
+       *sbox* tt 8 rshift  byte @i 16 lshift bit-xor
+       *sbox* tt          byte @i 8 lshift  bit-xor
+       *sbox* tt 24 rshift byte @i           bit-xor
+       *rcon* it @i 24 lshift bit-xor
+     bit-xor to tk0
+     tk1 tk0 bit-xor to tk1  tk2 tk1 bit-xor to tk2  tk3 tk2 bit-xor to tk3
+     it 1 + 4 * to base
+     *ke* base 0 + tk0 !i drop  *ke* base 1 + tk1 !i drop
+     *ke* base 2 + tk2 !i drop  *ke* base 3 + tk3 !i drop
+  :] 10 i-times ;
+
+\ --- table-driven block encrypt: 16 input bytes -> 16 output bytes ------------
+: encrypt-block ( in out -- )
+  | >in >out t0 t1 t2 t3 a0 a1 a2 a3 base |
+  in 0  be-word *ke* 0 @i bit-xor to t0
+  in 4  be-word *ke* 1 @i bit-xor to t1
+  in 8  be-word *ke* 2 @i bit-xor to t2
+  in 12 be-word *ke* 3 @i bit-xor to t3
+  [: |> r |
+     r 1 + 4 * to base
+     *t1* t0 24 rshift byte @i  *t2* t1 16 rshift byte @i bit-xor  *t3* t2 8 rshift byte @i bit-xor  *t4* t3 byte @i bit-xor  *ke* base 0 + @i bit-xor to a0
+     *t1* t1 24 rshift byte @i  *t2* t2 16 rshift byte @i bit-xor  *t3* t3 8 rshift byte @i bit-xor  *t4* t0 byte @i bit-xor  *ke* base 1 + @i bit-xor to a1
+     *t1* t2 24 rshift byte @i  *t2* t3 16 rshift byte @i bit-xor  *t3* t0 8 rshift byte @i bit-xor  *t4* t1 byte @i bit-xor  *ke* base 2 + @i bit-xor to a2
+     *t1* t3 24 rshift byte @i  *t2* t0 16 rshift byte @i bit-xor  *t3* t1 8 rshift byte @i bit-xor  *t4* t2 byte @i bit-xor  *ke* base 3 + @i bit-xor to a3
+     a0 to t0  a1 to t1  a2 to t2  a3 to t3
+  :] 9 i-times
+  out 0   *sbox* t0 24 rshift byte @i  *ke* 40 @i 24 rshift bit-xor byte  !i drop
+  out 1   *sbox* t1 16 rshift byte @i  *ke* 40 @i 16 rshift bit-xor byte  !i drop
+  out 2   *sbox* t2 8 rshift  byte @i  *ke* 40 @i 8 rshift  bit-xor byte  !i drop
+  out 3   *sbox* t3          byte @i  *ke* 40 @i           bit-xor byte  !i drop
+  out 4   *sbox* t1 24 rshift byte @i  *ke* 41 @i 24 rshift bit-xor byte  !i drop
+  out 5   *sbox* t2 16 rshift byte @i  *ke* 41 @i 16 rshift bit-xor byte  !i drop
+  out 6   *sbox* t3 8 rshift  byte @i  *ke* 41 @i 8 rshift  bit-xor byte  !i drop
+  out 7   *sbox* t0          byte @i  *ke* 41 @i           bit-xor byte  !i drop
+  out 8   *sbox* t2 24 rshift byte @i  *ke* 42 @i 24 rshift bit-xor byte  !i drop
+  out 9   *sbox* t3 16 rshift byte @i  *ke* 42 @i 16 rshift bit-xor byte  !i drop
+  out 10  *sbox* t0 8 rshift  byte @i  *ke* 42 @i 8 rshift  bit-xor byte  !i drop
+  out 11  *sbox* t1          byte @i  *ke* 42 @i           bit-xor byte  !i drop
+  out 12  *sbox* t3 24 rshift byte @i  *ke* 43 @i 24 rshift bit-xor byte  !i drop
+  out 13  *sbox* t0 16 rshift byte @i  *ke* 43 @i 16 rshift bit-xor byte  !i drop
+  out 14  *sbox* t1 8 rshift  byte @i  *ke* 43 @i 8 rshift  bit-xor byte  !i drop
+  out 15  *sbox* t2          byte @i  *ke* 43 @i           bit-xor byte  !i drop ;
+
+\ --- CTR mode (symmetric): out[i] = in[i] xor E(counter)[i], counter from 1 ---
+: put-be32 ( arr off val -- )
+  |> arr off val |
+  arr off 0 +  val 24 rshift byte  !i drop
+  arr off 1 +  val 16 rshift byte  !i drop
+  arr off 2 +  val 8 rshift byte   !i drop
+  arr off 3 +  val byte            !i drop ;
+
+: ctr-crypt ( in out nbytes -- )
+  | >in >out >nbytes nblk idx ctr ks |
+  nbytes 15 + 16 / ftruncate to nblk
+  0 16 array-of to ctr  0 16 array-of to ks
+  [: |> b |
+     ctr 12 b 1 + put-be32
+     ctr ks encrypt-block
+     [: |> j |
+        b 16 * j + to idx
+        idx nbytes lt if  out idx  in idx @i  ks j @i  bit-xor  !i drop  then
+     :] 16 i-times
+  :] nblk i-times ;
+
+\ --- verification: FIPS-197 AES-128 known-answer test ------------------------
+variable *katout*
+: kat ( -- ok )
+  [ 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 ] key-expand
+  0 16 array-of to *katout*
+  [ 0 17 34 51 68 85 102 119 136 153 170 187 204 221 238 255 ] *katout* encrypt-block
+  *katout* [ 105 196 224 216 106 123 4 48 216 205 183 128 112 180 197 90 ] = ;
+
+\ --- benchmark: CTR-encrypt and decrypt a message, check round-trip ----------
+variable *msg*  variable *ct*  variable *back*  variable *nbytes*
+8192 to *nbytes*
+
+: build-message
+  0 *nbytes* array-of to *msg*
+  [: |> i | *msg* i  i 167 * 31 + 251 mod  !i drop :] *nbytes* i-times
+  0 *nbytes* array-of to *ct*
+  0 *nbytes* array-of to *back* ;
+
+: cksum ( arr -- s )  | >arr s |  0 to s  [: |> i | arr i @i s + to s :] arr size i-times  s ;
+
+: aes-bench
+  | t0 ok |
+  build-sbox  build-ttables
+  [ 97 98 99 100 101 102 103 104 105 106 107 108 109 110 111 112 ] key-expand
+  build-message
+  now to t0
+  [: *msg* *ct* *nbytes* ctr-crypt  *ct* *back* *nbytes* ctr-crypt :] *loops* times
+  now t0 - to t0
+  *back* cksum *msg* cksum = to ok
+  "kat ok: " . kat . cr
+  "roundtrip ok: " . ok . cr
+  "checksum: " . *ct* cksum . cr
+  "elapsed: " . t0 . " s" . cr ;
+
+aes-bench
+bye
