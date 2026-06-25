@@ -1173,26 +1173,41 @@ void execute_cfa(Interpreter *interp, int cfa) {
 	vocab.dict[interp->trampoline_base + 2] = saved_slot_2;
 }
 
-void call_open(Interpreter *interp, int cfa, CallContext *ctx) {
+void call_open(Interpreter *interp, int cfa, CallContext *context) {
 	cfa_handler handler = (cfa_handler)vocab.dict[cfa];
 
+	context->reuses_locals = 0;
+
 	if (handler == dovar || handler == dosym) {
-		ctx->fast = 0;
+		context->fast = 0;
 		return;
 	}
 
-	ctx->fast = 1;
-	ctx->saved_ip = interp->ip;
-	ctx->saved_running = interp->running;
-	ctx->saved_slot_0 = vocab.dict[interp->trampoline_base];
-	ctx->saved_slot_1 = vocab.dict[interp->trampoline_base + 1];
-	ctx->saved_slot_2 = vocab.dict[interp->trampoline_base + 2];
+	context->fast = 1;
+	context->saved_ip = interp->ip;
+	context->saved_running = interp->running;
+	context->saved_slot_0 = vocab.dict[interp->trampoline_base];
+	context->saved_slot_1 = vocab.dict[interp->trampoline_base + 1];
+	context->saved_slot_2 = vocab.dict[interp->trampoline_base + 2];
 
 	cell stop_handler = vocab.dict[vocab.stop_cfa];
 	if (handler == docol) {
 		vocab.dict[interp->trampoline_base] = (cell)docol;
 		vocab.dict[interp->trampoline_base + 1] = (cell)cfa;
 		vocab.dict[interp->trampoline_base + 2] = stop_handler;
+
+		if ((cfa_handler)vocab.dict[cfa + 1] == p_enter_locals_to) {
+			int n_locals = (int)vocab.dict[cfa + 2];
+			if (interp->rsp + n_locals + 1 <= RETURN_STACK_DEPTH) {
+				interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
+
+			context->saved_loop_local_base = interp->loop_local_base;
+			interp->local_base = interp->rsp;
+			interp->loop_local_base = interp->rsp;
+			interp->rsp += n_locals;
+			context->reuses_locals = 1;
+			}
+		}
 	} else {
 		vocab.dict[interp->trampoline_base] = (cell)handler;
 		vocab.dict[interp->trampoline_base + 1] = stop_handler;
@@ -1206,14 +1221,21 @@ void call_invoke(Interpreter *interp) {
 	run_inner(interp, interp->rsp);
 }
 
-void call_close(Interpreter *interp, CallContext *ctx) {
-	if (!ctx->fast)
+void call_close(Interpreter *interp, CallContext *context) {
+	if (!context->fast)
 		return;
-	interp->running = ctx->saved_running;
-	interp->ip = ctx->saved_ip;
-	vocab.dict[interp->trampoline_base] = ctx->saved_slot_0;
-	vocab.dict[interp->trampoline_base + 1] = ctx->saved_slot_1;
-	vocab.dict[interp->trampoline_base + 2] = ctx->saved_slot_2;
+	interp->running = context->saved_running;
+	interp->ip = context->saved_ip;
+	vocab.dict[interp->trampoline_base] = context->saved_slot_0;
+	vocab.dict[interp->trampoline_base + 1] = context->saved_slot_1;
+	vocab.dict[interp->trampoline_base + 2] = context->saved_slot_2;
+
+	if (context->reuses_locals) {
+		Val locals_header = interp->return_stack[interp->loop_local_base - 1];
+		interp->rsp = interp->loop_local_base - 1;
+		interp->local_base = saved_local_base(locals_header);
+		interp->loop_local_base = context->saved_loop_local_base;
+	}
 }
 
 
@@ -1469,6 +1491,17 @@ void p_enter_locals(Interpreter *interp) {
 
 void p_enter_locals_to(Interpreter *interp) {
 	int n_locals = (int)vocab.dict[interp->ip++];
+
+	if (interp->loop_local_refill) {
+		interp->loop_local_refill = 0;
+		int data_start = interp->dsp - n_locals;
+		for (int i = 0; i < n_locals; i++) 
+			interp->return_stack[interp->local_base + i] = interp->data_stack[data_start + i];
+		interp->dsp -= n_locals;
+
+		DISPATCH(interp);
+	}
+
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
 		fail(interp, "(enter-locals-to): return stack overflow");
 		return;
@@ -1519,6 +1552,11 @@ void p_enter_locals_mixed(Interpreter *interp) {
 
 void p_leave_locals(Interpreter *interp) {
 	int n_locals = (int)vocab.dict[interp->ip++];
+
+	if (interp->local_base == interp->loop_local_base) {
+		DISPATCH(interp);
+	}
+
 	interp->rsp -= n_locals;
 	Val locals_header = rpop(interp);
 	interp->local_base = saved_local_base(locals_header);
@@ -4005,6 +4043,7 @@ void interp_init(Interpreter *interp) {
 	interp->bind_trail_cap = BIND_TRAIL_DEPTH;
 	interp->lvar_stack = malloc(sizeof(Val) * LVAR_STACK_DEPTH);
 	interp->lvar_cap = LVAR_STACK_DEPTH;
+	interp->loop_local_base = -1;
 }
 
 Interpreter *main_init(void) {

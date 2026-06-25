@@ -408,8 +408,12 @@ typedef struct Interpreter {
 	int rsp;
 	Val side_stack[SIDESTACK_DEPTH];
 	int side_dsp;
+
 	int local_base;
+	int loop_local_base;
+	int loop_local_refill;
 	int run_floor;
+	
 	int *bind_trail;
 	int bind_trail_top, bind_trail_cap;
 	Val *lvar_stack;
@@ -729,6 +733,8 @@ typedef struct {
 	int saved_running;
 	cell saved_slot_0, saved_slot_1, saved_slot_2;
 	int fast;
+	int reuses_locals;
+	int saved_loop_local_base;
 } CallContext;
 
 void call_open(Interpreter *interp, int cfa, CallContext *ctx);
@@ -747,10 +753,12 @@ typedef struct {
 extern const HelpEntry help_entries[];
 extern const int help_entry_count;
 
-static inline void call_step(Interpreter *interp, CallContext *ctx, int cfa) {
-	if (ctx->fast)
+static inline void call_step(Interpreter *interp, CallContext *context, int cfa) {
+	if (context->fast) {
+		if (context->reuses_locals)
+			interp->loop_local_refill = 1;
 		call_invoke(interp);
-	else
+	} else
 		execute_cfa(interp, cfa);
 }
 
