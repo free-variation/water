@@ -1192,7 +1192,9 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 
 	context->saved_loop_body_start = interp->loop_body_start;
 	context->saved_loop_n = interp->loop_n;
+	context->saved_loop_slots_ip = interp->loop_slots_ip;
 	interp->loop_body_start = 0;
+	interp->loop_slots_ip = -1;
 
 	cell stop_handler = vocab.dict[vocab.stop_cfa];
 	if (handler == docol) {
@@ -1200,29 +1202,43 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 		vocab.dict[interp->trampoline_base + 1] = (cell)cfa;
 		vocab.dict[interp->trampoline_base + 2] = stop_handler;
 
-		if ((cfa_handler)vocab.dict[cfa + 1] == p_enter_locals_to) {
-			int n_locals = (int)vocab.dict[cfa + 2];
-			if (interp->rsp + n_locals + 1 <= RETURN_STACK_DEPTH) {
-				interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
+		int n_locals = 0, n_received = 0, slots_ip = -1, body_start = 0;
+		cfa_handler enter = (cfa_handler)vocab.dict[cfa + 1];
+		n_locals = (int)vocab.dict[cfa + 2];
+		
+		if (enter == p_enter_locals_to) {
+			n_received = n_locals;
+			body_start = cfa + 3;
+		} else if (enter == p_enter_locals_mixed) {
+			n_received = (int)vocab.dict[cfa + 3];
+			slots_ip = cfa + 4;
+			body_start = cfa + 4 + n_received;
+		}
 
-				context->saved_loop_local_base = interp->loop_local_base;
-				interp->local_base = interp->rsp;
-				interp->loop_local_base = interp->rsp;
-				interp->rsp += n_locals;
-				context->reuses_locals = 1;
+		if (body_start && interp->rsp + n_locals + 1 <= RETURN_STACK_DEPTH) {
+			interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
 
-				interp->loop_n = n_locals;
-				context->leave_ip = 0;
+			context->saved_loop_local_base = interp->loop_local_base;
+			interp->local_base = interp->rsp;
+			interp->loop_local_base = interp->rsp;
+			interp->rsp += n_locals;
+			context->reuses_locals = 1;
 
-				if ((cfa_handler)vocab.dict[cfa - 2] == (cfa_handler)vocab.dict[vocab.branch_cfa]) {
-					int leave_ip = cfa + (int)vocab.dict[cfa - 1] - 4;
+			interp->loop_n = n_received;
+			interp->loop_slots_ip = slots_ip;
+			context->leave_ip = 0;
+
+			if ((cfa_handler)vocab.dict[cfa - 2] == (cfa_handler)vocab.dict[vocab.branch_cfa]) {
+				int leave_ip = cfa + (int)vocab.dict[cfa - 1] - 4;
+				if ((cfa_handler)vocab.dict[leave_ip] == p_leave_locals) {
 					context->leave_ip = leave_ip;
 					context->saved_leave = vocab.dict[leave_ip];
 					vocab.dict[leave_ip] = stop_handler;
-					interp->loop_body_start = cfa + 3;
+					interp->loop_body_start = body_start;
 				}
 			}
 		}
+
 	} else {
 		vocab.dict[interp->trampoline_base] = (cell)handler;
 		vocab.dict[interp->trampoline_base + 1] = stop_handler;
@@ -1238,8 +1254,14 @@ void call_invoke(Interpreter *interp) {
 		int base = interp->loop_local_base;
 		int data_start = interp->dsp - n;
 		
-		for (int i = 0; i < n; i++)
-			interp->return_stack[base + i] = interp->data_stack[data_start + i];
+		if (interp->loop_slots_ip < 0) {
+			for (int i = 0; i < n; i++)
+				interp->return_stack[base + i] = interp->data_stack[data_start + i];
+		} else {
+			int slots_ip = interp->loop_slots_ip;
+			for (int i = 0; i < n; i++)
+				interp->return_stack[base + (int)vocab.dict[slots_ip + i]] = interp->data_stack[data_start + i];
+		}
 
 		interp->dsp -= n;
 		interp->ip = interp->loop_body_start;
@@ -1264,6 +1286,8 @@ void call_close(Interpreter *interp, CallContext *context) {
 
 	interp->loop_body_start = context->saved_loop_body_start;
 	interp->loop_n = context->saved_loop_n;
+	interp->loop_slots_ip = context->saved_loop_slots_ip;
+
 
 	if (context->reuses_locals) {
 		if (context->leave_ip)
@@ -1564,6 +1588,19 @@ void p_enter_locals_to(Interpreter *interp) {
 void p_enter_locals_mixed(Interpreter *interp) {
 	int n_locals = (int)vocab.dict[interp->ip++];
 	int n_received = (int)vocab.dict[interp->ip++];
+
+	if (interp->loop_local_refill) {
+		interp->loop_local_refill = 0;
+		int data_start = interp->dsp - n_received;
+
+		for (int i = 0; i < n_received; i++) {
+			int slot = (int)vocab.dict[interp->ip++];
+			interp->return_stack[interp->local_base + slot] = interp->data_stack[data_start + i];
+		}
+		interp->dsp -= n_received;
+
+		DISPATCH(interp);
+	}
 
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
 		fail(interp, "(enter-locals-mixed): return stack overflow");

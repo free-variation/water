@@ -415,6 +415,7 @@ typedef struct Interpreter {
 	int run_floor;
 	int loop_body_start;
 	int loop_n;
+	int loop_slots_ip;
 	
 	int *bind_trail;
 	int bind_trail_top, bind_trail_cap;
@@ -740,6 +741,7 @@ typedef struct {
 
 	int saved_loop_body_start;
 	int saved_loop_n;
+	int saved_loop_slots_ip;
 	int leave_ip;
 	cell saved_leave;
 } CallContext;
