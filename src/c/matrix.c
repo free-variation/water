@@ -113,6 +113,27 @@ void p_at_i_lit_local0(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_at_i_ll0(Interpreter *interp) {
+	int arr_slot = (int)vocab.dict[interp->ip++];
+	int idx_slot = (int)vocab.dict[interp->ip++];
+	Val source_val = interp->return_stack[interp->local_base + arr_slot];
+	int index = (int)interp->return_stack[interp->local_base + idx_slot].number;
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_l1l0(Interpreter *interp) {
+	int arr_slot = (int)vocab.dict[interp->ip++];
+	int idx_slot = (int)vocab.dict[interp->ip++];
+	int enclosing = saved_local_base(interp->return_stack[interp->local_base - 1]);
+	Val source_val = interp->return_stack[enclosing + arr_slot];
+	int index = (int)interp->return_stack[interp->local_base + idx_slot].number;
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
 void p_gather_local0(Interpreter *interp) {
 	int slot = (int)vocab.dict[interp->ip++];
 	int row_index = (int)interp->return_stack[interp->local_base + slot].number;

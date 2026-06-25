@@ -387,8 +387,10 @@ typedef struct Vocabulary {
 	int local_finc_0depth_cfa, local_fdec_0depth_cfa, finc_cfa, fdec_cfa;
 	int qzbranch_cfa;
 	int eq_cfa, lt_cfa, gt_cfa, zeq_cfa;
+	int eq_f_cfa, lt_f_cfa, gt_f_cfa;
 	int at_i_cfa;
 	int eq_zbranch_cfa, lt_zbranch_cfa, gt_zbranch_cfa, zeq_zbranch_cfa;
+	int eq_f_zbranch_cfa, lt_f_zbranch_cfa, gt_f_zbranch_cfa;
 	int false_symbol, true_symbol;
 	int wildcard_symbol, descendant_symbol, self_symbol;
 
@@ -524,6 +526,7 @@ int try_fuse_local_acc(Interpreter *interp, int depth, int slot);
 int try_fuse_at_i_local(Interpreter *interp);
 int try_fuse_at_i_lit(Interpreter *interp);
 int try_fuse_gather_local(Interpreter *interp);
+int try_fuse_at_i_ll(Interpreter *interp);
 int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler);
 
 static inline void push(Interpreter *interp, Val value) {
@@ -768,6 +771,9 @@ void p_qzbranch(Interpreter *interp);
 void p_eq_zbranch(Interpreter *interp);
 void p_lt_zbranch(Interpreter *interp);
 void p_gt_zbranch(Interpreter *interp);
+void p_eq_f_zbranch(Interpreter *interp);
+void p_lt_f_zbranch(Interpreter *interp);
+void p_gt_f_zbranch(Interpreter *interp);
 void p_zeq_zbranch(Interpreter *interp);
 void p_dostr(Interpreter *interp);
 void p_enter_locals(Interpreter *interp);
@@ -906,6 +912,8 @@ void p_at_i(Interpreter *interp);
 void p_at_i_local0(Interpreter *interp);
 void p_at_i_lit(Interpreter *interp);
 void p_at_i_lit_local0(Interpreter *interp);
+void p_at_i_ll0(Interpreter *interp);
+void p_at_i_l1l0(Interpreter *interp);
 void p_gather_local0(Interpreter *interp);
 void p_store_i(Interpreter *interp);
 void p_store_i_drop(Interpreter *interp);

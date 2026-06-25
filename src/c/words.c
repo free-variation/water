@@ -381,6 +381,22 @@ COMPARISON_ZBRANCH(p_eq_zbranch, ==);
 COMPARISON_ZBRANCH(p_lt_zbranch, <);
 COMPARISON_ZBRANCH(p_gt_zbranch, >);
 
+/* Pure-float counterparts: feq/flt/fgt assert float operands, so these skip the
+   tag check and val_cmp fallback entirely — the speed feq is chosen for. */
+#define FLOAT_COMPARISON_ZBRANCH(name, op) \
+	void name(Interpreter *interp) { \
+		cell branch_distance = vocab.dict[interp->ip++]; \
+		POP(right); \
+		POP(left); \
+		if (!(VAL_NUMBER(left) op VAL_NUMBER(right))) \
+			interp->ip += branch_distance - 1; \
+		DISPATCH(interp); \
+	}
+
+FLOAT_COMPARISON_ZBRANCH(p_eq_f_zbranch, ==);
+FLOAT_COMPARISON_ZBRANCH(p_lt_f_zbranch, <);
+FLOAT_COMPARISON_ZBRANCH(p_gt_f_zbranch, >);
+
 void p_zeq_zbranch(Interpreter *interp) {
 	cell branch_distance = vocab.dict[interp->ip++];
 	POP(operand);
@@ -936,6 +952,12 @@ static int try_fuse_cmp_branch(Interpreter *interp) {
 		fused_cfa = vocab.gt_zbranch_cfa;
 	else if (compiler.fuse_prev_cmp == vocab.zeq_cfa)
 		fused_cfa = vocab.zeq_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.eq_f_cfa)
+		fused_cfa = vocab.eq_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.lt_f_cfa)
+		fused_cfa = vocab.lt_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.gt_f_cfa)
+		fused_cfa = vocab.gt_f_zbranch_cfa;
 	else
 		return 0;
 
