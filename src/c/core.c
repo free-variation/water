@@ -1915,6 +1915,38 @@ void inbuf_reset(void) {
 	compiler.need_more = 0;
 }
 
+int refill_input(void) {
+	if (compiler.load_depth > 0)
+		return 0;
+
+	if (compiler.interactive) {
+		char *entered = ic_readline("");
+		if (!entered)
+			return 0;
+		int entered_len = (int)strlen(entered);
+		if (compiler.input_buffer_len + entered_len + 1 >= INPUT_BUFFER_SIZE - 1) {
+			ic_free(entered);
+			return 0;
+		}
+		memcpy(compiler.input_buffer + compiler.input_buffer_len, entered, (size_t)entered_len);
+		compiler.input_buffer_len += entered_len;
+		compiler.input_buffer[compiler.input_buffer_len++] = '\n';
+		compiler.input_buffer[compiler.input_buffer_len] = '\0';
+		ic_free(entered);
+		return 1;
+	}
+
+	char line[1024];
+	if (!fgets(line, sizeof(line), stdin))
+		return 0;
+	int line_len = (int)strlen(line);
+	if (compiler.input_buffer_len + line_len >= INPUT_BUFFER_SIZE - 1)
+		return 0;
+	memcpy(compiler.input_buffer + compiler.input_buffer_len, line, (size_t)line_len + 1);
+	compiler.input_buffer_len += line_len;
+	return 1;
+}
+
 char *next_token(void) {
 	while (compiler.input_buffer_pos < compiler.input_buffer_len
 	       && isspace((unsigned char)compiler.input_buffer[compiler.input_buffer_pos]))
@@ -1965,6 +1997,26 @@ static int comment_starts_here(void) {
 	int next = compiler.input_buffer_pos + 1;
 	return next >= compiler.input_buffer_len
 		|| isspace((unsigned char)compiler.input_buffer[next]);
+}
+
+void skip_whitespace_and_comments(void) {
+	for (;;) {
+		skip_whitespace();
+		if (compiler.input_buffer_pos >= compiler.input_buffer_len)
+			return;
+		char lead_char = compiler.input_buffer[compiler.input_buffer_pos];
+		if (lead_char == '(' && comment_starts_here()) {
+			skip_to_char(')');
+			if (compiler.input_buffer_pos < compiler.input_buffer_len)
+				compiler.input_buffer_pos++;
+			continue;
+		}
+		if (lead_char == '\\' && comment_starts_here()) {
+			skip_to_char('\n');
+			continue;
+		}
+		return;
+	}
 }
 
 static void compile_or_push(Interpreter *interp, Val value) {
@@ -4353,7 +4405,8 @@ static const char *lf_token_style(const char *s, long len) {
 	if (lf_is_number(s, len))
 		return "ansi-teal";
 	if (len == 2 && (memcmp(s, "[:", 2) == 0 || memcmp(s, ":]", 2) == 0
-			|| memcmp(s, "[(", 2) == 0 || memcmp(s, ")]", 2) == 0))
+			|| memcmp(s, "[(", 2) == 0 || memcmp(s, ")]", 2) == 0
+			|| memcmp(s, "[|", 2) == 0 || memcmp(s, "[>", 2) == 0))
 		return "ansi-blue";
 	if (s[0] == ':' && len > 1)
 		return "ansi-olive";
@@ -4486,6 +4539,7 @@ int main(int argc, char **argv) {
 		ic_enable_multiline_indent(true);
 	}
 	char line[1024];
+	compiler.interactive = interactive;
 
 	for (;;) {
 		if (interactive) {

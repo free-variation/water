@@ -33,7 +33,7 @@ ROW_SPLIT = re.compile(r"(?<!\\)\|")
 WORD_CELL = re.compile(r"^`([^`\s]+)`$")
 
 # --- Curated structural groups (stable; everything else is a builtin) --------
-DEFINING = [":", ";", "variable", "symbol", "to", "forget", "inline", "'", "lookup", "immediate"]
+DEFINING = [":", ";", "variable", "constant", "symbol", "to", "forget", "inline", "'", "lookup", "immediate"]
 CONDITIONAL = ["if", "?if", "else", "then"]
 REPEAT = ["begin", "until", "again", "while", "repeat", "times", "i-times"]
 KEYWORD = ["exit", "execute"]
@@ -46,7 +46,7 @@ OPERATORS = [
     "2dup", ".s", ".a", ".",
 ]
 # Handled by regex match rules in the templates, never a keyword.
-DELIMITERS = {"[", "]", "{", "}", "<", ">", "|", "[:", ":]", "[(", ")]"}
+DELIMITERS = {"[", "]", "{", "}", "<", ">", "|", "[:", ":]", "[(", ")]", "[|", "[>"}
 # Documentation pseudo-words (symbol-literal examples), matched by the symbol scope.
 EXCLUDE = {":name"}
 
@@ -124,6 +124,8 @@ def emit_vim(auto):
 
     L.append(kw("logicforthDefine", DEFINING))
     L.append('syn match   logicforthDefine "\\[:"')
+    L.append('syn match   logicforthDefine "\\[|"')
+    L.append('syn match   logicforthDefine "\\[>"')
     L.append('syn match   logicforthDefine ":\\]"')
     L.append('syn match   logicforthDefName "\\%(^\\|\\s\\):\\s\\+\\zs\\k\\+"')
     L.append("")
@@ -200,7 +202,7 @@ def emit_vscode(auto):
             "numbers": {"name": "constant.numeric.logicforth",
                         "match": r"(?<=^|\s)-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?=\s|$)"},
             "quotation": {"name": "keyword.declaration.logicforth",
-                          "match": r"(?<=^|\s)(?:\[:|:\])(?=\s|$)"},
+                          "match": r"(?<=^|\s)(?:\[:|\[\||\[>|:\])(?=\s|$)"},
             "control": {"name": "keyword.control.logicforth", "match": alt(CONDITIONAL + REPEAT + KEYWORD)},
             "defining": {"name": "keyword.declaration.logicforth", "match": alt(DEFINING)},
             "logic": {"name": "keyword.other.logic.logicforth", "match": alt(LOGIC)},

@@ -454,6 +454,7 @@ typedef struct {
 
 	char input_buffer[INPUT_BUFFER_SIZE];
 	int input_buffer_len, input_buffer_pos, need_more;
+	int interactive;
 	int compiling_src_start;
 	
 	int fuse_prev_var, fuse_prev2_var;
@@ -990,6 +991,8 @@ void p_symbol(Interpreter *interp);
 void p_string_to_symbol(Interpreter *interp);
 void p_forget(Interpreter *interp);
 void inbuf_reset(void);
+int refill_input(void);
+void skip_whitespace_and_comments(void);
 int read_string_literal(void);
 char *next_token(void);
 int parse_float(const char *text, double *out);
