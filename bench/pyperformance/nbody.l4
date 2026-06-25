@@ -79,7 +79,7 @@ variable b2-targets
   | px py pz sun |
   0 to px  0 to py  0 to pz
   *bodies* 0 @i to sun
-  [: |> i |
+  [> i |
      *bodies* i @i 3 @i  *bodies* i @i 6 @i *  px + to px
      *bodies* i @i 4 @i  *bodies* i @i 6 @i *  py + to py
      *bodies* i @i 5 @i  *bodies* i @i 6 @i *  pz + to pz
@@ -105,8 +105,8 @@ variable b2-targets
   | e |
   0 to e
   [: *bodies* swap @i kinetic e + to e :] 5 i-times
-  [: |> i |
-     [: |> j |
+  [> i |
+     [> j |
         i j lt if
           *bodies* i @i  *bodies* j @i  pair-potential  e + to e
         then :]

@@ -19,7 +19,7 @@ inline
 : part_A_times_u ( i u -- partial_sum )
   | >i >u acc |
   0 to acc
-  [: |> j |
+  [> j |
      i j eval_A  u j @i  f*  acc f+  to acc
   :] u size i-times
   acc ;
@@ -27,7 +27,7 @@ inline
 : part_At_times_u ( i u -- partial_sum )
   | >i >u acc |
   0 to acc
-  [: |> j |
+  [> j |
      j i eval_A  u j @i  f*  acc f+  to acc
   :] u size i-times
   acc ;
@@ -36,7 +36,7 @@ inline
 : eval_times_u ( u xt -- new-u )
   | >u >xt n |
   u size to n
-  [: |> i | i u xt execute :] n i-times
+  [> i | i u xt execute :] n i-times
   n array ;
 
 : eval_AtA_times_u ( u -- new-u )
@@ -53,7 +53,7 @@ inline
      \ vBv = sum u_i * v_i, vv = sum v_i * v_i (correctness check)
      0 to vBv
      0 to vv
-     [: |> i |
+     [> i |
         u i @i  v i @i  *  vBv + to vBv
         v i @i  dup    *  vv + to vv :] *n* i-times
   :] n_loops times

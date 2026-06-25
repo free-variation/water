@@ -28,7 +28,7 @@ variable *init*  variable *data*
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
   17.0 double-segment to *m*
-  [: |> iloop |
+  [> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
@@ -128,22 +128,22 @@ variable *init*  variable *data*
   | norm |
   1.0 fft-transform-internal
   1.0  *nlen* 2.0 f/  f/ to norm
-  [: |> i | *data* i  *data* i @i norm f*  !i drop :] *nlen* i-times ;
+  [> i | *data* i  *data* i @i norm f*  !i drop :] *nlen* i-times ;
 
 : fft-bench
   | t0 s |
   *nlen* double-segment to *init*
   *nlen* double-segment to *data*
   7.0 rng-init
-  [: |> i | *init* i next-double !i drop :] *nlen* i-times
+  [> i | *init* i next-double !i drop :] *nlen* i-times
   now to t0
-  [: |> lp |
-     [: |> i | *data* i *init* i @i !i drop :] *nlen* i-times
+  [> lp |
+     [> i | *data* i *init* i @i !i drop :] *nlen* i-times
      [: -1.0 fft-transform-internal fft-inverse :] *cycles* times
   :] *loops* i-times
   now t0 - to t0
   0.0 to s
-  [: |> i | *data* i @i s f+ to s :] *nlen* i-times
+  [> i | *data* i @i s f+ to s :] *nlen* i-times
   "elapsed: " . t0 . " s" . cr
   s "checksum: {0}" format . cr ;
 

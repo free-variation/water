@@ -17,8 +17,8 @@ variable *zero-col*
 : build-a
   | flat |
   0 *n* *n* * array-of to flat
-  [: |> i |
-     [: |> j |
+  [> i |
+     [> j |
         flat  i *n* * j +  i j eval-a  !i drop
      :] *n* i-times
   :] *n* i-times
@@ -51,7 +51,7 @@ variable *zero-col*
   "elapsed: " . now t0 - . "s" . cr
 
   0 to vBv  0 to vv
-  [: |> i |
+  [> i |
      *u-mat* i 0 @i,j  *v-mat* i 0 @i,j  *  vBv + to vBv
      *v-mat* i 0 @i,j  dup *  vv + to vv :] *n* i-times
   "spectral norm estimate: " . vBv vv / sqrt . cr ;

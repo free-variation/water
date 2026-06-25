@@ -13,8 +13,8 @@ variable *cycles*
   *board* b  rot         !i drop ;
 
 : valid?
-  < [: |> i | *board* i @i i + :] *queens* i-times > size *queens* =
-  < [: |> i | *board* i @i i - :] *queens* i-times > size *queens* =
+  < [> i | *board* i @i i + :] *queens* i-times > size *queens* =
+  < [> i | *board* i @i i - :] *queens* i-times > size *queens* =
   * ;
 
 : check-perm
@@ -37,9 +37,9 @@ variable *cycles*
 
 : init-arrays
   0 *queens* array-of to *board*
-  [: |> k | *board* k k !i drop :] *queens* i-times
+  [> k | *board* k k !i drop :] *queens* i-times
   0 *queens* array-of to *cycles*
-  [: |> k | *cycles* k  *queens* k -  !i drop :] *queens* i-times ;
+  [> k | *cycles* k  *queens* k -  !i drop :] *queens* i-times ;
 
 : permute-all
   | i j yielded done inner-done |

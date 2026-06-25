@@ -13,11 +13,11 @@ variable *max-flips*
 
 : init-arrays
   0 *n* array-of to *perm1*
-  [: |> k | *perm1* k k !i drop :] *n* i-times
+  [> k | *perm1* k k !i drop :] *n* i-times
   0 *n* array-of to *perm*
-  [: |> k | *perm* k k !i drop :] *n* i-times
+  [> k | *perm* k k !i drop :] *n* i-times
   0 *n* array-of to *count*
-  [: |> k | *count* k  k f1+  !i drop :] *n* i-times ;
+  [> k | *count* k  k f1+  !i drop :] *n* i-times ;
 
 : copy-perm1
   *perm* 0 *perm1* 0 1 *n* slice! drop ;

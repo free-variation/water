@@ -20,14 +20,14 @@ now to t
 *db* *row-count* "WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL SELECT n+1 FROM seq WHERE n < {0}) SELECT n AS id, 'cat' || (n % 50) AS cat FROM seq" format [ ] db-query to *result*
 "db-query:     " . now t - . "s" . cr
 *result* :rows @ size                                  "  rows materialized = {0}  (want 1000000)" format . cr
-*result* :rows @ 0 [: |> a row | a row :id @ + :] reduce  "  sum of ids       = {0}  (want 500000500000)" format . cr
+*result* :rows @ 0 [> a row | a row :id @ + :] reduce  "  sum of ids       = {0}  (want 500000500000)" format . cr
 
 \ --- create-index: symbolize :cat and build the index over N rows ---
 now to t
 *result* [ :cat ] create-index to *result*
 "create-index: " . now t - . "s" . cr
 *result* :index @ :cat @ keys size                     "  distinct cats    = {0}  (want 50)" format . cr
-*result* :index @ :cat @ values 0 [: |> a s | a s size + :] reduce  "  total indexed    = {0}  (want 1000000)" format . cr
+*result* :index @ :cat @ values 0 [> a s | a s size + :] reduce  "  total indexed    = {0}  (want 1000000)" format . cr
 *result* { :cat :cat7 } query size                     "  cat7 bucket      = {0}  (want 20000)" format . cr
 
 *db* db-close

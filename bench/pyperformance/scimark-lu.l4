@@ -30,15 +30,15 @@ variable *rm*  variable *ri*  variable *rj*
 
 : build-empty ( n -- a )
   | n a | to n  0 n array-of to a
-  [: |> i | a i  0 n array-of  !i drop :] n i-times  a ;
+  [> i | a i  0 n array-of  !i drop :] n i-times  a ;
 
 : build-filled ( n -- a )
   | n a | to n  n build-empty to a
-  [: |> i | [: |> jj | a i @i jj rng-next !i drop :] n i-times :] n i-times  a ;
+  [> i | [> jj | a i @i jj rng-next !i drop :] n i-times :] n i-times  a ;
 
 : copy-into ( src dst n -- )
   | src dst n | to n to dst to src
-  [: |> i | [: |> jj | dst i @i  jj  src i @i jj @i  !i drop :] n i-times :] n i-times ;
+  [> i | [> jj | dst i @i  jj  src i @i jj @i  !i drop :] n i-times :] n i-times ;
 
 : lu-factor ( a n -- )
   | a n j jp t i recp ii jj aiij aj aii rowj |
@@ -72,7 +72,7 @@ variable *rm*  variable *ri*  variable *rj*
 
 : checksum ( a n -- s )
   | a n s | to n to a  0 to s
-  [: |> i | [: |> jj | a i @i jj @i s f+ to s :] n i-times :] n i-times  s ;
+  [> i | [> jj | a i @i jj @i s f+ to s :] n i-times :] n i-times  s ;
 
 : lu-bench ( n cycles -- )
   | n cycles a lu t0 | to cycles to n

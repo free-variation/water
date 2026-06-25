@@ -24,7 +24,7 @@ variable *m*  variable *ri*  variable *rj*
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
   17.0 double-segment to *m*
-  [: |> iloop |
+  [> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0

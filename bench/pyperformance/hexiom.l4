@@ -53,7 +53,7 @@ variable *solution-sig*
   | >cells >i vmin vmax links |
   0.0 to vmin  0.0 to vmax
   *links* i @i to links
-  [: | >k nid |
+  [| >k nid |
      links k @i to nid
      cells nid already-done? if
         cells nid cell-val *empty* = 0= if vmin 1.0 f+ to vmin  vmax 1.0 f+ to vmax then
@@ -64,13 +64,13 @@ variable *solution-sig*
 : count-possible ( cells v -- n )            \ how many cells still allow v
   | >cells >v n |
   0.0 to n
-  [: | >i | cells i v member-cell? if n 1.0 f+ to n then :] *count* i-times
+  [| >i | cells i v member-cell? if n 1.0 f+ to n then :] *count* i-times
   n ;
 
 : remove-unfixed ( cells v -- changed )      \ drop v from every not-yet-fixed cell
   | >cells >v changed |
   0.0 to changed
-  [: | >i | cells i already-done? 0= if cells i v cell-remove if 1.0 to changed then then :] *count* i-times
+  [| >i | cells i already-done? 0= if cells i v cell-remove if 1.0 to changed then then :] *count* i-times
   changed ;
 
 \ --- constraint propagation (one pass; returns whether anything changed) ---
@@ -80,11 +80,11 @@ variable *solution-sig*
   *tiles* copy to left
   last-move -1.0 = if 0.0 *count* 1.0 f- range else *links* last-move @i then to freecells
   \ 1. remove values impossible by neighbour counts
-  [: | >fi i vmin vmax |
+  [| >fi i vmin vmax |
      freecells fi @i to i
      cells i already-done? 0= if
         cells i nb-vminvmax to vmax to vmin
-        [: | >num |
+        [| >num |
            num vmin lt num vmax gt or if
               cells i num cell-remove if 1.0 to changed then
            then
@@ -92,26 +92,26 @@ variable *solution-sig*
      then
   :] freecells size i-times
   \ 2. how many of each value remain free
-  [: | >i cv | cells i already-done? if cells i cell-val to cv  left cv  left cv @i 1.0 f-  !i drop then :] *count* i-times
+  [| >i cv | cells i already-done? if cells i cell-val to cv  left cv  left cv @i 1.0 f-  !i drop then :] *count* i-times
   \ 3. exhaust or force values
-  [: | >v |
+  [| >v |
      *tiles* v @i 0.0 gt  left v @i 0.0 = and if
         cells v remove-unfixed if 1.0 to changed then
      else
         cells v count-possible *tiles* v @i = if
-           [: | >i | cells i already-done? 0=  cells i v member-cell? and if cells i v set-done 1.0 to changed then :] *count* i-times
+           [| >i | cells i already-done? 0=  cells i v member-cell? and if cells i v set-done 1.0 to changed then :] *count* i-times
         then
      then
   :] 8.0 i-times
   \ 4. force empty / non-empty around filled cells
   last-move -1.0 = if 0.0 *count* 1.0 f- range else [ last-move ] then to filledcells
-  [: | >fi i num filled unk links |
+  [| >fi i num filled unk links |
      filledcells fi @i to i
      cells i already-done? if
         cells i cell-val to num
         0.0 to filled  [ ] to unk
         *links* i @i to links
-        [: | >k nid |
+        [| >k nid |
            links k @i to nid
            cells nid already-done? if
               cells nid cell-val *empty* = if else filled 1.0 f+ to filled then
@@ -119,9 +119,9 @@ variable *solution-sig*
         :] links size i-times
         unk size 0.0 gt if
            num filled = if
-              [: | >uk u | unk uk @i to u  cells u *empty* member-cell? if cells u *empty* set-done 1.0 to changed then :] unk size i-times
+              [| >uk u | unk uk @i to u  cells u *empty* member-cell? if cells u *empty* set-done 1.0 to changed then :] unk size i-times
            else num filled unk size f+ = if
-              [: | >uk u | unk uk @i to u  cells u *empty* cell-remove if 1.0 to changed then :] unk size i-times
+              [| >uk u | unk uk @i to u  cells u *empty* cell-remove if 1.0 to changed then :] unk size i-times
            then then
         then
      then
@@ -131,7 +131,7 @@ variable *solution-sig*
 \ --- record the solved board's 19 cell values (id order) ------------------
 : capture-sig ( cells -- )
   | >cells |
-  [: | >i | cells i cell-val 48.0 f+ :] *count* i-times
+  [| >i | cells i cell-val 48.0 f+ :] *count* i-times
   *count* array codepoints>string to *solution-sig* ;
 
 \ --- solved? : OPEN=0 SOLVED=1 IMPOSSIBLE=-1 ------------------------------
@@ -204,7 +204,7 @@ variable *solution-sig*
 : solve-once
   | cells |
   0.0 *count* array-of to cells
-  [: | >i | cells i < 2.0 3.0 4.0 7.0 > !i drop :] *count* i-times
+  [| >i | cells i < 2.0 3.0 4.0 7.0 > !i drop :] *count* i-times
   cells 1.0 solve-step drop ;
 
 : hexiom-bench

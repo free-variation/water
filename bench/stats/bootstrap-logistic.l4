@@ -16,7 +16,7 @@ ds [ :y ] dataset>matrix to *y*
 data dim drop to n
 
 7 seed
-*reps* iota [: |> i | data n resample-indices select-rows :] map to resamples
+*reps* iota [> i | data n resample-indices select-rows :] map to resamples
 
 now to t0
 resamples ' fit-augmented-logistic map to serial-betas

@@ -32,7 +32,7 @@ variable *sols*   variable *done*
   | >s cells mask |
   s dup size take to cells
   0.0 to mask
-  [: |> i | mask  1.0 cells i @i lshift  bit-or to mask :] cells size i-times
+  [> i | mask  1.0 cells i @i lshift  bit-or to mask :] cells size i-times
   mask ;
 
 \ --- direction maps (rotate / flip a single offset) ----------------------
@@ -68,21 +68,21 @@ variable *sols*   variable *done*
      is-c2 if ps 3.0 take to ps then
   :] 5 times
   ps to snap
-  [: |> i | ps [ snap i @i flip-list ] concat to ps :] snap size i-times
+  [> i | ps [ snap i @i flip-list ] concat to ps :] snap size i-times
   ps ;
 
 \ --- incremental directions -> coordinate offsets (cumulative sums) -------
 : convert ( ido -- offsets )
   | >ido acc out |
   0.0 to acc  [ 0.0 ] to out
-  [: |> i | acc ido i @i f+ to acc  out [ acc ] concat to out :] ido size i-times
+  [> i | acc ido i @i f+ to acc  out [ acc ] concat to out :] ido size i-times
   out ;
 
 \ --- footprint set: cells of `pp` placed at code `c` that land on the board -
 : foot ( c pp -- fpset )
   | >c >pp s |
   < > to s
-  [: |> i |
+  [> i |
      c pp i @i f+ cell-index
      dup -1.0 = if drop else s swap set-add! to s then
   :] pp size i-times
@@ -92,8 +92,8 @@ variable *sols*   variable *done*
 : init-board
   -1.0 460.0 array-of to *cti*
   0.0 50.0 array-of to *board*
-  [: |> y |
-     [: | >x code idx |
+  [> y |
+     [| >x code idx |
         2.0 x f* 50.0 y f* f+ y 2.0 mod f+ to code
         y 5.0 f* x f+ to idx
         *board* idx code !i drop
@@ -113,7 +113,7 @@ variable *sols*   variable *done*
     [ -49.0 51.0 2.0 -49.0 ]
     [ 51.0 51.0 2.0 51.0 ]
     [ 2.0 -51.0 -51.0 -51.0 ] ] to *pieces*
-  [: | >pi conv |
+  [| >pi conv |
      *pieces* pi @i  pi 3.0 =  permute  [: convert :] map to conv
      *pieces* pi conv !i drop
   :] 10 i-times ;
@@ -122,19 +122,19 @@ variable *sols*   variable *done*
 : empty-row ( -- row )
   | row |
   0.0 10.0 array-of to row
-  [: |> pi | row pi [ ] !i drop :] 10 i-times
+  [> pi | row pi [ ] !i drop :] 10 i-times
   row ;
 
 : init-fps
   0.0 50.0 array-of to *fps*
-  [: |> ci | *fps* ci empty-row !i drop :] 50 i-times ;
+  [> ci | *fps* ci empty-row !i drop :] 50 i-times ;
 
 : get-footprints
-  [: | >ci c |
+  [| >ci c |
      *board* ci @i to c
-     [: | >pi pps |
+     [| >pi pps |
         *pieces* pi @i to pps
-        [: | >ppi fp m row nb |
+        [| >ppi fp m row nb |
            c pps ppi @i foot to fp
            fp size 5.0 = if
               fp set-min to m
@@ -148,7 +148,7 @@ variable *sols*   variable *done*
 
 : get-senh
   0.0 50.0 array-of to *se-nh*
-  [: |> ci | *se-nh* ci  *board* ci @i  [ 2.0 49.0 51.0 ] foot set>mask  !i drop :] 50 i-times ;
+  [> ci | *se-nh* ci  *board* ci @i  [ 2.0 49.0 51.0 ] foot set>mask  !i drop :] 50 i-times ;
 
 \ --- solution string from a finished board (and its reverse) --------------
 : cb>string  ( cb -- s )  [: 48.0 f+ :] map codepoints>string ;
@@ -169,7 +169,7 @@ variable *sols*   variable *done*
         fp 0 @i to fp_mask
         fp_mask free bit-and fp_mask = if
            fp 1 @i to fp_cells
-           [: |> i | cb fp_cells i @i p !i drop :] fp_cells size i-times
+           [> i | cb fp_cells i @i p !i drop :] fp_cells size i-times
            pl_mask  pl_mask 1.0 f- bit-and  0.0 = 0= if
               free fp_mask bit-xor to n_free
               n_free lowest-bit to n_i_min
@@ -184,7 +184,7 @@ variable *sols*   variable *done*
               *sols* rs set-add! to *sols*
               *sols* size *nsols* lt 0= if 1.0 to *done* exit then
            then
-           [: |> i | cb fp_cells i @i -1.0 !i drop :] fp_cells size i-times
+           [> i | cb fp_cells i @i -1.0 !i drop :] fp_cells size i-times
         then
         fp_idx 1.0 f+ to fp_idx
      repeat

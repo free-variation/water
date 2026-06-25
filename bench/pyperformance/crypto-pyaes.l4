@@ -25,7 +25,7 @@ variable *exp*  variable *log*  variable *sbox*  variable *acc*
   0 256 array-of to *exp*
   0 256 array-of to *log*
   1 to *acc*
-  [: |> i |
+  [> i |
      *exp* i *acc* !i drop
      *log* *acc* i !i drop
      *acc* gmul3 to *acc*
@@ -41,7 +41,7 @@ variable *exp*  variable *log*  variable *sbox*  variable *acc*
 : build-sbox
   build-gf
   0 256 array-of to *sbox*
-  [: |> i | *sbox* i  i ginv affine  !i drop :] 256 i-times ;
+  [> i | *sbox* i  i ginv affine  !i drop :] 256 i-times ;
 
 \ --- T-tables: T1[a]=[2s,s,s,3s] (s=sbox[a]); T2..T4 are byte-rotations --------
 variable *t1*  variable *t2*  variable *t3*  variable *t4*
@@ -50,7 +50,7 @@ variable *t1*  variable *t2*  variable *t3*  variable *t4*
   | s s2 s3 |
   0 256 array-of to *t1*  0 256 array-of to *t2*
   0 256 array-of to *t3*  0 256 array-of to *t4*
-  [: |> a |
+  [> a |
      *sbox* a @i to s  s xtime to s2  s gmul3 to s3
      *t1* a  s2 24 lshift  s  16 lshift bit-or  s  8 lshift bit-or  s3 bit-or  !i drop
      *t2* a  s3 24 lshift  s2 16 lshift bit-or  s  8 lshift bit-or  s  bit-or  !i drop
@@ -74,7 +74,7 @@ variable *ke*
   0 44 array-of to *ke*
   key 0 be-word to tk0  key 4 be-word to tk1  key 8 be-word to tk2  key 12 be-word to tk3
   *ke* 0 tk0 !i drop  *ke* 1 tk1 !i drop  *ke* 2 tk2 !i drop  *ke* 3 tk3 !i drop
-  [: |> it |
+  [> it |
      tk3 to tt
      tk0
        *sbox* tt 16 rshift byte @i 24 lshift
@@ -96,7 +96,7 @@ variable *ke*
   in 4  be-word *ke* 1 @i bit-xor to t1
   in 8  be-word *ke* 2 @i bit-xor to t2
   in 12 be-word *ke* 3 @i bit-xor to t3
-  [: |> r |
+  [> r |
      r 1 + 4 * to base
      *t1* t0 24 rshift byte @i  *t2* t1 16 rshift byte @i bit-xor  *t3* t2 8 rshift byte @i bit-xor  *t4* t3 byte @i bit-xor  *ke* base 0 + @i bit-xor to a0
      *t1* t1 24 rshift byte @i  *t2* t2 16 rshift byte @i bit-xor  *t3* t3 8 rshift byte @i bit-xor  *t4* t0 byte @i bit-xor  *ke* base 1 + @i bit-xor to a1
@@ -133,10 +133,10 @@ variable *ke*
   | >in >out >nbytes nblk idx ctr ks |
   nbytes 15 + 16 / ftruncate to nblk
   0 16 array-of to ctr  0 16 array-of to ks
-  [: |> b |
+  [> b |
      ctr 12 b 1 + put-be32
      ctr ks encrypt-block
-     [: |> j |
+     [> j |
         b 16 * j + to idx
         idx nbytes lt if  out idx  in idx @i  ks j @i  bit-xor  !i drop  then
      :] 16 i-times
@@ -156,11 +156,11 @@ variable *msg*  variable *ct*  variable *back*  variable *nbytes*
 
 : build-message
   0 *nbytes* array-of to *msg*
-  [: |> i | *msg* i  i 167 * 31 + 251 mod  !i drop :] *nbytes* i-times
+  [> i | *msg* i  i 167 * 31 + 251 mod  !i drop :] *nbytes* i-times
   0 *nbytes* array-of to *ct*
   0 *nbytes* array-of to *back* ;
 
-: cksum ( arr -- s )  | >arr s |  0 to s  [: |> i | arr i @i s + to s :] arr size i-times  s ;
+: cksum ( arr -- s )  | >arr s |  0 to s  [> i | arr i @i s + to s :] arr size i-times  s ;
 
 : aes-bench
   | t0 ok |

@@ -72,7 +72,7 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
      node 16  x w f- y h f+ w h make-node  !i drop
      node 4 1.0 !i drop
      node 8 @i to oldn
-     [: | >k pid |
+     [| >k pid |
         node 9.0 k f+ @i to pid
         node 13 @i pid insert drop
         node 14 @i pid insert drop
@@ -117,7 +117,7 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
   0.0 *n* array-of to *particles*
   0.0 to *pfill*
   *n* 0.3 f* ftruncate to bulge
-  [: | >i df r angle x y mass |
+  [| >i df r angle x y mass |
      i bulge f/ to df
      *radius* 5.0 f/ df f* to r
      2.0 pi f* i f* bulge f/ 7.0 f* to angle
@@ -128,8 +128,8 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
   :] bulge i-times
   *n* bulge f- to spiral
   spiral 2.0 / ftruncate to per-arm
-  [: | >arm |
-     [: | >i df dist angle x y mass base |
+  [| >arm |
+     [| >i df dist angle x y mass base |
         2.0 pi f* arm f* 2.0 f/ to base
         i per-arm f/ to df
         *radius*  0.2 0.8 df f* f+  f* to dist
@@ -141,14 +141,14 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
      :] per-arm i-times
   :] 2.0 i-times
   spiral per-arm 2.0 f* f- to remaining
-  [: | >i angle dist x y |
+  [| >i angle dist x y |
      2.0 pi f* i f* remaining f/ to angle
      *radius* 0.5 f* to dist
      *cx* dist angle fcos f* f+ to x
      *cy* dist angle fsin f* f+ to y
      x y 5.0 add-particle
   :] remaining i-times
-  [: | >i p dx dy dist perpx perpy orbv |
+  [| >i p dx dy dist perpx perpy orbv |
      *particles* i @i to p
      p 0 @i *cx* f- to dx
      p 1 @i *cy* f- to dy
@@ -165,8 +165,8 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
 : system-energy ( -- e )
   | e pi pj dx dy dist p v2 |
   0.0 to e
-  [: | >i |
-     [: | >j |
+  [| >i |
+     [| >j |
         j i gt if
            *particles* i @i to pi  *particles* j @i to pj
            pi 0 @i pj 0 @i f- to dx
@@ -177,7 +177,7 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
         then
      :] *n* i-times
   :] *n* i-times
-  [: | >i |
+  [| >i |
      *particles* i @i to p
      p 2 @i p 2 @i f*  p 3 @i p 3 @i f* f+ to v2
      e  0.5 p 6 @i f* v2 f*  f+  to e
@@ -187,15 +187,15 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
 : advance-system
   | root |
   *width* 2.0 f/  *height* 2.0 f/  *width* 2.0 f/  *height* 2.0 f/  make-node to root
-  [: |> i | root i insert drop :] *n* i-times
-  [: | >i p fx fy |
+  [> i | root i insert drop :] *n* i-times
+  [| >i p fx fy |
      *particles* i @i to p
      i to *tpidx*  p 0 @i to *tpx*  p 1 @i to *tpy*  p 6 @i to *tpmass*
      root calc-force to fy to fx
      p 4  p 4 @i  fx p 6 @i f/  f+  !i drop
      p 5  p 5 @i  fy p 6 @i f/  f+  !i drop
   :] *n* i-times
-  [: | >i p |
+  [| >i p |
      *particles* i @i to p
      p 2  p 2 @i  p 4 @i *time-step* f* f+  !i drop
      p 3  p 3 @i  p 5 @i *time-step* f* f+  !i drop
@@ -209,7 +209,7 @@ variable *tpidx*  variable *tpx*  variable *tpy*  variable *tpmass*
   create-galaxy
   system-energy to ie
   now to t0
-  [: |> lp | [: advance-system :] *iterations* times  system-energy to fe :] *loops* i-times
+  [> lp | [: advance-system :] *iterations* times  system-energy to fe :] *loops* i-times
   now t0 - to t0
   "initial energy: " . [ ie ] frame>json . cr
   "final energy: " . [ fe ] frame>json . cr

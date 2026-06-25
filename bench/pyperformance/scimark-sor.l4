@@ -29,7 +29,7 @@ variable *g*
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
   17.0 double-segment to *m*
-  [: |> iloop |
+  [> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
@@ -50,7 +50,7 @@ variable *g*
 : build-*g*
   *nn* double-segment to *g*
   101.0 rng-init
-  [: |> idx | *g* idx next-double !i drop :] *nn* i-times ;
+  [> idx | *g* idx next-double !i drop :] *nn* i-times ;
 
 : sor-execute
   | y x idx nv |
@@ -77,7 +77,7 @@ variable *g*
 : sor-checksum ( -- s )
   | s |
   0.0 to s
-  [: |> idx | *g* idx @i s f+ to s :] *nn* i-times
+  [> idx | *g* idx @i s f+ to s :] *nn* i-times
   s ;
 
 : sor-bench

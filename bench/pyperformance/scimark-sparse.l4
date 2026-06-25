@@ -27,7 +27,7 @@ variable *row*  variable *col*  variable *val*  variable *x*  variable *y*
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
   17.0 double-segment to *m*
-  [: |> iloop |
+  [> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
@@ -52,24 +52,24 @@ variable *row*  variable *col*  variable *val*  variable *x*  variable *y*
   *n* double-segment to *x*
   *n* double-segment to *y*
   101.0 rng-init
-  [: |> i | *x* i next-double !i drop :] *n* i-times
-  [: |> i | *val* i next-double !i drop :] *anz* i-times
+  [> i | *x* i next-double !i drop :] *n* i-times
+  [> i | *val* i next-double !i drop :] *anz* i-times
   *row* 0.0 0.0 !i drop
-  [: | >r rowr step |
+  [| >r rowr step |
      *row* r @i to rowr
      *row* r 1.0 f+  rowr *nr* f+  !i drop
      r *nr* / ftruncate to step
      step 1.0 lt if 1.0 to step then
-     [: |> i | *col* rowr i f+  i step f*  !i drop :] *nr* i-times
+     [> i | *col* rowr i f+  i step f*  !i drop :] *nr* i-times
   :] *n* i-times ;
 
 : sparse-matmult
   [:
-     [: | >r sa lo hi |
+     [| >r sa lo hi |
         0.0 to sa
         *row* r @i to lo
         *row* r 1.0 f+ @i to hi
-        [: | >k i | lo k f+ to i  *x* *col* i @i @i  *val* i @i f*  sa f+ to sa :] hi lo f- i-times
+        [| >k i | lo k f+ to i  *x* *col* i @i @i  *val* i @i f*  sa f+ to sa :] hi lo f- i-times
         *y* r sa !i drop
      :] *n* i-times
   :] *cycles* times ;
@@ -77,7 +77,7 @@ variable *row*  variable *col*  variable *val*  variable *x*  variable *y*
 : sparse-checksum ( -- s )
   | s |
   0.0 to s
-  [: |> r | *y* r @i s f+ to s :] *n* i-times
+  [> r | *y* r @i s f+ to s :] *n* i-times
   s ;
 
 : sparse-bench

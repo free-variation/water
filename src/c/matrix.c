@@ -113,6 +113,43 @@ void p_at_i_lit_local0(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_gather_local0(Interpreter *interp) {
+	int slot = (int)vocab.dict[interp->ip++];
+	int row_index = (int)interp->return_stack[interp->local_base + slot].number;
+
+	POP(index_array);
+	POP(value_array);
+
+	double gathered_index;
+	if (VAL_TAG(index_array) == T_SEGMENT) {
+		Object *segment = OBJECT_AT(VAL_DATA(index_array));
+		if (row_index < 0 || row_index >= segment->segment.length) {
+			fail(interp, "@i: segment index %d out of bounds (length %d)", row_index, segment->segment.length);
+			return;
+		}
+		gathered_index = segment_get(segment, row_index);
+	} else if (VAL_TAG(index_array) == T_ARRAY) {
+		Object *array = OBJECT_AT(VAL_DATA(index_array));
+		if (row_index < 0 || row_index >= array->len) {
+			fail(interp, "@i: array index %d out of bounds (length %d)", row_index, array->len);
+			return;
+		}
+		Val element = array->items[row_index];
+		if (VAL_TAG(element) != T_FLOAT) {
+			fail(interp, "@i: gather index must be a number; got %s", tag_name(VAL_TAG(element)));
+			return;
+		}
+		gathered_index = VAL_NUMBER(element);
+	} else {
+		fail(interp, "@i: expected an array or segment; got %s", tag_name(VAL_TAG(index_array)));
+		return;
+	}
+
+	array_index_fetch(interp, value_array, (int)gathered_index);
+
+	DISPATCH(interp);
+}
+
 void p_store_i(Interpreter *interp) {
 	PEEK_AT(target_val, 2, "!i");
 	PEEK_AT(index_val, 1, "!i");

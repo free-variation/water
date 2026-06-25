@@ -46,7 +46,7 @@ clear
 0 [: 1 array :] 200 times  copy drop
 clear
 "-- symbol pool/hash full (intern many distinct symbols):" . cr
-[: |> i | i "s{0}" format string>symbol drop :] 2000000 i-times
+[> i | i "s{0}" format string>symbol drop :] 2000000 i-times
 clear
 "-- object registry full (fills the 64M object table):" . cr
 1 70000000 range [: drop < 0 > :] map drop

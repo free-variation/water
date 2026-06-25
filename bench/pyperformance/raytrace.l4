@@ -78,7 +78,7 @@ variable *pixw* variable *pixh*
 
 : init-objects
   1.0 3.0 -10.0 2.0  0.2 0.6  1.0 1.0 0.0 sphere-obj
-  [: |> y |
+  [> y |
      -3.0 y 0.4 f* f-  2.3  -5.0  0.4  0.2 0.6
      y 6.0 f/  1.0 y 6.0 f/ f-  0.5  sphere-obj
   :] 6 i-times
@@ -111,7 +111,7 @@ variable *pixw* variable *pixh*
 : light-visible? ( hx hy hz sdx sdy sdz -- flag )
   | >hx >hy >hz >sdx >sdy >sdz vis |
   1.0 to vis
-  [: |> oi |
+  [> oi |
      *objects* oi @i  hx hy hz sdx sdy sdz  obj-intersect
      if *epsilon* gt if 0.0 to vis then
      else drop then
@@ -124,7 +124,7 @@ variable *pixw* variable *pixh*
   *rdepth* 3.0 gt if 0.0 0.0 0.0 exit then
   *rdepth* 1+ to *rdepth*
   0.0 to found  0.0 to besti  0.0 to bestt
-  [: |> oi |
+  [> oi |
      *objects* oi @i  px py pz dx dy dz  obj-intersect
      if
         dup *negeps* gt if
@@ -169,7 +169,7 @@ variable *pixw* variable *pixh*
      obj 8 @i to lamb
      lamb 0.0 gt if
         0.0 to lam
-        [: |> li |
+        [> li |
            *lights* li @i to lightarr
            lightarr 0 @i hx f- to sdx
            lightarr 1 @i hy f- to sdy
@@ -212,8 +212,8 @@ variable *pixw* variable *pixh*
 : render-frame
   | sx sy rdx rdy rdz pr pg pb |
   0.0 to *checksum*
-  [: |> y |
-     [: |> x |
+  [> y |
+     [> x |
         x *pixw* f* *halfw* f- to sx
         y *pixh* f* *halfh* f- to sy
         *rx* sx f* *evx* f+ *ux* sy f* f+ to rdx

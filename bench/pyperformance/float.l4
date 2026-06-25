@@ -15,7 +15,7 @@ variable *xs*  variable *ys*  variable *zs*
 variable *maxx* variable *maxy* variable *maxz*
 
 : build-points
-  [: | >i sxi |
+  [| >i sxi |
      i fsin to sxi
      *xs* i sxi !i drop
      *ys* i  i fcos 3.0 f*  !i drop
@@ -23,7 +23,7 @@ variable *maxx* variable *maxy* variable *maxz*
   :] *points* i-times ;
 
 : normalize-points
-  [: | >i xi yi zi norm |
+  [| >i xi yi zi norm |
      *xs* i @i to xi  *ys* i @i to yi  *zs* i @i to zi
      xi xi f* yi yi f* f+ zi zi f* f+ fsqrt to norm
      *xs* i  xi norm f/  !i drop
@@ -33,7 +33,7 @@ variable *maxx* variable *maxy* variable *maxz*
 
 : maximize-points
   *xs* 0 @i to *maxx*  *ys* 0 @i to *maxy*  *zs* 0 @i to *maxz*
-  [: | >i xi |
+  [| >i xi |
      *xs* i @i to xi  *maxx* xi gt 0= if xi to *maxx* then
      *ys* i @i to xi  *maxy* xi gt 0= if xi to *maxy* then
      *zs* i @i to xi  *maxz* xi gt 0= if xi to *maxz* then

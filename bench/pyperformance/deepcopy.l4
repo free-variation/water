@@ -14,9 +14,9 @@ variable *dc*
 
 : run-deepcopy ( -- )
   [: *a* copy drop :] 30 times
-  [: |> ci |
+  [> ci |
      *dc* :string *colors* ci @i ! drop
-     [: |> kk |
+     [> kk |
         *dc* :lst @ 0 kk !i drop
         *dc* :boolean :1 ! drop  *dc* copy drop
         *dc* :boolean :0 ! drop  *dc* copy drop

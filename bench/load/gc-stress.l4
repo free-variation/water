@@ -14,28 +14,28 @@
 : ck ( got want -- ) = . cr ;
 
 \ A: arena array churn + reduce, R rounds  (forces array alloc/discard + gc)
-1 *rounds* range 0 [: |> a e | a  1 *elems* range 0 [: + :] reduce  + :] reduce
+1 *rounds* range 0 [> a e | a  1 *elems* range 0 [: + :] reduce  + :] reduce
 *elems* sum1n *rounds* *  ck
 gc
 
 \ B: large matrices, MR rounds  (heap payloads + serial byte-trigger GC + reuse)
-1 *matrix-rounds* range 0 [: |> a e | a  1 *big-elems* range *big-elems* 1 matrix sum  + :] reduce
+1 *matrix-rounds* range 0 [> a e | a  1 *big-elems* range *big-elems* 1 matrix sum  + :] reduce
 *big-elems* sum1n *matrix-rounds* *  ck
 gc
 
 \ C: cons lists, R rounds  (pair alloc + epoch mark + pair GC + traversal)
-1 *rounds* range 0 [: |> a e | a  1 *elems* range array>cons cons>array 0 [: + :] reduce  + :] reduce
+1 *rounds* range 0 [> a e | a  1 *elems* range array>cons cons>array 0 [: + :] reduce  + :] reduce
 *elems* sum1n *rounds* *  ck
 gc
 
 \ D: deep copy, R rounds  (reify/copy gc-disabled path; copy must sum-equal original)
-1 *rounds* range 0 [: |> a e | a  1 *elems* range copy 0 [: + :] reduce  + :] reduce
+1 *rounds* range 0 [> a e | a  1 *elems* range copy 0 [: + :] reduce  + :] reduce
 *elems* sum1n *rounds* *  ck
 gc
 
 \ E: pmap heavy == serial  (each item builds a big matrix -> worker-local GC)
-1 *domain* range [: |> i | i  1 *big-elems* range *big-elems* 1 matrix sum  * :] map
-1 *domain* range 6 1 [: |> i | i  1 *big-elems* range *big-elems* 1 matrix sum  * :] pmap-ext
+1 *domain* range [> i | i  1 *big-elems* range *big-elems* 1 matrix sum  * :] map
+1 *domain* range 6 1 [> i | i  1 *big-elems* range *big-elems* 1 matrix sum  * :] pmap-ext
 =  . cr
 gc
 
@@ -47,8 +47,8 @@ gc
 
 \ G: pmap escaping == serial  (each item returns one region pair -> region kept.
 \ One escaping allocation per item stays within pmap's pre-grown headroom.)
-1 *domain* range [: |> i | i 0 cons :] map
-1 *domain* range 6 1 [: |> i | i 0 cons :] pmap-ext
+1 *domain* range [> i | i 0 cons :] map
+1 *domain* range 6 1 [> i | i 0 cons :] pmap-ext
 =  . cr
 gc
 

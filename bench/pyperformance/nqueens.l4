@@ -50,7 +50,7 @@ inline
 : nqueens-run
   | t0 |
   0 *queens* array-of to *board*
-  [: |> i | *board* i i !i drop :] *queens* i-times
+  [> i | *board* i i !i drop :] *queens* i-times
   0 to *solutions*
   now to t0
   0 permute

@@ -31,7 +31,7 @@
 : build-strings ( -- arr )
   | arr |
   "" 147 array-of to arr
-  [: |> kk |
+  [> kk |
      arr kk
        *fills* kk 21 mod @i
        *words* kk 21 mod @i
@@ -47,12 +47,12 @@ build-strings constant *strs*
 : search10 ( string pattern -- )  [: 2dup has? drop :] 10 times  drop drop ;
 
 : search-all ( -- )
-  [: |> kk |  *strs* kk @i  *patterns* kk 21 mod @i  search10 :] 147 i-times ;
+  [> kk |  *strs* kk @i  *patterns* kk 21 mod @i  search10 :] 147 i-times ;
 
 \ verification: how many of the 147 pairs match (each counted once)
 : count-matches ( -- n )
   | n |  0 to n
-  [: |> kk |  *strs* kk @i  *patterns* kk 21 mod @i  has?  n + to n :] 147 i-times
+  [> kk |  *strs* kk @i  *patterns* kk 21 mod @i  has?  n + to n :] 147 i-times
   n ;
 
 count-matches "matches: {0}" format . cr

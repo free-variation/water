@@ -6,9 +6,9 @@
 
 100000 constant *n*
 0 *n* array-of to *data*
-[: |> i | *data* i { :id i :name i "n{0}" format :sq i i * :tags < i 7 mod i 11 mod > :nested { :half i 2 quotient } } !i drop :] *n* i-times
+[> i | *data* i { :id i :name i "n{0}" format :sq i i * :tags < i 7 mod i 11 mod > :nested { :half i 2 quotient } } !i drop :] *n* i-times
 0 to *sum*
-[: |> i | *sum* *data* i @i :id @ + *data* i @i :sq @ + *data* i @i :nested @ :half @ + to *sum* :] *n* i-times
+[> i | *sum* *data* i @i :id @ + *data* i @i :sq @ + *data* i @i :nested @ :half @ + to *sum* :] *n* i-times
 
 "/tmp/lf-image-stress.image" save-image
 
@@ -18,7 +18,7 @@ clear
 "/tmp/lf-image-stress.image" load-image
 
 0 to *s2*
-[: |> i | *s2* *data* i @i :id @ + *data* i @i :sq @ + *data* i @i :nested @ :half @ + to *s2* :] *n* i-times
+[> i | *s2* *data* i @i :id @ + *data* i @i :sq @ + *data* i @i :nested @ :half @ + to *s2* :] *n* i-times
 
 *data* size *n* = . cr
 *sum* *s2* = . cr

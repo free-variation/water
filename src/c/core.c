@@ -1679,6 +1679,7 @@ static void p_ll_litrev_sub_0(Interpreter *interp) {
 static int at_i_local0_cfa;
 static int at_i_lit_cfa;
 static int at_i_lit_local0_cfa;
+static int gather_local0_cfa;
 static int load2_cfa, load3_cfa;
 
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot) {
@@ -1743,6 +1744,27 @@ int try_fuse_at_i_local(Interpreter *interp) {
 	int slot = (int)dict[here - 1];
 	vocab.here -= 2;
 	emit_call(interp, at_i_local0_cfa);
+	emit(interp, (cell)slot);
+
+	return 1;
+}
+
+int try_fuse_gather_local(Interpreter *interp) {
+	if (!compiler.compiling)
+		return 0;
+
+	cell *dict = vocab.dict;
+	int here = vocab.here;
+	if (here < 2)
+		return 0;
+	if (here - 2 < compiler.fuse_floor)
+		return 0;
+	if ((cfa_handler)dict[here - 2] != p_at_i_local0)
+		return 0;
+
+	int slot = (int)dict[here - 1];
+	vocab.here -= 2;
+	emit_call(interp, gather_local0_cfa);
 	emit(interp, (cell)slot);
 
 	return 1;
@@ -2645,7 +2667,8 @@ static int op_cell_count(int cursor) {
 	    || handler == (cell)p_local_acc_mul_0
 	    || handler == (cell)p_local_acc_div_0
 	    || handler == (cell)p_at_i_local0
-	    || handler == (cell)p_at_i_lit)
+	    || handler == (cell)p_at_i_lit
+	    || handler == (cell)p_gather_local0)
 		return 2;
 
 	if (handler == vocab.dict[vocab.dostr_cfa]
@@ -4122,6 +4145,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	at_i_local0_cfa = define_primitive(interp, "(@i.l0)", p_at_i_local0, 4);
 	at_i_lit_cfa = define_primitive(interp, "(@i.lit)", p_at_i_lit, 4);
 	at_i_lit_local0_cfa = define_primitive(interp, "(@i.lit.l0)", p_at_i_lit_local0, 4);
+	gather_local0_cfa = define_primitive(interp, "(gather.l0)", p_gather_local0, 4);
 	ll_add_0_cfa = define_primitive(interp, "(ll+0)", p_ll_add_0, 4);
 	ll_sub_0_cfa = define_primitive(interp, "(ll-0)", p_ll_sub_0, 4);
 	ll_mul_0_cfa = define_primitive(interp, "(ll*0)", p_ll_mul_0, 4);
