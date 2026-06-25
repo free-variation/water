@@ -1,0 +1,9 @@
+\ Fusion floor: a local loaded before `begin` and one loaded after it must not
+\ fuse across the loop-back target. Before the floor, `start begin step f+` fused
+\ start+step into a single (ll+0) straddling the begin point, so the loop's
+\ back-branch landed inside that op and the word crashed silently. It must run
+\ the loop (i: 5..1) and leave 3 + 4*5 = 23.
+: floor-test | start step i |
+  3.0 to start  4.0 to step  5.0 to i
+  start begin step f+ i 1.0 f- to i i 0.0 fgt 0= until ;
+floor-test . cr

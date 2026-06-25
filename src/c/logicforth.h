@@ -458,6 +458,8 @@ typedef struct {
 	
 	int fuse_prev_var, fuse_prev2_var;
 	int fuse_prev_cmp;
+	int fuse_floor;
+	int loadn_at;
 	
 	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
 	
@@ -773,6 +775,8 @@ void p_leave_locals(Interpreter *interp);
 void p_local_fetch(Interpreter *interp);
 void p_local_store(Interpreter *interp);
 void p_local_fetch_0depth(Interpreter *interp);
+void p_load2(Interpreter *interp);
+void p_load3(Interpreter *interp);
 void p_local_store_0depth(Interpreter *interp);
 void p_local_incr_0depth(Interpreter *interp);
 void p_local_decr_0depth(Interpreter *interp);
@@ -977,6 +981,8 @@ void p_to(Interpreter *interp);
 void p_to_var(Interpreter *interp);
 void p_bar(Interpreter *interp);
 void p_bar_to(Interpreter *interp);
+void p_bracket_bar(Interpreter *interp);
+void p_bracket_bar_to(Interpreter *interp);
 void p_symbol(Interpreter *interp);
 void p_string_to_symbol(Interpreter *interp);
 void p_forget(Interpreter *interp);

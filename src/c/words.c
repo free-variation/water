@@ -976,6 +976,7 @@ void p_then(Interpreter *interp) {
 	if (!valid_patch_slot(interp, slot, "then"))
 		return;
 	vocab.dict[slot] = (vocab.here - slot);
+	compiler.fuse_floor = vocab.here;
 
 	DISPATCH(interp);
 }
@@ -995,6 +996,7 @@ void p_else(Interpreter *interp) {
 
 void p_begin(Interpreter *interp) {
 	push(interp, make_float((double)vocab.here));
+	compiler.fuse_floor = vocab.here;
 
 	DISPATCH(interp);
 }
@@ -1045,7 +1047,7 @@ void p_repeat(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_qcolon(Interpreter *interp) {
+static void open_quotation(Interpreter *interp) {
 	int branch_slot = -1;
 	if (compiler.compiling) {
 		emit_call(interp, vocab.branch_cfa);
@@ -1054,10 +1056,16 @@ void p_qcolon(Interpreter *interp) {
 	}
 	int anon_cfa = vocab.here;
 	emit(interp, (cell)&docol);
+	compiler.fuse_floor = vocab.here;
+	compiler.loadn_at = -1;
 	enter_compile_scope(interp);
 	compiler.compiling = 1;
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
+}
+
+void p_qcolon(Interpreter *interp) {
+	open_quotation(interp);
 
 	DISPATCH(interp);
 }
@@ -1163,6 +1171,8 @@ void p_colon(Interpreter *interp) {
 
 	create_header(interp, token, 0);
 	emit(interp, (cell)&docol);
+	compiler.fuse_floor = vocab.here;
+	compiler.loadn_at = -1;
 	enter_compile_scope(interp);
 	compiler.compiling = 1;
 
@@ -1317,6 +1327,20 @@ void p_bar(Interpreter *interp) {
 
 void p_bar_to(Interpreter *interp) {
 	compile_locals_decl(interp, "|>", 1);
+
+	DISPATCH(interp);
+}
+
+void p_bracket_bar(Interpreter *interp) {
+	open_quotation(interp);
+	compile_locals_decl(interp, "[|", 0);
+
+	DISPATCH(interp);
+}
+
+void p_bracket_bar_to(Interpreter *interp) {
+	open_quotation(interp);
+	compile_locals_decl(interp, "[>", 1);
 
 	DISPATCH(interp);
 }

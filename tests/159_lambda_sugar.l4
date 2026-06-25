@@ -1,0 +1,6 @@
+\ [| … | and [> … | are optional sugar for [: | … | and [: |> … | — a minimalist
+\ lambda syntax. [> opens a receive-all (|>) quotation; [| is the general opener
+\ (fresh locals, or > prefixes to receive selectively). All equivalent to [:.
+[ 2 3 4 ] [> x | x x f* :] map . cr
+[ 2 3 4 ] [| >x | x x f* :] map . cr
+3.0 [> a | a a f* :] execute . cr
