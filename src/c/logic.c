@@ -71,7 +71,7 @@ static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int dep
 		for (int i = 0; i < n - 1; i++)
 			if (!unify_depth(interp, left->items[i], right->items[i], depth + 1))
 				return 0;
-		MUSTTAIL return unify_depth(interp, left->items[n - 1], right->items[n - 1], depth + 1);
+		__attribute__((musttail)) return unify_depth(interp, left->items[n - 1], right->items[n - 1], depth + 1);
 	}
 
 	if (VAL_TAG(left_val) == T_PAIR && VAL_TAG(right_val) == T_PAIR) {
@@ -80,7 +80,7 @@ static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int dep
 
 		if (!unify_depth(interp, left->head, right->head, depth + 1))
 			return 0;
-		MUSTTAIL return unify_depth(interp, left->tail, right->tail, depth + 1);
+		__attribute__((musttail)) return unify_depth(interp, left->tail, right->tail, depth + 1);
 	}
 
 	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
