@@ -56,15 +56,16 @@ syn keyword logicforthBuiltin log lowest-bit lshift lt man map mapn match match-
 syn keyword logicforthBuiltin matrix>pointer max mean member? merge min mod negate nip not now num-cores
 syn keyword logicforthBuiltin num-elements or over parallel-run pfilter pfilter-ext pi pmap pmap-ext pmap-reduce pmap-reduce-ext print
 syn keyword logicforthBuiltin print-stack quantile query quotient r> r@ random random-int range read read-err read-file
-syn keyword logicforthBuiltin read-out read-tsv reduce reify relation reload replace resample-indices reset reshape resume retract
-syn keyword logicforthBuiltin reverse reverse-slice! roll rot round round-down round-up row-maxes row-means row-mins row-sums rows>dataset
-syn keyword logicforthBuiltin rows>relation rshift run run-result running? sample save save-image see see-compiled see-tree seed
-syn keyword logicforthBuiltin segment>pointer select-keys select-rows select-values set set-add! set-remove! shift shift-with side-depth side-drop sin
-syn keyword logicforthBuiltin size skip sleep slice! sort split sq sqrt start-generator start-process stop string>chars
-syn keyword logicforthBuiltin string>codepoints string>symbol submatrix substring sum swap symbol? take tan tanh throw to-slice!
-syn keyword logicforthBuiltin transpose trim true truncate try-catch union update-at values var vf* vf+ vf-
-syn keyword logicforthBuiltin vf/ vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh vvf*
-syn keyword logicforthBuiltin vvf*+ vvf*- vvf+ vvf- vvf/ wait words write write-file write-in write-tsv yield
+syn keyword logicforthBuiltin read-out read-tsv reduce reify relation reload render replace resample-indices reset reshape resume
+syn keyword logicforthBuiltin retract reverse reverse-slice! roll rot round round-down round-up row-maxes row-means row-mins row-sums
+syn keyword logicforthBuiltin rows>dataset rows>relation rshift run run-result running? sample save save-image see see-compiled see-compiled>string
+syn keyword logicforthBuiltin see-tree see-tree>string see>string seed segment>pointer select-keys select-rows select-values set set-add! set-remove! shift
+syn keyword logicforthBuiltin shift-with side-depth side-drop sin size skip sleep slice! sort split sq sqrt
+syn keyword logicforthBuiltin start-generator start-process stop string>chars string>codepoints string>number string>symbol submatrix substring sum swap symbol?
+syn keyword logicforthBuiltin take tan tanh throw to-slice! transpose trim true truncate try-catch union update-at
+syn keyword logicforthBuiltin values var vf* vf+ vf- vf/ vfabs vfcos vfexp vflog vfneg vfsin
+syn keyword logicforthBuiltin vfsq vfsqrt vftan vftanh vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait words
+syn keyword logicforthBuiltin write write-file write-in write-tsv yield
 syn match   logicforthBuiltin "|>"
 
 hi def link logicforthComment      Comment
