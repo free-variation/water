@@ -273,6 +273,7 @@ These compile-time words read a following local name and emit a single fused dep
 |------|-------------|----------|-----|-------|---|
 | `.` | `( a -- )` | Print value then a space; matrices print as a grid, frames pretty-print | 1 + print | none | O(size printed) |
 | `.a` | `( a -- )` | Like `.` but disables print truncation (show all elements) | 1 + print | none | O(size printed) |
+| `render` | `( a -- s )` | The text `.` would print, returned as a string instead of printed: no truncation, no trailing separator (a matrix grid's final newline is dropped). Strings render raw, symbols by name, collections/frames/matrices in their laid-out form | 1 + size | `1o` | O(size) |
 | `.s` | `( -- )` | Print every stack value, bottom to top; leaves the stack intact | print | none | O(depth) |
 | `print` | `( x -- )` | lib.l4: alias for `.` | 1 + print | none | O(size printed) |
 | `print-stack` | `( -- )` | lib.l4: alias for `.s` | print | none | O(depth) |
@@ -303,6 +304,7 @@ Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is co
 | `codepoints>string` | `( [ code… ] -- s )` | Encode each codepoint to UTF-8 and concatenate; per-element type- and range-checked | n | `1o` | O(n) |
 | `trim` | `( s -- s' )` | Strip leading and trailing ASCII whitespace (`' ' \t \n \v \f \r`); a backward/forward byte-scan, one allocation of the surviving span | n | `1o` | O(n) |
 | `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
+| `string>number` | `( s -- n \| none )` | Parse a decimal/float string (via `strtod`, like a numeric literal) to a float, ignoring surrounding whitespace; the none value if `s` is not entirely a number | n | none | O(n) |
 | `format` | `( … template -- s )` | Fill `template`'s `{n}` (or `{n:spec}`) placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only `{digit…}` (optionally with a `:spec`) substitute — other brace content is left literal | len + refs | `1o` | O(len) |
 
 A placeholder may carry a format spec after a colon — `{n:spec}` — a printf-style mini-language controlling how the value renders. `spec` is optional flags (`-`, `+`, space, `#`, `0`), an optional field width, an optional `.precision`, and an optional conversion letter:
@@ -689,8 +691,11 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 |------|-------------|----------|-----|-------|---|
 | `words` | `( -- )` | List all non-internal words, newest first, 8 per line | dict scan | none | O(\|dict\|) |
 | `see` | `( xt -- )` | Print a word's source (`: name … ;`), or `variable`/`symbol`/primitive form | dict scan | none | O(\|dict\|) |
+| `see>string` | `( xt -- s )` | The text `see` would print, returned as a string (trailing newline stripped) | dict scan | `1o` | O(\|dict\|) |
 | `see-compiled` | `( xt -- )` | Disassemble a colon definition's compiled cells | body scan | none | O(body) |
+| `see-compiled>string` | `( xt -- s )` | The text `see-compiled` would print, returned as a string (trailing newline stripped) | body scan | `1o` | O(body) |
 | `see-tree` | `( xt -- )` | Like `see-compiled`, but each colon-word call is expanded inline, indented two spaces, recursively down to primitives; recursive calls print as `name ...` | body scan | none | O(expanded body) |
+| `see-tree>string` | `( xt -- s )` | The text `see-tree` would print, returned as a string (trailing newline stripped) | body scan | `1o` | O(expanded body) |
 | `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
 | `help` | `( "name" -- )` | lib.l4: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |

@@ -67,23 +67,23 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
   words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
   lines, `s stdout write` emits.
 
-### Number parsing and stringify
+### Re-readable repr
 
-Reading a number out of a string, and capturing a value as the text `.` would
-print, are both indirect today: numeric literals are parsed only at read time,
-and a value renders to a string only through `format`'s placeholders (scalars)
-or `frame>json` (structured values).
+`render` produces a value's display form, which is not always re-readable —
+strings print raw, a matrix prints as a grid. `frame>json` round-trips, but only
+the JSON-expressible subset (frames, arrays, strings, numbers, booleans).
+Missing is a representation that reads back through the logicforth reader for
+*any* value.
 
-- `string>number` ( s -- n ) — parse a decimal/float string to a float.
-- `>string` ( v -- s ) — the rendering `.` produces, returned as a string rather
-  than printed: floats in shortest round-trip form, strings raw, symbols by
-  name, arrays/frames/matrices/sets in the same laid-out form.
+- `repr` ( v -- s ) — a string of logicforth source that, read back, reconstructs
+  an equal value: quoted strings (with `""` escaping), `[ ]` arrays, `{ :k v }`
+  frames, `< >` sets, `[( )]` cons lists, `:name` symbols, floats in shortest
+  round-trip form, a matrix as its `[ … ] R C matrix` constructor.
 
-To settle: how `string>number` signals a non-numeric input (an error, a trailing
-success flag, or the none value); whether `>string` mirrors `.`'s display
-(truncation and all) or always emits the full value; whether a separate
-re-readable `repr` (quoted strings, `[ ]`/`{ }`/`< >` literals) earns its place
-given `frame>json` already round-trips structured data.
+To settle: how a value with no source form (an unbound logic var, continuation,
+stream, db, or ptr) reprs — an error, or a `reify`-style canonical placeholder;
+whether `repr` then `load`-style evaluation is the intended round-trip path or a
+dedicated `read` ( s -- v ) word is wanted.
 
 ### Loop ergonomics
 

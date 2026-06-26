@@ -17,6 +17,24 @@ static AllocContext main_alloc;
 static pthread_mutex_t intern_lock = PTHREAD_MUTEX_INITIALIZER;
 
 
+static void *xmalloc(size_t bytes) {
+	void *block = malloc(bytes);
+	if (!block) {
+		fprintf(stderr, "logicforth: out of memory\n");
+		exit(1);
+	}
+	return block;
+}
+
+static void *xcalloc(size_t count, size_t size) {
+	void *block = calloc(count, size);
+	if (!block) {
+		fprintf(stderr, "logicforth: out of memory\n");
+		exit(1);
+	}
+	return block;
+}
+
 static void arena_init(void) {
 	arena.base = mmap(NULL, ARENA_RESERVE, PROT_READ | PROT_WRITE,
 			MAP_PRIVATE | MAP_ANON, -1, 0);
@@ -34,11 +52,11 @@ static void arena_init(void) {
 
 	arena.object_space.max = MAX_OBJECTS;
 	arena.object_space.cap = OBJECTS_INIT_CAP;
-	arena.objects = calloc(arena.object_space.cap, sizeof(Object *));
+	arena.objects = xcalloc(arena.object_space.cap, sizeof(Object *));
 	arena.object_space.n = 0;
 	main_alloc.objects.next = arena.object_space.n;
 	main_alloc.objects.end = arena.object_space.n;
-	arena.object_space.free = malloc(sizeof(int) * (size_t)arena.object_space.cap);
+	arena.object_space.free = xmalloc(sizeof(int) * (size_t)arena.object_space.cap);
 	arena.object_space.n_free = 0;
 }
 
@@ -603,11 +621,11 @@ int double_cmp(const void *left, const void *right) {
 }
 	
 
-void print_double(double number) {
+void print_double(FILE *out, double number) {
 	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
-		printf("%lld", (long long)number);
+		fprintf(out, "%lld", (long long)number);
 	else
-		printf("%g", number);
+		fprintf(out, "%g", number);
 }
 
 int print_truncate = 1;
@@ -624,45 +642,45 @@ static int print_depth = 0;
 static void print_depth_enter(void) { print_depth++; }
 static void print_depth_leave(void) { print_depth--; }
 
-void print_items(Interpreter *interp, Object *collection) {
+void print_items(FILE *out, Interpreter *interp, Object *collection) {
 	int length = collection->len;
 
 	if (!print_truncate || length <= PRINT_FIRST + PRINT_LAST) {
 		for (int i = 0; i < length; i++) {
-			print_val(interp, collection->items[i]);
-			putchar(' ');
+			print_val(out, interp, collection->items[i]);
+			putc(' ', out);
 		}
 	} else {
 		for (int i = 0; i < PRINT_FIRST; i++) {
-			print_val(interp, collection->items[i]);
-			putchar(' ');
+			print_val(out, interp, collection->items[i]);
+			putc(' ', out);
 		}
-		fputs("... ", stdout);
+		fputs("... ", out);
 		for (int i = length - PRINT_LAST; i < length; i++) {
-			print_val(interp, collection->items[i]);
-			putchar(' ');
+			print_val(out, interp, collection->items[i]);
+			putc(' ', out);
 		}
 	}
 }
 
-void print_corners(Object *matrix) {
+void print_corners(FILE *out, Object *matrix) {
 	double *elements = matrix->matrix.elements;
 	int n = matrix->matrix.rows * matrix->matrix.columns;
 
 	if (!print_truncate || n <= PRINT_FIRST + PRINT_LAST) {
 		for (int i = 0; i < n; i++) {
-			putchar(' ');
-			print_double(elements[i]);
+			putc(' ', out);
+			print_double(out, elements[i]);
 		}
 	} else {
 		for (int i = 0; i < PRINT_FIRST; i++) {
-			putchar(' ');
-			print_double(elements[i]);
+			putc(' ', out);
+			print_double(out, elements[i]);
 		}
-		fputs(" ...", stdout);
+		fputs(" ...", out);
 		for (int i = n - PRINT_LAST; i < n; i++) {
-			putchar(' ');
-			print_double(elements[i]);
+			putc(' ', out);
+			print_double(out, elements[i]);
 		}
 	}
 }
@@ -672,11 +690,11 @@ void print_corners(Object *matrix) {
 #define MATRIX_DISP_FIRST_COLS 5
 #define MATRIX_DISP_LAST_COLS 3
 
-void print_matrix_cell(double value) {
-	printf(" %10.4g", value);
+void print_matrix_cell(FILE *out, double value) {
+	fprintf(out, " %10.4g", value);
 }
 
-void print_matrix_grid(Object *m) {
+void print_matrix_grid(FILE *out, Object *m) {
 	int rows = m->matrix.rows;
 	int cols = m->matrix.columns;
 	int rows_trunc = print_truncate
@@ -684,12 +702,12 @@ void print_matrix_grid(Object *m) {
 	int cols_trunc = print_truncate
 		&& cols > MATRIX_DISP_FIRST_COLS + MATRIX_DISP_LAST_COLS;
 
-	printf("<matrix %dx%d>\n", rows, cols);
+	fprintf(out, "<matrix %dx%d>\n", rows, cols);
 
 	for (int i = 0; i < rows; i++) {
 		if (rows_trunc) {
 			if (i == MATRIX_DISP_FIRST_ROWS)
-				fputs(" ...\n", stdout);
+				fputs(" ...\n", out);
 			if (i >= MATRIX_DISP_FIRST_ROWS && i < rows - MATRIX_DISP_LAST_ROWS)
 				continue;
 		}
@@ -697,84 +715,84 @@ void print_matrix_grid(Object *m) {
 		for (int j = 0; j < cols; j++) {
 			if (cols_trunc) {
 				if (j == MATRIX_DISP_FIRST_COLS)
-					printf(" %10s", "...");
+					fprintf(out, " %10s", "...");
 				if (j >= MATRIX_DISP_FIRST_COLS && j < cols - MATRIX_DISP_LAST_COLS)
 					continue;
 			}
-			print_matrix_cell(MAT(m, i, j));
+			print_matrix_cell(out, MAT(m, i, j));
 		}
-		putchar('\n');
+		putc('\n', out);
 	}
 }
 
-void print_val(Interpreter *interp, Val value) {
+void print_val(FILE *out, Interpreter *interp, Val value) {
 	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
-		case T_NONE: fputs("null", stdout); break;
-		case T_UNBOUND: fputs("_", stdout); break;
-		case T_FLOAT: print_double(VAL_NUMBER(value)); break;
-		case T_SYMBOL: printf(":%s", &vocab.symbol_pool[VAL_DATA(value)]); break;
+		case T_NONE: fputs("null", out); break;
+		case T_UNBOUND: fputs("_", out); break;
+		case T_FLOAT: print_double(out, VAL_NUMBER(value)); break;
+		case T_SYMBOL: fprintf(out, ":%s", &vocab.symbol_pool[VAL_DATA(value)]); break;
 		case T_STRING: {
 			Object *str = OBJECT_AT(VAL_DATA(value));
 			if (print_depth > 0)
-				printf("\"%s\"", str->bytes);
+				fprintf(out, "\"%s\"", str->bytes);
 			else
-				fputs(str->bytes, stdout);
+				fputs(str->bytes, out);
 			break;
 		}
 		case T_SET:
 					   print_depth_enter();
 					   if (print_depth > MAX_NESTING_DEPTH) {
-						   fputs("<...>", stdout);
+						   fputs("<...>", out);
 					   } else {
-						   fputs("< ", stdout);
-						   print_items(interp, OBJECT_AT(VAL_DATA(value)));
-						   putchar('>');
+						   fputs("< ", out);
+						   print_items(out, interp, OBJECT_AT(VAL_DATA(value)));
+						   putc('>', out);
 					   }
 					   print_depth_leave();
 					   break;
 		case T_ARRAY:
 					   print_depth_enter();
 					   if (print_depth > MAX_NESTING_DEPTH) {
-						   fputs("[...]", stdout);
+						   fputs("[...]", out);
 					   } else {
-						   fputs("[ ", stdout);
-						   print_items(interp, OBJECT_AT(VAL_DATA(value)));
-						   putchar(']');
+						   fputs("[ ", out);
+						   print_items(out, interp, OBJECT_AT(VAL_DATA(value)));
+						   putc(']', out);
 					   }
 					   print_depth_leave();
 					   break;
 		case T_PAIR: {
 			print_depth_enter();
 			if (print_depth > MAX_NESTING_DEPTH) {
-				fputs("[(...)]", stdout);
+				fputs("[(...)]", out);
 			} else {
-				fputs("[( ", stdout);
+				fputs("[( ", out);
 				Val cur = value;
 				int count = 0;
 				while (VAL_TAG(cur) == T_PAIR && count < LIST_PRINT_MAX) {
 					Pair *pair = &pairs.table[VAL_DATA(cur)];
-					print_val(interp, pair->head);
-					putchar(' ');
+					print_val(out, interp, pair->head);
+					putc(' ', out);
 					cur = deref(interp, pair->tail);
 					count++;
 				}
 				if (count == LIST_PRINT_MAX)
-					fputs("... ", stdout);
+					fputs("... ", out);
 				else {
-					print_val(interp, cur);
-					putchar(' ');
+					print_val(out, interp, cur);
+					putc(' ', out);
 				}
-				fputs(")]", stdout);
+				fputs(")]", out);
 			}
 			print_depth_leave();
 			break;
 		}
-		case T_XT: printf("<xt %lld>", (long long)VAL_DATA(value)); break;
-		case T_ADDR: printf("<addr %lld>", (long long)VAL_DATA(value)); break;
-		case T_STREAM: printf("<stream %lld>", (long long)VAL_DATA(value)); break;
-		case T_DB: printf("<database %lld>", (long long)VAL_DATA(value)); break;
-		case T_PTR: printf("<ptr %lld>", (long long)VAL_DATA(value)); break;
+		case T_XT: fprintf(out, "<xt %lld>", (long long)VAL_DATA(value)); break;
+		case T_ADDR: fprintf(out, "<addr %lld>", (long long)VAL_DATA(value)); break;
+		case T_STREAM: fprintf(out, "<stream %lld>", (long long)VAL_DATA(value)); break;
+		case T_DB: fprintf(out, "<database %lld>", (long long)VAL_DATA(value)); break;
+		case T_PTR: fprintf(out, "<ptr %lld>", (long long)VAL_DATA(value)); break;
 		case T_SEGMENT: {
 							Object *segment = OBJECT_AT(VAL_DATA(value));
 							const char *name = "?";
@@ -782,16 +800,16 @@ void print_val(Interpreter *interp, Val value) {
 								case SEGMENT_INT:    name = "int"; break;
 								case SEGMENT_DOUBLE: name = "double"; break;
 							}
-							printf("<%s-segment %d>", name, segment->segment.length);
+							fprintf(out, "<%s-segment %d>", name, segment->segment.length);
 							break;
 						}
-		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
+		case T_LOGIC_VAR: fprintf(out, "_%d", (int)VAL_DATA(value)); break;
 		case T_MATRIX: {
 						   Object *matrix = OBJECT_AT(VAL_DATA(value));
 						   print_depth_enter();
-						   printf("<matrix %dx%d: ", matrix->matrix.rows, matrix->matrix.columns);
-						   print_corners(matrix);
-						   putchar('>');
+						   fprintf(out, "<matrix %dx%d: ", matrix->matrix.rows, matrix->matrix.columns);
+						   print_corners(out, matrix);
+						   putc('>', out);
 						   print_depth_leave();
 						   break;
 					   }
@@ -799,15 +817,15 @@ void print_val(Interpreter *interp, Val value) {
 						  Object *frame = OBJECT_AT(VAL_DATA(value));
 						  print_depth_enter();
 						  if (print_depth > MAX_NESTING_DEPTH) {
-							  fputs("{...}", stdout);
+							  fputs("{...}", out);
 						  } else {
-							  fputs("{ ", stdout);
+							  fputs("{ ", out);
 							  for (int i = 0; i < frame->len; i++) {
-								  printf(":%s ", &vocab.symbol_pool[frame->frame.keys[i]]);
-								  print_val(interp, frame->frame.values[i]);
-								  putchar(' ');
+								  fprintf(out, ":%s ", &vocab.symbol_pool[frame->frame.keys[i]]);
+								  print_val(out, interp, frame->frame.values[i]);
+								  putc(' ', out);
 							  }
-							  putchar('}');
+							  putc('}', out);
 						  }
 						  print_depth_leave();
 						  break;
@@ -815,12 +833,12 @@ void print_val(Interpreter *interp, Val value) {
 		case T_MARK: {
 						 int bracket = (int)VAL_DATA(value);
 						 if (bracket == '(')
-							 fputs("[(", stdout);
+							 fputs("[(", out);
 						 else
-							 putchar(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?');
+							 putc(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?', out);
 						 break;
 					 }
-		default: printf("<?>"); break;
+		default: fputs("<?>", out); break;
 	}
 }
 
@@ -831,113 +849,111 @@ static int array_has_nested(Object *arr) {
 	return 0;
 }
 
-static void pp_value(Interpreter *interp, Val value, int indent) {
+static void pp_value(FILE *out, Interpreter *interp, Val value, int indent) {
 	if (VAL_TAG(value) != T_ARRAY) {
-		print_val(interp, value);
+		print_val(out, interp, value);
 		return;
 	}
 	Object *arr = OBJECT_AT(VAL_DATA(value));
 	if (!array_has_nested(arr)) {
-		print_val(interp, value);
+		print_val(out, interp, value);
 		return;
 	}
 
 	int n = arr->len;
 	int trunc = print_truncate && n > PRINT_FIRST + PRINT_LAST;
 	int child_indent = indent + 2;
-	fputs("[ ", stdout);
+	fputs("[ ", out);
 	print_depth_enter();
 	int first = 1;
 	for (int i = 0; i < n; i++) {
 		if (trunc && i == PRINT_FIRST) {
-			putchar('\n');
+			putc('\n', out);
 			for (int s = 0; s < child_indent; s++)
-				putchar(' ');
-			fputs("...", stdout);
+				putc(' ', out);
+			fputs("...", out);
 		}
 		if (trunc && i >= PRINT_FIRST && i < n - PRINT_LAST)
 			continue;
 		if (!first) {
-			putchar('\n');
+			putc('\n', out);
 			for (int s = 0; s < child_indent; s++)
-				putchar(' ');
+				putc(' ', out);
 		}
 		first = 0;
-		pp_value(interp, arr->items[i], child_indent);
+		pp_value(out, interp, arr->items[i], child_indent);
 	}
 	print_depth_leave();
-	fputs(" ]", stdout);
+	fputs(" ]", out);
 }
 
-void pretty_print_array(Interpreter *interp, Val value) {
+void pretty_print_array(FILE *out, Interpreter *interp, Val value) {
 	Object *arr = OBJECT_AT(VAL_DATA(value));
 	if (!array_has_nested(arr)) {
-		print_val(interp, value);
-		putchar(' ');
+		print_val(out, interp, value);
 		return;
 	}
-	pp_value(interp, value, 0);
-	putchar(' ');
+	pp_value(out, interp, value, 0);
 }
 
-void print_val_inspect(Interpreter *interp, Val value) {
+void print_val_inspect(FILE *out, Interpreter *interp, Val value) {
 	print_depth_enter();
-	print_val(interp, value);
+	print_val(out, interp, value);
 	print_depth_leave();
 }
 
-void print_val_compact(Interpreter *interp, Val value) {
+void print_val_compact(FILE *out, Interpreter *interp, Val value) {
 	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
-		case T_NONE: fputs("null", stdout); break;
-		case T_UNBOUND: fputs("_", stdout); break;
+		case T_NONE: fputs("null", out); break;
+		case T_UNBOUND: fputs("_", out); break;
 		case T_FLOAT: {
 						  double number = VAL_NUMBER(value);
 						  if (number == (double)(int64_t)number && number > -1e12 && number < 1e12)
-							  printf("%lld", (long long)number);
+							  fprintf(out, "%lld", (long long)number);
 						  else
-							  printf("%.4g", number);
+							  fprintf(out, "%.4g", number);
 						  break;
 					  }
 		case T_STRING: {
 						   Object *obj = OBJECT_AT(VAL_DATA(value));
 						   if (obj->len <= 10)
-						   	printf("\"%.*s\"", obj->len, obj->bytes);
+						   	fprintf(out, "\"%.*s\"", obj->len, obj->bytes);
 						   else
-						   	printf("\"%.9s…\"", obj->bytes);
+						   	fprintf(out, "\"%.9s…\"", obj->bytes);
 						   break;
 					   }
 		case T_SYMBOL: {
 						   const char *name = &vocab.symbol_pool[VAL_DATA(value)];
 						   int len = (int)strlen(name);
 						   if (len <= 10)
-						   	printf(":%s", name);
+						   	fprintf(out, ":%s", name);
 						   else
-						   	printf(":%.9s…", name);
+						   	fprintf(out, ":%.9s…", name);
 						   break;
 					   }
 		case T_SET:
 					   print_depth_enter();
-					   printf("<%d>", OBJECT_AT(VAL_DATA(value))->len);
+					   fprintf(out, "<%d>", OBJECT_AT(VAL_DATA(value))->len);
 					   print_depth_leave();
 					   break;
 		case T_ARRAY:
 					   print_depth_enter();
-					   printf("[%d]", OBJECT_AT(VAL_DATA(value))->len);
+					   fprintf(out, "[%d]", OBJECT_AT(VAL_DATA(value))->len);
 					   print_depth_leave();
 					   break;
 		case T_PAIR:
-					   fputs("[(…)]", stdout);
+					   fputs("[(…)]", out);
 					   break;
 		case T_FRAME:
 					   print_depth_enter();
-					   printf("{%d}", OBJECT_AT(VAL_DATA(value))->len);
+					   fprintf(out, "{%d}", OBJECT_AT(VAL_DATA(value))->len);
 					   print_depth_leave();
 					   break;
 		case T_MATRIX: {
 						   Object *m = OBJECT_AT(VAL_DATA(value));
 						   print_depth_enter();
-						   printf("M%dx%d", m->matrix.rows, m->matrix.columns);
+						   fprintf(out, "M%dx%d", m->matrix.rows, m->matrix.columns);
 						   print_depth_leave();
 						   break;
 					   }
@@ -953,16 +969,16 @@ void print_val_compact(Interpreter *interp, Val value) {
 					   if (name) {
 						   int len = (int)strlen(name);
 						   if (len <= 9)
-						   	printf("'%s", name);
+						   	fprintf(out, "'%s", name);
 						   else
-						   	printf("'%.8s…", name);
+						   	fprintf(out, "'%.8s…", name);
 					   } else {
-						   printf("'?");
+						   fputs("'?", out);
 					   }
 					   break;
 				   }
-		case T_ADDR: printf("@%lld", (long long)VAL_DATA(value)); break;
-		case T_PTR: printf("<ptr %lld>", (long long)VAL_DATA(value)); break;
+		case T_ADDR: fprintf(out, "@%lld", (long long)VAL_DATA(value)); break;
+		case T_PTR: fprintf(out, "<ptr %lld>", (long long)VAL_DATA(value)); break;
 		case T_SEGMENT: {
 							Object *segment = OBJECT_AT(VAL_DATA(value));
 							char element = '?';
@@ -970,43 +986,43 @@ void print_val_compact(Interpreter *interp, Val value) {
 								case SEGMENT_INT:    element = 'I'; break;
 								case SEGMENT_DOUBLE: element = 'D'; break;
 							}
-							printf("*%c%d", element, segment->segment.length);
+							fprintf(out, "*%c%d", element, segment->segment.length);
 							break;
 						}
-		case T_CONT: fputs("k", stdout); break;
-		case T_LOGIC_VAR: printf("_%d", (int)VAL_DATA(value)); break;
+		case T_CONT: fputs("k", out); break;
+		case T_LOGIC_VAR: fprintf(out, "_%d", (int)VAL_DATA(value)); break;
 		case T_MARK: {
 						 int bracket = (int)VAL_DATA(value);
 						 if (bracket == '(')
-							 fputs("[(", stdout);
+							 fputs("[(", out);
 						 else
-							 putchar(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?');
+							 putc(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?', out);
 						 break;
 					 }
-		default: fputs("?", stdout); break;
+		default: fputs("?", out); break;
 	}
 }
 
-void print_frame_pretty(Interpreter *interp, Object *frame, int indent) {
+void print_frame_pretty(FILE *out, Interpreter *interp, Object *frame, int indent) {
 	if (indent > 2 * MAX_NESTING_DEPTH) {
-		fputs("{...}", stdout);
+		fputs("{...}", out);
 		return;
 	}
-	fputs("{\n", stdout);
+	fputs("{\n", out);
 	for (int i = 0; i < frame->len; i++) {
 		for (int s = 0; s < indent + 2; s++)
-			putchar(' ');
-		printf(":%s ", &vocab.symbol_pool[frame->frame.keys[i]]);
+			putc(' ', out);
+		fprintf(out, ":%s ", &vocab.symbol_pool[frame->frame.keys[i]]);
 		Val value = frame->frame.values[i];
 		if (VAL_TAG(value) == T_FRAME)
-			print_frame_pretty(interp, OBJECT_AT(VAL_DATA(value)), indent + 2);
+			print_frame_pretty(out, interp, OBJECT_AT(VAL_DATA(value)), indent + 2);
 		else
-			print_val(interp, value);
-		putchar('\n');
+			print_val(out, interp, value);
+		putc('\n', out);
 	}
 	for (int s = 0; s < indent; s++)
-		putchar(' ');
-	putchar('}');
+		putc(' ', out);
+	putc('}', out);
 }
 
 void print_prompt_state(Interpreter *interp) {
@@ -1019,7 +1035,7 @@ void print_prompt_state(Interpreter *interp) {
 		putchar('0');
 	} else {
 		printf("%d|", interp->dsp);
-		print_val_compact(interp, interp->data_stack[interp->dsp - 1]);
+		print_val_compact(stdout, interp, interp->data_stack[interp->dsp - 1]);
 	}
 
 	putchar(' ');
@@ -3089,38 +3105,38 @@ static const char *var_name_from_slot(cell slot) {
 
 /* Print one non-control op (name + operands) at cursor; shared by see-compiled
  * and see-tree. cell_count is op_cell_count(cursor). */
-static void see_print_op(Interpreter *interp, int cursor, int cell_count) {
+static void see_print_op(FILE *out, Interpreter *interp, int cursor, int cell_count) {
 	cell handler = vocab.dict[cursor];
 	if (superword_is_lit_fold(handler)) {
 		Val immediate;
 		immediate.bits = (uint64_t)vocab.dict[cursor + 1];
-		printf("%s ", handler_word_name(handler));
-		print_val_compact(interp, immediate);
+		fprintf(out, "%s ", handler_word_name(handler));
+		print_val_compact(out, interp, immediate);
 	} else if (superword_cell_count(handler)) {
-		printf("%s", handler_word_name(handler));
+		fprintf(out, "%s", handler_word_name(handler));
 		for (int operand_index = 1; operand_index < cell_count; operand_index++)
-			printf(" %s", var_name_from_slot(vocab.dict[cursor + operand_index]));
+			fprintf(out, " %s", var_name_from_slot(vocab.dict[cursor + operand_index]));
 	} else if (handler == vocab.dict[vocab.literal_cfa]) {
 		Val value;
 		value.bits = (uint64_t)vocab.dict[cursor + 1];
-		fputs("(lit) ", stdout);
-		print_val_compact(interp, value);
+		fputs("(lit) ", out);
+		print_val_compact(out, interp, value);
 	} else if (handler == (cell)p_ll_lit_add_0
 	           || handler == (cell)p_ll_lit_sub_0
 	           || handler == (cell)p_ll_lit_mul_0
 	           || handler == (cell)p_ll_litrev_sub_0) {
 		Val lit;
 		lit.bits = (uint64_t)vocab.dict[cursor + 2];
-		printf("%s %lld ", handler_word_name(handler), (long long)vocab.dict[cursor + 1]);
-		print_val_compact(interp, lit);
+		fprintf(out, "%s %lld ", handler_word_name(handler), (long long)vocab.dict[cursor + 1]);
+		print_val_compact(out, interp, lit);
 	} else {
-		printf("%s", handler_word_name(handler));
+		fprintf(out, "%s", handler_word_name(handler));
 		for (int operand_index = 1; operand_index < cell_count; operand_index++)
-			printf(" %lld", (long long)vocab.dict[cursor + operand_index]);
+			fprintf(out, " %lld", (long long)vocab.dict[cursor + operand_index]);
 	}
 }
 
-static void see_compiled_body(Interpreter *interp, int body_start, int body_end) {
+static void see_compiled_body(FILE *out, Interpreter *interp, int body_start, int body_end) {
 	cell exit_handler = vocab.dict[vocab.exit_cfa];
 	cell branch_handler = vocab.dict[vocab.branch_cfa];
 	cell docol_handler = (cell)docol;
@@ -3132,10 +3148,10 @@ static void see_compiled_body(Interpreter *interp, int body_start, int body_end)
 		cell handler = vocab.dict[cursor];
 		cfa_handler handler_fn = (cfa_handler)handler;
 
-		printf(" %d: ", cursor - body_start);
+		fprintf(out, " %d: ", cursor - body_start);
 
 		if (handler == exit_handler) {
-			fputs("exit\n", stdout);
+			fputs("exit\n", out);
 			cursor++;
 			if (depth == 0)
 				break;
@@ -3145,7 +3161,7 @@ static void see_compiled_body(Interpreter *interp, int body_start, int body_end)
 		}
 
 		if (expect_docol && handler == docol_handler) {
-			fputs("[:\n", stdout);
+			fputs("[:\n", out);
 			cursor++;
 			depth++;
 			expect_docol = 0;
@@ -3155,23 +3171,23 @@ static void see_compiled_body(Interpreter *interp, int body_start, int body_end)
 		if (handler_fn == docol || handler_fn == dovar) {
 			int target = (int)vocab.dict[cursor + 1];
 			if (target >= 4 && target < vocab.here)
-				printf("%s\n", &vocab.name_pool[WORD_NAME(target)]);
+				fprintf(out, "%s\n", &vocab.name_pool[WORD_NAME(target)]);
 			else
-				fputs("?\n", stdout);
+				fputs("?\n", out);
 			cursor += 2;
 			expect_docol = 0;
 			continue;
 		}
 		if (handler_fn == dosym) {
-			printf(":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
+			fprintf(out, ":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
 			cursor += 2;
 			expect_docol = 0;
 			continue;
 		}
 
 		int cell_count = op_cell_count(cursor);
-		see_print_op(interp, cursor, cell_count);
-		putchar('\n');
+		see_print_op(out, interp, cursor, cell_count);
+		putc('\n', out);
 		cursor += cell_count;
 		expect_docol = (handler == branch_handler);
 	}
@@ -3181,7 +3197,7 @@ static void see_compiled_body(Interpreter *interp, int body_start, int body_end)
  * its name, then its body indented two more spaces, recursively, down to
  * primitives. `stack` holds the cfas on the current expansion path so direct
  * or mutual recursion prints as a leaf instead of looping forever. */
-static void see_tree_body(Interpreter *interp, int body_start, int indent, int *stack, int sp) {
+static void see_tree_body(FILE *out, Interpreter *interp, int body_start, int indent, int *stack, int sp) {
 	cell exit_handler = vocab.dict[vocab.exit_cfa];
 	int cursor = body_start;
 	int depth = 0;
@@ -3191,11 +3207,11 @@ static void see_tree_body(Interpreter *interp, int body_start, int indent, int *
 		cfa_handler handler_fn = (cfa_handler)handler;
 
 		for (int s = 0; s < indent; s++)
-			putchar(' ');
-		printf("%d: ", cursor - body_start);
+			putc(' ', out);
+		fprintf(out, "%d: ", cursor - body_start);
 
 		if (handler == exit_handler) {
-			fputs("exit\n", stdout);
+			fputs("exit\n", out);
 			cursor++;
 			if (depth == 0)
 				break;
@@ -3209,7 +3225,7 @@ static void see_tree_body(Interpreter *interp, int body_start, int indent, int *
 				/* the cell after docol is an inline op, not a word cfa, so this
 				 * docol opens a quotation ([branch][off][docol][body][exit])
 				 * rather than calling a colon word */
-				fputs("[:\n", stdout);
+				fputs("[:\n", out);
 				cursor++;
 				depth++;
 				continue;
@@ -3223,43 +3239,63 @@ static void see_tree_body(Interpreter *interp, int body_start, int indent, int *
 					break;
 				}
 			if (seen || sp >= SEE_TREE_MAX_DEPTH) {
-				printf("%s ...\n", name);
+				fprintf(out, "%s ...\n", name);
 			} else {
-				printf("%s:\n", name);
+				fprintf(out, "%s:\n", name);
 				stack[sp] = target;
-				see_tree_body(interp, target + 1, indent + 2, stack, sp + 1);
+				see_tree_body(out, interp, target + 1, indent + 2, stack, sp + 1);
 			}
 			continue;
 		}
 		if (handler_fn == dovar) {
 			int target = (int)vocab.dict[cursor + 1];
 			if (target >= 4 && target < vocab.here)
-				printf("%s\n", &vocab.name_pool[WORD_NAME(target)]);
+				fprintf(out, "%s\n", &vocab.name_pool[WORD_NAME(target)]);
 			else
-				fputs("?\n", stdout);
+				fputs("?\n", out);
 			cursor += 2;
 			continue;
 		}
 		if (handler_fn == dosym) {
-			printf(":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
+			fprintf(out, ":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
 			cursor += 2;
 			continue;
 		}
 
 		int cell_count = op_cell_count(cursor);
-		see_print_op(interp, cursor, cell_count);
-		putchar('\n');
+		see_print_op(out, interp, cursor, cell_count);
+		putc('\n', out);
 		cursor += cell_count;
 	}
 }
 
-void p_see_compiled(Interpreter *interp) {
-	POP_XT(target_cfa, "see-compiled");
+int capture_render(Interpreter *interp, void (*render)(FILE *, Interpreter *, int), int target_cfa) {
+	char *buffer = NULL;
+	size_t size = 0;
+	FILE *out = open_memstream(&buffer, &size);
+	if (!out) {
+		fail(interp, "see>string: out of memory");
+		return -1;
+	}
+
+	render(out, interp, target_cfa);
+	fclose(out);
+
+	int length = (int)size;
+	if (length > 0 && buffer[length - 1] == '\n')
+		length--;
+
+	int handle = object_new_string(interp, buffer ? buffer : "", length);
+	free(buffer);
+	return handle;
+}
+
+static void see_compiled_render(FILE *out, Interpreter *interp, int target_cfa) {
 	const char *name = &vocab.name_pool[WORD_NAME(target_cfa)];
 
 	if ((cfa_handler)vocab.dict[target_cfa] != docol) {
-		printf("%s: not a colon definition\n", name);
-		DISPATCH(interp);
+		fprintf(out, "%s: not a colon definition\n", name);
+		return;
 	}
 
 	int body_start = target_cfa + 1;
@@ -3269,30 +3305,59 @@ void p_see_compiled(Interpreter *interp) {
 			body_end = cfa - 4;
 	}
 
-	printf(": %s   \\ %d cells\n", name, body_end - body_start);
-	see_compiled_body(interp, body_start, body_end);
-	fputs(";\n", stdout);
+	fprintf(out, ": %s   \\ %d cells\n", name, body_end - body_start);
+	see_compiled_body(out, interp, body_start, body_end);
+	fputs(";\n", out);
+}
+
+void p_see_compiled(Interpreter *interp) {
+	POP_XT(target_cfa, "see-compiled");
+	see_compiled_render(stdout, interp, target_cfa);
 	fflush(stdout);
 
 	DISPATCH(interp);
 }
 
-void p_see_tree(Interpreter *interp) {
-	POP_XT(target_cfa, "see-tree");
+void p_see_compiled_to_string(Interpreter *interp) {
+	POP_XT(target_cfa, "see-compiled>string");
+	int handle = capture_render(interp, see_compiled_render, target_cfa);
+	if (interp->error_flag)
+		return;
+	push(interp, make_string(handle));
+
+	DISPATCH(interp);
+}
+
+static void see_tree_render(FILE *out, Interpreter *interp, int target_cfa) {
 	const char *name = &vocab.name_pool[WORD_NAME(target_cfa)];
 
 	if ((cfa_handler)vocab.dict[target_cfa] != docol) {
-		printf("%s: not a colon definition\n", name);
-		DISPATCH(interp);
+		fprintf(out, "%s: not a colon definition\n", name);
+		return;
 	}
 
 	int stack[SEE_TREE_MAX_DEPTH + 1];
 	stack[0] = target_cfa;
 
-	printf(": %s\n", name);
-	see_tree_body(interp, target_cfa + 1, 2, stack, 1);
-	fputs(";\n", stdout);
+	fprintf(out, ": %s\n", name);
+	see_tree_body(out, interp, target_cfa + 1, 2, stack, 1);
+	fputs(";\n", out);
+}
+
+void p_see_tree(Interpreter *interp) {
+	POP_XT(target_cfa, "see-tree");
+	see_tree_render(stdout, interp, target_cfa);
 	fflush(stdout);
+
+	DISPATCH(interp);
+}
+
+void p_see_tree_to_string(Interpreter *interp) {
+	POP_XT(target_cfa, "see-tree>string");
+	int handle = capture_render(interp, see_tree_render, target_cfa);
+	if (interp->error_flag)
+		return;
+	push(interp, make_string(handle));
 
 	DISPATCH(interp);
 }
@@ -4108,27 +4173,27 @@ done:
 
 void interp_init(Interpreter *interp) {
 	interp->next_mark_id = 1;
-	interp->bind_trail = malloc(sizeof(int) * BIND_TRAIL_DEPTH);
+	interp->bind_trail = xmalloc(sizeof(int) * BIND_TRAIL_DEPTH);
 	interp->bind_trail_cap = BIND_TRAIL_DEPTH;
-	interp->lvar_stack = malloc(sizeof(Val) * LVAR_STACK_DEPTH);
+	interp->lvar_stack = xmalloc(sizeof(Val) * LVAR_STACK_DEPTH);
 	interp->lvar_cap = LVAR_STACK_DEPTH;
 	interp->loop_local_base = -1;
 }
 
 Interpreter *main_init(void) {
-	Interpreter *interp = calloc(1, sizeof(Interpreter));
+	Interpreter *interp = xcalloc(1, sizeof(Interpreter));
 	interp_init(interp);
 
 	arena_init();
 	vocab.here = DICT_RESERVED;
 	vocab.source_here = 1;
 
-	pairs.table = malloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
+	pairs.table = xmalloc(sizeof(Pair) * PAIR_TABLE_DEPTH);
 	pairs.space.cap = PAIR_TABLE_DEPTH;
 	pairs.space.n = 0;
 	main_alloc.pairs.next = main_alloc.pairs.end = pairs.space.n;
-	pairs.mark_epoch = calloc(PAIR_TABLE_DEPTH, sizeof(cell));
-	pairs.space.free = malloc(sizeof(int) * PAIR_TABLE_DEPTH);
+	pairs.mark_epoch = xcalloc(PAIR_TABLE_DEPTH, sizeof(cell));
+	pairs.space.free = xmalloc(sizeof(int) * PAIR_TABLE_DEPTH);
 	pairs.space.n_free = 0;
 
 	vocab.false_symbol = intern_symbol(interp, "0");
@@ -4141,7 +4206,7 @@ Interpreter *main_init(void) {
 }
 
 Interpreter *worker_init(int worker_index) {
-	Interpreter *interp = calloc(1, sizeof(Interpreter));
+	Interpreter *interp = xcalloc(1, sizeof(Interpreter));
 	interp_init(interp);
 
 	interp->trampoline_base = 3 * worker_index;
@@ -4231,6 +4296,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "alloc-stats", p_alloc_stats, 0);
 	define_primitive(interp, ".", p_dot, 0);
 	define_primitive(interp, ".a", p_dot_all, 0);
+	define_primitive(interp, "render", p_render, 0);
 	define_primitive(interp, "cr", p_cr, 0);
 	define_primitive(interp, "emit", p_emit_, 0);
 	define_primitive(interp, ".s", p_dots, 0);
@@ -4269,6 +4335,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "codepoints>string", p_codepoints_to_string, 0);
 	define_primitive(interp, "trim", p_trim, 0);
 	define_primitive(interp, "join", p_join, 0);
+	define_primitive(interp, "string>number", p_string_to_number, 0);
 	define_primitive(interp, "format", p_format, 0);
 	define_primitive(interp, "update-at", p_update_at, 0);
 	define_primitive(interp, "merge", p_merge, 0);
@@ -4343,9 +4410,12 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 
 	define_primitive(interp, "words", p_words, 0);
 	define_primitive(interp, "see", p_see, 0);
+	define_primitive(interp, "see>string", p_see_to_string, 0);
 	define_primitive(interp, "man", p_man, 0);
 	define_primitive(interp, "see-compiled", p_see_compiled, 0);
+	define_primitive(interp, "see-compiled>string", p_see_compiled_to_string, 0);
 	define_primitive(interp, "see-tree", p_see_tree, 0);
+	define_primitive(interp, "see-tree>string", p_see_tree_to_string, 0);
 
 	vocab.exit_cfa = define_primitive(interp, "exit", p_exit, 0);
 	vocab.literal_cfa = define_primitive(interp, "(lit)", p_literal, 4);

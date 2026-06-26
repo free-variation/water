@@ -511,14 +511,15 @@ void p_roll(Interpreter *interp) {
 void p_dot(Interpreter *interp) {
 	POP(value);
 	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(OBJECT_AT(VAL_DATA(value)));
+		print_matrix_grid(stdout, OBJECT_AT(VAL_DATA(value)));
 	} else if (VAL_TAG(value) == T_FRAME) {
-		print_frame_pretty(interp, OBJECT_AT(VAL_DATA(value)), 0);
+		print_frame_pretty(stdout, interp, OBJECT_AT(VAL_DATA(value)), 0);
 		putchar('\n');
 	} else if (VAL_TAG(value) == T_ARRAY) {
-		pretty_print_array(interp, value);
+		pretty_print_array(stdout, interp, value);
+		putchar(' ');
 	} else {
-		print_val(interp, value);
+		print_val(stdout, interp, value);
 		putchar(' ');
 	}
 	fflush(stdout);
@@ -531,13 +532,52 @@ void p_dot_all(Interpreter *interp) {
 	print_truncate = 0;
 	POP(value);
 	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(OBJECT_AT(VAL_DATA(value)));
+		print_matrix_grid(stdout, OBJECT_AT(VAL_DATA(value)));
 	} else {
-		print_val(interp, value);
+		print_val(stdout, interp, value);
 		putchar(' ');
 	}
 	fflush(stdout);
 	print_truncate = saved;
+
+	DISPATCH(interp);
+}
+
+void p_render(Interpreter *interp) {
+	PEEK_AT(value, 0, "render");
+
+	char *buffer = NULL;
+	size_t size = 0;
+	FILE *out = open_memstream(&buffer, &size);
+	if (!out) {
+		fail(interp, "render: out of memory");
+		return;
+	}
+
+	int saved_truncate = print_truncate;
+	print_truncate = 0;
+	if (VAL_TAG(value) == T_MATRIX)
+		print_matrix_grid(out, OBJECT_AT(VAL_DATA(value)));
+	else if (VAL_TAG(value) == T_FRAME)
+		print_frame_pretty(out, interp, OBJECT_AT(VAL_DATA(value)), 0);
+	else if (VAL_TAG(value) == T_ARRAY)
+		pretty_print_array(out, interp, value);
+	else
+		print_val(out, interp, value);
+	print_truncate = saved_truncate;
+
+	fclose(out);
+
+	int length = (int)size;
+	if (VAL_TAG(value) == T_MATRIX && length > 0 && buffer[length - 1] == '\n')
+		length--;
+
+	int handle = object_new_string(interp, buffer ? buffer : "", length);
+	free(buffer);
+	if (interp->error_flag)
+		return;
+
+	interp->data_stack[interp->dsp - 1] = make_string(handle);
 
 	DISPATCH(interp);
 }
@@ -574,7 +614,7 @@ void p_emit_(Interpreter *interp) {
 
 void p_dots(Interpreter *interp) {
 	for (int i = 0; i < interp->dsp; i++) {
-		print_val_inspect(interp, interp->data_stack[i]);
+		print_val_inspect(stdout, interp, interp->data_stack[i]);
 		putchar(' ');
 	}
 	fflush(stdout);
@@ -840,35 +880,47 @@ void p_words(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_see(Interpreter *interp) {
-	POP_XT(target_cfa, "see");
-
+static void see_source_render(FILE *out, Interpreter *interp, int target_cfa) {
 	const char *name = name_of(target_cfa);
 
 	cfa_handler handler = (cfa_handler)vocab.dict[target_cfa];
 	if (handler == docol) {
 		if (!name) {
-
-			printf("[: ... :]  \\ anonymous, no source\n");
+			fprintf(out, "[: ... :]  \\ anonymous, no source\n");
 		} else {
 			int src_idx = (int)WORD_SOURCE(target_cfa);
 			if (src_idx > 0)
-				printf(": %s%s;\n", name, &vocab.source_pool[src_idx]);
+				fprintf(out, ": %s%s;\n", name, &vocab.source_pool[src_idx]);
 			else
-				printf(": %s ... ;  \\ no source captured\n", name);
+				fprintf(out, ": %s ... ;  \\ no source captured\n", name);
 		}
 	} else if (handler == dovar) {
 		Val value;
 		value.bits = (uint64_t)vocab.dict[target_cfa + 1];
-		printf("variable %s  \\ current value: ", name ? name : "?");
-		print_val(interp, value);
-		putchar('\n');
+		fprintf(out, "variable %s  \\ current value: ", name ? name : "?");
+		print_val(out, interp, value);
+		putc('\n', out);
 	} else if (handler == dosym) {
-		printf("symbol %s\n", name ? name : "?");
+		fprintf(out, "symbol %s\n", name ? name : "?");
 	} else {
-		printf("%s is a primitive\n", name ? name : "?");
+		fprintf(out, "%s is a primitive\n", name ? name : "?");
 	}
+}
+
+void p_see(Interpreter *interp) {
+	POP_XT(target_cfa, "see");
+	see_source_render(stdout, interp, target_cfa);
 	fflush(stdout);
+
+	DISPATCH(interp);
+}
+
+void p_see_to_string(Interpreter *interp) {
+	POP_XT(target_cfa, "see>string");
+	int handle = capture_render(interp, see_source_render, target_cfa);
+	if (interp->error_flag)
+		return;
+	push(interp, make_string(handle));
 
 	DISPATCH(interp);
 }

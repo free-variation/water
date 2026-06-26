@@ -243,6 +243,7 @@ reduce
 reify
 relation
 reload
+render
 repeat
 replace
 resample-indices
@@ -272,7 +273,10 @@ save
 save-image
 see
 see-compiled
+see-compiled>string
 see-tree
+see-tree>string
+see>string
 seed
 segment>pointer
 select-keys
@@ -300,6 +304,7 @@ start-process
 stop
 string>chars
 string>codepoints
+string>number
 string>symbol
 submatrix
 substring

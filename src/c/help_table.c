@@ -249,6 +249,7 @@ const HelpEntry help_entries[] = {
 	{ "reify", "( a -- a' )", "Like copy, but each unbound var becomes a canonical inert symbol :_0, :_1, … numbered by first appearance — a ground, storable, comparable snapshot.", "tree size", "one object per node", "O(tree size)" },
 	{ "relation", "( [cols] -- rel )", "New empty relation; cols is an array of column symbols to index", "k", "frames + sets", "O(k)" },
 	{ "reload", "( -- )", "Truncate user state, re-run every loaded file in order", "forget + N loads", "—", "O(Σ files)" },
+	{ "render", "( a -- s )", "The text . would print, returned as a string instead of printed: no truncation, no trailing separator (a matrix grid's final newline is dropped). Strings render raw, symbols by name, collections/frames/matrices in their laid-out form", "1 + size", "1o", "O(size)" },
 	{ "repeat", "—", "Branch back to begin; patches the while exit", NULL, NULL, NULL },
 	{ "replace", "( s pat rep -- s' )", "Replace **all** matches; in rep, & or \\0 is the whole match, \\1–\\9 a capture, \\& and \\\\ literals", "n", "1o + buffer growth", "O(n)" },
 	{ "resample-indices", "( n -- arr )", "lib.l4: n indices drawn from [0,n) with replacement (bootstrap)", "2n", "2×1a(n)", "O(n)" },
@@ -278,7 +279,10 @@ const HelpEntry help_entries[] = {
 	{ "save-image", "( s -- )", "Binary snapshot of full state (dict, objects, stacks, continuations)", "serialize all", "file I/O", "O(objects + dict)" },
 	{ "see", "( xt -- )", "Print a word's source (: name … ;), or variable/symbol/primitive form", "dict scan", "none", "O(|dict|)" },
 	{ "see-compiled", "( xt -- )", "Disassemble a colon definition's compiled cells", "body scan", "none", "O(body)" },
+	{ "see-compiled>string", "( xt -- s )", "The text see-compiled would print, returned as a string (trailing newline stripped)", "body scan", "1o", "O(body)" },
 	{ "see-tree", "( xt -- )", "Like see-compiled, but each colon-word call is expanded inline, indented two spaces, recursively down to primitives; recursive calls print as name ...", "body scan", "none", "O(expanded body)" },
+	{ "see-tree>string", "( xt -- s )", "The text see-tree would print, returned as a string (trailing newline stripped)", "body scan", "1o", "O(expanded body)" },
+	{ "see>string", "( xt -- s )", "The text see would print, returned as a string (trailing newline stripped)", "dict scan", "1o", "O(|dict|)" },
 	{ "seed", "( n -- )", "Set the global base seed and reset the stream counter; per-thread streams derive from it", "1", "none", "O(1)" },
 	{ "segment>pointer", "( seg -- ptr )", "Intern the backing buffer and return an FFI pointer handle (no copy; see Foreign function interface)", "1", "none", "O(1)†" },
 	{ "select-keys", "( fr path -- arr )", "The full root-to-match path (a symbol array) for every match, document order; each round-trips through @", "s", "1a + 1a per match", "O(s + total path length)" },
@@ -306,6 +310,7 @@ const HelpEntry help_entries[] = {
 	{ "stop", "( pid -- status )", "SIGKILL the child then reap it (137 = 128+9, or its code if it had already exited)", "2 syscalls", "none", "O(1)" },
 	{ "string>chars", "( s -- [ char… ] )", "Array of one-character strings, one per codepoint", "n", "1a + 1o/char", "O(n)" },
 	{ "string>codepoints", "( s -- [ code… ] )", "Array of integer codepoints, one per codepoint", "n", "1a", "O(n)" },
+	{ "string>number", "( s -- n | none )", "Parse a decimal/float string (via strtod, like a numeric literal) to a float, ignoring surrounding whitespace; the none value if s is not entirely a number", "n", "none", "O(n)" },
 	{ "string>symbol", "( s -- sym )", "Intern a computed string as a symbol", NULL, NULL, NULL },
 	{ "submatrix", "( m rs re cs ce -- m )", "Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end", "5 + r·c", "1m(r×c)", "O(r·c)" },
 	{ "substring", "( s start end -- sub )", "Half-open **codepoint** range [start, end); bounds-checked against the codepoint count", "2 + n", "1o", "O(n)" },
@@ -364,4 +369,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.l4: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 358;
+const int help_entry_count = 363;

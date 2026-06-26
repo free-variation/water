@@ -1,0 +1,25 @@
+\ string>number ( s -- n | none ) — parse a decimal/float string to a float
+\ (via strtod, like a numeric literal), surrounding whitespace ignored; the
+\ none value when the whole string is not a number.
+
+"42" string>number 42 = . cr
+"3.14" string>number 3.14 = . cr
+"-7" string>number -7 = . cr
+"-3.5" string>number -3.5 = . cr
+".5" string>number 0.5 = . cr
+"1e3" string>number 1000 = . cr
+"  12.5e2  " string>number 1250 = . cr
+
+\ non-numeric / partial / empty / all-whitespace -> none
+"abc" string>number null = . cr
+"12abc" string>number null = . cr
+"" string>number null = . cr
+"   " string>number null = . cr
+
+\ a real number is not none
+"42" string>number null = . cr
+
+\ composes arithmetically and round-trips through render
+"10" string>number "20" string>number + 30 = . cr
+42 render string>number 42 = . cr
+3.14 render string>number 3.14 = . cr
