@@ -528,6 +528,7 @@ void p_column_mins(Interpreter *interp);
 
 void define_superwords(Interpreter *interp);
 int superword_cell_count(cell handler);
+int superword_is_lit_fold(cell handler);
 int superword_try_fuse(Interpreter *interp, int op_cfa);
 int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot);

@@ -144,6 +144,21 @@ FLOAT_BINOPS(GEN_VV_STORE)
 	}
 FLOAT_BINOPS(GEN_VF)
 
+#define GEN_LF(suffix, op, base) \
+	static int lf_##suffix##_cfa; \
+	static void p_lf_##suffix(Interpreter *interp) { \
+		Val k; \
+		k.bits = (uint64_t)vocab.dict[interp->ip++]; \
+		if (interp->dsp < 1) { \
+			fail(interp, "lf" #op ": data stack underflow"); \
+			return; \
+		} \
+		Val *a = &interp->data_stack[interp->dsp - 1]; \
+		a->number = a->number op k.number; \
+		DISPATCH(interp); \
+	}
+FLOAT_BINOPS(GEN_LF)
+
 #define GEN_VFN(suffix, expr, base) \
 	static int vfn_##suffix##_cfa; \
 	static void p_vfn_##suffix(Interpreter *interp) { \
@@ -262,6 +277,8 @@ int superword_cell_count(cell handler) {
 	FLOAT_UNARY_FNS(CC_VFN_STORE)
 #define CC_VF(suffix, op, base) if (h == p_vf_##suffix) return 2;
 	FLOAT_BINOPS(CC_VF)
+#define CC_LF(suffix, op, base) if (h == p_lf_##suffix) return 2;
+	FLOAT_BINOPS(CC_LF)
 #define CC_VFN(suffix, expr, base) if (h == p_vfn_##suffix) return 2;
 	FLOAT_UNARY_FNS(CC_VFN)
 #define CC_FUSED(suffix, expr, base, name) if (h == p_vv_##suffix) return 3;
@@ -376,6 +393,13 @@ static int try_fuse_array_step(Interpreter *interp) {
 	return 1;
 }
 
+int superword_is_lit_fold(cell handler) {
+	cfa_handler h = (cfa_handler)handler;
+#define IS_LF(suffix, op, base) if (h == p_lf_##suffix) return 1;
+	FLOAT_BINOPS(IS_LF)
+	return 0;
+}
+
 int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_cfa == vocab.at_i_cfa) {
 		if (try_fuse_at_i_ll(interp))
@@ -405,6 +429,16 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 
 #define FUSE_BIN(suffix, op, base) \
 	if (op_handler == base) { \
+		if (vocab.here >= 2 && vocab.here - 2 >= compiler.fuse_floor \
+		    && (cfa_handler)vocab.dict[vocab.here - 2] == p_literal) { \
+			cell bits = vocab.dict[vocab.here - 1]; \
+			vocab.here -= 2; \
+			emit_call(interp, lf_##suffix##_cfa); \
+			emit(interp, bits); \
+			compiler.fuse_prev_var = 0; \
+			compiler.fuse_prev2_var = 0; \
+			return 1; \
+		} \
 		if (prev1 && prev2) return emit_fused_two_var(interp, vv_##suffix##_cfa, prev2 + 1, prev1 + 1); \
 		if (prev1) return emit_fused_one_var(interp, vf_##suffix##_cfa, prev1 + 1); \
 		return 0; \
@@ -483,6 +517,10 @@ void define_superwords(Interpreter *interp) {
 	sub_store_i_cfa = define_primitive(interp, "(-!i)", p_sub_store_i, 4);
 	mul_store_i_cfa = define_primitive(interp, "(*!i)", p_mul_store_i, 4);
 	div_store_i_cfa = define_primitive(interp, "(/!i)", p_div_store_i, 4);
+
+#define REG_LF(suffix, op, base) \
+	lf_##suffix##_cfa = define_primitive(interp, "(lf" #op ")", p_lf_##suffix, 4);
+	FLOAT_BINOPS(REG_LF)
 
 #define REG_VV(suffix, op, base) \
 	vv_##suffix##_cfa = define_primitive(interp, "(vvf" #op ")", p_vv_##suffix, 4); \

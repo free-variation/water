@@ -3091,7 +3091,12 @@ static const char *var_name_from_slot(cell slot) {
  * and see-tree. cell_count is op_cell_count(cursor). */
 static void see_print_op(Interpreter *interp, int cursor, int cell_count) {
 	cell handler = vocab.dict[cursor];
-	if (superword_cell_count(handler)) {
+	if (superword_is_lit_fold(handler)) {
+		Val immediate;
+		immediate.bits = (uint64_t)vocab.dict[cursor + 1];
+		printf("%s ", handler_word_name(handler));
+		print_val_compact(interp, immediate);
+	} else if (superword_cell_count(handler)) {
 		printf("%s", handler_word_name(handler));
 		for (int operand_index = 1; operand_index < cell_count; operand_index++)
 			printf(" %s", var_name_from_slot(vocab.dict[cursor + operand_index]));
