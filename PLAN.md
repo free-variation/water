@@ -67,22 +67,6 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
   words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
   lines, `s stdout write` emits.
 
-### Format specs
-
-Extend `format`'s placeholders with optional format specifiers after a
-colon: `{0:.2f}` (precision), `{0:8}` (field width), `{0:x}` (hex) — a
-small printf-style mini-language on top of the positional `{n}` fill.
-
-### Named interpolation
-
-A named form `{name}` referencing an in-scope local or global reads better
-than the positional `{0}` — `"ls {dir}" …`. `format` runs at runtime where
-local names are gone, so this needs either a compile-time f-string (scan a
-string literal, resolve each `{name}` in scope, rewrite to the positional
-`{n}` form) under an explicit opt-in marker so raw strings and regex like
-`\d{3}` stay literal, or a runtime frame-keyed `format-with`
-(`{ :dir d } "{dir}" format-with`).
-
 ### Number parsing and stringify
 
 Reading a number out of a string, and capturing a value as the text `.` would

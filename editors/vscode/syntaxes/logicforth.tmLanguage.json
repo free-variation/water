@@ -69,6 +69,10 @@
         {
           "name": "constant.character.escape.logicforth",
           "match": "\"\""
+        },
+        {
+          "name": "constant.other.placeholder.logicforth",
+          "match": "\\{\\d+(?::[^}]*)?\\}"
         }
       ]
     },

@@ -37,7 +37,7 @@ inline
 ( arr n -- arr' )  \ all but the first n elements (clamped)
 : skip  over size swap -  swap reverse swap take reverse ;
 
-\ Execeptions
+\ Exceptions
 : throw ( exc -- ) [: drop 1 :] shift-with ;
 : catch ( xt -- result 0 | exc 1 ) reset (execute-catching) 0 ;
 
@@ -167,7 +167,7 @@ inline
 	>side
 	{ :rows < > :index side> } ;
 
-( column-index inedxed-value row -- ) \ add row to the value's bucket in one column's index, creating the bucket if absent
+( column-index indexed-value row -- ) \ add row to the value's bucket in one column's index, creating the bucket if absent
 : bucket-add!
 	|> column-index indexed-value row |
 	column-index indexed-value has? not if 
@@ -220,7 +220,7 @@ inline
 		dup smallest-set [: |> narrowed bucket | narrowed bucket intersection :] reduce
 	then ;
 
-( rel pattern -- flag) \ true men every pattern column is a ground-symbol indexed column -- so the index alone answers the query
+( rel pattern -- flag) \ true when every pattern column is a ground-symbol indexed column -- so the index alone answers the query
 : covering?
 	|> rel pattern |
 	pattern keys 1
@@ -250,7 +250,7 @@ inline
 		rel pattern query size
 	then ;
 
-( driver probed col -- [rows] ) \ inner join: merge each driver row thi weach probed row sharing col's value; probed must index col
+( driver probed col -- [rows] ) \ inner join: merge each driver row with each probed row sharing col's value; probed must index col
 : inner-join
 	|> driver probed col |
 	driver :rows @ null
@@ -291,7 +291,7 @@ inline
 ( value -- resumed ) \ value: emitted to the driver; resumed: what the driver hand sback
 : yield shift ;
 
-( producer -- value generatior ) \ run producer to its first yield; the value it yielded and resumable handle
+( producer -- value generator ) \ run producer to its first yield; the value it yielded and resumable handle
 : start-generator reset execute ;
 
 ( producer count -- array ) \ the first count values the producer yields
@@ -378,7 +378,7 @@ inline
 	cols size rows-count matrix \ KxN (each row a column)
 	transpose ;
 
-( n -- [indices] ) \ row indices drawn from [0, n{ with replacement
+( n -- [indices] ) \ row indices drawn from [0, n) with replacement
 : resample-indices
 	| >n |
 	n iota n true sample ;

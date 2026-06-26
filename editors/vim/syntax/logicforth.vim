@@ -12,7 +12,8 @@ syn iskeyword @,48-57,_,192-255,33,35-39,42-47,58-64,94,126
 
 syn match   logicforthComment "\%(^\|\s\)\zs\\\%(\s.*\)\=$" contains=@Spell
 syn region  logicforthComment start="\[\@<!(\s" end=")" contains=@Spell
-syn region  logicforthString start=+"+ skip=+""+ end=+"+ contains=@Spell
+syn region  logicforthString start=+"+ skip=+""+ end=+"+ contains=@Spell,logicforthFormat
+syn match   logicforthFormat "{\d\+\%(:[^}]*\)\=}" contained
 syn match   logicforthNumber "\<-\=\d\+\%(\.\d\+\)\=\%([eE][-+]\=\d\+\)\=\>"
 syn match   logicforthSymbol  ":\k\+"
 syn match   logicforthPath    "/\a\k*"
@@ -81,5 +82,6 @@ hi def link logicforthLogic        Special
 hi def link logicforthBoolean      Boolean
 hi def link logicforthDelimiter    Delimiter
 hi def link logicforthBuiltin      Statement
+hi def link logicforthFormat       SpecialChar
 
 let b:current_syntax = "logicforth"

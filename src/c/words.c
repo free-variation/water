@@ -1644,6 +1644,111 @@ static void interp_render_val(Interpreter *interp, Val value, char **out_buffer,
 	}
 }
 
+static int parse_format_spec(const char *spec, int len, char *conv_out) {
+	int i = 0;
+	while(i < len && (spec[i] == '-' || spec[i] == '+' || spec[i] == ' '
+				|| spec[i] == '#' || spec[i] == '0'))
+		i++;
+
+	while(i < len && isdigit((unsigned char)spec[i]))
+		i++;
+
+	if (i < len && spec[i] == '.') {
+		i++;
+		while (i < len && isdigit((unsigned char)spec[i]))
+			i++;
+	}
+
+	char conv = 0;
+	if (i < len && strchr("fFeEgGdis", spec[i])) {
+		conv = spec[i];
+		i++;
+	}
+
+	if (i != len)
+		return -1;
+
+	*conv_out = conv;
+	return 0;
+}
+
+
+static void interp_render_with_spec(Interpreter *interp, Val value,
+		const char *spec, int spec_len,
+		char **out_buffer, int *capacity, int *out_length) {
+	if (spec_len >= 64) {
+		fail(interp, "format: spec too long");
+		return;
+	}
+	char cspec[64];
+	memcpy(cspec, spec, (size_t)spec_len);
+	cspec[spec_len] = 0;
+
+	char conv;
+	if (parse_format_spec(cspec, spec_len, &conv) != 0) {
+		fail(interp, "format: bad spec '%s'", cspec);
+		return;
+	}
+
+	char fmt[80];
+	char stackbuf[256];
+	char *rendered = stackbuf;
+	int n;
+
+	if (conv == 'd' || conv == 'i') {
+		if (VAL_TAG(value) != T_FLOAT) {
+			fail(interp, "format: {%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
+			return;
+		}
+		cspec[spec_len - 1] = 0;
+		snprintf(fmt, sizeof fmt, "%%%slld", cspec);
+		long long as_int = (long long)VAL_NUMBER(value);
+		n = snprintf(stackbuf, sizeof stackbuf, fmt, as_int);
+		if (n >= (int)sizeof stackbuf) {
+			rendered = malloc((size_t)n + 1);
+			snprintf(rendered, (size_t)n + 1, fmt, as_int);
+		}
+	} else if (conv && conv != 's') {
+		if (VAL_TAG(value) != T_FLOAT) {
+			fail(interp, "format: {%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
+			return;
+		}
+		double as_float = VAL_NUMBER(value);
+		snprintf(fmt, sizeof fmt, "%%%s", cspec);
+		n = snprintf(stackbuf, sizeof stackbuf, fmt, as_float);
+		if (n >= (int)sizeof stackbuf) {
+			rendered = malloc((size_t)n + 1);
+			snprintf(rendered, (size_t)n + 1, fmt, as_float);
+		}
+	} else {
+		int text_cap = 64;
+		char *text = malloc(text_cap);
+		int text_len = 0;
+		interp_render_val(interp, value, &text, &text_cap, &text_len);
+		interp_append(interp, &text, &text_cap, &text_len, "", 1);
+		if (interp->error_flag) {
+			free(text);
+			return;
+		}
+		if (conv == 's')
+			snprintf(fmt, sizeof fmt, "%%%s", cspec);
+		else
+			snprintf(fmt, sizeof fmt, "%%%ss", cspec);
+		n = snprintf(stackbuf, sizeof stackbuf, fmt, text);
+		if (n >= (int)sizeof stackbuf) {
+			rendered = malloc((size_t)n + 1);
+			snprintf(rendered, (size_t)n + 1, fmt, text);
+		}
+		free(text);
+	}
+
+	if (n < 0)
+		n = 0;
+	interp_append(interp, out_buffer, capacity, out_length, rendered, n);
+	if (rendered != stackbuf)
+		free(rendered);
+}
+
 int interpolate(Interpreter *interp, int template_handle) {
 	Object *template = OBJECT_AT(template_handle);
 	int capacity = template->len + 64;
@@ -1664,25 +1769,43 @@ int interpolate(Interpreter *interp, int template_handle) {
 				scan++;
 				saw_digit = 1;
 			}
-			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
-				int stack_index = interp->dsp - 1 - digit_value;
-				if (stack_index < 0) {
-					fail(interp, "format: {%d} needs %d stack value(s) but only %d present",
-							digit_value, digit_value + 1, interp->dsp);
-					free(out_buffer);
-					return object_new_string(interp, "", 0);
+			if (saw_digit && scan < template->len
+					&& (template->bytes[scan] == '}' || template->bytes[scan] == ':')) {
+				const char *spec = NULL;
+				int spec_len = 0;
+				int close = scan;
+				if (template->bytes[scan] == ':') {
+					int spec_start = scan + 1;
+					close = spec_start;
+					while (close < template->len && template->bytes[close] != '}')
+						close++;
+					spec = &template->bytes[spec_start];
+					spec_len = close - spec_start;
 				}
-				int already = 0;
-				for (int i = 0; i < ref_count; i++)
-					if (refs[i] == digit_value) {
-						already = 1;
-						break;
+				if (close < template->len && template->bytes[close] == '}') {
+					int stack_index = interp->dsp - 1 - digit_value;
+					if (stack_index < 0) {
+						fail(interp, "format: {%d} needs %d stack value(s) but only %d present",
+								digit_value, digit_value + 1, interp->dsp);
+						free(out_buffer);
+						return object_new_string(interp, "", 0);
 					}
-				if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
-					refs[ref_count++] = digit_value;
-				interp_render_val(interp, interp->data_stack[stack_index], &out_buffer, &capacity, &out_length);
-				cursor = scan + 1;
-				continue;
+					int already = 0;
+					for (int i = 0; i < ref_count; i++)
+						if (refs[i] == digit_value) {
+							already = 1;
+							break;
+						}
+					if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
+						refs[ref_count++] = digit_value;
+					Val value = interp->data_stack[stack_index];
+					if (spec)
+						interp_render_with_spec(interp, value, spec, spec_len, &out_buffer, &capacity, &out_length);
+					else
+						interp_render_val(interp, value, &out_buffer, &capacity, &out_length);
+					cursor = close + 1;
+					continue;
+				}
 			}
 		}
 		interp_append(interp, &out_buffer, &capacity, &out_length, &template->bytes[cursor], 1);

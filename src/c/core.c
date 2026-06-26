@@ -3183,11 +3183,8 @@ static void see_compiled_body(Interpreter *interp, int body_start, int body_end)
  * or mutual recursion prints as a leaf instead of looping forever. */
 static void see_tree_body(Interpreter *interp, int body_start, int indent, int *stack, int sp) {
 	cell exit_handler = vocab.dict[vocab.exit_cfa];
-	cell branch_handler = vocab.dict[vocab.branch_cfa];
-	cell docol_handler = (cell)docol;
 	int cursor = body_start;
 	int depth = 0;
-	int expect_docol = 0;
 
 	while (cursor < vocab.here) {
 		cell handler = vocab.dict[cursor];
@@ -3203,26 +3200,21 @@ static void see_tree_body(Interpreter *interp, int body_start, int indent, int *
 			if (depth == 0)
 				break;
 			depth--;
-			expect_docol = 0;
-			continue;
-		}
-
-		if (expect_docol && handler == docol_handler) {
-			fputs("[:\n", stdout);
-			cursor++;
-			depth++;
-			expect_docol = 0;
 			continue;
 		}
 
 		if (handler_fn == docol) {
 			int target = (int)vocab.dict[cursor + 1];
-			cursor += 2;
-			expect_docol = 0;
 			if (target < 4 || target >= vocab.here) {
-				fputs("?\n", stdout);
+				/* the cell after docol is an inline op, not a word cfa, so this
+				 * docol opens a quotation ([branch][off][docol][body][exit])
+				 * rather than calling a colon word */
+				fputs("[:\n", stdout);
+				cursor++;
+				depth++;
 				continue;
 			}
+			cursor += 2;
 			const char *name = &vocab.name_pool[WORD_NAME(target)];
 			int seen = 0;
 			for (int i = 0; i < sp; i++)
@@ -3246,13 +3238,11 @@ static void see_tree_body(Interpreter *interp, int body_start, int indent, int *
 			else
 				fputs("?\n", stdout);
 			cursor += 2;
-			expect_docol = 0;
 			continue;
 		}
 		if (handler_fn == dosym) {
 			printf(":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
 			cursor += 2;
-			expect_docol = 0;
 			continue;
 		}
 
@@ -3260,7 +3250,6 @@ static void see_tree_body(Interpreter *interp, int body_start, int indent, int *
 		see_print_op(interp, cursor, cell_count);
 		putchar('\n');
 		cursor += cell_count;
-		expect_docol = (handler == branch_handler);
 	}
 }
 

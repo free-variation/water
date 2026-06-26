@@ -155,7 +155,7 @@ const HelpEntry help_entries[] = {
 	{ "fmod", "( a b -- fmod(a,b) ) ⚠", "fmod", "2", "none", "O(1)" },
 	{ "fnegate", "( a -- -a ) ⚠", "in place", "1", "none", "O(1)" },
 	{ "forget", "—", "Read the following name; truncate the dictionary back to before it", NULL, NULL, NULL },
-	{ "format", "( … template -- s )", "Fill template's {n} placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only {digits} substitute — other brace content is left literal", "len + refs", "1o", "O(len)" },
+	{ "format", "( … template -- s )", "Fill template's {n} (or {n:spec}) placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only {digit…} (optionally with a :spec) substitute — other brace content is left literal", "len + refs", "1o", "O(len)" },
 	{ "frame", "( keys values -- fr )", "Build from parallel key and value arrays of equal length", "2 + n log n", "1o + reallocs", "O(n log n)" },
 	{ "frame>array", "( fr -- arr )", "Flatten to a key-sorted alternating-kv array; inverse of array>frame", "1 + n", "1o", "O(n)" },
 	{ "frame>json", "( val -- s )", "Serialize a value to JSON. Floats use the shortest round-trip form; strings are escaped (non-ASCII emitted raw); object keys are the symbol names", "walk + build", "1o string", "O(tree size)" },

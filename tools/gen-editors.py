@@ -112,7 +112,8 @@ def emit_vim(auto):
     L.append("")
     L.append("syn match   logicforthComment \"\\%(^\\|\\s\\)\\zs\\\\\\%(\\s.*\\)\\=$\" contains=@Spell")
     L.append('syn region  logicforthComment start="\\[\\@<!(\\s" end=")" contains=@Spell')
-    L.append('syn region  logicforthString start=+"+ skip=+""+ end=+"+ contains=@Spell')
+    L.append('syn region  logicforthString start=+"+ skip=+""+ end=+"+ contains=@Spell,logicforthFormat')
+    L.append('syn match   logicforthFormat "{\\d\\+\\%(:[^}]*\\)\\=}" contained')
     L.append('syn match   logicforthNumber "\\<-\\=\\d\\+\\%(\\.\\d\\+\\)\\=\\%([eE][-+]\\=\\d\\+\\)\\=\\>"')
     L.append('syn match   logicforthSymbol  ":\\k\\+"')
     L.append('syn match   logicforthPath    "/\\a\\k*"')
@@ -158,6 +159,7 @@ def emit_vim(auto):
         ("Define", "Define"), ("DefName", "Function"), ("Conditional", "Conditional"),
         ("Repeat", "Repeat"), ("Keyword", "Keyword"), ("Logic", "Special"),
         ("Boolean", "Boolean"), ("Delimiter", "Delimiter"), ("Builtin", "Statement"),
+        ("Format", "SpecialChar"),
     ]:
         L.append("hi def link logicforth%-12s %s" % (grp, link))
     L.append("")
@@ -197,7 +199,10 @@ def emit_vscode(auto):
             ]},
             "strings": {
                 "name": "string.quoted.double.logicforth", "begin": "\"", "end": "\"(?!\")",
-                "patterns": [{"name": "constant.character.escape.logicforth", "match": "\"\""}],
+                "patterns": [
+                    {"name": "constant.character.escape.logicforth", "match": "\"\""},
+                    {"name": "constant.other.placeholder.logicforth", "match": r"\{\d+(?::[^}]*)?\}"},
+                ],
             },
             "numbers": {"name": "constant.numeric.logicforth",
                         "match": r"(?<=^|\s)-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?=\s|$)"},

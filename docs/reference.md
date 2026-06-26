@@ -303,7 +303,15 @@ Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is co
 | `codepoints>string` | `( [ code… ] -- s )` | Encode each codepoint to UTF-8 and concatenate; per-element type- and range-checked | n | `1o` | O(n) |
 | `trim` | `( s -- s' )` | Strip leading and trailing ASCII whitespace (`' ' \t \n \v \f \r`); a backward/forward byte-scan, one allocation of the surviving span | n | `1o` | O(n) |
 | `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
-| `format` | `( … template -- s )` | Fill `template`'s `{n}` placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only `{digits}` substitute — other brace content is left literal | len + refs | `1o` | O(len) |
+| `format` | `( … template -- s )` | Fill `template`'s `{n}` (or `{n:spec}`) placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only `{digit…}` (optionally with a `:spec`) substitute — other brace content is left literal | len + refs | `1o` | O(len) |
+
+A placeholder may carry a format spec after a colon — `{n:spec}` — a printf-style mini-language controlling how the value renders. `spec` is optional flags (`-`, `+`, space, `#`, `0`), an optional field width, an optional `.precision`, and an optional conversion letter:
+
+- `f` `e` `g` (and `F` `E` `G`) render the value as a float: `{0:.2f}` fixes the precision, `{0:8.2f}` also pads to a field width.
+- `d` / `i` render it as an integer, truncated toward zero: `{0:04d}`.
+- `s`, or no conversion letter, places the value's default rendering in a field: `{0:8}` right-justifies, `{0:-8}` left-justifies, `{0:.3}` truncates to three characters.
+
+A float or integer conversion requires a float operand; a non-float operand, an unknown conversion letter, or trailing characters in the spec is an error. With no colon, `{n}` renders the value in its default form.
 
 `first match` and `findall` are spelled `match` and `match-all`; there is no separate search/match/fullmatch split. Anchor with `^`/`$` (or `\A`/`\z`) when you need it.
 
