@@ -492,18 +492,12 @@ extern Compiler compiler;
 
 typedef void (*cfa_handler)(Interpreter *interp);
 
-#if defined(__has_attribute) && __has_attribute(musttail) && !defined(__wasm__)
-#define MUSTTAIL __attribute__((musttail))
 #define DISPATCH(interp) do { \
 	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
 		return; \
-	MUSTTAIL \
+	__attribute__((musttail)) \
 	return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \
 } while (0)
-#else
-#define MUSTTAIL
-#define DISPATCH(interp) do { return; } while (0)
-#endif
 
 typedef double (*scalar_operator)(double, double);
 
