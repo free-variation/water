@@ -264,15 +264,9 @@ In rough priority:
   amortizes to nothing for one big region (a single `pmap` over a huge domain
   saturates the cores), but the spawn/join dominates for many small regions —
   system time, not compute. A pool that parks threads and dispatches per call
-  fixes it. Co-design with the rewind: pooled threads keep their `AllocContext`
-  across regions, so teardown has to reset every worker's context, not just the
+  fixes it. Pooled threads keep their per-worker allocation context across
+  regions, so region teardown must reset every worker's context, not just the
   caller's.
-
-- **De-fragilize the region rewind.** The rewind restores several counters and
-  resets the calling thread's context by hand; correctness depends on invariants
-  maintained across files (the `in_parallel` gating, the per-region thread
-  lifecycle). Fold the region's mutated state into one begin/commit/abort owner
-  to remove that coupling — a prerequisite for the thread pool.
 
 - **Numeric disjoint-write buffer / work-stealing.** Lower priority: a shared
   unboxed-`double` output buffer threaded under the matrix kernels, and
