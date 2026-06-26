@@ -233,13 +233,6 @@ int object_alloc_slot(Interpreter *interp) {
 	return -1;
 }
 
-void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_pairs) {
-	arena.used = saved_used;
-	arena.object_space.n = saved_n_objects;
-	pairs.space.n = saved_n_pairs;
-	memset(&thread_alloc, 0, sizeof thread_alloc);
-}
-
 void reset_thread_alloc(void) {
 	memset(&thread_alloc, 0, sizeof thread_alloc);
 }
@@ -263,6 +256,67 @@ static inline void heap_bytes_sub(size_t bytes) {
 	if (in_parallel)
 		thread_alloc.heap_bytes_live -= bytes;
 }
+
+void region_begin(ParallelRegion *region, int domain_len, int worker_count) {
+	CLAMP(worker_count, 1, MAX_WORKER_THREADS);
+
+	int object_headroom = arena.object_space.n + domain_len + worker_count * SLOTS_PER_CLAIM;
+	object_headroom = MIN(object_headroom, arena.object_space.max);
+	if (object_headroom > arena.object_space.cap)
+		GROW_OBJECT_TABLE(object_headroom);
+
+	int pair_headroom = pairs.space.n + domain_len + worker_count * SLOTS_PER_CLAIM;
+	if (pair_headroom > pairs.space.cap)
+		GROW_PAIR_TABLE(pair_headroom);
+
+	region->used = arena.used;
+	region->n_objects = arena.object_space.n;
+	region->n_pairs = pairs.space.n;
+
+	parallel_region_object_base = arena.object_space.n;
+	parallel_region_pair_base = pairs.space.n;
+	parallel_region_collected = 0;
+
+	in_parallel = 1;
+	reset_thread_alloc();
+}
+
+void region_commit(ParallelRegion *region) {
+	(void)region;
+	memset(&thread_alloc, 0, sizeof thread_alloc);
+}
+
+void region_abort(ParallelRegion *region) {
+	int high = arena.object_space.n;
+	for (int handle = region->n_objects; handle < high; handle++) {
+		Object *obj = arena.objects[handle];
+		if (!obj)
+			continue;
+		switch (obj->kind) {
+			case OBJECT_MATRIX:
+				heap_bytes_sub((size_t)obj->matrix.rows * (size_t)obj->matrix.columns * sizeof(double));
+				free(obj->matrix.elements);
+				break;
+			case OBJECT_SEGMENT:
+				heap_bytes_sub((size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
+				free(obj->segment.data);
+				break;
+			case OBJECT_CONTINUATION:
+				heap_bytes_sub((size_t)obj->continuation.return_len * sizeof(Val));
+				free(obj->continuation.return_slice);
+				break;
+			default:
+				break;
+		}
+		arena.objects[handle] = NULL;
+	}
+
+	arena.used = region->used;
+	arena.object_space.n = region->n_objects;
+	pairs.space.n = region->n_pairs;
+	memset(&thread_alloc, 0, sizeof thread_alloc);
+}
+
 
 static Object *object_new(Interpreter *interp, ObjectKind kind, int *out_slot) {
 	int slot = object_alloc_slot(interp);

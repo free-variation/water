@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.9.1"
+#define VERSION "0.10.2"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -292,7 +292,7 @@ typedef struct {
 	size_t used;
 	int n_objects;
 	int n_pairs;
-} RegionSnapshot;
+} ParallelRegion;
 
 
 typedef struct {
@@ -991,7 +991,9 @@ void p_filter(Interpreter *interp);
 void p_pmap(Interpreter *interp);
 void p_pfilter(Interpreter *interp);
 void p_pmap_reduce(Interpreter *interp);
-void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_pairs);
+void region_begin(ParallelRegion *region, int domain_len, int worker_count);
+void region_commit(ParallelRegion *region);
+void region_abort(ParallelRegion *region);
 void reset_thread_alloc(void);
 void p_num_cores(Interpreter *interp);
 void p_reduce(Interpreter *interp);
