@@ -969,6 +969,19 @@ void p_man(Interpreter *interp) {
 }
 
 void p_semicolon(Interpreter *interp) {
+	if (compiler.compiling_src_start > 0 && compiler.n_local_scopes > 1) {
+		int partial_cfa = vocab.latest_cfa;
+		vocab.here = partial_cfa - 4;
+		vocab.names_here = (int)WORD_NAME(partial_cfa);
+		vocab.latest_cfa = (int)WORD_LINK(partial_cfa);
+		compiler.n_local_scopes = 0;
+		compiler.n_local_names = 0;
+		compiler.local_names_pool_here = 0;
+		compiler.compiling = 0;
+		compiler.compiling_src_start = 0;
+		fail(interp, "; : unterminated quotation (a [: , [> , or [| has no matching :])");
+		return;
+	}
 	leave_compile_scope(interp);
 	emit_call(interp, vocab.exit_cfa);
 	if (compiler.compiling_src_start > 0 && vocab.latest_cfa != 0) {

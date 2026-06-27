@@ -2649,9 +2649,9 @@ void p_load(Interpreter *interp) {
 	gc_root_push(interp, filename_obj_val);
 
 	const char *filename = filename_obj->bytes;
-	if (compiler.load_depth == 0)
-		record_loaded_file(interp, filename);
 	load_file(interp, filename);
+	if (compiler.load_depth == 0 && !interp->error_flag)
+		record_loaded_file(interp, filename);
 
 	gc_root_pop(interp);
 
