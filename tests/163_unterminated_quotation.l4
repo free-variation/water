@@ -1,0 +1,13 @@
+\ An unterminated quotation inside a definition (a [: / [> / [| with no
+\ matching :]) must fail loudly and discard the half-built word, not segfault.
+\ The system must recover and keep compiling/running normally afterward.
+
+: bad [: 1 2 ;
+bad
+: bad2 [> a b | a ;
+bad2
+1 2 + .
+: good 6 7 + ;
+good .
+[ 1 2 3 ] [: dup * :] map .
+cr
