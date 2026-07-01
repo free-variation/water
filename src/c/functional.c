@@ -269,6 +269,7 @@ static int references_region_depth(Val value, ParallelRegion *snapshot, int dept
 	switch (VAL_TAG(value)) {
 		case T_STRING:
 		case T_MATRIX:
+		case T_SEGMENT:
 			return VAL_DATA(value) >= snapshot->n_objects;
 		case T_SET:
 		case T_ARRAY: {
