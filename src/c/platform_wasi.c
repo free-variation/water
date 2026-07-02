@@ -17,8 +17,9 @@ void platform_init(void) {
 
 int platform_repl_begin(struct Interpreter *interp, int want_interactive) {
 	(void)interp;
-	(void)want_interactive;
-	return 0;
+	if (want_interactive)
+		printf("logicforth %s\n", VERSION);
+	return want_interactive;
 }
 
 int platform_read_chunk(char *dst, int dst_avail, int interactive) {
