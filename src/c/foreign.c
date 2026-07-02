@@ -1,4 +1,5 @@
 #include "logicforth.h"
+#include <ffi/ffi.h>
 #include <dlfcn.h>
 
 #define FFI_MAX_ARGS 16

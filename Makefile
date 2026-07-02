@@ -2,8 +2,8 @@ CC     = clang
 CFLAGS = -O3 -march=native -Wall -Wextra -pthread
 LDLIBS = -lm -lffi
 
-SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/foreign.c
-HDRS = src/c/logicforth.h src/c/lib_embed.h src/c/repl_highlight_groups.h
+SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/foreign.c src/c/platform_posix.c
+HDRS = src/c/logicforth.h src/c/platform.h src/c/lib_embed.h src/c/repl_highlight_groups.h
 
 # Vendored PCRE2 (see external/pcre2/PROVENANCE; refresh with tools/vendor-pcre2.sh).
 PCRE2_DIR    = external/pcre2
@@ -60,6 +60,30 @@ $(SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
 $(ISOCLINE_OBJ): $(ISOCLINE_DIR)/src/isocline.c
 	$(CC) $(ISOCLINE_CFLAGS) -c $< -o $@
 
+# WASM/WASI cross-build (a-shell, standalone runtimes, browser via a WASI shim).
+# Shares the vendored pcre2 dependency, compiled no-JIT for wasm; sqlite, isocline
+# and ffi are unavailable on WASI and excluded, their words present as erroring
+# stubs from platform_wasi.c. Needs the wasi-sdk toolchain in $(WASI_SDK).
+WASI_SDK        = $(HOME)/wasi-sdk
+WASI_CC         = $(WASI_SDK)/bin/clang
+WASI_AR         = $(WASI_SDK)/bin/llvm-ar
+WASI_SYSROOT    = $(WASI_SDK)/share/wasi-sysroot
+WASM_SRCS       = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/platform_wasi.c
+WASM_CFLAGS     = --sysroot $(WASI_SYSROOT) -O2 -I$(PCRE2_SRC) -Wno-ignored-pragmas -Wl,-z,stack-size=8388608
+WASM_PCRE2_OBJS = $(patsubst %.c,%.wasm.o,$(wildcard $(PCRE2_SRC)/pcre2_*.c))
+WASM_PCRE2_LIB  = $(PCRE2_DIR)/libpcre2-8-wasm.a
+
+wasm: logicforth.wasm
+
+logicforth.wasm: $(WASM_SRCS) $(HDRS) $(WASM_PCRE2_LIB)
+	$(WASI_CC) $(WASM_CFLAGS) -o logicforth.wasm $(WASM_SRCS) $(WASM_PCRE2_LIB)
+
+$(WASM_PCRE2_LIB): $(WASM_PCRE2_OBJS)
+	$(WASI_AR) rcs $@ $(WASM_PCRE2_OBJS)
+
+$(PCRE2_SRC)/%.wasm.o: $(PCRE2_SRC)/%.c
+	$(WASI_CC) --sysroot $(WASI_SYSROOT) $(PCRE2_CFLAGS) -c $< -o $@
+
 # Build the LAPACKE-over-Accelerate dylib that FFI dlopens.
 lapacke: $(LAPACKE_DYLIB)
 
@@ -99,6 +123,6 @@ bench:
 	@sh bench/run-benchmarks.sh
 
 clean:
-	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_DYLIB)
+	rm -f logicforth logicforth.wasm $(PCRE2_OBJS) $(PCRE2_LIB) $(WASM_PCRE2_OBJS) $(WASM_PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_DYLIB)
 
-.PHONY: all clean test bench vendor-pcre2 vendor-lapacke lapacke editors
+.PHONY: all clean test bench wasm vendor-pcre2 vendor-lapacke lapacke editors

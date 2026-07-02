@@ -341,7 +341,9 @@ surrounded by #ifndef/#endif lines so that the value can be overridden by -D. */
 /* #undef SUPPORT_DIFF_FUZZ */
 
 /* Define to any value to enable support for Just-In-Time compiling. */
+#ifndef __wasm__
 #define SUPPORT_JIT 1
+#endif
 
 /* Define to any value to allow pcre2grep to be linked with libbz2, so that it
    is able to handle .bz2 files. */
