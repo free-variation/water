@@ -1,6 +1,5 @@
 #include "logicforth.h"
 #include "lib_embed.h"
-#include "isocline.h"
 
 
 Vocabulary vocab;
@@ -36,21 +35,18 @@ static void *xcalloc(size_t count, size_t size) {
 }
 
 static void arena_init(void) {
-	arena.base = mmap(NULL, ARENA_RESERVE, PROT_READ | PROT_WRITE,
-			MAP_PRIVATE | MAP_ANON, -1, 0);
-
-	if (arena.base == MAP_FAILED) {
-		fprintf(stderr, "logicforth: arena mmap failed\n");
+	arena.base = platform_reserve(&arena.reserved);
+	if (!arena.base) {
+		fprintf(stderr, "logicforth: arena reserve failed\n");
 		exit(1);
 	}
 
 	arena.used = 0;
-	arena.reserved = ARENA_RESERVE;
 	arena.heap_bytes_live = 0;
 	arena.heap_gc_threshold = HEAP_GC_FLOOR;
 	main_alloc.slab_next = main_alloc.slab_end = arena.base;
 
-	arena.object_space.max = MAX_OBJECTS;
+	arena.object_space.max = (int)(arena.reserved / ARENA_BYTES_PER_HANDLE);
 	arena.object_space.cap = OBJECTS_INIT_CAP;
 	arena.objects = xcalloc(arena.object_space.cap, sizeof(Object *));
 	arena.object_space.n = 0;
@@ -1971,6 +1967,7 @@ int try_fuse_at_i_ll(Interpreter *interp) {
 	int here = vocab.here;
 
 	if (here >= 3 && here - 3 >= compiler.fuse_floor
+	    && here - 3 == compiler.loadn_at
 	    && (cfa_handler)dict[here - 3] == p_load2) {
 		int arr_slot = (int)dict[here - 2];
 		int idx_slot = (int)dict[here - 1];
@@ -2032,6 +2029,7 @@ int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
 	int here = vocab.here;
 
 	if (here >= 3 && here - 3 >= compiler.fuse_floor
+	    && here - 3 == compiler.loadn_at
 	    && (cfa_handler)dict[here - 3] == p_load2) {
 		int slot_a = (int)dict[here - 2];
 		int slot_b = (int)dict[here - 1];
@@ -2157,31 +2155,11 @@ int refill_input(void) {
 	if (compiler.load_depth > 0)
 		return 0;
 
-	if (compiler.interactive) {
-		char *entered = ic_readline("");
-		if (!entered)
-			return 0;
-		int entered_len = (int)strlen(entered);
-		if (compiler.input_buffer_len + entered_len + 1 >= INPUT_BUFFER_SIZE - 1) {
-			ic_free(entered);
-			return 0;
-		}
-		memcpy(compiler.input_buffer + compiler.input_buffer_len, entered, (size_t)entered_len);
-		compiler.input_buffer_len += entered_len;
-		compiler.input_buffer[compiler.input_buffer_len++] = '\n';
-		compiler.input_buffer[compiler.input_buffer_len] = '\0';
-		ic_free(entered);
-		return 1;
-	}
-
-	char line[1024];
-	if (!fgets(line, sizeof(line), stdin))
+	int chunk = platform_read_chunk(compiler.input_buffer + compiler.input_buffer_len,
+			INPUT_BUFFER_SIZE - compiler.input_buffer_len, compiler.interactive);
+	if (chunk <= 0)
 		return 0;
-	int line_len = (int)strlen(line);
-	if (compiler.input_buffer_len + line_len >= INPUT_BUFFER_SIZE - 1)
-		return 0;
-	memcpy(compiler.input_buffer + compiler.input_buffer_len, line, (size_t)line_len + 1);
-	compiler.input_buffer_len += line_len;
+	compiler.input_buffer_len += chunk;
 	return 1;
 }
 
@@ -2888,7 +2866,8 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 
 void copy_or_reify(Interpreter *interp, Val source_val, Val *copy_val, int reify) {
 	VarMap map = { reify, NULL, 0, 0};
-	if (arena.object_space.n > arena.object_space.max * 9 / 10)
+	if (arena.object_space.n >= arena.object_space.max
+			&& arena.object_space.n_free < arena.object_space.max / 10)
 		gc(interp);
 
 	interp->gc_disabled = 1;
@@ -4670,129 +4649,6 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	return 0;
 }
 
-static Interpreter *repl_interp;
-
-#include "repl_highlight_groups.h"
-
-static int lf_token_in(const char *const *set, const char *tok, long len) {
-	for (int i = 0; set[i]; i++)
-		if ((long)strlen(set[i]) == len && memcmp(set[i], tok, (size_t)len) == 0)
-			return 1;
-	return 0;
-}
-
-static int lf_is_number(const char *s, long len) {
-	long i = 0;
-	if (i < len && (s[i] == '-' || s[i] == '+'))
-		i++;
-	long digits = 0;
-	while (i < len && s[i] >= '0' && s[i] <= '9') { i++; digits++; }
-	if (i < len && s[i] == '.') {
-		i++;
-		while (i < len && s[i] >= '0' && s[i] <= '9') { i++; digits++; }
-	}
-	if (digits == 0)
-		return 0;
-	if (i < len && (s[i] == 'e' || s[i] == 'E')) {
-		i++;
-		if (i < len && (s[i] == '-' || s[i] == '+'))
-			i++;
-		long exp_digits = 0;
-		while (i < len && s[i] >= '0' && s[i] <= '9') { i++; exp_digits++; }
-		if (exp_digits == 0)
-			return 0;
-	}
-	return i == len;
-}
-
-static const char *lf_token_style(const char *s, long len) {
-	if (lf_is_number(s, len))
-		return "ansi-teal";
-	if (len == 2 && (memcmp(s, "[:", 2) == 0 || memcmp(s, ":]", 2) == 0
-			|| memcmp(s, "[(", 2) == 0 || memcmp(s, ")]", 2) == 0
-			|| memcmp(s, "[|", 2) == 0 || memcmp(s, "[>", 2) == 0))
-		return "ansi-blue";
-	if (s[0] == ':' && len > 1)
-		return "ansi-olive";
-	if (s[0] == '/' && len > 1 && ((s[1] >= 'a' && s[1] <= 'z') || (s[1] >= 'A' && s[1] <= 'Z')))
-		return "ansi-olive";
-	if (s[0] >= 'A' && s[0] <= 'Z')
-		return "ansi-purple";
-	if (lf_token_in(lf_control, s, len))
-		return "ansi-maroon";
-	if (lf_token_in(lf_defining, s, len))
-		return "ansi-blue";
-	if (lf_token_in(lf_logicwords, s, len))
-		return "ansi-fuchsia";
-	if (len > 0 && len < 128) {
-		char buf[128];
-		memcpy(buf, s, (size_t)len);
-		buf[len] = 0;
-		if (find(buf))
-			return "ansi-navy";
-	}
-	return NULL;
-}
-
-static int lf_is_ws(char c) {
-	return c == ' ' || c == '\t' || c == '\r' || c == '\n';
-}
-
-static void repl_highlighter(ic_highlight_env_t *henv, const char *input, void *arg) {
-	(void)arg;
-	long n = (long)strlen(input);
-	long i = 0;
-	while (i < n) {
-		if (lf_is_ws(input[i])) { i++; continue; }
-		long start = i;
-		if (input[i] == '\\' && (i + 1 >= n || lf_is_ws(input[i + 1]))) {
-			while (i < n && input[i] != '\n') i++;
-			ic_highlight(henv, start, i - start, "ansi-silver");
-			continue;
-		}
-		if (input[i] == '(' && i + 1 < n && lf_is_ws(input[i + 1])) {
-			while (i < n && input[i] != ')') i++;
-			if (i < n) i++;
-			ic_highlight(henv, start, i - start, "ansi-silver");
-			continue;
-		}
-		if (input[i] == '"') {
-			i++;
-			while (i < n) {
-				if (input[i] == '"') {
-					if (i + 1 < n && input[i + 1] == '"') { i += 2; continue; }
-					i++;
-					break;
-				}
-				i++;
-			}
-			ic_highlight(henv, start, i - start, "ansi-green");
-			continue;
-		}
-		while (i < n && !lf_is_ws(input[i])) i++;
-		const char *style = lf_token_style(input + start, i - start);
-		if (style)
-			ic_highlight(henv, start, i - start, style);
-	}
-}
-
-static void repl_complete_word(ic_completion_env_t *cenv, const char *word) {
-	size_t word_len = strlen(word);
-	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
-		if (WORD_IS_INTERNAL(cfa))
-			continue;
-		const char *name = &vocab.name_pool[WORD_NAME(cfa)];
-		if (strncmp(name, word, word_len) == 0)
-			if (!ic_add_completion(cenv, name))
-				return;
-	}
-}
-
-static void repl_completer(ic_completion_env_t *cenv, const char *prefix) {
-	ic_complete_word(cenv, prefix, repl_complete_word, &ic_char_is_nonwhite);
-	ic_complete_filename(cenv, prefix, '/', NULL, NULL);
-}
-
 int main(int argc, char **argv) {
 	int interactive = isatty(fileno(stdin));
 	int load_lib = 1;
@@ -4826,47 +4682,20 @@ int main(int argc, char **argv) {
 		max_objects_arg = MIN(max_objects_arg, MAX_OBJECTS);
 		arena.object_space.max = (int)max_objects_arg;
 	}
-	signal(SIGPIPE, SIG_IGN);
+	platform_init();
 	if (construct_vocabulary(interp, load_lib))
 		return 1;
 
-	if (interactive) {
-		printf("logicforth %s\n", VERSION);
-		ic_set_history(".logicforth_history", -1);
-		repl_interp = interp;
-		ic_set_default_completer(repl_completer, NULL);
-		ic_set_default_highlighter(repl_highlighter, NULL);
-		ic_enable_brace_matching(true);
-		ic_set_matching_braces("[]{}");
-		ic_enable_brace_insertion(false);
-		ic_set_prompt_marker(NULL, "..");
-		ic_enable_multiline_indent(true);
-	}
-	char line[1024];
+	interactive = platform_repl_begin(interp, interactive);
 	compiler.interactive = interactive;
 
 	for (;;) {
-		if (interactive) {
-			char *entered = ic_readline("");
-			if (!entered)
-				break;
-			int entered_len = (int)strlen(entered);
-			if (compiler.input_buffer_len + entered_len + 1 < INPUT_BUFFER_SIZE - 1) {
-				memcpy(compiler.input_buffer + compiler.input_buffer_len, entered, (size_t)entered_len);
-				compiler.input_buffer_len += entered_len;
-				compiler.input_buffer[compiler.input_buffer_len++] = '\n';
-				compiler.input_buffer[compiler.input_buffer_len] = '\0';
-			}
-			ic_free(entered);
-		} else {
-			if (!fgets(line, sizeof(line), stdin))
-				break;
-			int line_len = (int)strlen(line);
-			if (compiler.input_buffer_len + line_len < INPUT_BUFFER_SIZE - 1) {
-				memcpy(compiler.input_buffer + compiler.input_buffer_len, line, (size_t)line_len + 1);
-				compiler.input_buffer_len += line_len;
-			}
-		}
+		int chunk = platform_read_chunk(compiler.input_buffer + compiler.input_buffer_len,
+				INPUT_BUFFER_SIZE - compiler.input_buffer_len, interactive);
+		if (chunk == 0)
+			break;
+		if (chunk > 0)
+			compiler.input_buffer_len += chunk;
 
 		interp->error_flag = 0;
 		interp->unwinding = 0;

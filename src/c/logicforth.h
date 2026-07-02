@@ -15,12 +15,10 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <sys/mman.h>
 #include <stdatomic.h>
 #include <pthread.h>
-#include <ffi/ffi.h>
+
+#include "platform.h"
 
 typedef int64_t cell;
 
@@ -30,6 +28,7 @@ typedef int64_t cell;
 #define RETURN_STACK_DEPTH (1 << 16)
 #define MAX_OBJECTS (1 << 26)
 #define ARENA_RESERVE ((size_t)1 << 34)
+#define ARENA_BYTES_PER_HANDLE 256
 #define ARENA_ALIGNMENT 16
 #define ARENA_SIZE_CLASSES (2 << 5)
 #define OBJECTS_INIT_CAP (1 << 16)
@@ -491,13 +490,6 @@ extern Compiler compiler;
 
 
 typedef void (*cfa_handler)(Interpreter *interp);
-
-#define DISPATCH(interp) do { \
-	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
-		return; \
-	__attribute__((musttail)) \
-	return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \
-} while (0)
 
 typedef double (*scalar_operator)(double, double);
 
