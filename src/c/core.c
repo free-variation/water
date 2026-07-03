@@ -13,7 +13,7 @@ int parallel_region_object_base;
 int parallel_region_pair_base;
 static _Thread_local AllocContext thread_alloc;
 static AllocContext main_alloc;
-static pthread_mutex_t intern_lock = PTHREAD_MUTEX_INITIALIZER;
+static platform_mutex_t intern_lock = PLATFORM_MUTEX_INIT;
 
 
 static void *xmalloc(size_t bytes) {
@@ -524,16 +524,16 @@ void parallel_for(int n_items, int n_threads, int items_per_claim,
 		.context = context,
 	};
 
-	pthread_t threads[MAX_WORKER_THREADS];
+	platform_thread_t threads[MAX_WORKER_THREADS];
 	int created = 0;
 
 	for (int worker = 1; worker < n_threads; worker++)
-		if (pthread_create(&threads[created], NULL, worker_entry, &task) == 0)
+		if (platform_thread_create(&threads[created], worker_entry, &task) == 0)
 			created++;
 
 	worker_entry(&task);
 	for (int worker = 0; worker < created; worker++)
-		pthread_join(threads[worker], NULL);
+		platform_thread_join(threads[worker]);
 }
 
 int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
@@ -1427,7 +1427,7 @@ int intern_symbol(Interpreter *interp, const char *name) {
 		return symbol_offset;
 
 	if (in_parallel)
-		pthread_mutex_lock(&intern_lock);
+		platform_mutex_lock(&intern_lock);
 
 	symbol_offset = probe_symbol(name, &index);
 	if (symbol_offset == -1) {
@@ -1447,7 +1447,7 @@ int intern_symbol(Interpreter *interp, const char *name) {
 	}
 
 	if (in_parallel)
-		pthread_mutex_unlock(&intern_lock);
+		platform_mutex_unlock(&intern_lock);
 	return symbol_offset;
 }
 

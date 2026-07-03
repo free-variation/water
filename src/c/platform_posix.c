@@ -17,7 +17,7 @@ void platform_init(void) {
 	signal(SIGPIPE, SIG_IGN);
 }
 
-void lf_qsort_r(void *base, size_t n, size_t size, void *thunk,
+void platform_qsort_r(void *base, size_t n, size_t size, void *thunk,
 		int (*cmp)(void *, const void *, const void *)) {
 	qsort_r(base, n, size, thunk, cmp);
 }

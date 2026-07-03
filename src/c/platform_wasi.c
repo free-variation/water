@@ -36,7 +36,7 @@ static int wasi_qsort_trampoline(const void *a, const void *b) {
 	return wasi_qsort_cmp(wasi_qsort_thunk, a, b);
 }
 
-void lf_qsort_r(void *base, size_t n, size_t size, void *thunk,
+void platform_qsort_r(void *base, size_t n, size_t size, void *thunk,
 		int (*cmp)(void *, const void *, const void *)) {
 	wasi_qsort_thunk = thunk;
 	wasi_qsort_cmp = cmp;
