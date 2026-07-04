@@ -1,4 +1,4 @@
-# logicforth
+# water
 
 A Forth-flavored language for numeric and matrix work, statistics and
 regression, set/array/frame manipulation, string/regex processing, logic
@@ -8,10 +8,10 @@ runtime C FFI. A compact C interpreter built with `clang -O3`.
 ## Building and running
 
 ```
-make           # builds ./logicforth
+make           # builds ./water
 make test      # runs the golden-output test suite
-make bench     # runs the benchmark suite (logicforth vs CPython)
-./logicforth   # REPL
+make bench     # runs the benchmark suite (water vs CPython)
+./water   # REPL
 ```
 
 Self-contained: its vendored dependencies — PCRE2 (regex), isocline (REPL line
@@ -172,7 +172,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 
 ### I/O and persistence
 
-- **Interactive REPL** with full isocline line editing: theme-adaptive **syntax highlighting**, **matching-brace** highlighting, **inline hints** and **Tab completion** (word names from the live dictionary, filenames inside string literals), persistent history (`.logicforth_history`), and **multi-line editing** — `Ctrl+J` inserts a line, `Enter` submits the whole buffer. A `count|top` prompt shows stack depth and the top value, green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
+- **Interactive REPL** with full isocline line editing: theme-adaptive **syntax highlighting**, **matching-brace** highlighting, **inline hints** and **Tab completion** (word names from the live dictionary, filenames inside string literals), persistent history (`.water_history`), and **multi-line editing** — `Ctrl+J` inserts a line, `Enter` submits the whole buffer. A `count|top` prompt shows stack depth and the top value, green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
 - **`load`** runs a source file as if typed.
 - **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
@@ -285,7 +285,7 @@ See `PLAN.md`.
 ## Project layout
 
 ```
-src/c/logicforth.h     — types, global program structs (Vocabulary/Arena/Compiler), per-run Interpreter, prototypes
+src/c/water.h     — types, global program structs (Vocabulary/Arena/Compiler), per-run Interpreter, prototypes
 src/c/core.c           — engine: interpreter, dictionary, GC, printing, image, REPL
 src/c/words.c          — arithmetic, stack, I/O, control flow, defining words, continuations
 src/c/collections.c    — sets, arrays, and frames
@@ -301,7 +301,7 @@ src/forth/lib.l4       — standard library (embedded, auto-loaded at startup)
 lib/                   — loadable libraries: statistics.l4, files.l4, claude.l4
 external/              — vendored deps: pcre2, sqlite, isocline, lapacke
 tests/                 — golden-output test files
-bench/                 — benchmark suite (logicforth vs CPython) and inventory
+bench/                 — benchmark suite (water vs CPython) and inventory
 docs/                  — design documents and the word reference
 examples/              — sample programs
 PLAN.md                — future work
