@@ -1295,7 +1295,7 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 			interp->loop_slots_ip = slots_ip;
 			context->leave_ip = 0;
 
-			if ((cfa_handler)vocab.dict[cfa - 2] == (cfa_handler)vocab.dict[vocab.branch_cfa]) {
+			if (dict_op_is(cfa - 2, (cfa_handler)vocab.dict[vocab.branch_cfa])) {
 				int leave_ip = cfa + (int)vocab.dict[cfa - 1] - 4;
 				if (dict_op_is(leave_ip, p_leave_locals)) {
 					context->leave_ip = leave_ip;
