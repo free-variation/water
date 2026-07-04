@@ -1,8 +1,10 @@
 CC      = clang
 PCRE2   = external/pcre2/src
+SQLITE  = external/sqlite
 STACK   = -Wl,-z,stack-size=8388608
 ARENA   =
-CFLAGS  = -O2 -I$(PCRE2) -DHAVE_CONFIG_H -DPCRE2_CODE_UNIT_WIDTH=8 -DPCRE2_STATIC -Wno-ignored-pragmas $(ARENA)
+CFLAGS  = -O2 -I$(PCRE2) -I$(SQLITE) -DHAVE_CONFIG_H -DPCRE2_CODE_UNIT_WIDTH=8 -DPCRE2_STATIC -Wno-ignored-pragmas $(ARENA)
+SQLITE_CFLAGS = -O2 -DSQLITE_THREADSAFE=0 -DSQLITE_DQS=0 -DSQLITE_DEFAULT_MEMSTATUS=0 -DSQLITE_DEFAULT_WAL_SYNCHRONOUS=1 -DSQLITE_LIKE_DOESNT_MATCH_BLOBS -DSQLITE_MAX_EXPR_DEPTH=0 -DSQLITE_OMIT_DEPRECATED -DSQLITE_OMIT_SHARED_CACHE -DSQLITE_OMIT_LOAD_EXTENSION -DSQLITE_USE_ALLOCA
 LDFLAGS =
 
 OBJS = \
@@ -15,7 +17,9 @@ OBJS = \
 	src/c/strings.o \
 	src/c/help_table.o \
 	src/c/logic.o \
+	src/c/database.o \
 	src/c/platform_wasi.o \
+	$(SQLITE)/sqlite3.o \
 	$(PCRE2)/pcre2_auto_possess.o \
 	$(PCRE2)/pcre2_chartables.o \
 	$(PCRE2)/pcre2_chkdint.o \
@@ -56,7 +60,13 @@ logicforth.wasm: $(OBJS)
 .c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
 
+$(SQLITE)/sqlite3.o: $(SQLITE)/sqlite3.c $(SQLITE)/sqlite3.h
+	$(CC) $(SQLITE_CFLAGS) -c $(SQLITE)/sqlite3.c -o $(SQLITE)/sqlite3.o
+
 $(OBJS): src/c/logicforth.h src/c/platform.h
+
+test: logicforth.wasm
+	WASM_EXEC=wasm sh tests/run-wasm.sh
 
 clean:
 	rm -f $(OBJS) logicforth.wasm

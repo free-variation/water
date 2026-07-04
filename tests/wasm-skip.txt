@@ -10,7 +10,6 @@
 106_running         process control (running?): no fork/exec on WASI
 110_env             env!/start-process: not supported on WASI
 113_parallel_run    start-process: no fork/exec on WASI
-139_sqlite          sqlite excluded from the wasm build
 144_reload_literals start-process: no fork/exec on WASI
 145_ffi             ffi excluded from the wasm build
 146_ffi_lapacke     ffi/LAPACKE excluded from the wasm build

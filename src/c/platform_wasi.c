@@ -60,10 +60,6 @@ WASM_UNSUPPORTED(p_ffi_call, "(ffi-call)")
 WASM_UNSUPPORTED(p_ffi_free, "ffi-free")
 WASM_UNSUPPORTED(p_matrix_to_pointer, "matrix>pointer")
 WASM_UNSUPPORTED(p_segment_to_pointer, "segment>pointer")
-WASM_UNSUPPORTED(p_db_open, "db-open")
-WASM_UNSUPPORTED(p_db_close, "db-close")
-WASM_UNSUPPORTED(p_db_exec, "db-exec")
-WASM_UNSUPPORTED(p_db_query, "db-query")
 
 int ffi_register_call_cfa(int cfa) {
 	return cfa;
