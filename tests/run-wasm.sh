@@ -10,18 +10,26 @@
 # fails for any other reason is a real wasm defect and must not be listed.
 #
 # Environment:
-#   WASMTIME  WASI runtime command (default: wasmtime)
+#   WASM_EXEC command that runs a module (the module path is appended, program
+#             on stdin), overriding the default. On a-shell, which has no
+#             separate runtime, set WASM_EXEC=wasm.
+#   WASMTIME  WASI runtime used when WASM_EXEC is unset (default: wasmtime)
 #   WASM      module path (default: ../logicforth.wasm)
 
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
-runtime=${WASMTIME:-wasmtime}
 module=${WASM:-$root/logicforth.wasm}
 skiplist="$here/wasm-skip.txt"
 
-command -v "$runtime" >/dev/null 2>&1 || { echo "runtime '$runtime' not found (set WASMTIME)"; exit 1; }
+if [ -n "${WASM_EXEC:-}" ]; then
+    exec_cmd=$WASM_EXEC
+else
+    runtime=${WASMTIME:-wasmtime}
+    command -v "$runtime" >/dev/null 2>&1 || { echo "no runtime: set WASMTIME=<path> or WASM_EXEC=<command>"; exit 1; }
+    exec_cmd="$runtime run --dir . --dir /tmp"
+fi
 [ -f "$module" ] || { echo "module '$module' not found (run: make wasm)"; exit 1; }
 
 pass=0
@@ -50,7 +58,7 @@ for input in "$here"/*.l4; do
     # the .expected files were captured by the native harness. Preopen the repo
     # root (guest ".") for relative loads and /tmp for scratch files, so file
     # I/O tests get the same access the native harness has.
-    (cd "$root" && "$runtime" run --dir . --dir /tmp "$module" < "$input") > "$actual" 2>&1
+    (cd "$root" && $exec_cmd "$module" < "$input") > "$actual" 2>&1
     if diff -q "$expected" "$actual" > /dev/null 2>&1; then
         pass=$((pass + 1))
         printf "  ok   %s\n" "$name"
