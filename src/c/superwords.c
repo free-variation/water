@@ -312,6 +312,8 @@ static int try_fuse_array_step(Interpreter *interp) {
 
 	if (here - 2 < floor)
 		return 0;
+	if (!dict_is_handler[here - 2])
+		return 0;
 	cfa_handler arith = (cfa_handler)dict[here - 2];
 	int op_cfa;
 	int has_delta;
@@ -335,6 +337,8 @@ static int try_fuse_array_step(Interpreter *interp) {
 	if (has_delta) {
 		if (here - 4 < floor)
 			return 0;
+		if (!dict_is_handler[here - 4])
+			return 0;
 		cfa_handler push = (cfa_handler)dict[here - 4];
 		if (push != p_literal && push != p_local_fetch_0depth
 		    && push != p_local_fetch_1depth && push != dovar)
@@ -342,6 +346,8 @@ static int try_fuse_array_step(Interpreter *interp) {
 	}
 
 	if (fetch_end - 3 < floor)
+		return 0;
+	if (!dict_is_handler[fetch_end - 3])
 		return 0;
 	cfa_handler folded = (cfa_handler)dict[fetch_end - 3];
 	int arr_form;
@@ -356,9 +362,9 @@ static int try_fuse_array_step(Interpreter *interp) {
 	} else {
 		if (fetch_end - 4 < floor)
 			return 0;
-		if ((cfa_handler)dict[fetch_end - 2] != p_at_i_local0)
+		if (!dict_op_is(fetch_end - 2, p_at_i_local0))
 			return 0;
-		if ((cfa_handler)dict[fetch_end - 4] != dovar)
+		if (!dict_op_is(fetch_end - 4, dovar))
 			return 0;
 		arr_form = 0;
 		arr_key = (int)dict[fetch_end - 3];
@@ -368,9 +374,11 @@ static int try_fuse_array_step(Interpreter *interp) {
 
 	if (fetch_start - 4 < floor)
 		return 0;
-	if ((cfa_handler)dict[fetch_start - 2] != p_local_fetch_0depth)
+	if (!dict_op_is(fetch_start - 2, p_local_fetch_0depth))
 		return 0;
 	if ((int)dict[fetch_start - 1] != idx_slot)
+		return 0;
+	if (!dict_is_handler[fetch_start - 4])
 		return 0;
 	cfa_handler arr_push = (cfa_handler)dict[fetch_start - 4];
 	if (arr_form == 0 && arr_push != dovar)
@@ -414,7 +422,7 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 
 	if (op_handler == p_drop
 	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
-	    && (cfa_handler)vocab.dict[vocab.here - 1] == p_store_i) {
+	    && dict_op_is(vocab.here - 1, p_store_i)) {
 		if (try_fuse_array_step(interp))
 			return 1;
 		vocab.here -= 1;
@@ -430,7 +438,7 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 #define FUSE_BIN(suffix, op, base) \
 	if (op_handler == base) { \
 		if (vocab.here >= 2 && vocab.here - 2 >= compiler.fuse_floor \
-		    && (cfa_handler)vocab.dict[vocab.here - 2] == p_literal) { \
+		    && dict_op_is(vocab.here - 2, p_literal)) { \
 			cell bits = vocab.dict[vocab.here - 1]; \
 			vocab.here -= 2; \
 			emit_call(interp, lf_##suffix##_cfa); \
@@ -469,7 +477,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 	int here = vocab.here;
 	int dst = dst_cfa + 1;
 
-	if (here >= 3) {
+	if (here >= 3 && dict_is_handler[here - 3]) {
 		cfa_handler tail = (cfa_handler)dict[here - 3];
 		int store_cfa = -1;
 #define MATCH3(suffix, ...) if (tail == p_vv_##suffix) store_cfa = vv_##suffix##_store_cfa;
@@ -487,7 +495,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 		}
 	}
 
-	if (here >= 2) {
+	if (here >= 2 && dict_is_handler[here - 2]) {
 		cfa_handler tail = (cfa_handler)dict[here - 2];
 		int store_cfa = -1;
 #define MATCH2_VF(suffix, op, base) if (tail == p_vf_##suffix) store_cfa = vf_##suffix##_store_cfa;
