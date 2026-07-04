@@ -492,6 +492,11 @@ typedef void (*cfa_handler)(Interpreter *interp);
 
 typedef double (*scalar_operator)(double, double);
 
+extern unsigned char dict_is_handler[];
+static inline int dict_op_is(int pos, cfa_handler h) {
+	return pos >= 0 && dict_is_handler[pos] && (cfa_handler)vocab.dict[pos] == h;
+}
+
 #define WORD_LINK(cfa) (vocab.dict[(cfa) - 4])
 #define WORD_FLAGS(cfa) (vocab.dict[(cfa) - 3])
 #define WORD_NAME(cfa) (vocab.dict[(cfa) - 2])
