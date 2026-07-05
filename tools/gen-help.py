@@ -107,7 +107,7 @@ def emit(entries):
     out.append("/* Generated from docs/reference.md by tools/gen-help.py.")
     out.append("   Do not edit by hand; rerun the generator instead. */")
     out.append("")
-    out.append('#include "logicforth.h"')
+    out.append('#include "water.h"')
     out.append("")
     out.append("const HelpEntry help_entries[] = {")
     for name, effect, summary, ops, alloc, order in entries:

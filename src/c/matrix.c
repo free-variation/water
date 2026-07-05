@@ -1,4 +1,4 @@
-#include "logicforth.h"
+#include "water.h"
 
 /* Element-wise, with vector broadcasting: a dimension of size 1 in either
    operand stretches to match the other (so n×1 and 1×k vectors broadcast
@@ -276,8 +276,6 @@ void p_dgemm_tt(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-/* Combine operators for the inlined reductions. MAX and MIN are in
- * logicforth.h; only ADD needs definition here. */
 #define ADD(a, b) ((a) + (b))
 
 /* Overall reduction: four-way accumulator unroll so float-sum (non-associative)

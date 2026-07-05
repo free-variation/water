@@ -3,7 +3,7 @@ CFLAGS = -O3 -march=native -Wall -Wextra -pthread
 LDLIBS = -lm -lffi
 
 SRCS = src/c/core.c src/c/words.c src/c/collections.c src/c/matrix.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/foreign.c
-HDRS = src/c/logicforth.h src/c/lib_embed.h src/c/repl_highlight_groups.h
+HDRS = src/c/water.h src/c/lib_embed.h src/c/repl_highlight_groups.h
 
 # Vendored PCRE2 (see external/pcre2/PROVENANCE; refresh with tools/vendor-pcre2.sh).
 PCRE2_DIR    = external/pcre2
@@ -31,7 +31,7 @@ ISOCLINE_OBJ    = $(ISOCLINE_DIR)/isocline.o
 
 # Vendored LAPACKE closure (see external/lapacke/PROVENANCE; refresh with
 # tools/vendor-lapacke.sh). C wrappers over Accelerate's Fortran LAPACK, built
-# into a dylib that logicforth dlopens via FFI. macOS/Accelerate-only, so this
+# into a dylib that water dlopens via FFI. macOS/Accelerate-only, so this
 # is the explicit `make lapacke` target, not part of the default build.
 # Add a routine: re-vendor with it, then add a -exported_symbol below.
 LAPACKE_DIR     = external/lapacke
@@ -43,10 +43,10 @@ LAPACKE_CFLAGS  = -O2 -DNDEBUG -DADD_ -I$(LAPACKE_DIR)/include
 LAPACKE_EXPORTS = -Wl,-exported_symbol,_LAPACKE_dgesvd \
                   -Wl,-exported_symbol,_LAPACKE_dgelsd
 
-all: logicforth $(LAPACKE_DYLIB)
+all: water $(LAPACKE_DYLIB)
 
-logicforth: $(SRCS) $(HDRS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
-	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -I$(SQLITE_DIR) -I$(ISOCLINE_DIR)/include -o logicforth $(SRCS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LDLIBS)
+water: $(SRCS) $(HDRS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
+	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -I$(SQLITE_DIR) -I$(ISOCLINE_DIR)/include -o water $(SRCS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LDLIBS)
 
 $(PCRE2_LIB): $(PCRE2_OBJS)
 	ar rcs $@ $(PCRE2_OBJS)
@@ -78,8 +78,8 @@ $(LAPACKE_DIR)/%.o: $(LAPACKE_DIR)/%.c
 src/c/help_table.c: docs/reference.md tools/gen-help.py
 	python3 tools/gen-help.py
 
-src/c/lib_embed.h: src/forth/lib.l4
-	cd src/forth && xxd -i lib.l4 > ../../src/c/lib_embed.h
+src/c/lib_embed.h: src/forth/lib.h2o
+	cd src/forth && xxd -i lib.h2o > ../../src/c/lib_embed.h
 
 # Regenerate the editor syntax files from docs/reference.md (not compiled, so
 # on-demand rather than a build dependency). Run after editing reference.md.
@@ -92,13 +92,13 @@ vendor-pcre2:
 vendor-lapacke:
 	sh tools/vendor-lapacke.sh
 
-test: logicforth
+test: water
 	sh tests/run.sh
 
 bench:
 	@sh bench/run-benchmarks.sh
 
 clean:
-	rm -f logicforth $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_DYLIB)
+	rm -f water $(PCRE2_OBJS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_DYLIB)
 
 .PHONY: all clean test bench vendor-pcre2 vendor-lapacke lapacke editors

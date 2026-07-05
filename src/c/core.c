@@ -1,4 +1,4 @@
-#include "logicforth.h"
+#include "water.h"
 #include "lib_embed.h"
 #include "isocline.h"
 
@@ -3838,9 +3838,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "running?", p_running, 0);
 
 	if (load_lib) {
-		memcpy(compiler.input_buffer, lib_l4, lib_l4_len);
-		compiler.input_buffer[lib_l4_len] = 0;
-		compiler.input_buffer_len = (int)lib_l4_len;
+		memcpy(compiler.input_buffer, lib_h2o, lib_h2o_len);
+		compiler.input_buffer[lib_h2o_len] = 0;
+		compiler.input_buffer_len = (int)lib_h2o_len;
 		compiler.input_buffer_pos = 0;
 		run_outer(interp);
 
@@ -3849,12 +3849,12 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 		compiler.input_buffer[0] = 0;
 
 		if (interp->error_flag) {
-			printf("lib.l4 load error\n");
+			printf("lib.h2o load error\n");
 			return 1;
 		}
 	}
 
-	/* lib.l4 is part of the rebuilt-each-process base, not user state: the
+	/* lib.h2o is part of the rebuilt-each-process base, not user state: the
 	   init_* watermarks (the boundary an image saves above) sit after it, so
 	   images carry only words defined after bootstrap. */
 	vocab.init_here = vocab.here;
