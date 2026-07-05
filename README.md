@@ -190,7 +190,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 
 ### Subprocesses and pipes
 
-Drive external programs over pipes (`fork`/`execvp`/`pipe`/`waitpid`; binary-safe, no shell):
+Drive external programs over pipes (`fork`/`execv`/`pipe`/`waitpid`, with a manual `PATH` search; binary-safe, no shell):
 
 - **`argv start-process`** — launch from an argv array; returns a frame `{ :pid :in :out :err }` with the child's pid and its stdin/stdout/stderr as `T_STREAM` values.
 - **`write`** / **`read`** / **`close`** — write a string to a stream, read a stream to EOF, close one (closing `:in` sends EOF).
@@ -293,19 +293,24 @@ See `PLAN.md`.
 ## Project layout
 
 ```
-src/c/water.h     — types, global program structs (Vocabulary/Arena/Compiler), per-run Interpreter, prototypes
-src/c/core.c           — engine: interpreter, dictionary, GC, printing, image, REPL
-src/c/words.c          — arithmetic, stack, I/O, control flow, defining words, continuations
+src/c/water.h          — types, global program structs (Vocabulary/Arena/Compiler), per-run Interpreter, prototypes
+src/c/core.c           — engine: interpreter, dictionary, symbol table, GC, arena, value printing, tokenizer/reader, see, text save
+src/c/words.c          — arithmetic, stack ops, printing words, delimited continuations, format, math, RNG/time
+src/c/compiler.c       — compile-time words: colon/quotation definition, control flow, locals, to/constant/variable/symbol, forget
+src/c/io.c             — file, TSV, stream, and environment I/O
+src/c/image.c          — binary save-image / load-image serialization
 src/c/collections.c    — sets, arrays, and frames
 src/c/matrix.c         — matrix words and numeric kernels
-src/c/functional.c     — higher-order operations (map, mapn, …)
+src/c/functional.c     — higher-order operations (map, mapn, …) and multi-core parallelism
 src/c/superwords.c     — compile-time instruction fusion (superwords)
 src/c/strings.c        — string and PCRE2 regex operations
 src/c/logic.c          — logic variables, unification, amb, fact database
 src/c/database.c       — SQLite integration
 src/c/foreign.c        — FFI (libffi), pointer registry, matrix/segment bridges
+src/c/platform_posix.c — POSIX platform: arena mmap, isocline REPL, subprocesses
+src/c/platform_wasi.c  — WASI platform: allocator + erroring stubs for FFI/subprocess
 src/c/help_table.c     — generated help/man text (from docs/reference.md)
-src/forth/lib.h2o       — standard library (embedded, auto-loaded at startup)
+src/forth/lib.h2o      — standard library (embedded, auto-loaded at startup)
 lib/                   — loadable libraries: statistics.h2o, files.h2o, claude.h2o
 external/              — vendored deps: pcre2, sqlite, isocline, lapacke
 tests/                 — golden-output test files
