@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="water_logo.png" alt="water logo" width="200">
+</p>
+
 # water
 
 A Forth-flavored language for numeric and matrix work, statistics and
