@@ -64,6 +64,7 @@ bench/*.md
 
 .claude
 .water_history
+water.wasm
 
 # transient benchmark run reports / logs
 bench/results/
