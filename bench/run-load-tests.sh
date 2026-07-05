@@ -54,20 +54,34 @@ run_one() {
 	printf '\n========== %s ==========\n' "$name"
 	local start end status
 	start=$(date +%s)
+	interrupted=0
 	if [ "$name" = extreme-load ] && [ -n "${MAX_OBJECTS:-}" ]; then
 		( cd "$root" && "$bin" -b --max-objects "$MAX_OBJECTS" < "$file" )
 	else
 		( cd "$root" && "$bin" -b < "$file" )
 	fi
 	status=$?
+	[ "$interrupted" = 1 ] && status=$int_status
 	end=$(date +%s)
 	printf -- '---------- %s: exit %d in %ds ----------\n' "$name" "$status" "$((end - start))"
 }
 
 tests=("$@")
 if [ "${#tests[@]}" -eq 0 ]; then
-	tests=( $(cd "$here/load" && ls *.l4 2>/dev/null | sed 's/\.l4$//') )
+	# Finite tests first; the open-ended select-load (stopped with Ctrl-C) runs last.
+	tests=()
+	for t in $(cd "$here/load" && ls *.l4 2>/dev/null | sed 's/\.l4$//'); do
+		[ "$t" = select-load ] || tests+=("$t")
+	done
+	[ -f "$here/load/select-load.l4" ] && tests+=(select-load)
 fi
+
+# An open-ended test (e.g. select-load) is meant to be stopped with Ctrl-C.
+# Trap SIGINT so it ends only the current test — recording its status and
+# moving on — rather than killing the whole script.
+interrupted=0
+int_status=0
+trap 'int_status=$?; interrupted=1' INT
 
 for t in "${tests[@]}"; do
 	run_one "$t"

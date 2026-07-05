@@ -43,6 +43,8 @@ alloc-stats
 amb
 and
 append-file
+argmax
+argmin
 array
 array-of
 array>cons
@@ -53,6 +55,10 @@ assert
 atan
 augment
 begin
+bit-and
+bit-not
+bit-or
+bit-xor
 bulk-load
 bye
 byte-size
@@ -73,6 +79,7 @@ column-sums
 concat
 cons
 cons>array
+constant
 copy
 cos
 count-matches
@@ -126,16 +133,19 @@ false
 fasin
 fatan
 fcos
+feq
 fexp
 ffi-free
 ffi-function
 ffi-open
 ffi-variadic
+fgt
 filter
 flatten
 flatten-array
 fln
 flog
+flt
 fmod
 fnegate
 forget
@@ -178,6 +188,8 @@ load-bag
 load-image
 log
 lookup
+lowest-bit
+lshift
 lt
 lvar
 man
@@ -231,6 +243,7 @@ reduce
 reify
 relation
 reload
+render
 repeat
 replace
 resample-indices
@@ -251,6 +264,7 @@ row-mins
 row-sums
 rows>dataset
 rows>relation
+rshift
 run
 run-result
 running?
@@ -259,6 +273,10 @@ save
 save-image
 see
 see-compiled
+see-compiled>string
+see-tree
+see-tree>string
+see>string
 seed
 segment>pointer
 select-keys
@@ -286,6 +304,7 @@ start-process
 stop
 string>chars
 string>codepoints
+string>number
 string>symbol
 submatrix
 substring

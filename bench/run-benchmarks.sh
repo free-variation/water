@@ -21,6 +21,15 @@ root=$(cd "$here/.." && pwd)
 bin="$root/logicforth"
 
 python=${PYTHON:-python3.14}
+# crypto-pyaes needs the pure-Python `pyaes` module; prefer the repo .venv
+# (where it is installed) over the default interpreter. Override with CRYPTO_PYTHON.
+if [ -n "${CRYPTO_PYTHON:-}" ]; then
+	crypto_python=$CRYPTO_PYTHON
+elif [ -x "$root/.venv/bin/python" ]; then
+	crypto_python="$root/.venv/bin/python"
+else
+	crypto_python=$python
+fi
 reps=${REPS:-5}
 reps_py=${REPS_PY:-3}
 # regex-compile is an inherently single-shot cold measure (~1 ms; the cache
@@ -33,6 +42,7 @@ nbody_steps=20000
 raytrace_loops=10
 float_points=100000
 float_repeat=20
+crypto_loops=10
 spectral_loops=50
 scimark_lu_cycles=100
 nqueens_n=8
@@ -48,8 +58,6 @@ montecarlo_loops=3
 meteor_loops=10
 hexiom_loops=50
 leibniz_rounds=1000000000
-leibniz_url="https://raw.githubusercontent.com/niklas-heer/speed-comparison/master/src/leibniz.py"
-leibniz_r_url="https://raw.githubusercontent.com/niklas-heer/speed-comparison/master/src/leibniz.r"
 
 work=$(mktemp -d "${TMPDIR:-/tmp}/lfbench.XXXXXX")
 trap 'rm -rf "$work"' EXIT
@@ -107,6 +115,7 @@ lf_fannkuch() { "$bin" < "$here/pyperformance/fannkuch.l4"; }
 lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.l4"; } | "$bin"; }
 lf_raytrace() { { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.l4"; } | "$bin"; }
 lf_float()    { "$bin" < "$here/pyperformance/float.l4"; }
+lf_crypto()   { "$bin" < "$here/pyperformance/crypto-pyaes.l4"; }
 lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.l4"; } | "$bin"; }
 lf_spectral_matrix() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/variants/spectral-norm-matrix.l4"; } | "$bin"; }
 lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.l4"; } | "$bin"; }
@@ -132,6 +141,7 @@ py_fannkuch() { "$python" "$here/pyperformance/pyperf_fannkuch.py" "$fannkuch_n"
 py_nbody()    { "$python" "$here/pyperformance/pyperf_nbody.py" "$nbody_steps"; }
 py_raytrace() { "$python" "$here/pyperformance/pyperf_raytrace.py" "$raytrace_loops"; }
 py_float()    { "$python" "$here/pyperformance/pyperf_float.py" "$float_points" "$float_repeat"; }
+py_crypto()   { "$crypto_python" "$here/pyperformance/pyperf_crypto_pyaes.py" "$crypto_loops"; }
 py_spectral() { "$python" "$here/pyperformance/pyperf_spectral_norm.py" "$spectral_loops"; }
 py_scimark_lu() { "$python" "$here/pyperformance/pyperf_scimark_lu.py" "$scimark_lu_cycles"; }
 py_scimark_sor() { "$python" "$here/pyperformance/pyperf_scimark_sor.py" "$scimark_sor_loops"; }
@@ -172,71 +182,16 @@ result_line() {
 	grep -iE "$pattern" "$work/$key.log" | tail -1 | sed 's/^[[:space:]]*//; s/[[:space:]]*$//'
 }
 
-# --- leibniz python reference (fetched from upstream) ----------------------
-leibniz_py_elapsed=""
-leibniz_py_result=""
-run_leibniz_py() {
-	local ref="$here/pyperformance/.leibniz_ref.py" i
-	if [ ! -s "$ref" ]; then
-		log "fetching upstream leibniz.py reference (caching at $ref)..."
-		if ! curl -fsSL "$leibniz_url" -o "$ref"; then
-			log "  WARNING: could not fetch leibniz reference; skipping python leibniz"
-			rm -f "$ref"
-			return 1
-		fi
-	else
-		log "using cached leibniz.py reference"
-	fi
-	echo "$leibniz_rounds" > "$work/rounds.txt"
-	# the reference prints only the result, so time it externally and capture
-	# both the elapsed seconds and the printed pi on each run (tab-separated)
-	local times="$work/leibniz_py_times"
-	: > "$times"
-	for i in $(seq 1 "$reps_py"); do
-		log "  leibniz(py): run $i/$reps_py"
-		"$python" - "$python" "$ref" "$work" >> "$times" <<'PYEOF'
-import sys, time, subprocess
-interp, ref, cwd = sys.argv[1], sys.argv[2], sys.argv[3]
-start = time.perf_counter()
-done = subprocess.run([interp, ref], cwd=cwd, capture_output=True, text=True)
-print(f"{time.perf_counter() - start:.6f}\t{done.stdout.strip()}")
-PYEOF
-	done
-	leibniz_py_elapsed=$(cut -f1 "$times" | median)
-	leibniz_py_result=$(tail -1 "$times" | cut -f2)
-}
+# --- leibniz python + R references (cached) --------------------------------
+# Python leibniz (~40s) and R leibniz are not measured live: Python is slow and
+# R is often absent. These reference numbers are cached from a prior full run.
+# Refresh by hand if the host or interpreter versions change.
+leibniz_py_elapsed=42.258
+leibniz_py_result=3.1415926525880504
 
-# --- leibniz R reference (the vectorized one-liner leibniz-matrix mirrors) --
-# Optional: skipped cleanly when Rscript isn't installed.
-leibniz_r_elapsed=""
-leibniz_r_result=""
-leibniz_r_version=""
-run_leibniz_r() {
-	command -v Rscript >/dev/null 2>&1 || { log "  Rscript not found; skipping R leibniz"; return 1; }
-	local ref="$work/leibniz_ref.r" i
-	log "fetching upstream leibniz.r reference..."
-	if ! curl -fsSL "$leibniz_r_url" -o "$ref"; then
-		log "  WARNING: could not fetch leibniz.r reference; skipping R leibniz"
-		return 1
-	fi
-	echo "$leibniz_rounds" > "$work/rounds.txt"
-	leibniz_r_version=$(Rscript --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-	# the reference prints only the result; time it externally, capture both
-	local times="$work/leibniz_r_times"
-	: > "$times"
-	for i in $(seq 1 "$reps_py"); do
-		log "  leibniz(R): run $i/$reps_py"
-		"$python" - "Rscript" "$ref" "$work" >> "$times" <<'PYEOF'
-import sys, time, subprocess
-interp, ref, cwd = sys.argv[1], sys.argv[2], sys.argv[3]
-start = time.perf_counter()
-done = subprocess.run([interp, ref], cwd=cwd, capture_output=True, text=True)
-print(f"{time.perf_counter() - start:.6f}\t{done.stdout.strip()}")
-PYEOF
-	done
-	leibniz_r_elapsed=$(cut -f1 "$times" | median)
-	leibniz_r_result=$(tail -1 "$times" | cut -f2)
-}
+leibniz_r_elapsed=1.720
+leibniz_r_result=3.1415926525897171
+leibniz_r_version=4.5.2
 
 # ===========================================================================
 # Run everything
@@ -259,6 +214,10 @@ run_reps raytrace_py py_raytrace "$reps_py"
 log "== float =="
 run_reps float_lf lf_float "$reps"
 run_reps float_py py_float "$reps_py"
+
+log "== crypto-pyaes =="
+run_reps crypto_lf lf_crypto "$reps"
+run_reps crypto_py py_crypto "$reps_py"
 
 log "== fannkuch =="
 run_reps fannkuch_lf lf_fannkuch "$reps"
@@ -333,12 +292,12 @@ run_reps json_dumps_py py_json_dumps "$reps_py"
 have_leibniz=0
 have_leibniz_r=0
 if [ "$skip_leibniz" != 1 ]; then
-	log "== leibniz + leibniz-matrix (slow) =="
+	log "== leibniz + leibniz-matrix (slow; python/R refs are cached) =="
 	run_reps leibniz_lf lf_leibniz "$reps"
 	run_reps leibniz_matrix_lf lf_leibniz_matrix "$reps"
 	run_reps leibniz_parallel_lf lf_leibniz_parallel "$reps"
-	if run_leibniz_py; then have_leibniz=1; fi
-	if run_leibniz_r; then have_leibniz_r=1; fi
+	have_leibniz=1
+	have_leibniz_r=1
 fi
 
 # ===========================================================================
@@ -387,6 +346,7 @@ row "nqueens-iter" "N = $nqueens_n" nqueens_iter_lf "$(median_elapsed nqueens_py
 row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
 row "raytrace" "${raytrace_loops}× 100×100" raytrace_lf "$(median_elapsed raytrace_py)"
 row "float" "${float_points} pts × ${float_repeat}" float_lf "$(median_elapsed float_py)"
+row "crypto-pyaes" "8192 B, ${crypto_loops}× enc+dec" crypto_lf "$(median_elapsed crypto_py)"
 row "fannkuch" "N = $fannkuch_n" fannkuch_lf "$(median_elapsed fannkuch_py)"
 row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed spectral_py)"
 row "spectral-norm-matrix" "N = 130, ${spectral_loops}×" spectral_matrix_lf "$(median_elapsed spectral_py)"
@@ -427,6 +387,7 @@ emit "| nqueens | $(result_line nqueens_lf 'solutions') | $(result_line nqueens_
 emit "| nbody | $(result_line nbody_lf 'final energy') | $(result_line nbody_py 'final energy') |"
 emit "| raytrace | $(result_line raytrace_lf 'checksum') | $(result_line raytrace_py 'checksum') |"
 emit "| float | $(result_line float_lf 'result:') | $(result_line float_py 'result:') |"
+emit "| crypto-pyaes | $(result_line crypto_lf 'checksum:') | $(result_line crypto_py 'checksum:') |"
 emit "| fannkuch | $(result_line fannkuch_lf 'max flips') | $(result_line fannkuch_py 'max flips') |"
 emit "| spectral-norm | $(result_line spectral_lf 'estimate') | $(result_line spectral_py 'estimate') |"
 emit "| scimark-lu | $(result_line scimark_lu_lf 'checksum') | $(result_line scimark_lu_py 'checksum') |"

@@ -42,10 +42,7 @@ MATRIX_ELEMENTWISE_OP(matrix_sub, "-", -)
 MATRIX_ELEMENTWISE_OP(matrix_mul, "*", *)
 MATRIX_ELEMENTWISE_OP(matrix_div, "/", /)
 
-void p_at_i(Interpreter *interp) {
-	POP_INT(index, "@i", "index");
-
-	POP(source_val);
+static void array_index_fetch(Interpreter *interp, Val source_val, int index) {
 	if (VAL_TAG(source_val) == T_ARRAY) {
 		Object *array = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= array->len) {
@@ -77,6 +74,99 @@ void p_at_i(Interpreter *interp) {
 	} else {
 		fail(interp, "@i: expected an array or matrix; got %s", tag_name(VAL_TAG(source_val)));
 	}
+}
+
+void p_at_i(Interpreter *interp) {
+	POP_INT(index, "@i", "index");
+	POP(source_val);
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_local0(Interpreter *interp) {
+	int slot = (int)vocab.dict[interp->ip++];
+	int index = (int)interp->return_stack[interp->local_base + slot].number;
+
+	POP(source_val);
+
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_lit(Interpreter *interp) {
+	int index = (int)vocab.dict[interp->ip++];
+
+	POP(source_val);
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_lit_local0(Interpreter *interp) {
+	int slot = (int)vocab.dict[interp->ip++];
+	int index = (int)vocab.dict[interp->ip++];
+	Val source_val = interp->return_stack[interp->local_base + slot];
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_ll0(Interpreter *interp) {
+	int arr_slot = (int)vocab.dict[interp->ip++];
+	int idx_slot = (int)vocab.dict[interp->ip++];
+	Val source_val = interp->return_stack[interp->local_base + arr_slot];
+	int index = (int)interp->return_stack[interp->local_base + idx_slot].number;
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_at_i_l1l0(Interpreter *interp) {
+	int arr_slot = (int)vocab.dict[interp->ip++];
+	int idx_slot = (int)vocab.dict[interp->ip++];
+	int enclosing = saved_local_base(interp->return_stack[interp->local_base - 1]);
+	Val source_val = interp->return_stack[enclosing + arr_slot];
+	int index = (int)interp->return_stack[interp->local_base + idx_slot].number;
+	array_index_fetch(interp, source_val, index);
+
+	DISPATCH(interp);
+}
+
+void p_gather_local0(Interpreter *interp) {
+	int slot = (int)vocab.dict[interp->ip++];
+	int row_index = (int)interp->return_stack[interp->local_base + slot].number;
+
+	POP(index_array);
+	POP(value_array);
+
+	double gathered_index;
+	if (VAL_TAG(index_array) == T_SEGMENT) {
+		Object *segment = OBJECT_AT(VAL_DATA(index_array));
+		if (row_index < 0 || row_index >= segment->segment.length) {
+			fail(interp, "@i: segment index %d out of bounds (length %d)", row_index, segment->segment.length);
+			return;
+		}
+		gathered_index = segment_get(segment, row_index);
+	} else if (VAL_TAG(index_array) == T_ARRAY) {
+		Object *array = OBJECT_AT(VAL_DATA(index_array));
+		if (row_index < 0 || row_index >= array->len) {
+			fail(interp, "@i: array index %d out of bounds (length %d)", row_index, array->len);
+			return;
+		}
+		Val element = array->items[row_index];
+		if (VAL_TAG(element) != T_FLOAT) {
+			fail(interp, "@i: gather index must be a number; got %s", tag_name(VAL_TAG(element)));
+			return;
+		}
+		gathered_index = VAL_NUMBER(element);
+	} else {
+		fail(interp, "@i: expected an array or segment; got %s", tag_name(VAL_TAG(index_array)));
+		return;
+	}
+
+	array_index_fetch(interp, value_array, (int)gathered_index);
 
 	DISPATCH(interp);
 }
@@ -115,6 +205,114 @@ void p_store_i(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
+
+void p_store_i_drop(Interpreter *interp) {
+	PEEK_AT(target_val, 2, "!i");
+	PEEK_AT(index_val, 1, "!i");
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		fail(interp, "!i: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+	int index = (int)VAL_NUMBER(index_val);
+	PEEK_AT(value, 0, "!i");
+
+	if (VAL_TAG(target_val) == T_ARRAY) {
+		Object *array = OBJECT_AT(VAL_DATA(target_val));
+		if (index < 0 || index >= array->len) {
+			fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
+			return;
+		}
+		array->items[index] = value;
+	} else if (VAL_TAG(target_val) == T_SEGMENT) {
+		if (VAL_TAG(value) != T_FLOAT) {
+			fail(interp, "!i: segment stores a float; got %s", tag_name(VAL_TAG(value)));
+			return;
+		}
+		Object *segment = OBJECT_AT(VAL_DATA(target_val));
+		segment_set(segment, index, VAL_NUMBER(value));
+	} else {
+		fail(interp, "!i: expected an array or segment; got %s", tag_name(VAL_TAG(target_val)));
+		return;
+	}
+
+	interp->dsp -= 3;
+
+	DISPATCH(interp);
+}
+
+#define ARRAY_STEP_OP(fn, word, delta) \
+void fn(Interpreter *interp) { \
+	PEEK_AT(target_val, 1, word); \
+	PEEK_AT(index_val, 0, word); \
+	int index = (int)VAL_NUMBER(index_val); \
+	if (VAL_TAG(target_val) == T_ARRAY) { \
+		Object *array = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= array->len) { \
+			fail(interp, word ": array index %d out of bounds (length %d)", index, array->len); \
+			return; \
+		} \
+		Val *element = &array->items[index]; \
+		if (VAL_TAG(*element) != T_FLOAT) { \
+			fail(interp, word ": array element is not a float; got %s", tag_name(VAL_TAG(*element))); \
+			return; \
+		} \
+		*element = make_float(VAL_NUMBER(*element) + (delta)); \
+	} else if (VAL_TAG(target_val) == T_SEGMENT) { \
+		Object *segment = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= segment->segment.length) { \
+			fail(interp, word ": segment index %d out of bounds (length %d)", index, segment->segment.length); \
+			return; \
+		} \
+		segment_set(segment, index, segment_get(segment, index) + (delta)); \
+	} else { \
+		fail(interp, word ": expected an array or segment; got %s", tag_name(VAL_TAG(target_val))); \
+		return; \
+	} \
+	interp->dsp -= 2; \
+	DISPATCH(interp); \
+}
+
+ARRAY_STEP_OP(p_inc_store_i, "(inc!i)", 1.0)
+ARRAY_STEP_OP(p_dec_store_i, "(dec!i)", -1.0)
+
+#define ARRAY_INPLACE_OP(fn, word, op) \
+void fn(Interpreter *interp) { \
+	PEEK_AT(target_val, 2, word); \
+	PEEK_AT(index_val, 1, word); \
+	PEEK_AT(delta_val, 0, word); \
+	int index = (int)VAL_NUMBER(index_val); \
+	double delta = VAL_NUMBER(delta_val); \
+	if (VAL_TAG(target_val) == T_ARRAY) { \
+		Object *array = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= array->len) { \
+			fail(interp, word ": array index %d out of bounds (length %d)", index, array->len); \
+			return; \
+		} \
+		Val *element = &array->items[index]; \
+		if (VAL_TAG(*element) != T_FLOAT) { \
+			fail(interp, word ": array element is not a float; got %s", tag_name(VAL_TAG(*element))); \
+			return; \
+		} \
+		*element = make_float(VAL_NUMBER(*element) op delta); \
+	} else if (VAL_TAG(target_val) == T_SEGMENT) { \
+		Object *segment = OBJECT_AT(VAL_DATA(target_val)); \
+		if (index < 0 || index >= segment->segment.length) { \
+			fail(interp, word ": segment index %d out of bounds (length %d)", index, segment->segment.length); \
+			return; \
+		} \
+		segment_set(segment, index, segment_get(segment, index) op delta); \
+	} else { \
+		fail(interp, word ": expected an array or segment; got %s", tag_name(VAL_TAG(target_val))); \
+		return; \
+	} \
+	interp->dsp -= 3; \
+	DISPATCH(interp); \
+}
+
+ARRAY_INPLACE_OP(p_add_store_i, "(+!i)", +)
+ARRAY_INPLACE_OP(p_sub_store_i, "(-!i)", -)
+ARRAY_INPLACE_OP(p_mul_store_i, "(*!i)", *)
+ARRAY_INPLACE_OP(p_div_store_i, "(/!i)", /)
 
 void p_at_j(Interpreter *interp) {
 	POP_INT(index, "@j", "index");
@@ -349,6 +547,20 @@ MATRIX_REDUCE_ROWS_OP(matrix_min_rows, INFINITY, MIN)
 MATRIX_REDUCE_COLUMNS_OP(matrix_sum_columns, 0.0, ADD)
 MATRIX_REDUCE_COLUMNS_OP(matrix_max_columns, -INFINITY, MAX)
 MATRIX_REDUCE_COLUMNS_OP(matrix_min_columns, INFINITY, MIN)
+
+#define MATRIX_ARG_OP(name, cmp) \
+	static int name(Object *source) { \
+		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
+		const double * restrict elements = source->matrix.elements; \
+		size_t best = 0; \
+		for (size_t i = 1; i < num_elements; i++) \
+			if (elements[i] cmp elements[best]) \
+				best = i; \
+		return (int)best; \
+	}
+
+MATRIX_ARG_OP(matrix_argmax_index, >)
+MATRIX_ARG_OP(matrix_argmin_index, <)
 
 double matrix_variance_overall(Object *source) {
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
@@ -603,6 +815,8 @@ void p_submatrix(Interpreter *interp) {
 REDUCE_OVERALL_HANDLER(p_sum, "sum", matrix_sum_overall)
 REDUCE_OVERALL_HANDLER(p_max, "max", matrix_max_overall)
 REDUCE_OVERALL_HANDLER(p_min, "min", matrix_min_overall)
+REDUCE_OVERALL_HANDLER(p_argmax, "argmax", matrix_argmax_index)
+REDUCE_OVERALL_HANDLER(p_argmin, "argmin", matrix_argmin_index)
 REDUCE_AXIS_HANDLER(p_row_sums, "row-sums", matrix_sum_rows)
 REDUCE_AXIS_HANDLER(p_row_maxes, "row-maxes", matrix_max_rows)
 REDUCE_AXIS_HANDLER(p_row_mins, "row-mins", matrix_min_rows)

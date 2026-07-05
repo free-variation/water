@@ -1,7 +1,7 @@
 #ifndef LOGICFORTH_H
 #define LOGICFORTH_H
 
-#define VERSION "0.9.0"
+#define VERSION "0.11.2"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,12 +15,9 @@
 #include <unistd.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <signal.h>
-#include <sys/wait.h>
-#include <sys/mman.h>
 #include <stdatomic.h>
-#include <pthread.h>
-#include <ffi/ffi.h>
+
+#include "platform.h"
 
 typedef int64_t cell;
 
@@ -30,6 +27,7 @@ typedef int64_t cell;
 #define RETURN_STACK_DEPTH (1 << 16)
 #define MAX_OBJECTS (1 << 26)
 #define ARENA_RESERVE ((size_t)1 << 34)
+#define ARENA_BYTES_PER_HANDLE 256
 #define ARENA_ALIGNMENT 16
 #define ARENA_SIZE_CLASSES (2 << 5)
 #define OBJECTS_INIT_CAP (1 << 16)
@@ -266,6 +264,7 @@ typedef struct {
 	HandleSpace object_space;
 } Arena;
 extern Arena arena;
+
 extern int in_parallel;
 extern int parallel_region_collected;
 extern int parallel_region_object_base;
@@ -291,7 +290,7 @@ typedef struct {
 	size_t used;
 	int n_objects;
 	int n_pairs;
-} RegionSnapshot;
+} ParallelRegion;
 
 
 typedef struct {
@@ -382,11 +381,15 @@ typedef struct Vocabulary {
 	int exit_cfa, literal_cfa, branch_cfa, zbranch_cfa, dostr_cfa, stop_cfa, to_var_cfa;
 	int enter_locals_cfa, enter_locals_to_cfa, enter_locals_mixed_cfa, leave_locals_cfa, local_fetch_cfa, local_store_cfa;
 	int local_fetch_0depth_cfa, local_store_0depth_cfa;
+	int local_fetch_1depth_cfa;
 	int local_incr_0depth_cfa, local_decr_0depth_cfa, inc_cfa, dec_cfa;
 	int local_finc_0depth_cfa, local_fdec_0depth_cfa, finc_cfa, fdec_cfa;
 	int qzbranch_cfa;
 	int eq_cfa, lt_cfa, gt_cfa, zeq_cfa;
+	int eq_f_cfa, lt_f_cfa, gt_f_cfa;
+	int at_i_cfa;
 	int eq_zbranch_cfa, lt_zbranch_cfa, gt_zbranch_cfa, zeq_zbranch_cfa;
+	int eq_f_zbranch_cfa, lt_f_zbranch_cfa, gt_f_zbranch_cfa;
 	int false_symbol, true_symbol;
 	int wildcard_symbol, descendant_symbol, self_symbol;
 
@@ -403,8 +406,15 @@ typedef struct Interpreter {
 	int rsp;
 	Val side_stack[SIDESTACK_DEPTH];
 	int side_dsp;
+
 	int local_base;
+	int loop_local_base;
+	int loop_local_refill;
 	int run_floor;
+	int loop_body_start;
+	int loop_n;
+	int loop_slots_ip;
+	
 	int *bind_trail;
 	int bind_trail_top, bind_trail_cap;
 	Val *lvar_stack;
@@ -452,10 +462,13 @@ typedef struct {
 
 	char input_buffer[INPUT_BUFFER_SIZE];
 	int input_buffer_len, input_buffer_pos, need_more;
+	int interactive;
 	int compiling_src_start;
 	
 	int fuse_prev_var, fuse_prev2_var;
 	int fuse_prev_cmp;
+	int fuse_floor;
+	int loadn_at;
 	
 	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
 	
@@ -477,14 +490,12 @@ extern Compiler compiler;
 
 typedef void (*cfa_handler)(Interpreter *interp);
 
-#define DISPATCH(interp) do { \
-	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
-		return; \
-	__attribute__((musttail)) \
-	return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \
-} while (0)
-
 typedef double (*scalar_operator)(double, double);
+
+extern unsigned char dict_is_handler[];
+static inline int dict_op_is(int pos, cfa_handler h) {
+	return pos >= 0 && dict_is_handler[pos] && (cfa_handler)vocab.dict[pos] == h;
+}
 
 #define WORD_LINK(cfa) (vocab.dict[(cfa) - 4])
 #define WORD_FLAGS(cfa) (vocab.dict[(cfa) - 3])
@@ -502,6 +513,8 @@ void p_variance(Interpreter *interp);
 void p_quantile(Interpreter *interp);
 void p_max(Interpreter *interp);
 void p_min(Interpreter *interp);
+void p_argmax(Interpreter *interp);
+void p_argmin(Interpreter *interp);
 void p_row_sums(Interpreter *interp);
 void p_row_maxes(Interpreter *interp);
 void p_row_mins(Interpreter *interp);
@@ -511,9 +524,15 @@ void p_column_mins(Interpreter *interp);
 
 void define_superwords(Interpreter *interp);
 int superword_cell_count(cell handler);
+int superword_is_lit_fold(cell handler);
 int superword_try_fuse(Interpreter *interp, int op_cfa);
 int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot);
+int try_fuse_at_i_local(Interpreter *interp);
+int try_fuse_at_i_lit(Interpreter *interp);
+int try_fuse_gather_local(Interpreter *interp);
+int try_fuse_at_i_ll(Interpreter *interp);
+int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler);
 
 static inline void push(Interpreter *interp, Val value) {
 	if (interp->dsp < DATA_STACK_DEPTH) {
@@ -690,16 +709,16 @@ int set_member(Interpreter *interp, int set_handle, Val value);
 int set_union(Interpreter *interp, int handle_a, int handle_b);
 int set_intersect(Interpreter *interp, int handle_a, int handle_b);
 int set_difference(Interpreter *interp, int handle_a, int handle_b);
-void print_double(double number);
-void print_items(Interpreter *interp, Object *collection);
-void print_corners(Object *matrix);
-void print_matrix_cell(double value);
-void print_matrix_grid(Object *m);
-void print_val(Interpreter *interp, Val value);
-void print_val_inspect(Interpreter *interp, Val value);
-void pretty_print_array(Interpreter *interp, Val value);
-void print_val_compact(Interpreter *interp, Val value);
-void print_frame_pretty(Interpreter *interp, Object *frame, int indent);
+void print_double(FILE *out, double number);
+void print_items(FILE *out, Interpreter *interp, Object *collection);
+void print_corners(FILE *out, Object *matrix);
+void print_matrix_cell(FILE *out, double value);
+void print_matrix_grid(FILE *out, Object *m);
+void print_val(FILE *out, Interpreter *interp, Val value);
+void print_val_inspect(FILE *out, Interpreter *interp, Val value);
+void pretty_print_array(FILE *out, Interpreter *interp, Val value);
+void print_val_compact(FILE *out, Interpreter *interp, Val value);
+void print_frame_pretty(FILE *out, Interpreter *interp, Object *frame, int indent);
 void print_prompt_state(Interpreter *interp);
 int find(const char *name);
 const char *name_of(int cfa);
@@ -714,6 +733,14 @@ typedef struct {
 	int saved_running;
 	cell saved_slot_0, saved_slot_1, saved_slot_2;
 	int fast;
+	int reuses_locals;
+	int saved_loop_local_base;
+
+	int saved_loop_body_start;
+	int saved_loop_n;
+	int saved_loop_slots_ip;
+	int leave_ip;
+	cell saved_leave;
 } CallContext;
 
 void call_open(Interpreter *interp, int cfa, CallContext *ctx);
@@ -732,10 +759,12 @@ typedef struct {
 extern const HelpEntry help_entries[];
 extern const int help_entry_count;
 
-static inline void call_step(Interpreter *interp, CallContext *ctx, int cfa) {
-	if (ctx->fast)
+static inline void call_step(Interpreter *interp, CallContext *context, int cfa) {
+	if (context->fast) {
+		if (context->reuses_locals)
+			interp->loop_local_refill = 1;
 		call_invoke(interp);
-	else
+	} else
 		execute_cfa(interp, cfa);
 }
 
@@ -757,6 +786,9 @@ void p_qzbranch(Interpreter *interp);
 void p_eq_zbranch(Interpreter *interp);
 void p_lt_zbranch(Interpreter *interp);
 void p_gt_zbranch(Interpreter *interp);
+void p_eq_f_zbranch(Interpreter *interp);
+void p_lt_f_zbranch(Interpreter *interp);
+void p_gt_f_zbranch(Interpreter *interp);
 void p_zeq_zbranch(Interpreter *interp);
 void p_dostr(Interpreter *interp);
 void p_enter_locals(Interpreter *interp);
@@ -766,6 +798,9 @@ void p_leave_locals(Interpreter *interp);
 void p_local_fetch(Interpreter *interp);
 void p_local_store(Interpreter *interp);
 void p_local_fetch_0depth(Interpreter *interp);
+void p_local_fetch_1depth(Interpreter *interp);
+void p_load2(Interpreter *interp);
+void p_load3(Interpreter *interp);
 void p_local_store_0depth(Interpreter *interp);
 void p_local_incr_0depth(Interpreter *interp);
 void p_local_decr_0depth(Interpreter *interp);
@@ -794,6 +829,7 @@ void p_codepoint_to_char(Interpreter *interp);
 void p_codepoints_to_string(Interpreter *interp);
 void p_trim(Interpreter *interp);
 void p_join(Interpreter *interp);
+void p_string_to_number(Interpreter *interp);
 int matrix_add(Interpreter *interp, Val left_val, Val right_val);
 int matrix_sub(Interpreter *interp, Val left_val, Val right_val);
 int matrix_mul(Interpreter *interp, Val left_val, Val right_val);
@@ -809,6 +845,16 @@ void p_div_inplace(Interpreter *interp);
 void p_add_f(Interpreter *interp);
 void p_sub_f(Interpreter *interp);
 void p_mul_f(Interpreter *interp);
+void p_eq_f(Interpreter *interp);
+void p_lt_f(Interpreter *interp);
+void p_gt_f(Interpreter *interp);
+void p_bit_and(Interpreter *interp);
+void p_bit_or(Interpreter *interp);
+void p_bit_xor(Interpreter *interp);
+void p_lshift(Interpreter *interp);
+void p_rshift(Interpreter *interp);
+void p_bit_not(Interpreter *interp);
+void p_lowest_bit(Interpreter *interp);
 void p_div_f(Interpreter *interp);
 void p_neg(Interpreter *interp);
 void p_inc(Interpreter *interp);
@@ -839,6 +885,7 @@ void p_depth(Interpreter *interp);
 void p_roll(Interpreter *interp);
 void p_dot(Interpreter *interp);
 void p_dot_all(Interpreter *interp);
+void p_render(Interpreter *interp);
 void p_cr(Interpreter *interp);
 void p_emit_(Interpreter *interp);
 void p_dots(Interpreter *interp);
@@ -880,7 +927,20 @@ void p_size(Interpreter *interp);
 void p_byte_size(Interpreter *interp);
 void p_member(Interpreter *interp);
 void p_at_i(Interpreter *interp);
+void p_at_i_local0(Interpreter *interp);
+void p_at_i_lit(Interpreter *interp);
+void p_at_i_lit_local0(Interpreter *interp);
+void p_at_i_ll0(Interpreter *interp);
+void p_at_i_l1l0(Interpreter *interp);
+void p_gather_local0(Interpreter *interp);
 void p_store_i(Interpreter *interp);
+void p_store_i_drop(Interpreter *interp);
+void p_inc_store_i(Interpreter *interp);
+void p_dec_store_i(Interpreter *interp);
+void p_add_store_i(Interpreter *interp);
+void p_sub_store_i(Interpreter *interp);
+void p_mul_store_i(Interpreter *interp);
+void p_div_store_i(Interpreter *interp);
 void p_at_j(Interpreter *interp);
 void p_at_ij(Interpreter *interp);
 int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
@@ -909,6 +969,7 @@ void p_difference(Interpreter *interp);
 void p_set_add(Interpreter *interp);
 void p_set_remove(Interpreter *interp);
 void p_execute(Interpreter *interp);
+void p_execute_catching(Interpreter *interp);
 int push_prompt(Interpreter *interp, int kind);
 void p_reset(Interpreter *interp);
 void p_fail(Interpreter *interp);
@@ -926,7 +987,9 @@ void p_filter(Interpreter *interp);
 void p_pmap(Interpreter *interp);
 void p_pfilter(Interpreter *interp);
 void p_pmap_reduce(Interpreter *interp);
-void abort_parallel_region(size_t saved_used, int saved_n_objects, int saved_n_pairs);
+void region_begin(ParallelRegion *region, int domain_len, int worker_count);
+void region_commit(ParallelRegion *region);
+void region_abort(ParallelRegion *region);
 void reset_thread_alloc(void);
 void p_num_cores(Interpreter *interp);
 void p_reduce(Interpreter *interp);
@@ -934,6 +997,10 @@ void p_times(Interpreter *interp);
 void p_i_times(Interpreter *interp);
 void p_words(Interpreter *interp);
 void p_see(Interpreter *interp);
+int capture_render(Interpreter *interp, void (*render)(FILE *, Interpreter *, int), int target_cfa);
+void p_see_to_string(Interpreter *interp);
+void p_see_compiled_to_string(Interpreter *interp);
+void p_see_tree_to_string(Interpreter *interp);
 void p_man(Interpreter *interp);
 void p_semicolon(Interpreter *interp);
 void p_if(Interpreter *interp);
@@ -951,14 +1018,19 @@ void p_tick(Interpreter *interp);
 void p_lookup(Interpreter *interp);
 void p_colon(Interpreter *interp);
 void p_variable(Interpreter *interp);
+void p_constant(Interpreter *interp);
 void p_to(Interpreter *interp);
 void p_to_var(Interpreter *interp);
 void p_bar(Interpreter *interp);
 void p_bar_to(Interpreter *interp);
+void p_bracket_bar(Interpreter *interp);
+void p_bracket_bar_to(Interpreter *interp);
 void p_symbol(Interpreter *interp);
 void p_string_to_symbol(Interpreter *interp);
 void p_forget(Interpreter *interp);
 void inbuf_reset(void);
+int refill_input(void);
+void skip_whitespace_and_comments(void);
 int read_string_literal(void);
 char *next_token(void);
 int parse_float(const char *text, double *out);

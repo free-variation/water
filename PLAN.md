@@ -6,12 +6,6 @@ A TODO list of pending work.
 
 ## Matrix
 
-### argmax / argmin
-
-Index of the maximum / minimum element (or an `(i, j)` pair).
-
-### Beyond core
-
 - **Vertical stacking** — `vstack`, concatenating two matrices row-wise (the
   row counts of the result sum; column counts must match).
 - **Element-wise comparison** — `<` etc. returning a matrix of `1`/`0`, as
@@ -39,29 +33,6 @@ Over the match/replace layer: `index-of`, `starts-with`, `ends-with`,
 ---
 
 ## Core language additions
-
-### `constant`
-
-A defining word for immutable named values: `42 constant answer` binds a
-read-only word `answer` that pushes `42`. Value-then-defword-then-name shape
-(like `to`), name read via `next_token()`. Reassignment via `to` errors.
-
-### Bitwise operations
-
-Integer bitwise operators over the float representation: a value is read as a
-two's-complement integer (exact within the double's 53-bit integer range), the
-operation runs, and the result is pushed back as a float.
-
-- AND, OR, XOR, complement, left shift, logical right shift. The names must not
-  collide with the logical `and` / `or` / `not` (truthiness) words — e.g.
-  `bit-and` / `bit-or` / `bit-xor` / `bit-not` / `lshift` / `rshift`.
-
-Enables byte- and bit-level algorithms (base64, block ciphers, bit-stream
-codecs) and a native Mersenne Twister.
-
-To settle: the word names; the integer width (64-bit throughout vs a 32-bit
-masking word for codecs that need wraparound at `2^32`); whether right shift is
-logical only or also offers an arithmetic variant.
 
 ### Path queries — follow-ups
 
@@ -96,34 +67,119 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
   words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
   lines, `s stdout write` emits.
 
-`argv` is out of scope; invocation is `logicforth file.l4`, and argument
-handling lives in the shell-script wrapper layer.
+### Re-readable repr
 
-### Error handling — `catch` intercepts `error_flag`
+`render` produces a value's display form, which is not always re-readable —
+strings print raw, a matrix prints as a grid. `frame>json` round-trips, but only
+the JSON-expressible subset (frames, arrays, strings, numbers, booleans).
+Missing is a representation that reads back through the logicforth reader for
+*any* value.
 
-Make interpreter-level errors (stack underflow, type mismatch, division by
-zero, bad pattern, out-of-bounds) catchable, not only user `throw`s. `catch` /
-`try-catch` run a wrapped xt; if `error_flag` is set afterward, `catch`
-clears it and returns the `error_message` as a string with the failure
-flag, exactly as a `throw` would. Uncaught errors still surface at the REPL.
-A check in the `catch` path converts a set `error_flag` into the same
-`(exc 1)` result a `throw` produces.
+- `repr` ( v -- s ) — a string of logicforth source that, read back, reconstructs
+  an equal value: quoted strings (with `""` escaping), `[ ]` arrays, `{ :k v }`
+  frames, `< >` sets, `[( )]` cons lists, `:name` symbols, floats in shortest
+  round-trip form, a matrix as its `[ … ] R C matrix` constructor.
 
-### Format specs
+To settle: how a value with no source form (an unbound logic var, continuation,
+stream, db, or ptr) reprs — an error, or a `reify`-style canonical placeholder;
+whether `repr` then `load`-style evaluation is the intended round-trip path or a
+dedicated `read` ( s -- v ) word is wanted.
 
-Extend `format`'s placeholders with optional format specifiers after a
-colon: `{0:.2f}` (precision), `{0:8}` (field width), `{0:x}` (hex) — a
-small printf-style mini-language on top of the positional `{n}` fill.
+### Loop ergonomics
 
-### Named interpolation
+Counted iteration is `times` / `i-times` (with or without a pushed index) and the
+`begin … until` / `begin … while … repeat` / `again` family; leaving a loop early
+is hand-rolled by threading a flag through the condition. Missing is structured
+early exit and a counted index loop.
 
-A named form `{name}` referencing an in-scope local or global reads better
-than the positional `{0}` — `"ls {dir}" …`. `format` runs at runtime where
-local names are gone, so this needs either a compile-time f-string (scan a
-string literal, resolve each `{name}` in scope, rewrite to the positional
-`{n}` form) under an explicit opt-in marker so raw strings and regex like
-`\d{3}` stay literal, or a runtime frame-keyed `format-with`
-(`{ :dir d } "{dir}" format-with`).
+- `leave` — exit the innermost counted loop immediately; `?leave` ( flag -- ) the
+  conditional form; a skip-to-next-iteration (`continue`).
+- `do … loop` ( limit start -- ) with the index available as `i` (and `j` one
+  level out), and `+loop` for a custom step.
+
+To settle: whether to add `do … loop` as a second counted form or instead give
+`i-times` / `begin` a `leave` / `continue`; the index model (`do…loop`'s `i`/`j`
+read the return stack, where `i-times` pushes its index to the data stack — two
+conventions to reconcile or keep apart); how `leave` / `continue` compile
+(forward/back branch patching) and unwind cleanly past loop-local frames.
+
+---
+
+## Symbol collection
+
+Interned symbols are never reclaimed: `:foo` literals, `string>symbol`, and
+`json>frame` object keys all add to the symbol table for the life of the
+process. For a bounded, static set of names — source identifiers, fixed-schema
+keys — that is correct and cheap. But symbols minted at run time from dynamic or
+user-supplied strings (parsing JSON whose keys are unbounded, interning
+arbitrary input) grow the table without limit, because the everyday associative
+type — the frame — is symbol-keyed.
+
+Make runtime-minted symbols collectible by reachability, the contract strings
+and arrays already follow: a symbol keeps its identity (and its O(1) index
+equality) for as long as something live refers to it, and is reclaimed once
+nothing does. A string re-interned after its symbol was collected gets a fresh
+identity, which is sound because no live value held the old one.
+
+Two classes:
+
+- **Pinned** — any symbol a compiled cell can name (`:foo` literals, `symbol`
+  definitions, source identifiers). Interned at read/compile time; never
+  collected. Bounded, so it does not grow.
+- **Collectible** — symbols created at run time from computed strings. Reachable
+  only from live values, never embedded in compiled code. The collector marks
+  them while walking its existing roots and retires the unmarked ones, freeing
+  the name and reusing the slot.
+
+The partition keeps it cheap and safe: the collector never scans compiled code
+for symbol references, and a baked-in literal can never dangle. When a computed
+string matches a name already pinned, the pinned symbol wins, so a collectible
+symbol never shares a name with a pinned one.
+
+To settle: how symbols are represented (dictionary entries vs a separate
+interned pool) and therefore how a slot is retired and reused; how `save-image`
+serializes a collectible symbol (by name, re-interned on load, since its index
+is not stable); whether pinned-vs-collectible is decided at the intern call site
+or inferred from whether interning happens during compilation.
+
+---
+
+## Guaranteed cleanup
+
+`catch`/`try-catch` recover the throw path — user `throw`s and interpreter
+errors both unwind to the enclosing `reset`. What's absent is a cleanup hook
+guaranteed to run however the protected region is left: normally, by throw, by
+backtrack, or by a captured continuation. Resource handles make this concrete —
+a `db`/stream/FFI handle is a registry slot with no GC finalization, so any
+non-local exit past its close leaks it until the process ends.
+
+**Tier 1 — `ensure` over throw and normal exit.** Cleanup that runs on both the
+normal and the throw/interpreter-error path, expressible today on `catch`:
+
+```
+: ensure ( body-xt cleanup-xt -- … )
+    >side  catch  side> execute  if throw then ;
+```
+
+plus resource `with-` helpers — `with-db`, `with-stream`, `with-file` — that
+open, run a body, and close on either exit. Provide these as standard words
+rather than leaving each program to hand-roll the pattern. This tier covers the
+common case (open, use, release-even-on-error in straight-line code).
+
+**Tier 2 — `dynamic-wind` across every exit.** A `before body after` whose
+`after` also runs on a `fail` backtrack and a `shift` capture, and whose
+`before` re-runs on `resume` re-entry. A `catch` wrapper can't reach these:
+`fail` unwinds to the nearest *choice* prompt, past `catch`'s *exception*
+prompt, and a region re-entered by `resume` needs setup per entry, not a
+once-only handler. The mechanism is a *wind mark* — a return-stack mark, kin to
+`reset`'s, carrying the before/after thunks, recognized by both unwind cascades
+in the inner loop (exception and choice prompts) and by `resume`'s splice so
+re-entry re-runs `before`.
+
+To settle: whether `after` firing once per failed alternative of a multi-shot
+region is the wanted semantics or a footgun; how a wind mark interleaves with
+the locals-frame and trail rewind the unwind already carries; whether
+`before`/`after` observe the region's data stack or run isolated.
 
 ---
 
@@ -198,8 +254,6 @@ Building on the generator primitives:
 
 All `lib.l4` on the existing primitives — no new C.
 
-Scope: lazy data flow, not async I/O.
-
 ---
 
 ## Multi-core parallelism: threads over the shared heap
@@ -210,19 +264,42 @@ In rough priority:
   amortizes to nothing for one big region (a single `pmap` over a huge domain
   saturates the cores), but the spawn/join dominates for many small regions —
   system time, not compute. A pool that parks threads and dispatches per call
-  fixes it. Co-design with the rewind: pooled threads keep their `AllocContext`
-  across regions, so teardown has to reset every worker's context, not just the
+  fixes it. Pooled threads keep their per-worker allocation context across
+  regions, so region teardown must reset every worker's context, not just the
   caller's.
-
-- **De-fragilize the region rewind.** The rewind restores several counters and
-  resets the calling thread's context by hand; correctness depends on invariants
-  maintained across files (the `in_parallel` gating, the per-region thread
-  lifecycle). Fold the region's mutated state into one begin/commit/abort owner
-  to remove that coupling — a prerequisite for the thread pool.
 
 - **Numeric disjoint-write buffer / work-stealing.** Lower priority: a shared
   unboxed-`double` output buffer threaded under the matrix kernels, and
   work-stealing for skewed workloads.
+
+---
+
+## Dynamic vector
+
+Arrays are fixed-length and O(1)-indexed; cons lists grow by O(1) prepend but
+read sequentially. Neither grows at the end *and* indexes cheaply — the shape
+incremental, natural-order construction wants. Today that means accumulating
+onto a cons list and freezing with `cons>array`, or pre-sizing with `array-of`
+and filling by `!i`: a phase boundary, not one structure that is cheap to both
+grow and index.
+
+A fill-pointer vector closes it — a mutable, contiguous buffer with
+amortized-doubling append/remove at the end and O(1) index, update, and length.
+
+- `vector` / `vector-of` — empty, or pre-sized with a fill value.
+- `push` ( vec v -- vec ) append, doubling the backing buffer when full;
+  `pop` ( vec -- v ) remove and return the last element.
+- `@i` / `!i` / `size` extend to the live region (slots past the fill pointer
+  stay invisible), so indexing and update stay O(1).
+- `vector>array` freezes a copy of the live region; an array converts in.
+
+The pieces to hand-roll it already exist (`array-of`, `!i`, `size`, `slice!` /
+`to-slice!`, manual doubling); the value is a standard wordset, so every program
+isn't re-implementing the doubling buffer.
+
+To settle: a distinct type vs a growable mode of the array object (a fill-pointer
+field, so `@i`/`size` work unchanged); whether `push`/`pop` mutate and return the
+vector (like `set-add!`) or are value-returning; the word names.
 
 ---
 

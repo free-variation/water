@@ -8,39 +8,34 @@
 \ the sign alternates within the chunk. pmap-ext runs one chunk per
 \ worker; reduce sums the partials and the result is scaled by 4.
 
-variable TERMS
-1000000000 to TERMS
+1000000000 constant *terms*
+16 constant *chunks*
+*terms* *chunks* / constant *chunk-size*
 
-variable CHUNKS
-16 to CHUNKS
-
-variable CHUNK_SIZE
-TERMS CHUNKS / to CHUNK_SIZE
-
-variable PI
-variable T0
+variable *pi*
+variable *t0*
 
 : partial ( j -- partialsum )
   | >j acc sign k0 |
   0.0 to acc
   1.0 to sign
-  j CHUNK_SIZE f* to k0
+  j *chunk-size* f* to k0
   [: ( idx -- )
      k0 + 2.0 1.0 f*+        \ divisor = 2k+1
      sign swap f/            \ sign / divisor
      acc f+ to acc
      sign fnegate to sign
-  :] CHUNK_SIZE i-times
+  :] *chunk-size* i-times
   acc ;
 
 : pleibniz
-  now to T0
-  0 CHUNKS 1- range
-  CHUNKS 1 ' partial pmap-ext
+  now to *t0*
+  0 *chunks* 1- range
+  *chunks* 1 ' partial pmap-ext
   0.0 [: f+ :] reduce
-  4.0 f* to PI
-  now T0 - "elapsed: {0}s" format . cr
-  PI "pi: {0}" format . cr ;
+  4.0 f* to *pi*
+  now *t0* - "elapsed: {0}s" format . cr
+  *pi* "pi: {0}" format . cr ;
 
 pleibniz
 bye

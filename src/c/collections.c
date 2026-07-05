@@ -366,7 +366,7 @@ int build_set_from_values(Interpreter *interp, const Val *values, int count) {
 	memcpy(set->items, values, sizeof(Val) * (size_t)count);
 
 	if (count > 0) {
-		qsort_r(set->items, (size_t)count, sizeof(Val), interp, val_cmp_qsort);
+		platform_qsort_r(set->items, (size_t)count, sizeof(Val), interp, val_cmp_qsort);
 
 		int unique = 1;
 		for (int i = 1; i < count; i++)
@@ -398,7 +398,7 @@ void p_sort(Interpreter *interp) {
 	NEW_ARRAY(sorted_handle, sorted, source->len);
 	memcpy(sorted->items, source->items, sizeof(Val) * (size_t)source->len);
 	if (source->len > 0)
-		qsort_r(sorted->items, (size_t)source->len, sizeof(Val), interp, val_cmp_qsort);
+		platform_qsort_r(sorted->items, (size_t)source->len, sizeof(Val), interp, val_cmp_qsort);
 	if (interp->error_flag) return;
 
 	interp->data_stack[interp->dsp - 1] = make_array(sorted_handle);
@@ -1477,7 +1477,7 @@ void p_group_by(Interpreter *interp) {
 	for (int i = 0; i < result->len; i++) {
 		int bag = (int)VAL_DATA(result->frame.values[i]);
 		Object *bag_obj = OBJECT_AT(bag);
-		qsort_r(bag_obj->items, (size_t)bag_obj->len, sizeof(Val), interp, row_cmp);
+		platform_qsort_r(bag_obj->items, (size_t)bag_obj->len, sizeof(Val), interp, row_cmp);
 		int unique = 0;
 		for (int source = 0; source < bag_obj->len; source++)
 			if (unique == 0 || val_cmp(interp, bag_obj->items[unique - 1], bag_obj->items[source]) != 0)

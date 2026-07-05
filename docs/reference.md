@@ -88,6 +88,9 @@ Operate directly on stack slots' `.number`, in place, with only a depth check �
 | `f-` | `( a b -- a-b )` ⚠ | subtract | 2 | none | O(1) |
 | `f*` | `( a b -- a*b )` ⚠ | multiply | 2 | none | O(1) |
 | `f/` | `( a b -- a/b )` ⚠ | divide; checks divisor ≠ 0 | 2 | none | O(1) |
+| `feq` | `( a b -- f )` ⚠ | float `=`, result `1.0`/`0.0`; no type check | 2 | none | O(1) |
+| `flt` | `( a b -- f )` ⚠ | float `lt`, result `1.0`/`0.0`; no type check | 2 | none | O(1) |
+| `fgt` | `( a b -- f )` ⚠ | float `gt`, result `1.0`/`0.0`; no type check | 2 | none | O(1) |
 | `f^` | `( a b -- a^b )` ⚠ | `pow` | 2 | none | O(1) |
 | `fmod` | `( a b -- fmod(a,b) )` ⚠ | `fmod` | 2 | none | O(1) |
 | `f*+` | `( a b c -- a*b+c )` ⚠ | fused multiply-add; result in slot of `a` | 3 | none | O(1) |
@@ -160,6 +163,22 @@ Result is `1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural
 
 `truthy` of a float is `≠ 0.0`; of any heap value, its handle `≠ 0`.
 
+### Bitwise
+
+Each operand is read as a two's-complement integer (exact within the double's
+53-bit integer range), the operation is applied, and the result is pushed as a
+float. `rshift` is arithmetic (sign-preserving).
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `bit-and` | `( a b -- f )` | bitwise AND | 2 | none | O(1) |
+| `bit-or` | `( a b -- f )` | bitwise OR | 2 | none | O(1) |
+| `bit-xor` | `( a b -- f )` | bitwise XOR | 2 | none | O(1) |
+| `bit-not` | `( a -- f )` | two's-complement complement | 1 | none | O(1) |
+| `lshift` | `( a n -- f )` | left shift `a` by `n` bits | 2 | none | O(1) |
+| `rshift` | `( a n -- f )` | arithmetic right shift, = `floor(a / 2ⁿ)` | 2 | none | O(1) |
+| `lowest-bit` | `( a -- i )` | 0-indexed position of the lowest set bit (`-1` if `a` is 0) | 1 | none | O(1) |
+
 ---
 
 ## Return stack
@@ -213,6 +232,7 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 | `:` | — | Begin a colon definition; read the following name; enter compile mode |
 | `;` | — | End a colon definition; emit `exit`; store the source text for `see` |
 | `variable` | — | Read the following name; declare a global variable initialized to `0.0` |
+| `constant` | `( val -- )` | Pop a value and read the following name; define an inline word that pushes it as a literal, so call sites fold to the literal with no run-time fetch. Fixed at definition — `to` cannot reassign it |
 | `to` | `( val -- )` | Assign to the named local (in a definition) or global. At the REPL, auto-creates the global if absent. In a definition, the variable must already exist. May trigger superword store-fusion while compiling. |
 | `symbol` | — | Read the following name; declare a word that pushes a specific interned symbol |
 | `:name` | `( -- sym )` | Symbol literal; interns the name at read time |
@@ -233,6 +253,8 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 | `\| x y z \|` | Declare x, y, z, each initialized to `0.0`; read by bare name, assign with `to` |
 | `\|> x y z \|` | Declare and receive from the stack: z ← top, y ← second, x ← third |
 | `\| x >y z \|` | Mixed: a `>` prefix marks an individual name as a receive slot; the rest initialize to 0 |
+| `[\| x y z \| … :]` | Lambda sugar: `[\|` fuses `[:` and `\|` into one token, opening an anonymous quotation whose body begins with a `\|` locals list (`>` prefixes receive selectively) |
+| `[> x y z \| … :]` | Lambda sugar for the receive-all case: `[>` fuses `[:` and `\|>`, so x, y, z are received from the stack |
 
 These compile-time words read a following local name and emit a single fused depth-0 instruction:
 
@@ -251,6 +273,7 @@ These compile-time words read a following local name and emit a single fused dep
 |------|-------------|----------|-----|-------|---|
 | `.` | `( a -- )` | Print value then a space; matrices print as a grid, frames pretty-print | 1 + print | none | O(size printed) |
 | `.a` | `( a -- )` | Like `.` but disables print truncation (show all elements) | 1 + print | none | O(size printed) |
+| `render` | `( a -- s )` | The text `.` would print, returned as a string instead of printed: no truncation, no trailing separator (a matrix grid's final newline is dropped). Strings render raw, symbols by name, collections/frames/matrices in their laid-out form | 1 + size | `1o` | O(size) |
 | `.s` | `( -- )` | Print every stack value, bottom to top; leaves the stack intact | print | none | O(depth) |
 | `print` | `( x -- )` | lib.l4: alias for `.` | 1 + print | none | O(size printed) |
 | `print-stack` | `( -- )` | lib.l4: alias for `.s` | print | none | O(depth) |
@@ -281,7 +304,16 @@ Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is co
 | `codepoints>string` | `( [ code… ] -- s )` | Encode each codepoint to UTF-8 and concatenate; per-element type- and range-checked | n | `1o` | O(n) |
 | `trim` | `( s -- s' )` | Strip leading and trailing ASCII whitespace (`' ' \t \n \v \f \r`); a backward/forward byte-scan, one allocation of the surviving span | n | `1o` | O(n) |
 | `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
-| `format` | `( … template -- s )` | Fill `template`'s `{n}` placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only `{digits}` substitute — other brace content is left literal | len + refs | `1o` | O(len) |
+| `string>number` | `( s -- n \| none )` | Parse a decimal/float string (via `strtod`, like a numeric literal) to a float, ignoring surrounding whitespace; the none value if `s` is not entirely a number | n | none | O(n) |
+| `format` | `( … template -- s )` | Fill `template`'s `{n}` (or `{n:spec}`) placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. Only `{digit…}` (optionally with a `:spec`) substitute — other brace content is left literal | len + refs | `1o` | O(len) |
+
+A placeholder may carry a format spec after a colon — `{n:spec}` — a printf-style mini-language controlling how the value renders. `spec` is optional flags (`-`, `+`, space, `#`, `0`), an optional field width, an optional `.precision`, and an optional conversion letter:
+
+- `f` `e` `g` (and `F` `E` `G`) render the value as a float: `{0:.2f}` fixes the precision, `{0:8.2f}` also pads to a field width.
+- `d` / `i` render it as an integer, truncated toward zero: `{0:04d}`.
+- `s`, or no conversion letter, places the value's default rendering in a field: `{0:8}` right-justifies, `{0:-8}` left-justifies, `{0:.3}` truncates to three characters.
+
+A float or integer conversion requires a float operand; a non-float operand, an unknown conversion letter, or trailing characters in the spec is an error. With no colon, `{n}` renders the value in its default form.
 
 `first match` and `findall` are spelled `match` and `match-all`; there is no separate search/match/fullmatch split. Anchor with `^`/`$` (or `\A`/`\z`) when you need it.
 
@@ -445,6 +477,8 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `sum` | `( m -- f )` | Sum of all elements (4-way unrolled, fast-math) | 1 + r×c | none | O(r×c) |
 | `max` | `( m -- f )` | Maximum element | 1 + r×c | none | O(r×c) |
 | `min` | `( m -- f )` | Minimum element | 1 + r×c | none | O(r×c) |
+| `argmax` | `( m -- f )` | Flat row-major index of the maximum element (first on ties) | 1 + r×c | none | O(r×c) |
+| `argmin` | `( m -- f )` | Flat row-major index of the minimum element (first on ties) | 1 + r×c | none | O(r×c) |
 | `row-sums` | `( m -- m' )` | r×1 of per-row sums | 1 + r×c | `1m(r×1)` | O(r×c) |
 | `row-maxes` | `( m -- m' )` | r×1 of per-row maxima | 1 + r×c | `1m(r×1)` | O(r×c) |
 | `row-mins` | `( m -- m' )` | r×1 of per-row minima | 1 + r×c | `1m(r×1)` | O(r×c) |
@@ -554,8 +588,8 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 | `shift-with` | `( xt -- )` | Capture as `shift`, then run xt in the outer context with k on the stack and begin unwinding | L + xt | `1o` (cont) | O(L + xt) |
 | `resume` | `( k -- … )` | Pop k and re-enter it (multi-shot — the continuation object survives, so a retained copy can be resumed again); pushes whatever the resumed code yields | L + resumed | none | O(L + resumed) |
 | `throw` | `( exc -- )` | lib.l4: `[: drop 1 :] shift-with` | — | `1o` (cont) | O(stack depth) |
-| `catch` | `( xt -- result 0 \| exc 1 )` | lib.l4: `reset execute 0` | — | cont if thrown | O(xt) |
-| `try-catch` | `( normal-xt err-xt -- … )` | lib.l4: run normal-xt; on throw, run err-xt with exc on the stack | — | cont if thrown | O(normal-xt) |
+| `catch` | `( xt -- result 0 \| exc 1 )` | lib.l4: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (the error message becomes the exception value) | — | cont if thrown; `1s` on a caught interpreter error | O(xt) |
+| `try-catch` | `( normal-xt err-xt -- … )` | lib.l4: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack | — | cont if thrown; `1s` on a caught interpreter error | O(normal-xt) |
 
 ---
 
@@ -657,7 +691,11 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 |------|-------------|----------|-----|-------|---|
 | `words` | `( -- )` | List all non-internal words, newest first, 8 per line | dict scan | none | O(\|dict\|) |
 | `see` | `( xt -- )` | Print a word's source (`: name … ;`), or `variable`/`symbol`/primitive form | dict scan | none | O(\|dict\|) |
+| `see>string` | `( xt -- s )` | The text `see` would print, returned as a string (trailing newline stripped) | dict scan | `1o` | O(\|dict\|) |
 | `see-compiled` | `( xt -- )` | Disassemble a colon definition's compiled cells | body scan | none | O(body) |
+| `see-compiled>string` | `( xt -- s )` | The text `see-compiled` would print, returned as a string (trailing newline stripped) | body scan | `1o` | O(body) |
+| `see-tree` | `( xt -- )` | Like `see-compiled`, but each colon-word call is expanded inline, indented two spaces, recursively down to primitives; recursive calls print as `name ...` | body scan | none | O(expanded body) |
+| `see-tree>string` | `( xt -- s )` | The text `see-tree` would print, returned as a string (trailing newline stripped) | body scan | `1o` | O(expanded body) |
 | `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
 | `help` | `( "name" -- )` | lib.l4: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |

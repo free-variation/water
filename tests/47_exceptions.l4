@@ -65,5 +65,20 @@ symbol :oops
    [: drop "L1 inner-xt threw" . cr :] try-catch :]
 [: "L0 got " . . cr :] try-catch                              \ L1 inner-xt threw
 
-\ -- 16: throw at top-level (no catch) — surfaces as interpreter error
+\ --- catch / try-catch intercept interpreter errors, not just throws ---
+
+\ -- 16: division by zero, caught -> (msg 1)
+[: 1 0 / :] catch . . cr                              \ 1 / : division by zero
+
+\ -- 17: try-catch handler receives the error message
+[: 1 0 / :] [: "caught: " swap + . cr :] try-catch    \ caught: / : division by zero
+
+\ -- 18: error_flag is cleared — execution continues after the catch
+[: 1 0 / :] catch 2drop "after" . cr                  \ after
+
+\ -- 19: interpreter error caught at the inner try-catch; outer handler not run
+[: [: [ 1 2 3 ] 9 @i :] [: drop "inner caught" . cr :] try-catch :]
+[: drop "outer" . cr :] try-catch                     \ inner caught
+
+\ -- 20: throw at top-level (no catch) — surfaces as interpreter error
 42 throw

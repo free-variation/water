@@ -7,38 +7,33 @@
 \ Run:  ./logicforth -b < bench/cpu-stress.l4
 \ Knobs: ITERS (work per item), DOMAIN (items/round), WORKERS (cores), ROUNDS.
 
-variable ITERS
-variable WORKERS
-variable DOMAIN
-variable ROUNDS
-variable SEEDS
-variable T0
+variable *t0*
 
-10000000 to ITERS
-num-cores to WORKERS
-num-cores 16 * to DOMAIN
-1000000 to ROUNDS
-1 DOMAIN range to SEEDS
+10000000 constant *iters*
+num-cores to *workers*
+num-cores 16 * to *domain*
+1000000 constant *rounds*
+1 *domain* range to *seeds*
 
 ( seed -- result )  \ a long, allocation-free float mill
 : crunch
 	| acc >seed |
 	seed 1.0 + to acc
-	[: acc seed + 0.5 * to acc :] ITERS times
+	[: acc seed + 0.5 * to acc :] *iters* times
 	acc ;
 
 ( -- )  \ run ROUNDS rounds; each is a full-core pmap over every work item
 : stress
 	| i |
 	0 to i
-	begin i ROUNDS lt while
-		now to T0
-		SEEDS WORKERS 1 [: crunch :] pmap-ext 0.0 [: + :] reduce
-		i 1 + now T0 - "  round {1}: {0} s   cksum {2}" format . cr
+	begin i *rounds* lt while
+		now to *t0*
+		*seeds* *workers* 1 [: crunch :] pmap-ext 0.0 [: + :] reduce
+		i 1 + now *t0* - "  round {1}: {0} s   cksum {2}" format . cr
 		++ i
 	repeat ;
 
-WORKERS "cpu-stress: pinning {0} cores" format . cr
-DOMAIN ITERS "  {1} items/round x {0} float-iters   (Ctrl-C to stop)" format . cr
+*workers* "cpu-stress: pinning {0} cores" format . cr
+*domain* *iters* "  {1} items/round x {0} float-iters   (Ctrl-C to stop)" format . cr
 cr
 stress

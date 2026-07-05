@@ -4,43 +4,36 @@
 \ the per-thread allocation bands, and all cores at once. RSS should stay flat
 \ across rounds; the checksums prove the results are correct, not garbage.
 
-variable DOMAIN
-1 100000 range to DOMAIN
+1 100000 range to *domain*
+500 constant *rounds*
+num-cores to *workers*
+256 constant *claim*
 
-variable ROUNDS
-500 to ROUNDS
-
-variable WORKERS
-num-cores to WORKERS
-
-variable CLAIM
-256 to CLAIM
-
-variable T0
-variable CHECK
+variable *t0*
+variable *check*
 
 \ Each round drops a fresh output array (pmap/pfilter) — sequential garbage that
 \ a long-running program reclaims; the per-round gc keeps RSS flat. pmap-reduce
 \ returns a scalar, so the rewind alone bounds it, but it gcs too for uniformity.
 
 : stress-pmap
-  now to T0
-  [: DOMAIN WORKERS CLAIM [: "{0}" format size :] pmap-ext drop gc :] ROUNDS times
-  now T0 - "pmap         {0}s" format . cr ;
+  now to *t0*
+  [: *domain* *workers* *claim* [: "{0}" format size :] pmap-ext drop gc :] *rounds* times
+  now *t0* - "pmap         {0}s" format . cr ;
 
 : stress-pfilter
-  now to T0
-  [: DOMAIN WORKERS CLAIM [: "{0}" format size 3 gt :] pfilter-ext drop gc :] ROUNDS times
-  now T0 - "pfilter      {0}s" format . cr ;
+  now to *t0*
+  [: *domain* *workers* *claim* [: "{0}" format size 3 gt :] pfilter-ext drop gc :] *rounds* times
+  now *t0* - "pfilter      {0}s" format . cr ;
 
 : stress-pmap-reduce
-  now to T0
-  [: DOMAIN WORKERS CLAIM 0.0 [: "{0}" format size :] [: + :] pmap-reduce-ext to CHECK gc :] ROUNDS times
-  now T0 - "pmap-reduce  {0}s" format . cr
-  CHECK "  reduce checksum (sum of digit-lengths 1..100000): {0}" format . cr ;
+  now to *t0*
+  [: *domain* *workers* *claim* 0.0 [: "{0}" format size :] [: + :] pmap-reduce-ext to *check* gc :] *rounds* times
+  now *t0* - "pmap-reduce  {0}s" format . cr
+  *check* "  reduce checksum (sum of digit-lengths 1..100000): {0}" format . cr ;
 
-WORKERS "workers: {0}" format . cr
-ROUNDS "rounds:  {0}" format . cr
+*workers* "workers: {0}" format . cr
+*rounds* "rounds:  {0}" format . cr
 cr
 stress-pmap
 stress-pfilter

@@ -24,3 +24,55 @@
 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "{0}" format . cr
 "0123456789ABCDEF" "{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}" format . cr
 "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz" "{0}" format . cr
+
+\ --- format specs: printf-style mini-language after a colon ---
+
+\ float precision
+3.14159 "{0:.2f}" format "3.14" = . cr
+3.14159 "{0:.0f}" format "3" = . cr
+2.0 "{0:.3f}" format "2.000" = . cr
+1234.5 "{0:e}" format "1.234500e+03" = . cr
+0.0001 "{0:g}" format "0.0001" = . cr
+
+\ float field width, right- and left-justified
+3.14159 "[{0:8.2f}]" format "[    3.14]" = . cr
+3.14159 "[{0:-8.2f}]" format "[3.14    ]" = . cr
+
+\ float flags: leading +, zero pad
+3.5 "{0:+.1f}" format "+3.5" = . cr
+3.5 "{0:06.1f}" format "0003.5" = . cr
+
+\ integer cast (d): truncates toward zero
+255 "{0:d}" format "255" = . cr
+3.9 "{0:d}" format "3" = . cr
+-3.9 "{0:d}" format "-3" = . cr
+7 "{0:04d}" format "0007" = . cr
+255 "[{0:6d}]" format "[   255]" = . cr
+255 "[{0:-6d}]" format "[255   ]" = . cr
+255 "{0:+d}" format "+255" = . cr
+
+\ string field width and precision
+"hi" "[{0:6}]" format "[    hi]" = . cr
+"hi" "[{0:-6}]" format "[hi    ]" = . cr
+"hi" "[{0:6s}]" format "[    hi]" = . cr
+"hello" "{0:.3}" format "hel" = . cr
+
+\ symbol and float route through the default render under a width spec
+:sym "[{0:5}]" format "[  sym]" = . cr
+3.5 "[{0:6}]" format "[   3.5]" = . cr
+
+\ empty spec is a plain substitution
+5 "{0:}" format "5" = . cr
+
+\ multiple specs, and a spec mixed with a plain ref
+1.5 2.5 "{1:.1f} and {0:.1f}" format "1.5 and 2.5" = . cr
+42 "{0:d} = {0}" format "42 = 42" = . cr
+
+\ an unterminated spec brace stays literal and consumes no value
+"a{0:b" format "a{0:b" = . cr
+
+\ errors (each clears at the REPL, so they are independent)
+"x" "{0:d}" format
+"x" "{0:.2f}" format
+5 "{0:z}" format
+5 "{0:.2x}" format

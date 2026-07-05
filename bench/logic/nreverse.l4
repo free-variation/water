@@ -11,7 +11,7 @@
 : lappend  ( a b r -- )                   \ r = a ++ b
   | >A >B >R |
   [: A null ~ drop   R B ~ drop :]        \ append([], B, B)
-  [: | H T R1 |
+  [| H T R1 |
      A  H T cons  ~ drop                  \ A = [H|T]
      R  H R1 cons ~ drop                  \ R = [H|R1]
      T B R1 lappend :]                    \ append(T, B, R1)
@@ -20,14 +20,14 @@
 : nrev  ( l r -- )                        \ r = naive reverse of l
   | >L >R |
   [: L null ~ drop   R null ~ drop :]     \ nrev([], [])
-  [: | H T RT |
+  [| H T RT |
      L  H T cons  ~ drop                  \ L = [H|T]
      T RT nrev                            \ nrev(T, RT)
      RT  H null cons  R lappend :]        \ append(RT, [H], R)
   amb ;
 
 : iota  ( n -- list )                     \ the null-terminated list [n n-1 ... 1]
-  | >n |  null  [: |> i | i 1+ swap cons :] n i-times ;
+  | >n |  null  [> i | i 1+ swap cons :] n i-times ;
 
 \ --- correctness: reverse a 5-element list -------------------------------
 variable T5   5 iota to T5

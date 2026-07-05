@@ -14,26 +14,25 @@
 \ we use i-times with idx 0..rounds, and the divisor is 2*idx + 3
 \ (= 2*(idx+2) - 1). The compound op f*+ collapses the multiply-add.
 
-variable ROUNDS
-1000000000 to ROUNDS
+1000000000 constant *rounds*
 
-variable PI
-variable X
-variable T0
+variable *pi*
+variable *x*
+variable *t0*
 
 : leibniz
-  1.0 to PI
-  1.0 to X
-  now to T0
+  1.0 to *pi*
+  1.0 to *x*
+  now to *t0*
   [: ( idx -- )
-     X negate to X
+     *x* negate to *x*
      2.0 3.0 f*+        \ idx*2 + 3 = divisor
-     X swap f/          \ X / divisor
-     PI f+ to PI
-  :] ROUNDS f1+ i-times
-  PI 4.0 f* to PI
-  now T0 - "elapsed: {0}s" format . cr
-  PI "pi: {0}" format . cr ;
+     *x* swap f/          \ X / divisor
+     *pi* f+ to *pi*
+  :] *rounds* f1+ i-times
+  *pi* 4.0 f* to *pi*
+  now *t0* - "elapsed: {0}s" format . cr
+  *pi* "pi: {0}" format . cr ;
 
 leibniz
 bye

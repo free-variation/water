@@ -9,19 +9,18 @@
 \ (/!) reuses that buffer for the quotient, so peak stays at one array
 \ (~8 GB) rather than allocating a second.
 
-variable ROUNDS
-1000000000 to ROUNDS
+1000000000 constant *rounds*
 
-variable T0
+variable *t0*
 
 : leibniz-matrix
-  now to T0
-  ROUNDS -2.0 f* 1.0 f+       \ start = -2*ROUNDS + 1
-  ROUNDS 2.0 f*                \ end   = 2*ROUNDS
+  now to *t0*
+  *rounds* -2.0 f* 1.0 f+       \ start = -2*ROUNDS + 1
+  *rounds* 2.0 f*                \ end   = 2*ROUNDS
   4.0 matrix-range             \ build denominator sequence
   4.0 swap /!                  \ scalar / matrix, in place (reuses the sequence)
   sum                          \ accumulate
-  now T0 - "elapsed: {0}s" format . cr
+  now *t0* - "elapsed: {0}s" format . cr
   "pi: {0}" format . cr ;
 
 leibniz-matrix

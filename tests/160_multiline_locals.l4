@@ -1,0 +1,26 @@
+\ Multi-line locals declarations and comments within them.
+\ Exercises the input-refill path (a locals list spanning input lines)
+\ and comment-skipping inside the locals scan.
+
+\ (1) word locals split across lines, with \ and ( ) comments mixed in
+: add3
+  | >a >b      \ first two operands
+    >c |       ( and the third )
+  a b + c + ;
+1 2 3 add3 . cr
+
+\ (2) [| quotation locals split across lines
+: hyp2
+  [| >p
+     >q |
+     p p *  q q *  +
+  :] ;
+3 4 hyp2 execute . cr
+
+\ (3) a comment containing a word identical to a local name must not
+\ be read as a second declaration of that local
+: sq
+  | >n        \ n is the value to square
+  |
+  n n * ;
+6 sq . cr

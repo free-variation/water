@@ -579,6 +579,29 @@ void p_trim(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_string_to_number(Interpreter *interp) {
+	POP_STRING(source, "string>number");
+
+	const char *text = source->bytes;
+	char *end;
+	double value = strtod(text, &end);
+
+	if (end == text) {
+		push(interp, make_tagged(T_NONE, 0));
+		DISPATCH(interp);
+	}
+
+	while (isspace((unsigned char)*end))
+		end++;
+
+	if (*end != 0)
+		push(interp, make_tagged(T_NONE, 0));
+	else
+		push(interp, make_float(value));
+
+	DISPATCH(interp);
+}
+
 void p_join(Interpreter *interp) {
 	PEEK_STRING_AT(separator, 0, "join");
 	PEEK_TYPE_AT(array_val, 1, "join", T_ARRAY);

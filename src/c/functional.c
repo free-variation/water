@@ -16,12 +16,12 @@ void p_map(Interpreter *interp) {
 	memset(result->items, 0, sizeof(Val) * (size_t)MAX(source->len, 1));
 	gc_root_push(interp, make_array(result_handle));
 
-	CallContext ctx;
-	call_open(interp, xt, &ctx);
+	CallContext context;
+	call_open(interp, xt, &context);
 	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		int dsp_before = interp->dsp;
 		push(interp, source->items[i]);
-		call_step(interp, &ctx, xt);
+		call_step(interp, &context, xt);
 		if (interp->error_flag) break;
 		if (interp->dsp != dsp_before + 1) {
 			fail(interp, "map: quotation must leave exactly one value per element, but changed the stack by %d", interp->dsp - dsp_before);
@@ -29,7 +29,7 @@ void p_map(Interpreter *interp) {
 		}
 		result->items[i] = pop(interp);
 	}
-	call_close(interp, &ctx);
+	call_close(interp, &context);
 
 	gc_root_pop(interp);
 
@@ -73,15 +73,15 @@ void p_mapn(Interpreter *interp) {
 
 	gc_root_push(interp, make_array(result_handle));
 
-	CallContext ctx;
-	call_open(interp, xt, &ctx);
+	CallContext context;
+	call_open(interp, xt, &context);
 	for (int row = 0; row < row_count && !interp->error_flag; row++) {
 		int dsp_before = interp->dsp;
 		for (int source_index = 0; source_index < arity; source_index++) {
 			Object *source = OBJECT_AT(VAL_DATA(interp->data_stack[first_source + source_index]));
 			push(interp, source->items[row]);
 		}
-		call_step(interp, &ctx, xt);
+		call_step(interp, &context, xt);
 		if (interp->error_flag) break;
 		if (interp->dsp != dsp_before + 1) {
 			fail(interp, "mapn: quotation must leave exactly one value per row, but changed the stack by %d", interp->dsp - dsp_before);
@@ -89,7 +89,7 @@ void p_mapn(Interpreter *interp) {
 		}
 		result->items[row] = pop(interp);
 	}
-	call_close(interp, &ctx);
+	call_close(interp, &context);
 
 	gc_root_pop(interp);
 
@@ -109,12 +109,12 @@ void p_filter(Interpreter *interp) {
 
 	int *keep = malloc((size_t)MAX(source->len, 1) * sizeof(int));
 	int n_kept = 0;
-	CallContext ctx;
-	call_open(interp, xt, &ctx);
+	CallContext context;
+	call_open(interp, xt, &context);
 	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		int dsp_before = interp->dsp;
 		push(interp, source->items[i]);
-		call_step(interp, &ctx, xt);
+		call_step(interp, &context, xt);
 		if (interp->error_flag) break;
 		if (interp->dsp != dsp_before + 1) {
 			fail(interp, "filter: predicate must leave exactly one value per element, but changed the stack by %d", interp->dsp - dsp_before);
@@ -123,7 +123,7 @@ void p_filter(Interpreter *interp) {
 		keep[i] = truthy(pop(interp));
 		n_kept += keep[i];
 	}
-	call_close(interp, &ctx);
+	call_close(interp, &context);
 
 	if (interp->error_flag) {
 		free(keep);
@@ -156,18 +156,18 @@ void p_reduce(Interpreter *interp) {
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	Val result_val = init_val;
-	CallContext ctx;
-	call_open(interp, combiner, &ctx);
+	CallContext context;
+	call_open(interp, combiner, &context);
 	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		push(interp, result_val);
 		push(interp, source->items[i]);
 
-		call_step(interp, &ctx, combiner);
+		call_step(interp, &context, combiner);
 		if (interp->error_flag) break;
 
 		result_val = pop(interp);
 	}
-	call_close(interp, &ctx);
+	call_close(interp, &context);
 	if (interp->error_flag) return;
 
 	pop(interp);
@@ -184,14 +184,16 @@ void p_reduce(Interpreter *interp) {
 			fail(interp, word_name ": count must be non-negative; got %d", n); \
 			return; \
 		} \
-		CallContext ctx; \
-		call_open(interp, xt, &ctx); \
-		if (ctx.fast) { \
+		CallContext context; \
+		call_open(interp, xt, &context); \
+		if (context.fast) { \
 			for (int i = 0; i < n && !interp->error_flag; i++) { \
 				per_iter; \
+				if (context.reuses_locals) \
+					interp->loop_local_refill = 1; \
 				call_invoke(interp); \
 			} \
-			call_close(interp, &ctx); \
+			call_close(interp, &context); \
 		} else { \
 			for (int i = 0; i < n && !interp->error_flag; i++) { \
 				per_iter; \
@@ -261,12 +263,13 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
 	}
 }
 
-static int references_region_depth(Val value, RegionSnapshot *snapshot, int depth) {
+static int references_region_depth(Val value, ParallelRegion *snapshot, int depth) {
 	if (depth > MAX_NESTING_DEPTH)
 		return 1;   /* too deep / possible cycle: conservatively keep the region */
 	switch (VAL_TAG(value)) {
 		case T_STRING:
 		case T_MATRIX:
+		case T_SEGMENT:
 			return VAL_DATA(value) >= snapshot->n_objects;
 		case T_SET:
 		case T_ARRAY: {
@@ -314,36 +317,18 @@ static int references_region_depth(Val value, RegionSnapshot *snapshot, int dept
 	}
 }
 
-static int references_region(Val value, RegionSnapshot *snapshot) {
+static int references_region(Val value, ParallelRegion *snapshot) {
 	return references_region_depth(value, snapshot, 0);
 }
 
 static int parallel_apply(Object *domain, int worker_count,
 		int items_per_claim, void (*kernel)(int, int, void *), void *context,
-		RegionSnapshot *snapshot) {
-	CLAMP(worker_count, 1, MAX_WORKER_THREADS);
-	int object_headroom = arena.object_space.n + domain->len + worker_count * SLOTS_PER_CLAIM;
-	object_headroom = MIN(object_headroom, arena.object_space.max);
-	if (object_headroom > arena.object_space.cap)
-		GROW_OBJECT_TABLE(object_headroom);
-
-	int pair_headroom = pairs.space.n + domain->len + worker_count * SLOTS_PER_CLAIM;
-	if (pair_headroom > pairs.space.cap)
-		GROW_PAIR_TABLE(pair_headroom);
-
-	snapshot->used = arena.used;
-	snapshot->n_objects = arena.object_space.n;
-	snapshot->n_pairs = pairs.space.n;
-
-	parallel_region_object_base = arena.object_space.n;
-	parallel_region_pair_base = pairs.space.n;
+		ParallelRegion *region) {
+	region_begin(region, domain->len, worker_count);
 
 	worker_claim = 0;
 	worker_interp = NULL;
 	parallel_error = 0;
-	parallel_region_collected = 0;
-	in_parallel = 1;
-	reset_thread_alloc();
 	parallel_for(domain->len, worker_count, items_per_claim, kernel, context);
 	in_parallel = 0;
 
@@ -385,15 +370,15 @@ void p_pfilter(Interpreter *interp) {
 	char *keep = calloc((size_t)MAX(domain->len, 1), 1);
 
 	PfilterContext filter = { .predicate = predicate, .domain = domain, .keep = keep };
-	RegionSnapshot region;
+	ParallelRegion region;
 	if (parallel_apply(domain, worker_count, items_per_claim, pfilter_kernel, &filter, &region)) {
 		free(keep);
-		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+		region_abort(&region);
 		fail(interp, "pfilter: a worker predicate failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
 
-	abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+	region_abort(&region);
 
 	int n_kept = 0;
 	for (int i = 0; i < domain->len; i++)
@@ -473,13 +458,13 @@ void p_pmap(Interpreter *interp) {
 	gc_root_push(interp, make_array(image_handle));
 
 	PmapContext mapping = { .function = function, .domain = domain, .image = image };
-	RegionSnapshot region;
+	ParallelRegion region;
 	int failed = parallel_apply(domain, worker_count, items_per_claim, pmap_kernel, &mapping, &region);
 
 	gc_root_pop(interp);
 
 	if (failed) {
-		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+		region_abort(&region);
 		fail(interp, "pmap: a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
@@ -496,7 +481,9 @@ void p_pmap(Interpreter *interp) {
 			break;
 		}
 	if (rewindable)
-		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+		region_abort(&region);
+	else
+		region_commit(&region);
 
 	interp->dsp = domain_index;
 	push(interp, make_array(image_handle));
@@ -561,12 +548,12 @@ void p_pmap_reduce(Interpreter *interp) {
 		.domain = domain,
 		.partials = partials,
 	};
-	RegionSnapshot region;
+	ParallelRegion region;
 
 	if (parallel_apply(domain, worker_count, items_per_claim, pmap_reduce_kernel, &reduction, &region)) {
 		gc_root_pop(interp);
 		gc_root_pop(interp);
-		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+		region_abort(&region);
 		fail(interp, "pmap-reduce: a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
@@ -588,7 +575,9 @@ void p_pmap_reduce(Interpreter *interp) {
 	gc_root_pop(interp);
 
 	if (!references_region(result, &region))
-		abort_parallel_region(region.used, region.n_objects, region.n_pairs);
+		region_abort(&region);
+	else
+		region_commit(&region);
 
 	interp->dsp = domain_index;
 	push(interp, result);

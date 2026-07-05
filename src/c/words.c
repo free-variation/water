@@ -256,6 +256,51 @@ BINARY_FLOAT_OP(p_add_f, "f+", +)
 BINARY_FLOAT_OP(p_sub_f, "f-", -)
 BINARY_FLOAT_OP(p_mul_f, "f*", *)
 
+BINARY_FLOAT_OP(p_eq_f, "feq", ==)
+BINARY_FLOAT_OP(p_lt_f, "flt", <)
+BINARY_FLOAT_OP(p_gt_f, "fgt", >)
+
+#define BITWISE_BINARY_OP(name, opname, op) \
+	void name(Interpreter *interp) { \
+		if (interp->dsp < 2) { \
+			fail(interp, "%s: data stack underflow", opname); \
+			return; \
+		} \
+		Val *left = &interp->data_stack[interp->dsp - 2]; \
+		Val *right = &interp->data_stack[interp->dsp - 1]; \
+		int64_t a = (int64_t)left->number; \
+		int64_t b = (int64_t)right->number; \
+		left->number = (double)(a op b); \
+		interp->dsp--; \
+		DISPATCH(interp); \
+	}
+BITWISE_BINARY_OP(p_bit_and, "bit-and", &)
+BITWISE_BINARY_OP(p_bit_or, "bit-or", |)
+BITWISE_BINARY_OP(p_bit_xor, "bit-xor", ^)
+BITWISE_BINARY_OP(p_lshift, "lshift", <<)
+BITWISE_BINARY_OP(p_rshift, "rshift", >>)
+
+void p_bit_not(Interpreter *interp) {
+	if (interp->dsp < 1) {
+		fail(interp, "bit-not: data stack underflow");
+		return;
+	}
+	Val *top = &interp->data_stack[interp->dsp - 1];
+	top->number = (double)(~(int64_t)top->number);
+	DISPATCH(interp);
+}
+
+void p_lowest_bit(Interpreter *interp) {
+	if (interp->dsp < 1) {
+		fail(interp, "lowest-bit: data stack underflow");
+		return;
+	}
+	Val *top = &interp->data_stack[interp->dsp - 1];
+	uint64_t bits = (uint64_t)(int64_t)top->number;
+	top->number = bits ? (double)__builtin_ctzll(bits) : -1.0;
+	DISPATCH(interp);
+}
+
 void p_div_f(Interpreter *interp) {
 	if (interp->dsp < 2) {
 		fail(interp, "f/: data stack underflow");
@@ -335,6 +380,22 @@ void p_zeq(Interpreter *interp) {
 COMPARISON_ZBRANCH(p_eq_zbranch, ==);
 COMPARISON_ZBRANCH(p_lt_zbranch, <);
 COMPARISON_ZBRANCH(p_gt_zbranch, >);
+
+/* Pure-float counterparts: feq/flt/fgt assert float operands, so these skip the
+   tag check and val_cmp fallback entirely — the speed feq is chosen for. */
+#define FLOAT_COMPARISON_ZBRANCH(name, op) \
+	void name(Interpreter *interp) { \
+		cell branch_distance = vocab.dict[interp->ip++]; \
+		POP(right); \
+		POP(left); \
+		if (!(VAL_NUMBER(left) op VAL_NUMBER(right))) \
+			interp->ip += branch_distance - 1; \
+		DISPATCH(interp); \
+	}
+
+FLOAT_COMPARISON_ZBRANCH(p_eq_f_zbranch, ==);
+FLOAT_COMPARISON_ZBRANCH(p_lt_f_zbranch, <);
+FLOAT_COMPARISON_ZBRANCH(p_gt_f_zbranch, >);
 
 void p_zeq_zbranch(Interpreter *interp) {
 	cell branch_distance = vocab.dict[interp->ip++];
@@ -450,14 +511,15 @@ void p_roll(Interpreter *interp) {
 void p_dot(Interpreter *interp) {
 	POP(value);
 	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(OBJECT_AT(VAL_DATA(value)));
+		print_matrix_grid(stdout, OBJECT_AT(VAL_DATA(value)));
 	} else if (VAL_TAG(value) == T_FRAME) {
-		print_frame_pretty(interp, OBJECT_AT(VAL_DATA(value)), 0);
+		print_frame_pretty(stdout, interp, OBJECT_AT(VAL_DATA(value)), 0);
 		putchar('\n');
 	} else if (VAL_TAG(value) == T_ARRAY) {
-		pretty_print_array(interp, value);
+		pretty_print_array(stdout, interp, value);
+		putchar(' ');
 	} else {
-		print_val(interp, value);
+		print_val(stdout, interp, value);
 		putchar(' ');
 	}
 	fflush(stdout);
@@ -470,13 +532,52 @@ void p_dot_all(Interpreter *interp) {
 	print_truncate = 0;
 	POP(value);
 	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(OBJECT_AT(VAL_DATA(value)));
+		print_matrix_grid(stdout, OBJECT_AT(VAL_DATA(value)));
 	} else {
-		print_val(interp, value);
+		print_val(stdout, interp, value);
 		putchar(' ');
 	}
 	fflush(stdout);
 	print_truncate = saved;
+
+	DISPATCH(interp);
+}
+
+void p_render(Interpreter *interp) {
+	PEEK_AT(value, 0, "render");
+
+	char *buffer = NULL;
+	size_t size = 0;
+	FILE *out = open_memstream(&buffer, &size);
+	if (!out) {
+		fail(interp, "render: out of memory");
+		return;
+	}
+
+	int saved_truncate = print_truncate;
+	print_truncate = 0;
+	if (VAL_TAG(value) == T_MATRIX)
+		print_matrix_grid(out, OBJECT_AT(VAL_DATA(value)));
+	else if (VAL_TAG(value) == T_FRAME)
+		print_frame_pretty(out, interp, OBJECT_AT(VAL_DATA(value)), 0);
+	else if (VAL_TAG(value) == T_ARRAY)
+		pretty_print_array(out, interp, value);
+	else
+		print_val(out, interp, value);
+	print_truncate = saved_truncate;
+
+	fclose(out);
+
+	int length = (int)size;
+	if (VAL_TAG(value) == T_MATRIX && length > 0 && buffer[length - 1] == '\n')
+		length--;
+
+	int handle = object_new_string(interp, buffer ? buffer : "", length);
+	free(buffer);
+	if (interp->error_flag)
+		return;
+
+	interp->data_stack[interp->dsp - 1] = make_string(handle);
 
 	DISPATCH(interp);
 }
@@ -513,7 +614,7 @@ void p_emit_(Interpreter *interp) {
 
 void p_dots(Interpreter *interp) {
 	for (int i = 0; i < interp->dsp; i++) {
-		print_val_inspect(interp, interp->data_stack[i]);
+		print_val_inspect(stdout, interp, interp->data_stack[i]);
 		putchar(' ');
 	}
 	fflush(stdout);
@@ -704,6 +805,30 @@ void p_shift_with(Interpreter *interp) {
 	interp->unwinding = 1;
 }
 
+void p_execute_catching(Interpreter *interp) {
+	POP_XT(xt, "(execute-catching)");
+	int base_dsp = interp->dsp;
+
+	execute_cfa(interp, xt);
+
+	if (interp->error_flag) {
+		interp->error_flag = 0;
+		int handle = object_new_string(interp, interp->error_message,
+				(int)strlen(interp->error_message));
+		interp->dsp = base_dsp;
+		push(interp, make_string(handle));
+		push(interp, make_float(1));
+
+		int mark_index = find_prompt(interp, PROMPT_EXCEPTION);
+		if (mark_index >= 0) {
+			unwind_to(interp, mark_index);
+			interp->unwinding = 1;
+		}
+	}
+
+	DISPATCH(interp);
+}
+
 void p_resume(Interpreter *interp) {
 	POP_CONT(continuation, "resume");
 	if (continuation->continuation.capture_generation != vocab.forget_generation) {
@@ -755,35 +880,47 @@ void p_words(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_see(Interpreter *interp) {
-	POP_XT(target_cfa, "see");
-
+static void see_source_render(FILE *out, Interpreter *interp, int target_cfa) {
 	const char *name = name_of(target_cfa);
 
 	cfa_handler handler = (cfa_handler)vocab.dict[target_cfa];
 	if (handler == docol) {
 		if (!name) {
-
-			printf("[: ... :]  \\ anonymous, no source\n");
+			fprintf(out, "[: ... :]  \\ anonymous, no source\n");
 		} else {
 			int src_idx = (int)WORD_SOURCE(target_cfa);
 			if (src_idx > 0)
-				printf(": %s%s;\n", name, &vocab.source_pool[src_idx]);
+				fprintf(out, ": %s%s;\n", name, &vocab.source_pool[src_idx]);
 			else
-				printf(": %s ... ;  \\ no source captured\n", name);
+				fprintf(out, ": %s ... ;  \\ no source captured\n", name);
 		}
 	} else if (handler == dovar) {
 		Val value;
 		value.bits = (uint64_t)vocab.dict[target_cfa + 1];
-		printf("variable %s  \\ current value: ", name ? name : "?");
-		print_val(interp, value);
-		putchar('\n');
+		fprintf(out, "variable %s  \\ current value: ", name ? name : "?");
+		print_val(out, interp, value);
+		putc('\n', out);
 	} else if (handler == dosym) {
-		printf("symbol %s\n", name ? name : "?");
+		fprintf(out, "symbol %s\n", name ? name : "?");
 	} else {
-		printf("%s is a primitive\n", name ? name : "?");
+		fprintf(out, "%s is a primitive\n", name ? name : "?");
 	}
+}
+
+void p_see(Interpreter *interp) {
+	POP_XT(target_cfa, "see");
+	see_source_render(stdout, interp, target_cfa);
 	fflush(stdout);
+
+	DISPATCH(interp);
+}
+
+void p_see_to_string(Interpreter *interp) {
+	POP_XT(target_cfa, "see>string");
+	int handle = capture_render(interp, see_source_render, target_cfa);
+	if (interp->error_flag)
+		return;
+	push(interp, make_string(handle));
 
 	DISPATCH(interp);
 }
@@ -832,6 +969,19 @@ void p_man(Interpreter *interp) {
 }
 
 void p_semicolon(Interpreter *interp) {
+	if (compiler.compiling_src_start > 0 && compiler.n_local_scopes > 1) {
+		int partial_cfa = vocab.latest_cfa;
+		vocab.here = partial_cfa - 4;
+		vocab.names_here = (int)WORD_NAME(partial_cfa);
+		vocab.latest_cfa = (int)WORD_LINK(partial_cfa);
+		compiler.n_local_scopes = 0;
+		compiler.n_local_names = 0;
+		compiler.local_names_pool_here = 0;
+		compiler.compiling = 0;
+		compiler.compiling_src_start = 0;
+		fail(interp, "; : unterminated quotation (a [: , [> , or [| has no matching :])");
+		return;
+	}
 	leave_compile_scope(interp);
 	emit_call(interp, vocab.exit_cfa);
 	if (compiler.compiling_src_start > 0 && vocab.latest_cfa != 0) {
@@ -867,6 +1017,12 @@ static int try_fuse_cmp_branch(Interpreter *interp) {
 		fused_cfa = vocab.gt_zbranch_cfa;
 	else if (compiler.fuse_prev_cmp == vocab.zeq_cfa)
 		fused_cfa = vocab.zeq_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.eq_f_cfa)
+		fused_cfa = vocab.eq_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.lt_f_cfa)
+		fused_cfa = vocab.lt_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.gt_f_cfa)
+		fused_cfa = vocab.gt_f_zbranch_cfa;
 	else
 		return 0;
 
@@ -907,6 +1063,7 @@ void p_then(Interpreter *interp) {
 	if (!valid_patch_slot(interp, slot, "then"))
 		return;
 	vocab.dict[slot] = (vocab.here - slot);
+	compiler.fuse_floor = vocab.here;
 
 	DISPATCH(interp);
 }
@@ -926,6 +1083,7 @@ void p_else(Interpreter *interp) {
 
 void p_begin(Interpreter *interp) {
 	push(interp, make_float((double)vocab.here));
+	compiler.fuse_floor = vocab.here;
 
 	DISPATCH(interp);
 }
@@ -976,7 +1134,7 @@ void p_repeat(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_qcolon(Interpreter *interp) {
+static void open_quotation(Interpreter *interp) {
 	int branch_slot = -1;
 	if (compiler.compiling) {
 		emit_call(interp, vocab.branch_cfa);
@@ -985,10 +1143,16 @@ void p_qcolon(Interpreter *interp) {
 	}
 	int anon_cfa = vocab.here;
 	emit(interp, (cell)&docol);
+	compiler.fuse_floor = vocab.here;
+	compiler.loadn_at = -1;
 	enter_compile_scope(interp);
 	compiler.compiling = 1;
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
+}
+
+void p_qcolon(Interpreter *interp) {
+	open_quotation(interp);
 
 	DISPATCH(interp);
 }
@@ -1094,6 +1258,8 @@ void p_colon(Interpreter *interp) {
 
 	create_header(interp, token, 0);
 	emit(interp, (cell)&docol);
+	compiler.fuse_floor = vocab.here;
+	compiler.loadn_at = -1;
 	enter_compile_scope(interp);
 	compiler.compiling = 1;
 
@@ -1123,6 +1289,20 @@ void p_variable(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_constant(Interpreter *interp) {
+	POP(value);
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "constant: expected a name");
+		return;
+	}
+	create_header(interp, token, 2);
+	emit(interp, (cell)&docol);
+	emit_val_literal(interp, value);
+	emit_call(interp, vocab.exit_cfa);
+	DISPATCH(interp);
+}
+
 static void compile_locals_decl(Interpreter *interp, const char *opener, int force_all_receive) {
 	if (!compiler.compiling || compiler.n_local_scopes <= 0) {
 		fail(interp, "%s: only valid inside a colon definition or quotation", opener);
@@ -1140,8 +1320,11 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 	int n_received = 0;
 
 	while (1) {
+		skip_whitespace_and_comments();
 		char *token = next_token();
 		if (!token) {
+			if (refill_input())
+				continue;
 			fail(interp, "%s: unterminated locals declaration (no closing |)", opener);
 			return;
 		}
@@ -1234,6 +1417,20 @@ void p_bar(Interpreter *interp) {
 
 void p_bar_to(Interpreter *interp) {
 	compile_locals_decl(interp, "|>", 1);
+
+	DISPATCH(interp);
+}
+
+void p_bracket_bar(Interpreter *interp) {
+	open_quotation(interp);
+	compile_locals_decl(interp, "[|", 0);
+
+	DISPATCH(interp);
+}
+
+void p_bracket_bar_to(Interpreter *interp) {
+	open_quotation(interp);
+	compile_locals_decl(interp, "[>", 1);
 
 	DISPATCH(interp);
 }
@@ -1512,6 +1709,111 @@ static void interp_render_val(Interpreter *interp, Val value, char **out_buffer,
 	}
 }
 
+static int parse_format_spec(const char *spec, int len, char *conv_out) {
+	int i = 0;
+	while(i < len && (spec[i] == '-' || spec[i] == '+' || spec[i] == ' '
+				|| spec[i] == '#' || spec[i] == '0'))
+		i++;
+
+	while(i < len && isdigit((unsigned char)spec[i]))
+		i++;
+
+	if (i < len && spec[i] == '.') {
+		i++;
+		while (i < len && isdigit((unsigned char)spec[i]))
+			i++;
+	}
+
+	char conv = 0;
+	if (i < len && strchr("fFeEgGdis", spec[i])) {
+		conv = spec[i];
+		i++;
+	}
+
+	if (i != len)
+		return -1;
+
+	*conv_out = conv;
+	return 0;
+}
+
+
+static void interp_render_with_spec(Interpreter *interp, Val value,
+		const char *spec, int spec_len,
+		char **out_buffer, int *capacity, int *out_length) {
+	if (spec_len >= 64) {
+		fail(interp, "format: spec too long");
+		return;
+	}
+	char cspec[64];
+	memcpy(cspec, spec, (size_t)spec_len);
+	cspec[spec_len] = 0;
+
+	char conv;
+	if (parse_format_spec(cspec, spec_len, &conv) != 0) {
+		fail(interp, "format: bad spec '%s'", cspec);
+		return;
+	}
+
+	char fmt[80];
+	char stackbuf[256];
+	char *rendered = stackbuf;
+	int n;
+
+	if (conv == 'd' || conv == 'i') {
+		if (VAL_TAG(value) != T_FLOAT) {
+			fail(interp, "format: {%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
+			return;
+		}
+		cspec[spec_len - 1] = 0;
+		snprintf(fmt, sizeof fmt, "%%%slld", cspec);
+		long long as_int = (long long)VAL_NUMBER(value);
+		n = snprintf(stackbuf, sizeof stackbuf, fmt, as_int);
+		if (n >= (int)sizeof stackbuf) {
+			rendered = malloc((size_t)n + 1);
+			snprintf(rendered, (size_t)n + 1, fmt, as_int);
+		}
+	} else if (conv && conv != 's') {
+		if (VAL_TAG(value) != T_FLOAT) {
+			fail(interp, "format: {%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
+			return;
+		}
+		double as_float = VAL_NUMBER(value);
+		snprintf(fmt, sizeof fmt, "%%%s", cspec);
+		n = snprintf(stackbuf, sizeof stackbuf, fmt, as_float);
+		if (n >= (int)sizeof stackbuf) {
+			rendered = malloc((size_t)n + 1);
+			snprintf(rendered, (size_t)n + 1, fmt, as_float);
+		}
+	} else {
+		int text_cap = 64;
+		char *text = malloc(text_cap);
+		int text_len = 0;
+		interp_render_val(interp, value, &text, &text_cap, &text_len);
+		interp_append(interp, &text, &text_cap, &text_len, "", 1);
+		if (interp->error_flag) {
+			free(text);
+			return;
+		}
+		if (conv == 's')
+			snprintf(fmt, sizeof fmt, "%%%s", cspec);
+		else
+			snprintf(fmt, sizeof fmt, "%%%ss", cspec);
+		n = snprintf(stackbuf, sizeof stackbuf, fmt, text);
+		if (n >= (int)sizeof stackbuf) {
+			rendered = malloc((size_t)n + 1);
+			snprintf(rendered, (size_t)n + 1, fmt, text);
+		}
+		free(text);
+	}
+
+	if (n < 0)
+		n = 0;
+	interp_append(interp, out_buffer, capacity, out_length, rendered, n);
+	if (rendered != stackbuf)
+		free(rendered);
+}
+
 int interpolate(Interpreter *interp, int template_handle) {
 	Object *template = OBJECT_AT(template_handle);
 	int capacity = template->len + 64;
@@ -1532,25 +1834,43 @@ int interpolate(Interpreter *interp, int template_handle) {
 				scan++;
 				saw_digit = 1;
 			}
-			if (saw_digit && scan < template->len && template->bytes[scan] == '}') {
-				int stack_index = interp->dsp - 1 - digit_value;
-				if (stack_index < 0) {
-					fail(interp, "format: {%d} needs %d stack value(s) but only %d present",
-							digit_value, digit_value + 1, interp->dsp);
-					free(out_buffer);
-					return object_new_string(interp, "", 0);
+			if (saw_digit && scan < template->len
+					&& (template->bytes[scan] == '}' || template->bytes[scan] == ':')) {
+				const char *spec = NULL;
+				int spec_len = 0;
+				int close = scan;
+				if (template->bytes[scan] == ':') {
+					int spec_start = scan + 1;
+					close = spec_start;
+					while (close < template->len && template->bytes[close] != '}')
+						close++;
+					spec = &template->bytes[spec_start];
+					spec_len = close - spec_start;
 				}
-				int already = 0;
-				for (int i = 0; i < ref_count; i++)
-					if (refs[i] == digit_value) {
-						already = 1;
-						break;
+				if (close < template->len && template->bytes[close] == '}') {
+					int stack_index = interp->dsp - 1 - digit_value;
+					if (stack_index < 0) {
+						fail(interp, "format: {%d} needs %d stack value(s) but only %d present",
+								digit_value, digit_value + 1, interp->dsp);
+						free(out_buffer);
+						return object_new_string(interp, "", 0);
 					}
-				if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
-					refs[ref_count++] = digit_value;
-				interp_render_val(interp, interp->data_stack[stack_index], &out_buffer, &capacity, &out_length);
-				cursor = scan + 1;
-				continue;
+					int already = 0;
+					for (int i = 0; i < ref_count; i++)
+						if (refs[i] == digit_value) {
+							already = 1;
+							break;
+						}
+					if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
+						refs[ref_count++] = digit_value;
+					Val value = interp->data_stack[stack_index];
+					if (spec)
+						interp_render_with_spec(interp, value, spec, spec_len, &out_buffer, &capacity, &out_length);
+					else
+						interp_render_val(interp, value, &out_buffer, &capacity, &out_length);
+					cursor = close + 1;
+					continue;
+				}
 			}
 		}
 		interp_append(interp, &out_buffer, &capacity, &out_length, &template->bytes[cursor], 1);
@@ -2177,125 +2497,6 @@ void p_write_tsv(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-static char *resolve_program_path(const char *name) {
-	if (strchr(name, '/')) {
-		size_t length = strlen(name);
-		char *copy = malloc(length + 1);
-		memcpy(copy, name, length + 1);
-		return copy;
-	}
-
-	const char *path = getenv("PATH");
-	if (!path || !*path)
-		path = "/usr/bin:/bin";
-
-	size_t name_len = strlen(name);
-	for (const char *segment = path; ; ) {
-		const char *colon = strchr(segment, ':');
-		const char *dir = segment;
-		size_t dir_len = colon ? (size_t)(colon - segment) : strlen(segment);
-		if (dir_len == 0) {
-			dir = ".";
-			dir_len = 1;
-		}
-
-		char *candidate = malloc(dir_len + 1 + name_len + 1);
-		memcpy(candidate, dir, dir_len);
-		candidate[dir_len] = '/';
-		memcpy(candidate + dir_len + 1, name, name_len + 1);
-
-		if (access(candidate, X_OK) == 0)
-			return candidate;
-		free(candidate);
-
-		if (!colon)
-			return NULL;
-		segment = colon + 1;
-	}
-}
-
-void p_start_process(Interpreter *interp) {
-	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
-	Object *argv_array = OBJECT_AT(VAL_DATA(argv_val));
-	int argc = argv_array->len;
-	if (argc < 1) {
-		fail(interp, "start-process: argv needs at least the program name");
-		return;
-	}
-
-	char **argv = malloc(sizeof(char *) * (size_t)(argc + 1));
-	for (int i = 0; i < argc; i++) {
-		if (VAL_TAG(argv_array->items[i]) != T_STRING) {
-			free(argv);
-			fail(interp, "start-process: argv element %d is %s, expected a string",
-					i, tag_name(VAL_TAG(argv_array->items[i])));
-			return;
-		}
-		argv[i] = OBJECT_AT(VAL_DATA(argv_array->items[i]))->bytes;
-	}
-	argv[argc] = NULL;
-
-	char *program_path = resolve_program_path(argv[0]);
-	if (!program_path) {
-		const char *name = argv[0];
-		free(argv);
-		fail(interp, "start-process: %s: command not found", name);
-		return;
-	}
-
-	int in_pipe[2];
-	int out_pipe[2];
-	int err_pipe[2];
-	if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0 || pipe(err_pipe) < 0) {
-		free(argv);
-		free(program_path);
-		fail(interp, "start-process: pipe failed");
-		return;
-	}
-
-	int pipe_fds[6] = { in_pipe[0], in_pipe[1], out_pipe[0], out_pipe[1], err_pipe[0], err_pipe[1] };
-	for (int i = 0; i < 6; i++)
-		fcntl(pipe_fds[i], F_SETFD, FD_CLOEXEC);
-
-	pid_t pid = fork();
-	if (pid < 0) {
-		free(argv);
-		free(program_path);
-		fail(interp, "start-process: fork failed");
-		return;
-	}
-
-	if (pid == 0) {
-		dup2(in_pipe[0], 0);
-		dup2(out_pipe[1], 1);
-		dup2(err_pipe[1], 2);
-		close(in_pipe[0]);
-		close(in_pipe[1]);
-		close(out_pipe[0]);
-		close(out_pipe[1]);
-		close(err_pipe[0]);
-		close(err_pipe[1]);
-		execv(program_path, argv);
-		_exit(127);
-	}
-
-	close(in_pipe[0]);
-	close(out_pipe[1]);
-	close(err_pipe[1]);
-	free(argv);
-	free(program_path);
-
-	NEW_FRAME(proc_handle, proc);
-	frame_put(proc, intern_symbol(interp, "pid"), make_float((double)pid));
-	frame_put(proc, intern_symbol(interp, "in"), make_stream(in_pipe[1]));
-	frame_put(proc, intern_symbol(interp, "out"), make_stream(out_pipe[0]));
-	frame_put(proc, intern_symbol(interp, "err"), make_stream(err_pipe[0]));
-
-	interp->data_stack[interp->dsp - 1] = make_frame(proc_handle);
-
-	DISPATCH(interp);
-}
-
 void p_write(Interpreter *interp) {
 	PEEK_AT(stream_val, 0, "write");
 	if (VAL_TAG(stream_val) != T_STREAM) {
@@ -2386,83 +2587,6 @@ void p_close(Interpreter *interp) {
 	}
 	close((int)VAL_DATA(stream_val));
 	interp->dsp -= 1;
-
-	DISPATCH(interp);
-}
-
-void p_wait(Interpreter *interp) {
-	POP_INT(pid, "wait", "pid");
-	if (pid <= 0) {
-		fail(interp, "wait: invalid pid %d (expected a spawned process id)", pid);
-		return;
-	}
-
-	int status;
-	pid_t result;
-	do {
-		result = waitpid((pid_t)pid, &status, 0);
-	} while (result < 0 && errno == EINTR);
-
-	if (result < 0) {
-		fail(interp, "wait: %s", strerror(errno));
-		return;
-	}
-
-	int code;
-	if (WIFEXITED(status))
-		code = WEXITSTATUS(status);
-	else if (WIFSIGNALED(status))
-		code = 128 + WTERMSIG(status);
-	else
-		code = -1;
-	push(interp, make_float((double)code));
-
-	DISPATCH(interp);
-}
-
-void p_stop_process(Interpreter *interp) {
-	POP_INT(pid, "stop", "pid");
-	if (pid <= 0) {
-		fail(interp, "stop: invalid pid %d (expected a spawned process id)", pid);
-		return;
-	}
-
-	kill((pid_t)pid, SIGKILL);
-
-	int status;
-	pid_t result;
-	do {
-		result = waitpid((pid_t)pid, &status, 0);
-	} while (result < 0 && errno == EINTR);
-
-	if (result < 0) {
-		fail(interp, "stop: %s", strerror(errno));
-		return;
-	}
-
-	int code;
-	if (WIFEXITED(status))
-		code = WEXITSTATUS(status);
-	else if (WIFSIGNALED(status))
-		code = 128 + WTERMSIG(status);
-	else
-		code = -1;
-	push(interp, make_float((double)code));
-
-	DISPATCH(interp);
-}
-
-void p_running(Interpreter *interp) {
-	POP_INT(pid, "running?", "pid");
-
-	siginfo_t info;
-	info.si_pid = 0;
-	int result;
-	do {
-		result = waitid(P_PID, (id_t)pid, &info, WEXITED | WNOHANG | WNOWAIT);
-	} while (result < 0 && errno == EINTR);
-
-	push(interp, make_bool(result == 0 && info.si_pid == 0));
 
 	DISPATCH(interp);
 }
