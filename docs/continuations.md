@@ -1,6 +1,6 @@
-# Delimited Continuations in water
+# Delimited Continuations in Water
 
-This document is a primer on delimited continuations and how water implements them. By the end you should understand:
+This document is a primer on delimited continuations and how Water implements them. By the end you should understand:
 
 - What a continuation is and why it matters
 - What "delimited" means and why it's the practical choice
@@ -76,8 +76,8 @@ Worse, undelimited continuations don't *compose*. A continuation in the `call/cc
 
 A *delimited* continuation captures only what's between two markers:
 
-- The **outer marker** is a boundary you've installed deliberately. In water this is what `reset` does.
-- The **inner marker** is wherever you choose to capture. In water this is wherever `shift` is called.
+- The **outer marker** is a boundary you've installed deliberately. In Water this is what `reset` does.
+- The **inner marker** is wherever you choose to capture. In Water this is wherever `shift` is called.
 
 The captured continuation represents the slice of work between those two markers — typically much smaller than "all of the rest of the program," and much more composable.
 
@@ -115,7 +115,7 @@ The captured slice is the box: the work that *would have happened* between the s
 
 Most modern languages with continuation support use the delimited flavor: Racket's `prompt`/`control`, Scala's `shift`/`reset`, OCaml 5's effect handlers (which are a slight generalization). The full-capture `call/cc` is mostly considered a historical mistake.
 
-water uses delimited continuations.
+Water uses delimited continuations.
 
 ---
 
@@ -143,7 +143,7 @@ Users can also push values onto the return stack with `>r` and pop them back wit
 
 ### The side stack
 
-A third stack, used purely for storage. water added this specifically to support some of the library code on top of continuations.
+A third stack, used purely for storage. Water added this specifically to support some of the library code on top of continuations.
 
 Why a third stack? The data stack is the worst place to stash temporary values: if a word leaves results on top, your stashed value either gets in the way or has to be manipulated around the results. The return stack is also a bad place: anything pushed there other than a saved instruction pointer (or a special MARK we'll meet later) gets misinterpreted when EXIT or the unwinding logic pops it.
 
@@ -172,7 +172,7 @@ The side stack is a small additional piece for situations where library code nee
 
 ## Part 4: The inner interpreter
 
-Forth's execution model is built around an *inner interpreter* — a small loop, `run_inner`, that dispatches one word at a time. It reads the next compiled cell, advances the instruction pointer, and calls the handler stored there; the instruction pointer walks a flat array where all compiled code lives. (water is direct-threaded — each cell holds its handler directly; `threading.md` covers dispatch in full.)
+Forth's execution model is built around an *inner interpreter* — a small loop, `run_inner`, that dispatches one word at a time. It reads the next compiled cell, advances the instruction pointer, and calls the handler stored there; the instruction pointer walks a flat array where all compiled code lives. (Water is direct-threaded — each cell holds its handler directly; `threading.md` covers dispatch in full.)
 
 A handler doesn't return to this loop between ops: it ends by tail-calling the next handler, so a run of compiled code executes as a chain of jumps, and control only comes back to the loop when something halts, errors, or unwinds. For a primitive (like `+`) the handler does its work and dispatches on. For a colon-defined word the handler saves the current instruction pointer onto the return stack and points the pointer at the word's body before dispatching into it; the body's closing EXIT pops that saved pointer back, so execution continues where it left off before the call.
 
@@ -862,7 +862,7 @@ A *symmetric* coroutine system has no such hierarchy. Any coroutine can transfer
 
 Asymmetric is easier to implement and reason about. Symmetric is more flexible — it can express patterns (like state machines passing tokens between states) that asymmetric coroutines force you to encode through a coordinator.
 
-In water's primitives, asymmetric coroutines are the natural fit: `shift` always unwinds to the most recent `reset`, which sets up a clear "outer/inner" relationship. Symmetric coroutines can be built on top by writing a coordinator that just shuttles control between named participants — the coordinator is the asymmetric driver, and the participants are asymmetric coroutines under it, but to the participants' perspective they're talking peer-to-peer through the coordinator.
+In Water's primitives, asymmetric coroutines are the natural fit: `shift` always unwinds to the most recent `reset`, which sets up a clear "outer/inner" relationship. Symmetric coroutines can be built on top by writing a coordinator that just shuttles control between named participants — the coordinator is the asymmetric driver, and the participants are asymmetric coroutines under it, but to the participants' perspective they're talking peer-to-peer through the coordinator.
 
 ### State and identity
 
@@ -923,7 +923,7 @@ This is the spiritual ancestor of Unix pipes, Clojure's transducers, and Reactiv
 Multi-producer scheduling — running many coroutines, interleaving their progress — is just a queue of `k`s and a loop that resumes them in turn:
 
 ```forth
-\ Pseudo-code (water doesn't ship a queue type)
+\ Pseudo-code (Water doesn't ship a queue type)
 : scheduler
     begin
         queue-empty? if exit then
@@ -1049,7 +1049,7 @@ In a traditional exception system, the throw site is the loser: it relinquishes 
 
 In a restart system, the *throw site* offers a menu of recovery strategies, and the *catch site* picks one. The throw site retains a kind of "veto" over how the error is handled, because it controls what's resumable.
 
-In water: the signaling word builds a handler quotation that wraps the resume call. The outer handler (the one in `try-catch`) can either run the signaling word's resume strategy (call it as a function) or override (drop the strategy and do its own thing). This combination is more flexible than either pure exceptions or pure restarts.
+In Water: the signaling word builds a handler quotation that wraps the resume call. The outer handler (the one in `try-catch`) can either run the signaling word's resume strategy (call it as a function) or override (drop the strategy and do its own thing). This combination is more flexible than either pure exceptions or pure restarts.
 
 ### A multi-restart example
 
@@ -1136,9 +1136,9 @@ If we have first-class continuations:
 3. The slice runs. If it calls `fail`, the runtime pops the "try-next" stack: get a saved continuation and a list of remaining options, pick the next option (say 2), resume.
 4. If a slice succeeds, the runtime either reports the solution and stops, or treats success as a kind of fail (to enumerate all solutions).
 
-That sketch — capture a continuation, stash it with the untried options, resume on `fail` — is one way to build a backtracking engine on continuations, and it's worth understanding as the general technique. water's own engine is a close cousin that takes a more direct route.
+That sketch — capture a continuation, stash it with the untried options, resume on `fail` — is one way to build a backtracking engine on continuations, and it's worth understanding as the general technique. Water's own engine is a close cousin that takes a more direct route.
 
-### How water implements amb and fail
+### How Water implements amb and fail
 
 `amb` and `fail` are C primitives, not library words. They reuse the return-stack-mark machinery of Part 5, but with the *other* prompt kind: `amb` pushes a `PROMPT_CHOICE` mark, and `fail` targets that kind, so choice points and the `PROMPT_EXCEPTION` marks of `reset`/`shift` nest without interfering.
 
@@ -1160,7 +1160,7 @@ A search reads as a description of the constraints. The lib word `choose` (built
 
 To enumerate *every* solution rather than commit to the first, make success itself backtrack: do something with each answer, then `fail` to drive the search on to the next leaf. That is the same idiom that turns a search into a generator — each solution is a pause point, and forcing the next is one more `fail` — which is why coroutines and backtracking are the same machinery seen from two angles (Part 11).
 
-water's logic layer — logic variables, two-directional unification, the trail that undoes bindings at a choice point, reification, and the relational fact database — is built entirely on this `amb`/`fail` mechanism plus a backtrackable binding store. **`docs/logic.md`** covers it in full: how unification binds variables, how the trail rewinds them on backtrack, and how the pieces compose into a query engine.
+Water's logic layer — logic variables, two-directional unification, the trail that undoes bindings at a choice point, reification, and the relational fact database — is built entirely on this `amb`/`fail` mechanism plus a backtrackable binding store. **`docs/logic.md`** covers it in full: how unification binds variables, how the trail rewinds them on backtrack, and how the pieces compose into a query engine.
 
 The point for *this* document is the narrow one: backtracking search is not a separate language feature but a use of delimited continuations together with a small amount of backtrackable state — the same substrate that makes exceptions, coroutines, and green threads fall out of the same primitives. Constraint solvers, probabilistic-programming samplers, game-tree search, and backtracking parsers are all that shape: explore a tree, undo on backtrack, let a policy choose what to try next.
 
@@ -1179,7 +1179,7 @@ Continuations are the foundation.
 A green thread is a captured continuation plus some state (priority, status, perhaps a name). The scheduler is a loop that picks a thread, resumes it, and gets back either a new continuation (thread yielded) or nothing (thread finished).
 
 ```forth
-\ Sketch of a green-thread runtime in water
+\ Sketch of a green-thread runtime in Water
 
 \ A thread is just a continuation, optionally wrapped with metadata.
 \ The scheduler maintains a queue of ready threads.

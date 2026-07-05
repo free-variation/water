@@ -1,13 +1,13 @@
-# Superinstructions in water
+# Superinstructions in Water
 
-This document is a primer on how water collapses common sequences of
+This document is a primer on how Water collapses common sequences of
 floating-point operations into single dispatched ops — and how it does so
 without asking the programmer to write anything unusual. By the end you should
 understand:
 
 - Why a threaded interpreter spends most of a tight float loop on dispatch
   rather than on arithmetic, and why that is the lever
-- What a superinstruction is, and the four families water defines
+- What a superinstruction is, and the four families Water defines
 - How the compiler fuses idiomatic source into superinstructions at compile
   time, with no new syntax for the programmer to learn
 - How a store (`<expr> to <var>`) fuses into the producing op as well
@@ -30,7 +30,7 @@ bookkeeping trick rather than a special case — because that is all it is.
 
 ## Part 1: Why one dispatch per scalar op is the cost
 
-water is a direct-threaded interpreter (see `docs/threading.md`). A
+Water is a direct-threaded interpreter (see `docs/threading.md`). A
 compiled word body is an array of cells; each cell is a handler pointer, and
 running the body means a `musttail` chain of indirect calls, one per operation.
 That dispatch is cheap, but it is not free: an indirect call plus the per-op
@@ -52,7 +52,7 @@ small slice.
 
 A modern bytecode interpreter like CPython narrows this gap with a
 *specializing* interpreter: it fuses and specializes opcodes at runtime so each
-bytecode does more real work. water has no runtime specializer and does not
+bytecode does more real work. Water has no runtime specializer and does not
 compile to native code. The only lever available is to **do more per dispatch**
 — to recognize, at compile time, that a run of cheap ops can be replaced by one
 op that does all their work.
@@ -90,7 +90,7 @@ ops of `x1 x2 f-`.
 
 ## Part 3: The four families
 
-water defines four families of float superinstruction, named by how many
+Water defines four families of float superinstruction, named by how many
 variable operands they carry. `vv` means two inline variables, `vf` means one;
 then `f` for float, then the operator.
 
@@ -266,7 +266,7 @@ A superinstruction is not one piece of code; it is six. Each needs:
 6. a line in the fuse logic mapping a base operator to the superinstruction.
 
 Maintaining six parallel parts by hand is how a subtle bug enters: forget the
-width entry and the garbage collector silently mis-walks the body. water
+width entry and the garbage collector silently mis-walks the body. Water
 avoids that by deriving all six from a single per-family list of operators. Each
 list entry is just an operator plus the base float op it builds on, and a template
 expands the list once for each purpose — the runtime handler, the store-variant

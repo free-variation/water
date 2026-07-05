@@ -1,4 +1,4 @@
-# water reference
+# Water reference
 
 Every entry is derived from reading the C source. Stack effects are exact;
 `--` separates the state before (bottom to top, leftmost = deepest) from after.
@@ -768,13 +768,13 @@ Embedded relational storage via the vendored SQLite amalgamation, built into the
 | `db-exec` | `( db statement params -- n )` | Bind `params` to the statement's `?` placeholders and run it with no result set (INSERT / UPDATE / DELETE / CREATE / …); return the affected-row count as a float (0 for DDL). One statement per call. On a bad statement, errors with SQLite's message | per statement | none | O(statement) |
 | `db-query` | `( db query params -- rel )` | Bind `params` to the query's `?` placeholders and run it; return an index-less relation `{ :rows <array of row frames> :index { } }`. Each row is a frame keyed by column-name symbols, with INTEGER/REAL → float, TEXT → string, NULL → `null`, BLOB → string of raw bytes. `:rows` is a **bag** — duplicates kept, in result order. On a bad query, errors with SQLite's message | n·c | `1o` relation + `1a(n)` + `1o`/row + a string per text/blob cell | O(n·c) |
 
-Using a closed handle errors (`database is closed`). Do selection, projection, and joins in the SQL itself; water materializes the result. Indexing a result is a separate, explicit step — `create-index` (see Fact database) — because it interns the indexed columns to symbols, which only makes sense for low-cardinality categorical columns you choose.
+Using a closed handle errors (`database is closed`). Do selection, projection, and joins in the SQL itself; Water materializes the result. Indexing a result is a separate, explicit step — `create-index` (see Fact database) — because it interns the indexed columns to symbols, which only makes sense for low-cardinality categorical columns you choose.
 
 ---
 
 ## Foreign function interface
 
-Call C functions in any shared library at runtime via `libdl` + `libffi` — no per-library glue. `ffi-open` loads a library; `ffi-function` / `ffi-variadic` resolve a symbol and define a water word that marshals its arguments and result. Types are symbols: `:void :int :long :double :ptr :string` — water floats marshal to/from C `int`/`long`/`double`, strings pass as `const char*` (a returned `char*` is copied into a water string), and `:ptr` is an opaque C pointer held as a `T_PTR` handle (a registry index, since a 64-bit pointer doesn't fit a Val's 44-bit payload). FFI is unsafe: a wrong signature corrupts or crashes — argument *count* is checked, types are the caller's responsibility.
+Call C functions in any shared library at runtime via `libdl` + `libffi` — no per-library glue. `ffi-open` loads a library; `ffi-function` / `ffi-variadic` resolve a symbol and define a Water word that marshals its arguments and result. Types are symbols: `:void :int :long :double :ptr :string` — Water floats marshal to/from C `int`/`long`/`double`, strings pass as `const char*` (a returned `char*` is copied into a Water string), and `:ptr` is an opaque C pointer held as a `T_PTR` handle (a registry index, since a 64-bit pointer doesn't fit a Val's 44-bit payload). FFI is unsafe: a wrong signature corrupts or crashes — argument *count* is checked, types are the caller's responsibility.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -785,7 +785,7 @@ Call C functions in any shared library at runtime via `libdl` + `libffi` — no 
 | `ffi-variadic` | `( lib symbol arg-types ret-type n-fixed -- ) <name>` | Like `ffi-function` for a variadic C function: `n-fixed` leading arguments use the fixed convention, the rest the variadic one (`ffi_prep_cif_var`). Variadic argument types are fixed per binding, so declare one word per type combination (e.g. a `:string` `setopt` and a `:long` `setopt`) | dlsym + prep_cif_var | 1 binding | O(argc) |
 | `ffi-free` | `( ptr -- )` | `free` a C buffer held as a `T_PTR` (e.g. from `malloc`) and clear its registry slot. Not for library handles | free | none | O(1) |
 
-A defined FFI word pops its arguments, marshals each per the declared signature, calls through libffi, and pushes the marshalled return (`:void` pushes nothing). The build links `-lffi`; `dlopen` is in libSystem. Callbacks (C → water), struct-by-value, varargs-per-call, and finer numeric types (`float`, unsigned) are not yet supported.
+A defined FFI word pops its arguments, marshals each per the declared signature, calls through libffi, and pushes the marshalled return (`:void` pushes nothing). The build links `-lffi`; `dlopen` is in libSystem. Callbacks (C → Water), struct-by-value, varargs-per-call, and finer numeric types (`float`, unsigned) are not yet supported.
 
 ---
 

@@ -1,6 +1,6 @@
-# The symbol hash index in water
+# The symbol hash index in Water
 
-This is a primer on how water interns symbols — turning a name like
+This is a primer on how Water interns symbols — turning a name like
 `first_name` into a small integer id — and on the hash index that makes the
 lookup constant-time. By the end you should understand:
 
@@ -47,7 +47,7 @@ pool:    '0' '\0'    '1' '\0'    'a' 'g' 'e' '\0'    ...
 **A symbol's id is its byte offset into this pool.** To recover a name's text, you
 index the pool at its id. (The first two entries, `"0"` and `"1"`, are reserved on
 purpose: they're the boolean symbols `:0` and `:1`, interned first at startup,
-followed by a few path symbols like `*` and `//`. That post-startup high-water
+followed by a few path symbols like `*` and `//`. That post-startup high-Water
 mark matters in Part 6.)
 
 The representation is compact and makes the text trivially recoverable, but it has
@@ -94,7 +94,7 @@ overwhelmingly common path, and the only path a single-threaded program takes fo
 a known name. A miss has to insert, and concurrency makes that the delicate part.
 Three things keep it correct when several workers intern at once:
 
-- **The insert is serialized.** Appending a name bumps the pool's high-water mark
+- **The insert is serialized.** Appending a name bumps the pool's high-Water mark
   and writes the bytes; two threads doing that at once would corrupt the pool. A
   mutex serializes inserters.
 - **It re-probes under the lock (double-checked).** Between the first lock-free
@@ -115,7 +115,7 @@ model that makes concurrent interning possible is `multicore.md`'s subject.
 ## Part 5: Sizing the table
 
 Open-addressing tables usually grow and rehash as they fill, because probe chains
-lengthen badly past a moderate load. water's table never grows — it's sized
+lengthen badly past a moderate load. Water's table never grows — it's sized
 once and that's the whole lifecycle. Two constants set the headroom: the pool's
 byte size and the table's slot count.
 
@@ -138,7 +138,7 @@ cap as the backstop.
 
 The index is *redundant* state: it duplicates information the pool already implies,
 so it has to be kept in step with the pool, and there's one place the pool changes
-out from under it. water can **truncate the pool** — `forget_user` (the path
+out from under it. Water can **truncate the pool** — `forget_user` (the path
 behind the `reset` family) rolls it back to the post-startup snapshot, dropping
 every symbol interned since; loading an image resets it to the snapshot plus the
 image's own names. After either, the pool's contents have changed but the index
@@ -150,7 +150,7 @@ truncated: clear the table and re-insert every name still in it, walking the poo
 entry by entry. This runs only at reset or image load — rare, and always
 single-threaded with no worker in flight, so it needs no locking. It's also why
 the reserved boolean symbols survive a reset cleanly: they live below the snapshot
-watermark, so the rebuild always re-scans and re-inserts them, and the `offset + 1`
+Watermark, so the rebuild always re-scans and re-inserts them, and the `offset + 1`
 encoding lets the false symbol at offset 0 round-trip through both the live table
 and a rebuilt one.
 

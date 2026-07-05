@@ -1,9 +1,9 @@
-# Multicore in water
+# Multicore in Water
 
-This is a primer on how water spreads work across CPU cores — what `pmap`
+This is a primer on how Water spreads work across CPU cores — what `pmap`
 does and the machinery underneath it. By the end you should understand:
 
-- The three ways a runtime can use multiple cores, and why water threads
+- The three ways a runtime can use multiple cores, and why Water threads
   over one shared heap rather than forking or copying results back
 - What state is shared between threads and what each thread keeps private
 - How a parallel loop load-balances itself with a dynamic work cursor
@@ -20,7 +20,7 @@ It's a conceptual tour. The machinery is in `src/c/core.c` and
 
 ---
 
-## Part 1: Three ways to use cores, and the one water uses
+## Part 1: Three ways to use cores, and the one Water uses
 
 A single-threaded interpreter leaves a multicore machine mostly idle. There are
 three established ways to spread an interpreter's work across cores, differing
@@ -39,9 +39,9 @@ mainly in what they do with *memory*.
 
 - **Threads over one shared heap.** Workers share the address space *and* the
   heap. A value a worker builds is, immediately, a value the coordinator can
-  name. This is what water does.
+  name. This is what Water does.
 
-The shared-heap choice pays off because of how water already represents
+The shared-heap choice pays off because of how Water already represents
 values. A value on a stack is a tagged word whose payload, for a heap type, is a
 *handle* — an index into a global table, not a raw pointer (see `gc.md`). The
 object table and the cons-pair table are one-per-process globals. So when a
@@ -121,7 +121,7 @@ Two things get claimed in bulk:
   covers the slab mechanism).
 - **Handles** — object slots and pair slots — come from a *band* the thread has
   claimed: a contiguous run of slot indices (`SLOTS_PER_CLAIM` of them) taken from
-  the table's shared high-water mark with one atomic. The thread then hands out
+  the table's shared high-Water mark with one atomic. The thread then hands out
   slots from its band with a plain increment, and records the band's start so it
   can later sweep its own slots (Part 8). When the band empties it claims another.
 
@@ -191,7 +191,7 @@ preserved.
 
 The coordinator's shape is the same for all three: allocate the result array (and
 root it, since the kernels allocate), pre-size the heap tables, snapshot the
-tables' high-water marks, run the work cursor, then either surface a worker fault
+tables' high-Water marks, run the work cursor, then either surface a worker fault
 or finish. The kernel maps each element of its claimed chunk through a worker
 interpreter and writes the result into the matching output slot.
 
@@ -218,9 +218,9 @@ A worker fault surfaces as an error, never as silent garbage in the result.
 
 On success the coordinator does one more thing: it reclaims the region's
 allocations when nothing live points into them. It snapshotted the tables'
-high-water marks before the workers ran; if no output value references memory the
+high-Water marks before the workers ran; if no output value references memory the
 region allocated — checked by a shallow scan of the results — it **rewinds**
-those high-water marks, dropping the whole region's allocations at once. This is
+those high-Water marks, dropping the whole region's allocations at once. This is
 valid because a worker-allocated value always has a handle at or above the
 snapshot, so if the output references none of them, everything above the line is
 garbage. It costs an O(n) scan of the results, no collection, no lock. The cases

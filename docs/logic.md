@@ -1,7 +1,7 @@
-# Logic programming in water
+# Logic programming in Water
 
 This is a primer on logic programming — computing with *unknowns* and *search*
-rather than fixed values — and on how water provides it. By the end you
+rather than fixed values — and on how Water provides it. By the end you
 should understand:
 
 - What a logic variable is, and how a *substitution* records what the unknowns
@@ -16,7 +16,7 @@ should understand:
 - How these pieces compose into a relational fact database
 
 It's a conceptual tour. The engine lives in `src/c/logic.c` and parts of
-`src/c/core.c`; the fact-database layer is in the standard library. water's
+`src/c/core.c`; the fact-database layer is in the standard library. Water's
 logic engine is behaviorally a microKanren — the classic minimal relational
 language — but realized on the interpreter's own substrate (a mutable binding
 store, a trail, and delimited continuations) rather than the streams-of-
@@ -201,10 +201,10 @@ reified term reflects every binding in force at the moment of reification.
 microKanren is the standard minimal logic language: four operators — `fresh`
 (introduce a variable), `≡` (unify), `disj` (or), `conj` (and) — over a
 *substitution*, with goals mapping a substitution to a (possibly infinite) *stream*
-of substitutions. water provides the same operations and the same behavior by
+of substitutions. Water provides the same operations and the same behavior by
 a different route:
 
-| microKanren | water | how it differs |
+| microKanren | Water | how it differs |
 |---|---|---|
 | `fresh` | `lvar` | A variable is a handle into the binding store, not an abstract symbol. |
 | `≡` (unify) | `~` / `unify` | Same two-directional unification. |
@@ -217,7 +217,7 @@ a different route:
 The substantive differences are the last two rows. microKanren's substitution is
 *persistent* — extending it returns a new map and leaves the old intact, so
 branches just hold different maps and need no undo — and its search is a lazy
-*stream* that disjunction interleaves. water keeps one *mutable* substitution
+*stream* that disjunction interleaves. Water keeps one *mutable* substitution
 undone with the trail, and drives the search with delimited continuations. The two
 compute the same answers; the mutable-plus-trail approach fits an imperative
 interpreter that already owns its call chain as data — a binding is one array
@@ -225,7 +225,7 @@ write, undoing a branch is a few trail-pops, a choice point is a return-stack ma
 plus a few saved integers — so the relational operators *are* primitives over the
 interpreter's own state, with no transpilation to a stream library.
 
-Like most Prologs, water omits the **occurs check**: unifying a variable with
+Like most Prologs, Water omits the **occurs check**: unifying a variable with
 a term doesn't first check whether the variable appears inside that term, so it can
 build a cyclic structure. The win is that binding stays a single array write; the
 cost is that a later `copy` or `reify` walking such a cycle would recur without

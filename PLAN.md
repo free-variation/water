@@ -1,4 +1,4 @@
-# water — future work
+# Water — future work
 
 A TODO list of pending work.
 
@@ -72,10 +72,10 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
 `render` produces a value's display form, which is not always re-readable —
 strings print raw, a matrix prints as a grid. `frame>json` round-trips, but only
 the JSON-expressible subset (frames, arrays, strings, numbers, booleans).
-Missing is a representation that reads back through the water reader for
+Missing is a representation that reads back through the Water reader for
 *any* value.
 
-- `repr` ( v -- s ) — a string of water source that, read back, reconstructs
+- `repr` ( v -- s ) — a string of Water source that, read back, reconstructs
   an equal value: quoted strings (with `""` escaping), `[ ]` arrays, `{ :k v }`
   frames, `< >` sets, `[( )]` cons lists, `:name` symbols, floats in shortest
   round-trip form, a matrix as its `[ … ] R C matrix` constructor.
@@ -185,11 +185,11 @@ the locals-frame and trail rewind the unwind already carries; whether
 
 ## FastCGI service
 
-Run water as a long-lived FastCGI application behind an off-the-shelf web
+Run Water as a long-lived FastCGI application behind an off-the-shelf web
 server (nginx, Caddy, lighttpd, Apache). The web server owns everything HTTP —
 TLS termination, HTTP/1.1–3, request parsing, static files, timeouts, rate
 limiting, access logs, load balancing — and forwards each request over a Unix or
-TCP socket as FastCGI records. water never sees a raw HTTP byte: it decodes
+TCP socket as FastCGI records. Water never sees a raw HTTP byte: it decodes
 the records, runs a handler, writes the response.
 
 **Instrumentation needed** — less than an in-process server, since the web server
@@ -227,7 +227,7 @@ builders are `lib.h2o`.
 
 ## Foreign function interface
 
-- **Callbacks** — C → water function pointers (`qsort` comparators,
+- **Callbacks** — C → Water function pointers (`qsort` comparators,
   `CURLOPT_WRITEFUNCTION` to capture a response body into a string).
 - **Struct-by-value** arguments and returns.
 - **Per-call varargs** — variadic arg types chosen at the call site rather

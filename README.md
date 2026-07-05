@@ -1,4 +1,4 @@
-# <img src="water_logo.png" alt="" height="40" align="top"> water
+# <img src="water_logo.png" alt="" height="40" align="top"> Water
 
 A Forth-flavored language for numeric and matrix work, statistics and
 regression, set/array/frame manipulation, string/regex processing, logic
@@ -10,7 +10,7 @@ runtime C FFI. A compact C interpreter built with `clang -O3`.
 ```
 make           # builds ./water
 make test      # runs the golden-output test suite
-make bench     # runs the benchmark suite (water vs CPython)
+make bench     # runs the benchmark suite (Water vs CPython)
 ./water   # REPL
 ```
 
@@ -314,7 +314,7 @@ src/forth/lib.h2o      — standard library (embedded, auto-loaded at startup)
 lib/                   — loadable libraries: statistics.h2o, files.h2o, claude.h2o
 external/              — vendored deps: pcre2, sqlite, isocline, lapacke
 tests/                 — golden-output test files
-bench/                 — benchmark suite (water vs CPython) and inventory
+bench/                 — benchmark suite (Water vs CPython) and inventory
 docs/                  — design documents and the word reference
 examples/              — sample programs
 PLAN.md                — future work

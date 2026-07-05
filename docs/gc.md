@@ -1,6 +1,6 @@
-# Garbage collection in water
+# Garbage collection in Water
 
-This is a primer on how water reclaims memory. By the end you should
+This is a primer on how Water reclaims memory. By the end you should
 understand:
 
 - What problem garbage collection solves
@@ -85,7 +85,7 @@ object slot and cons cell alike — and free the dead ones.
 
 ## Part 3: Mark and sweep
 
-water uses *mark-and-sweep*, one of the oldest collection algorithms. It
+Water uses *mark-and-sweep*, one of the oldest collection algorithms. It
 runs in two phases.
 
 **Mark.** Starting from the *roots* — references the runtime knows are live —
@@ -112,7 +112,7 @@ The rest of this document answers each.
 ## Part 4: Roots — where reachability starts
 
 A *root* is a reference the GC trusts as live; anything reachable from a root is
-live, everything else dead. In water the roots come from five places:
+live, everything else dead. In Water the roots come from five places:
 
 1. The **data stack** — the values user code is computing with.
 2. The **return stack** — saved instruction pointers, and any values parked there
@@ -146,7 +146,7 @@ guard), or reaches a non-reference.
 
 The one design choice worth dwelling on is **how a mark is recorded**, because
 the obvious approach — a mark bit per value, cleared at the start of every cycle
-— costs an O(n) clear pass over the whole heap each time. water instead uses
+— costs an O(n) clear pass over the whole heap each time. Water instead uses
 an **epoch**: a single counter the collector bumps by one at the start of each
 collection. Every value carries the epoch at which it was last marked, and a
 value counts as marked for *this* cycle iff its stamp equals the current epoch.
@@ -260,10 +260,10 @@ no scan. The pair table is swept the same way into its own free list.
 ### Why not compact?
 
 After a sweep the tables have holes — freed slots scattered among live ones.
-water doesn't slide live values down to close them, because a value is named
+Water doesn't slide live values down to close them, because a value is named
 by its slot index: moving it would mean finding and rewriting every handle that
 points at it. So holes are reused in place. The tables stay sparse and never
-shrink below their high-water mark, and allocation stays O(1) regardless — the
+shrink below their high-Water mark, and allocation stays O(1) regardless — the
 sweep leaves a free list, and the allocator just pops.
 
 ---

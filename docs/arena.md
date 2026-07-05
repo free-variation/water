@@ -1,6 +1,6 @@
 # The arena allocator
 
-water runs its heap through a custom allocator instead of calling
+Water runs its heap through a custom allocator instead of calling
 `malloc`/`free` per object. The design buys two things at once: allocation that
 costs little more than a pointer increment, and reclamation that recycles freed
 memory in constant time with no search. This document builds the idea up from the
@@ -8,7 +8,7 @@ bottom — the mechanism, not the exact data structures, which live in `core.c`.
 
 ## The shape of the heap
 
-Every heap value in water is a small fixed-size header struct (an `Object`)
+Every heap value in Water is a small fixed-size header struct (an `Object`)
 plus, usually, a separately allocated payload — a string's bytes, an array's
 slots, a frame's parallel key and value arrays. The headers and most of those
 payloads come from the arena. A few payloads deliberately sit outside it; the
@@ -29,12 +29,12 @@ allocates a few megabytes uses a few megabytes of RAM.
 The point of reserving so much up front is that the region never has to move or
 grow. Its base address is fixed for the life of the process, so a pointer into
 the arena stays valid forever — there is no realloc-and-relocate that could pull
-memory out from under a value still in use. A single high-water mark records how
+memory out from under a value still in use. A single high-Water mark records how
 far into the reservation the allocator has claimed so far.
 
 ## Bump allocation
 
-Allocations don't touch that shared high-water mark directly. Each one advances a
+Allocations don't touch that shared high-Water mark directly. Each one advances a
 cursor within a *slab* — a contiguous window the allocator has already claimed
 from the reserved region. Handing out memory is then just:
 
@@ -46,7 +46,7 @@ cursor += rounded_up_request
 — a pointer read and an add. When the window doesn't have room for the request,
 the allocator refills it by claiming a fresh slab (`SLAB_BYTES`, tens of
 kilobytes) from the reserved region with a single atomic bump of the shared
-high-water mark. So the shared write happens once per *slab*, not once per
+high-Water mark. So the shared write happens once per *slab*, not once per
 allocation; everything in between is the local cursor.
 
 That cursor, and the rest of an allocating thread's private bookkeeping, lives in

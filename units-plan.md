@@ -2,7 +2,7 @@
 
 ## Context
 
-water has a single numeric type (NaN-boxed `double`) plus raw-`double` matrices. We're adding **dimensioned quantities**: a magnitude carrying a unit, with arithmetic that propagates units automatically (`10 m 2 s / → 5 m/s`). The goal is dimensional *checking and algebra*, not unit *conversion*: units are rational-exponent vectors over user-declared base dimensions, magnitudes just compute, no scale factors or affine offsets.
+Water has a single numeric type (NaN-boxed `double`) plus raw-`double` matrices. We're adding **dimensioned quantities**: a magnitude carrying a unit, with arithmetic that propagates units automatically (`10 m 2 s / → 5 m/s`). The goal is dimensional *checking and algebra*, not unit *conversion*: units are rational-exponent vectors over user-declared base dimensions, magnitudes just compute, no scale factors or affine offsets.
 
 Two hard requirements from review:
 1. **Zero performance impact on dimensionless processing.** Plain floats and raw matrices are the hot paths; they must run byte-for-byte the same code they do today. Dimensioned values are opt-in and boxed.
@@ -118,7 +118,7 @@ Unary math — only **three** words need quantity handling. `abs`/`sqrt` are mac
 ## Step 5 — image round-trip (core.c)
 
 Quantities live in pair slots, already serialized wholesale by `p_save_image`/`p_load_image`: the head (float or matrix `Val`) and tail (unit_id bits) round-trip as raw bits; a dimensioned matrix's backing Object rides the existing object-table serialization. To keep each `unit_id` valid:
-- Serialize the **dimensions and units tables** alongside the symbol pool using the **watermark pattern** (`init_symbol_pool_here`): add `init_n_dims`/`init_n_units`, write only user-added entries, and add them to the bootstrap-mismatch check. Dim names are symbol offsets valid against the restored (append-only) pool; ids keep their indices.
+- Serialize the **dimensions and units tables** alongside the symbol pool using the **Watermark pattern** (`init_symbol_pool_here`): add `init_n_dims`/`init_n_units`, write only user-added entries, and add them to the bootstrap-mismatch check. Dim names are symbol offsets valid against the restored (append-only) pool; ids keep their indices.
 - **`image_op_cells`** → add `dounit` → return 2 (Step 2, item 7) so colon words that reference units translate correctly.
 - **`loaded_handle_ok`** → `case T_QUANTITY:` validate slot ∈ `[0,pairs.space.n)` **and** `unit_id=(int)pairs.table[slot].tail.bits` ∈ `[0,n_units)`. (The pair-walk in `validate_loaded` validates the head matrix via its own `T_MATRIX` case and ignores the float-looking tail, so the `unit_id` must be checked here, where the `T_QUANTITY` Val is seen.)
 
@@ -145,11 +145,11 @@ Quantities live in pair slots, already serialized wholesale by `p_save_image`/`p
 - **src/c/water.h** — `T_QUANTITY`; `make_quantity`; `truthy` arm (`return truthy(pairs.table[VAL_DATA].head)`); dims/units structs + externs; `init_n_dims`/`init_n_units`; prototypes (`p_base`, `p_unit`, `dounit`, `push_quantity`, `q_mag_*`, unit helpers, `render_unit`).
 - **src/c/units.c** (new; add to Makefile `SRCS`) — tables, rational/`gcd`, intern, `unit_multiply`/`unit_divide`/`unit_pow`, `render_unit`, `push_quantity`, `p_base`, `p_unit`, `dounit`.
 - **src/c/words.c** — quantity arms in `p_add`/`p_sub`/`p_mul`/`p_div` (appended after existing branches); `q_mag_*` combinators; `p_neg`; `abs`/`sqrt` un-macro'd with quantity arms; `p_power`.
-- **src/c/core.c** — `tag_name`, `val_cmp_depth`, `mark_value` (guard + arm), `print_val`, `print_val_compact`; image save/load of the two tables + watermarks; `loaded_handle_ok`; **`execute_cfa`** (`dounit` case), **`call_open`** (guard), **`see_compiled_body`/`see_tree_body`** (`dounit` case), **`image_op_cells`** (`dounit` → 2); `construct_vocabulary` registers `base`/`unit`; `handler_registry` + `emit_call` learn `dounit`; init watermarks.
+- **src/c/core.c** — `tag_name`, `val_cmp_depth`, `mark_value` (guard + arm), `print_val`, `print_val_compact`; image save/load of the two tables + Watermarks; `loaded_handle_ok`; **`execute_cfa`** (`dounit` case), **`call_open`** (guard), **`see_compiled_body`/`see_tree_body`** (`dounit` case), **`image_op_cells`** (`dounit` → 2); `construct_vocabulary` registers `base`/`unit`; `handler_registry` + `emit_call` learn `dounit`; init Watermarks.
 - **src/c/functional.c** — `references_region_depth` arm.
 - **docs/reference.md** (+ regen), **PLAN.md**, **tests/NNN_units.h2o** + `.expected`.
 
-Reuse: `intern_symbol`, `object_new_pair`/`INIT_PAIR`, `create_header`/`emit`/`emit_call`/`next_token`, `define_primitive`, the `dosym` template, `matrix_add`/`matrix_mul`/`matrix_sub`/`matrix_div` + `BROADCAST_*` macros, `val_cmp`, `print_double`/`print_matrix_grid`, `fail`, the symbol-pool watermark machinery.
+Reuse: `intern_symbol`, `object_new_pair`/`INIT_PAIR`, `create_header`/`emit`/`emit_call`/`next_token`, `define_primitive`, the `dosym` template, `matrix_add`/`matrix_mul`/`matrix_sub`/`matrix_div` + `BROADCAST_*` macros, `val_cmp`, `print_double`/`print_matrix_grid`, `fail`, the symbol-pool Watermark machinery.
 
 ## Verification
 
