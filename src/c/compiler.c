@@ -1,0 +1,661 @@
+/* Compile-time words: colon/quotation definition, control flow (if/begin/
+   while/repeat), locals declaration, to/constant/variable/symbol, tick,
+   inline, forget. Split out of words.c; all dependencies are in water.h. */
+#include "water.h"
+
+static void enter_compile_scope(Interpreter *interp);
+static void leave_compile_scope(Interpreter *interp);
+
+void p_semicolon(Interpreter *interp) {
+	if (compiler.compiling_src_start > 0 && compiler.n_local_scopes > 1) {
+		int partial_cfa = vocab.latest_cfa;
+		vocab.here = partial_cfa - 4;
+		vocab.names_here = (int)WORD_NAME(partial_cfa);
+		vocab.latest_cfa = (int)WORD_LINK(partial_cfa);
+		compiler.n_local_scopes = 0;
+		compiler.n_local_names = 0;
+		compiler.local_names_pool_here = 0;
+		compiler.compiling = 0;
+		compiler.compiling_src_start = 0;
+		fail(interp, "; : unterminated quotation (a [: , [> , or [| has no matching :])");
+		return;
+	}
+	leave_compile_scope(interp);
+	emit_call(interp, vocab.exit_cfa);
+	if (compiler.compiling_src_start > 0 && vocab.latest_cfa != 0) {
+		int src_end = compiler.input_buffer_pos - 1;
+		int src_len = src_end - compiler.compiling_src_start;
+		src_len = MAX(src_len, 0);
+		if (vocab.source_here + src_len + 1 > SOURCE_POOL) {
+			fail(interp, "source pool full (max %d bytes); definition source too large to store", SOURCE_POOL);
+		} else {
+			int source_offset = vocab.source_here;
+			memcpy(&vocab.source_pool[vocab.source_here],
+					&compiler.input_buffer[compiler.compiling_src_start],
+					(size_t)src_len);
+			vocab.source_pool[vocab.source_here + src_len] = 0;
+			vocab.source_here += src_len + 1;
+			WORD_SOURCE(vocab.latest_cfa) = source_offset;
+		}
+	}
+	compiler.compiling = 0;
+	compiler.compiling_src_start = 0;
+
+	DISPATCH(interp);
+}
+
+static int try_fuse_cmp_branch(Interpreter *interp) {
+	int fused_cfa;
+
+	if (compiler.fuse_prev_cmp == vocab.eq_cfa)
+		fused_cfa = vocab.eq_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.lt_cfa)
+		fused_cfa = vocab.lt_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.gt_cfa)
+		fused_cfa = vocab.gt_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.zeq_cfa)
+		fused_cfa = vocab.zeq_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.eq_f_cfa)
+		fused_cfa = vocab.eq_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.lt_f_cfa)
+		fused_cfa = vocab.lt_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.gt_f_cfa)
+		fused_cfa = vocab.gt_f_zbranch_cfa;
+	else
+		return 0;
+
+	vocab.here--;
+	emit_call(interp, fused_cfa);
+	return 1;
+}
+
+
+void p_if(Interpreter *interp) {
+	if (!try_fuse_cmp_branch(interp))
+		emit_call(interp, vocab.zbranch_cfa);
+	push(interp, make_float((double)vocab.here));
+	emit(interp, 0);
+
+	DISPATCH(interp);
+}
+
+void p_qif(Interpreter *interp) {
+	emit_call(interp, vocab.qzbranch_cfa);
+	push(interp, make_float((double)vocab.here));
+	emit(interp, 0);
+
+	DISPATCH(interp);
+}
+
+static int valid_patch_slot(Interpreter *interp, int slot, const char *op) {
+	if (slot < DICT_RESERVED || slot > vocab.here) {
+		fail(interp, "%s: no matching control-flow opener", op);
+		return 0;
+	}
+	return 1;
+}
+
+void p_then(Interpreter *interp) {
+	POP(slot_val);
+	int slot = (int)VAL_NUMBER(slot_val);
+	if (!valid_patch_slot(interp, slot, "then"))
+		return;
+	vocab.dict[slot] = (vocab.here - slot);
+	compiler.fuse_floor = vocab.here;
+
+	DISPATCH(interp);
+}
+
+void p_else(Interpreter *interp) {
+	POP(slot_val);
+	int slot = (int)VAL_NUMBER(slot_val);
+	if (!valid_patch_slot(interp, slot, "else"))
+		return;
+	emit_call(interp, vocab.branch_cfa);
+	push(interp, make_float((double)vocab.here));
+	emit(interp, 0);
+	vocab.dict[slot] = (vocab.here - slot);
+
+	DISPATCH(interp);
+}
+
+void p_begin(Interpreter *interp) {
+	push(interp, make_float((double)vocab.here));
+	compiler.fuse_floor = vocab.here;
+
+	DISPATCH(interp);
+}
+
+void p_until(Interpreter *interp) {
+	POP(back_val);
+	int back = (int)VAL_NUMBER(back_val);
+	if (!valid_patch_slot(interp, back, "until"))
+		return;
+	if (!try_fuse_cmp_branch(interp))
+		emit_call(interp, vocab.zbranch_cfa);
+	emit(interp, back - vocab.here);
+
+	DISPATCH(interp);
+}
+
+void p_again(Interpreter *interp) {
+	POP(back_val);
+	int back = (int)VAL_NUMBER(back_val);
+	if (!valid_patch_slot(interp, back, "again"))
+		return;
+	emit_call(interp, vocab.branch_cfa);
+	emit(interp, back - vocab.here);
+
+	DISPATCH(interp);
+}
+
+void p_while(Interpreter *interp) {
+	if (!try_fuse_cmp_branch(interp))
+		emit_call(interp, vocab.zbranch_cfa);
+	push(interp, make_float((double)vocab.here));
+	emit(interp, 0);
+
+	DISPATCH(interp);
+}
+
+void p_repeat(Interpreter *interp) {
+	POP(exit_slot_val);
+	POP(back_val);
+	int exit_slot = (int)VAL_NUMBER(exit_slot_val);
+	int back = (int)VAL_NUMBER(back_val);
+	if (!valid_patch_slot(interp, back, "repeat") || !valid_patch_slot(interp, exit_slot, "repeat"))
+		return;
+	emit_call(interp, vocab.branch_cfa);
+	emit(interp, back - vocab.here);
+	vocab.dict[exit_slot] = (vocab.here - exit_slot);
+
+	DISPATCH(interp);
+}
+
+static void open_quotation(Interpreter *interp) {
+	int branch_slot = -1;
+	if (compiler.compiling) {
+		emit_call(interp, vocab.branch_cfa);
+		branch_slot = vocab.here;
+		emit(interp, 0);
+	}
+	int anon_cfa = vocab.here;
+	emit(interp, (cell)&docol);
+	compiler.fuse_floor = vocab.here;
+	compiler.loadn_at = -1;
+	enter_compile_scope(interp);
+	compiler.compiling = 1;
+	push(interp, make_float((double)anon_cfa));
+	push(interp, make_float((double)branch_slot));
+}
+
+void p_qcolon(Interpreter *interp) {
+	open_quotation(interp);
+
+	DISPATCH(interp);
+}
+
+void p_qsemi(Interpreter *interp) {
+	leave_compile_scope(interp);
+	emit_call(interp, vocab.exit_cfa);
+	POP(branch_slot_val);
+	POP(anon_cfa_val);
+	int branch_slot = (int)VAL_NUMBER(branch_slot_val);
+	int anon_cfa = (int)VAL_NUMBER(anon_cfa_val);
+	if (branch_slot < 0) {
+		compiler.compiling = 0;
+		push(interp, make_xt(anon_cfa));
+	} else {
+		vocab.dict[branch_slot] = (vocab.here - branch_slot);
+		emit_val_literal(interp, make_xt(anon_cfa));
+	}
+
+	DISPATCH(interp);
+}
+
+static int parse_word_cfa(Interpreter *interp, const char *op) {
+	char *token = next_token();
+	
+	if (!token) {
+		fail(interp, "%s : expected a word name", op);
+		return 0;
+	}
+	int target_cfa = find(token);
+	if (!target_cfa) {
+		fail(interp, "%s : unknown word: %s", op, token);
+		return 0;
+	}
+
+	return target_cfa;
+}
+	
+
+void p_tick(Interpreter *interp) {
+	int target_cfa = parse_word_cfa(interp, "'");
+	if (!target_cfa)
+		return;
+
+	Val value = make_xt(target_cfa);
+	if (compiler.compiling)
+		emit_val_literal(interp, value);
+	else
+		push(interp, value);
+
+	DISPATCH(interp);
+}
+
+void p_lookup(Interpreter *interp) {
+	int target_cfa = parse_word_cfa(interp, "lookup");
+	if (!target_cfa)
+		return;
+
+	push(interp, make_xt(target_cfa));
+
+	DISPATCH(interp);
+}
+static void enter_compile_scope(Interpreter *interp) {
+	if (compiler.n_local_scopes >= MAX_LOCAL_SCOPES) {
+		fail(interp, "compile: locals nesting deeper than %d", MAX_LOCAL_SCOPES);
+		return;
+	}
+
+	compiler.local_scope_starts[compiler.n_local_scopes] = compiler.n_local_names;
+	compiler.local_scope_dict_starts[compiler.n_local_scopes] = vocab.here;
+	compiler.n_local_scopes++;
+}
+
+static void leave_compile_scope(Interpreter *interp) {
+	if (compiler.n_local_scopes <= 0)
+		return;
+
+	compiler.n_local_scopes--;
+	int saved_n_names = compiler.local_scope_starts[compiler.n_local_scopes];
+	int n_locals_in_scope = compiler.n_local_names - saved_n_names;
+
+	if (n_locals_in_scope > 0) {
+		emit_call(interp, vocab.leave_locals_cfa);
+		emit(interp, (cell)n_locals_in_scope);
+	}
+
+	if (saved_n_names == 0) {
+		compiler.local_names_pool_here = 0;
+	} else {
+		int last_offset = compiler.local_name_offsets[saved_n_names - 1];
+		compiler.local_names_pool_here = last_offset +
+			(int)strlen(&compiler.local_names_pool[last_offset]) + 1;
+	}
+	compiler.n_local_names = saved_n_names;
+}
+
+void p_colon(Interpreter *interp) {
+	char *token = next_token();
+	if (!token) {
+		fail(interp, ": expected a name for the new definition");
+		return;
+	}
+
+	create_header(interp, token, 0);
+	emit(interp, (cell)&docol);
+	compiler.fuse_floor = vocab.here;
+	compiler.loadn_at = -1;
+	enter_compile_scope(interp);
+	compiler.compiling = 1;
+
+	compiler.compiling_src_start = compiler.input_buffer_pos;
+
+	DISPATCH(interp);
+}
+
+int create_variable(Interpreter *interp, const char *name) {
+	create_header(interp, name, 0);
+	emit(interp, (cell)&dovar);
+	emit(interp, (cell)make_float(0.0).bits);
+
+	return vocab.latest_cfa;
+}
+
+
+void p_variable(Interpreter *interp) {
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "variable: expected a name");
+		return;
+	}
+
+	create_variable(interp, token);
+
+	DISPATCH(interp);
+}
+
+void p_constant(Interpreter *interp) {
+	POP(value);
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "constant: expected a name");
+		return;
+	}
+	create_header(interp, token, 2);
+	emit(interp, (cell)&docol);
+	emit_val_literal(interp, value);
+	emit_call(interp, vocab.exit_cfa);
+	DISPATCH(interp);
+}
+
+static void compile_locals_decl(Interpreter *interp, const char *opener, int force_all_receive) {
+	if (!compiler.compiling || compiler.n_local_scopes <= 0) {
+		fail(interp, "%s: only valid inside a colon definition or quotation", opener);
+		return;
+	}
+
+	int scope_idx = compiler.n_local_scopes - 1;
+	if (vocab.here != compiler.local_scope_dict_starts[scope_idx]) {
+		fail(interp, "%s: locals must be declared at the head of the body", opener);
+		return;
+	}
+
+	int scope_start = compiler.local_scope_starts[scope_idx];
+	int receive_slots[MAX_LOCAL_NAMES];
+	int n_received = 0;
+
+	while (1) {
+		skip_whitespace_and_comments();
+		char *token = next_token();
+		if (!token) {
+			if (refill_input())
+				continue;
+			fail(interp, "%s: unterminated locals declaration (no closing |)", opener);
+			return;
+		}
+		if (strcmp(token, "|") == 0)
+			break;
+
+		int has_receive_marker = 0;
+		if (token[0] == '>' && token[1] != 0) {
+			has_receive_marker = 1;
+			token++;
+		}
+
+		for (int i = scope_start; i < compiler.n_local_names; i++) {
+			if (strcmp(token, &compiler.local_names_pool[compiler.local_name_offsets[i]]) == 0) {
+				fail(interp, "%s: local '%s' declared twice", opener, token);
+				return;
+			}
+		}
+
+		int name_len = (int)strlen(token);
+		if (compiler.local_names_pool_here + name_len + 1 > LOCAL_NAMES_POOL_SIZE) {
+			fail(interp, "%s: local names pool full", opener);
+			return;
+		}
+		if (compiler.n_local_names >= MAX_LOCAL_NAMES) {
+			fail(interp, "%s: too many local names (max %d)", opener, MAX_LOCAL_NAMES);
+			return;
+		}
+
+		int slot = compiler.n_local_names - scope_start;
+
+		int offset = compiler.local_names_pool_here;
+		memcpy(&compiler.local_names_pool[offset], token, (size_t)name_len);
+		compiler.local_names_pool[offset + name_len] = 0;
+		compiler.local_names_pool_here += name_len + 1;
+		compiler.local_name_offsets[compiler.n_local_names++] = offset;
+
+		if (has_receive_marker)
+			receive_slots[n_received++] = slot;
+	}
+
+	int n_declared = compiler.n_local_names - scope_start;
+	if (n_declared == 0)
+		return;
+
+	if (force_all_receive && n_received > 0) {
+		fail(interp, "%s: do not use > markers; %s already implies all-receive", opener, opener);
+		return;
+	}
+
+	if (force_all_receive || n_received == n_declared) {
+		emit_call(interp, vocab.enter_locals_to_cfa);
+		emit(interp, (cell)n_declared);
+	} else if (n_received == 0) {
+		emit_call(interp, vocab.enter_locals_cfa);
+		emit(interp, (cell)n_declared);
+	} else {
+		emit_call(interp, vocab.enter_locals_mixed_cfa);
+		emit(interp, (cell)n_declared);
+		emit(interp, (cell)n_received);
+		for (int i = 0; i < n_received; i++)
+			emit(interp, (cell)receive_slots[i]);
+	}
+
+	int lvar_cfa = find("lvar");
+	for (int i = scope_start; i < compiler.n_local_names; i++) {
+		const char *name = &compiler.local_names_pool[compiler.local_name_offsets[i]];
+		if (name[0] < 'A' || name[0] > 'Z')
+			continue;
+		int slot = i - scope_start;
+		int received = 0;
+		for (int r = 0; r < n_received; r++)
+			if (receive_slots[r] == slot) {
+				received = 1;
+				break;
+			}
+		if (received)
+			continue;
+		emit_call(interp, lvar_cfa);
+		emit_call(interp, vocab.local_store_0depth_cfa);
+		emit(interp, (cell)slot);
+	}
+}
+
+void p_bar(Interpreter *interp) {
+	compile_locals_decl(interp, "|", 0);
+
+	DISPATCH(interp);
+}
+
+void p_bar_to(Interpreter *interp) {
+	compile_locals_decl(interp, "|>", 1);
+
+	DISPATCH(interp);
+}
+
+void p_bracket_bar(Interpreter *interp) {
+	open_quotation(interp);
+	compile_locals_decl(interp, "[|", 0);
+
+	DISPATCH(interp);
+}
+
+void p_bracket_bar_to(Interpreter *interp) {
+	open_quotation(interp);
+	compile_locals_decl(interp, "[>", 1);
+
+	DISPATCH(interp);
+}
+
+void p_to_var(Interpreter *interp) {
+	int var_cfa = (int)vocab.dict[interp->ip++];
+	POP(value);
+	vocab.dict[var_cfa + 1] = (cell)value.bits;
+
+	DISPATCH(interp);
+}
+
+void p_to(Interpreter *interp) {
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "to: expected a name"); 
+		return;
+	}
+
+	if (compiler.compiling) {
+		int local_depth, local_slot_idx;
+		if (find_local(token, &local_depth, &local_slot_idx)) {
+			if (try_fuse_local_acc(interp, local_depth, local_slot_idx))
+				return;
+			if (local_depth == 0) {
+				emit_call(interp, vocab.local_store_0depth_cfa);
+				emit(interp, (cell)local_slot_idx);
+			} else {
+				emit_call(interp, vocab.local_store_cfa);
+				emit(interp, (cell)local_depth);
+				emit(interp, (cell)local_slot_idx);
+			}
+			return;
+		}
+	}
+
+	int target_cfa = find(token);
+	if (!target_cfa) {
+		if (compiler.compiling) {
+			fail(interp, "to: unknown variable: %s; declare it with variable", token); 
+		return; 
+		}
+		target_cfa = create_variable(interp, token);
+	}
+
+	cfa_handler h = (cfa_handler)vocab.dict[target_cfa];
+	if (h != dovar) {
+		fail(interp, "to: %s is not a variable", token); 
+		return; 
+	}
+
+	if (compiler.compiling) {
+		if (!superword_try_fuse_store(interp, target_cfa)) {
+			emit_call(interp, vocab.to_var_cfa);
+			emit(interp, (cell)target_cfa);
+		}
+	} else {
+		POP(value);
+		vocab.dict[target_cfa + 1] = (cell)value.bits;
+	}
+
+	DISPATCH(interp);
+}
+
+static void compile_local_unary(Interpreter *interp, const char *op,
+                                int depth0_cfa, int fallback_cfa) {
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "%s: expected a local name", op);
+		return;
+	}
+	if (!compiler.compiling) {
+		fail(interp, "%s: only valid inside a colon definition", op);
+		return;
+	}
+	int depth, slot;
+	if (!find_local(token, &depth, &slot)) {
+		fail(interp, "%s: %s is not a local", op, token);
+		return;
+	}
+	if (depth == 0) {
+		emit_call(interp, depth0_cfa);
+		emit(interp, (cell)slot);
+	} else {
+		emit_call(interp, vocab.local_fetch_cfa);
+		emit(interp, (cell)depth);
+		emit(interp, (cell)slot);
+		emit_call(interp, fallback_cfa);
+		emit_call(interp, vocab.local_store_cfa);
+		emit(interp, (cell)depth);
+		emit(interp, (cell)slot);
+	}
+}
+
+void p_increment(Interpreter *interp) {
+	compile_local_unary(interp, "++",
+	                    vocab.local_incr_0depth_cfa,
+	                    vocab.inc_cfa);
+
+	DISPATCH(interp);
+}
+
+void p_decrement(Interpreter *interp) {
+	compile_local_unary(interp, "--",
+	                    vocab.local_decr_0depth_cfa,
+	                    vocab.dec_cfa);
+
+	DISPATCH(interp);
+}
+
+void p_f_increment(Interpreter *interp) {
+	compile_local_unary(interp, "f++",
+	                    vocab.local_finc_0depth_cfa,
+	                    vocab.finc_cfa);
+
+	DISPATCH(interp);
+}
+
+void p_f_decrement(Interpreter *interp) {
+	compile_local_unary(interp, "f--",
+	                    vocab.local_fdec_0depth_cfa,
+	                    vocab.fdec_cfa);
+
+	DISPATCH(interp);
+}
+
+void p_inline(Interpreter *interp) {
+	int latest = vocab.latest_cfa;
+	if (!latest) {
+		fail(interp, "inline: no recent definition");
+		return;
+	}
+
+	WORD_FLAGS(latest) |= 2;
+
+	DISPATCH(interp);
+}
+
+void p_symbol(Interpreter *interp) {
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "symbol: expected a name");
+		return;
+	}
+	if (token[0] == ':')
+		token++;
+
+	create_header(interp, token, 0);
+	emit(interp, (cell)&dosym);
+
+	emit(interp, (cell)intern_symbol(interp, token));
+
+	DISPATCH(interp);
+}
+
+void p_string_to_symbol(Interpreter *interp) {
+	POP_STRING(string, "string>symbol");
+	push(interp, make_symbol(intern_symbol(interp, string->bytes)));
+
+	DISPATCH(interp);
+}
+
+void p_forget(Interpreter *interp) {
+	char *token = next_token();
+	if (!token) {
+		fail(interp, "forget: expected a name");
+		return;
+	}
+	int target_cfa = find(token);
+	if (!target_cfa) {
+		fail(interp, "forget: unknown word: %s", token);
+		return;
+	}
+	vocab.here = target_cfa - 4;
+	vocab.forget_generation++;
+	vocab.names_here = (int)WORD_NAME(target_cfa);
+	vocab.latest_cfa = (int)WORD_LINK(target_cfa);
+
+	int max_src_end = 1;
+	for (int surviving_cfa = vocab.latest_cfa; surviving_cfa != 0; surviving_cfa = (int)WORD_LINK(surviving_cfa)) {
+		int src_offset = (int)WORD_SOURCE(surviving_cfa);
+		if (src_offset > 0) {
+			int src_end = src_offset + (int)strlen(&vocab.source_pool[src_offset]) + 1;
+			max_src_end = MAX(max_src_end, src_end);
+		}
+	}
+	vocab.source_here = max_src_end;
+
+	DISPATCH(interp);
+}

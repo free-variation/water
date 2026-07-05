@@ -285,6 +285,7 @@ typedef struct {
 	size_t heap_bytes_live, heap_gc_threshold;
 	LocalHandles objects, pairs;
 } AllocContext;
+extern AllocContext main_alloc;
 
 typedef struct {
 	size_t used;
@@ -688,6 +689,10 @@ int object_alloc_slot(Interpreter *interp);
 void *arena_malloc(size_t bytes);
 void *arena_realloc(void *payload, size_t bytes);
 void arena_free(void *payload);
+Object *arena_alloc_object(void);
+void heap_bytes_add(size_t bytes);
+int op_cell_count(int cursor);
+void rebuild_symbol_hash(void);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
 int object_new_string_uninit(Interpreter *interp, int length);
 int utf8_codepoint_count(const char *bytes, int length);
