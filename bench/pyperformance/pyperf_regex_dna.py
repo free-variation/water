@@ -10,7 +10,7 @@ Acker, Justin Peel, Christopher Sean Forgeron.
 Standalone harness version of pyperformance's bm_regex_dna: generates the same
 FASTA, then prints a `result:` line (ilen clen <9 counts> flen) and an
 `elapsed:` line for one timed run of the measured phase. Order of the result
-line matches bench/regex-dna.l4 so the suite can diff them.
+line matches bench/regex-dna.h2o so the suite can diff them.
 """
 
 import bisect

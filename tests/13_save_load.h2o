@@ -6,14 +6,14 @@
 variable counter
 42 to counter
 symbol red
-"/tmp/lf_save_test.l4" save
+"/tmp/lf_save_test.h2o" save
 
 \ Throw away the user vocabulary, including counter's value.
 forget double
 
 \ Reload from the saved file — definitions come back, counter's slot
 \ exists again but starts uninitialized (no value emitted by save).
-"/tmp/lf_save_test.l4" load
+"/tmp/lf_save_test.h2o" load
 
 \ Definitions work.
 8 double .

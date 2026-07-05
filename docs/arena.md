@@ -1,6 +1,6 @@
 # The arena allocator
 
-logicforth runs its heap through a custom allocator instead of calling
+water runs its heap through a custom allocator instead of calling
 `malloc`/`free` per object. The design buys two things at once: allocation that
 costs little more than a pointer increment, and reclamation that recycles freed
 memory in constant time with no search. This document builds the idea up from the
@@ -8,7 +8,7 @@ bottom — the mechanism, not the exact data structures, which live in `core.c`.
 
 ## The shape of the heap
 
-Every heap value in logicforth is a small fixed-size header struct (an `Object`)
+Every heap value in water is a small fixed-size header struct (an `Object`)
 plus, usually, a separately allocated payload — a string's bytes, an array's
 slots, a frame's parallel key and value arrays. The headers and most of those
 payloads come from the arena. A few payloads deliberately sit outside it; the

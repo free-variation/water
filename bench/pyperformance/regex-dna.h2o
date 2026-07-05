@@ -1,4 +1,4 @@
-\ regex-dna — logicforth port of CPython pyperformance bm_regex_dna.
+\ regex-dna — water port of CPython pyperformance bm_regex_dna.
 \
 \ Generates the same FASTA as CPython (LCG, seed 42, length 100000), then
 \ runs the measured phase: strip headers/newlines, count 9 variant patterns,

@@ -7,7 +7,7 @@ Freely redistributable under the MIT license,
 http://www.opensource.org/licenses/mit-license.php
 From http://www.lshift.net/blog/2008/10/29/toy-raytracer-in-python
 
-Adapted for logicforth's bench suite: the pyperf dependency is replaced by a
+Adapted for water's bench suite: the pyperf dependency is replaced by a
 SimpleNamespace shim, and __main__ self-times one render of `loops` frames and
 prints a checksum (the sum of the rendered canvas bytes) for cross-checking.
 """

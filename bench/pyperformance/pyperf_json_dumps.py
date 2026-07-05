@@ -3,7 +3,7 @@
 The data builders (EMPTY/SIMPLE/NESTED/HUGE, CASES, bench_json_dumps) are
 copied verbatim from the pyperformance reference; only the pyperf Runner is
 replaced with a plain timed loop. Prints a `bytes:` line (total canonical
-length, sort_keys=True + ensure_ascii=False — logicforth's `frame>json` emits
+length, sort_keys=True + ensure_ascii=False — water's `frame>json` emits
 raw UTF-8 rather than \\uXXXX-escaping non-ASCII, so the verification measures
 against that same form; the timed run still uses the default json.dumps) and an
 `elapsed:` line over LOOPS passes of the measured phase.

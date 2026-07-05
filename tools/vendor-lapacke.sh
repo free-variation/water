@@ -3,7 +3,7 @@
 #
 # Maintainer tool: needs network + clang + Apple's Accelerate. The COMMITTED
 # result under external/lapacke/ builds offline with nothing but a C compiler,
-# exactly like the other vendored deps. logicforth's LAPACKE path is
+# exactly like the other vendored deps. water's LAPACKE path is
 # Accelerate/macOS-specific, so this script is too.
 #
 # LAPACKE ships ~2600 wrapper files (every routine x s/d/c/z x {high,_work}).

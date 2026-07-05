@@ -1,4 +1,4 @@
-\ book-recs.l4 — top-N book recommendations via truncated SVD.
+\ book-recs.h2o — top-N book recommendations via truncated SVD.
 \ Exercises: SQLite, frames as rows, dense matrices, truncated SVD, sort,
 \ time, stdin, env, regex, quotations, try/catch.
 \

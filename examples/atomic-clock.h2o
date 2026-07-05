@@ -1,4 +1,4 @@
-\ atomic-clock.l4 — read the current UTC time from an atomic-clock-synced
+\ atomic-clock.h2o — read the current UTC time from an atomic-clock-synced
 \ web server by shelling out to curl and parsing the HTTP Date header.
 \ exercises: subprocesses (run / start-process / read-out), regex match.
 

@@ -1,5 +1,5 @@
-#ifndef LOGICFORTH_H
-#define LOGICFORTH_H
+#ifndef WATER_H
+#define WATER_H
 
 #define VERSION "0.11.2"
 
@@ -337,7 +337,7 @@ typedef enum {
 #ifdef GC_DEBUG
 #define GC_ASSERT(cond, msg) do { \
 	if (!(cond)) { \
-		fprintf(stderr, "logicforth GC invariant violated: %s\n", msg); \
+		fprintf(stderr, "water GC invariant violated: %s\n", msg); \
 		abort(); \
 	} \
 } while (0)

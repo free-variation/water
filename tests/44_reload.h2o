@@ -4,12 +4,12 @@
 
 : foo 1 2 + ;
 : greet "hi" . cr ;
-"/tmp/lf_reload_test.l4" save
+"/tmp/lf_reload_test.h2o" save
 forget foo
 
 \ Bring foo and greet back from the file. This adds the file to the
 \ session's loaded_files history.
-"/tmp/lf_reload_test.l4" load
+"/tmp/lf_reload_test.h2o" load
 foo .
 greet
 
@@ -17,7 +17,7 @@ greet
 : scribble 99 ;
 scribble .
 
-\ Reload: forget everything user-defined, re-run lib.l4 then the file.
+\ Reload: forget everything user-defined, re-run lib.h2o then the file.
 reload
 
 \ foo and greet are back from the file.

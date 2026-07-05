@@ -1,14 +1,14 @@
 """Standalone harness version of pyperformance's bm_deepcopy.
 
 Only the `benchmark` case (standard data types: a nested dict plus a small
-dataclass) is ported — it is the part logicforth's deep `copy` mirrors. The
+dataclass) is ported — it is the part water's deep `copy` mirrors. The
 reference's `benchmark_reduce` and `benchmark_memo` cases are excluded: they
 exercise custom __reduce__ classes and deepcopy's reference-identity memo,
-neither of which logicforth has.
+neither of which water has.
 
 The `benchmark` body is copied verbatim from the pyperformance reference; only
 pyperf.perf_counter is replaced with time.perf_counter. Prints an `equal:` line
-(1 if a deep copy equals its original — the logicforth side reproduces this
+(1 if a deep copy equals its original — the water side reproduces this
 with `copy =`) and an `elapsed:` line.
 """
 

@@ -2,7 +2,7 @@
 \ For each i in [0,n): a point (sin i, cos i · 3, sin²i / 2); normalize each to
 \ unit length; then componentwise-maximize across all points.
 \
-\ The reference builds n Point objects; logicforth keeps the three coordinates
+\ The reference builds n Point objects; water keeps the three coordinates
 \ in flat double-segments (no per-point boxing), so the inner loops are pure
 \ raw-double reads and writes — exactly the shape the compiler's vf*/vvf*
 \ fusion targets. The whole benchmark is repeated REPEAT times for a stable

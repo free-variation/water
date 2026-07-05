@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 #
-# Run the logicforth load / stress tests — the bench/ files that work the
+# Run the water load / stress tests — the bench/ files that work the
 # system hard rather than compare against CPython (run-benchmarks.sh does the
-# comparisons). Each is run as `logicforth -b < file` from the repo root, with
+# comparisons). Each is run as `water -b < file` from the repo root, with
 # a header, wall-clock time, and exit status. Test output goes to stdout;
 # build/progress goes to stderr.
 #
@@ -26,12 +26,12 @@ set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
-bin="$root/logicforth"
+bin="$root/water"
 python=${PYTHON:-python3}
 
 log() { printf '%s\n' "$*" >&2; }
 
-log "building logicforth..."
+log "building water..."
 (cd "$root" && make) >&2 || { log "build failed"; exit 1; }
 
 # select-load reads "bench/fixtures/big.json" by relative path; generate it once if absent.
@@ -44,7 +44,7 @@ ensure_big_json() {
 
 run_one() {
 	local name=$1
-	local file="$here/load/$name.l4"
+	local file="$here/load/$name.h2o"
 	[ -f "$file" ] || { log "SKIP $name (no $file)"; return; }
 
 	if [ "$name" = select-load ]; then
@@ -70,10 +70,10 @@ tests=("$@")
 if [ "${#tests[@]}" -eq 0 ]; then
 	# Finite tests first; the open-ended select-load (stopped with Ctrl-C) runs last.
 	tests=()
-	for t in $(cd "$here/load" && ls *.l4 2>/dev/null | sed 's/\.l4$//'); do
+	for t in $(cd "$here/load" && ls *.h2o 2>/dev/null | sed 's/\.h2o$//'); do
 		[ "$t" = select-load ] || tests+=("$t")
 	done
-	[ -f "$here/load/select-load.l4" ] && tests+=(select-load)
+	[ -f "$here/load/select-load.h2o" ] && tests+=(select-load)
 fi
 
 # An open-ended test (e.g. select-load) is meant to be stopped with Ctrl-C.

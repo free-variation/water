@@ -1,6 +1,6 @@
-# The symbol hash index in logicforth
+# The symbol hash index in water
 
-This is a primer on how logicforth interns symbols — turning a name like
+This is a primer on how water interns symbols — turning a name like
 `first_name` into a small integer id — and on the hash index that makes the
 lookup constant-time. By the end you should understand:
 
@@ -115,7 +115,7 @@ model that makes concurrent interning possible is `multicore.md`'s subject.
 ## Part 5: Sizing the table
 
 Open-addressing tables usually grow and rehash as they fill, because probe chains
-lengthen badly past a moderate load. logicforth's table never grows — it's sized
+lengthen badly past a moderate load. water's table never grows — it's sized
 once and that's the whole lifecycle. Two constants set the headroom: the pool's
 byte size and the table's slot count.
 
@@ -138,7 +138,7 @@ cap as the backstop.
 
 The index is *redundant* state: it duplicates information the pool already implies,
 so it has to be kept in step with the pool, and there's one place the pool changes
-out from under it. logicforth can **truncate the pool** — `forget_user` (the path
+out from under it. water can **truncate the pool** — `forget_user` (the path
 behind the `reset` family) rolls it back to the post-startup snapshot, dropping
 every symbol interned since; loading an image resets it to the snapshot plus the
 image's own names. After either, the pool's contents have changed but the index

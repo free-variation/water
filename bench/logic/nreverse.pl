@@ -1,5 +1,5 @@
 % naive reverse, the classic Prolog LIPS benchmark — SWI-Prolog reference for
-% nreverse.l4. Builds a 30-element list once, then nrev's it 30000 times.
+% nreverse.h2o. Builds a 30-element list once, then nrev's it 30000 times.
 :- initialization(main, main).
 
 app([], B, B).

@@ -4,7 +4,7 @@
 \   logit P(y=1) = -0.5 + 1.5 x1 - 1.0 x2 + 0.8 x3 - 0.3 x4
 \                       + 0.6 x5 - 1.2 x6 + 0.4 x7 - 0.7 x8
 \ Predictors are uniform on [-1, 1]; y ~ Bernoulli(sigmoid(eta)). 1,000,000 rows.
-\ Run:  ./logicforth -b < bench/gen-logistic-sim.l4
+\ Run:  ./water -b < bench/gen-logistic-sim.h2o
 
 12345 seed
 

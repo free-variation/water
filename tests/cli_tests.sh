@@ -1,5 +1,5 @@
 #!/bin/sh
-# Command-line flag tests for logicforth.
+# Command-line flag tests for water.
 #
 # The golden-output harness (run.sh) always invokes the binary with `-b`, so it
 # can't exercise flag behavior itself. These cases run the binary directly with
@@ -10,7 +10,7 @@
 
 set -u
 here=$(cd "$(dirname "$0")" && pwd)
-bin="$here/../logicforth"
+bin="$here/../water"
 pass=0
 fail=0
 
@@ -50,7 +50,7 @@ printf "CLI flag tests:\n"
 exact "batch (-b) is quiet"             '2 3 + . cr'  "5 " 0 -b
 exact "piped default is batch"          '2 3 + . cr'  "5 " 0
 # interactive: banner + per-line prompt (banner version not pinned)
-has   "interactive (-i) shows banner"   '2 3 + . cr'  "logicforth " 0 -i
+has   "interactive (-i) shows banner"   '2 3 + . cr'  "water " 0 -i
 has   "interactive (-i) shows prompt"   '1 . cr'      "0 ok"          0 -i
 # --max-objects lowers the object ceiling so the limit is reachable cheaply
 has   "--max-objects hits ceiling"      '1 200000 range [: drop < 0 > :] map drop'  "object registry full" 0 -b --max-objects 100000

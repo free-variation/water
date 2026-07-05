@@ -1,4 +1,4 @@
-# logicforth — future work
+# water — future work
 
 A TODO list of pending work.
 
@@ -72,10 +72,10 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
 `render` produces a value's display form, which is not always re-readable —
 strings print raw, a matrix prints as a grid. `frame>json` round-trips, but only
 the JSON-expressible subset (frames, arrays, strings, numbers, booleans).
-Missing is a representation that reads back through the logicforth reader for
+Missing is a representation that reads back through the water reader for
 *any* value.
 
-- `repr` ( v -- s ) — a string of logicforth source that, read back, reconstructs
+- `repr` ( v -- s ) — a string of water source that, read back, reconstructs
   an equal value: quoted strings (with `""` escaping), `[ ]` arrays, `{ :k v }`
   frames, `< >` sets, `[( )]` cons lists, `:name` symbols, floats in shortest
   round-trip form, a matrix as its `[ … ] R C matrix` constructor.
@@ -185,11 +185,11 @@ the locals-frame and trail rewind the unwind already carries; whether
 
 ## FastCGI service
 
-Run logicforth as a long-lived FastCGI application behind an off-the-shelf web
+Run water as a long-lived FastCGI application behind an off-the-shelf web
 server (nginx, Caddy, lighttpd, Apache). The web server owns everything HTTP —
 TLS termination, HTTP/1.1–3, request parsing, static files, timeouts, rate
 limiting, access logs, load balancing — and forwards each request over a Unix or
-TCP socket as FastCGI records. logicforth never sees a raw HTTP byte: it decodes
+TCP socket as FastCGI records. water never sees a raw HTTP byte: it decodes
 the records, runs a handler, writes the response.
 
 **Instrumentation needed** — less than an in-process server, since the web server
@@ -203,11 +203,11 @@ keeps the HTTP work:
   bounded read is required.
 - A FastCGI record codec — decode `BEGIN_REQUEST` / `PARAMS` (the CGI environment
   → a request frame) / `STDIN` (body → a string), and encode `STDOUT` +
-  `END_REQUEST`. The framing is simple: `lib.l4` over `read-n`/`write` plus byte
+  `END_REQUEST`. The framing is simple: `lib.h2o` over `read-n`/`write` plus byte
   arithmetic, with maybe a tiny C helper for the 2/4-byte length fields.
 
 **Serve loop.** A plain sequential `accept → decode → handle → respond` loop in
-`lib.l4`, each handler wrapped in `try-catch` so a bad request can't kill the
+`lib.h2o`, each handler wrapped in `try-catch` so a bad request can't kill the
 worker; per-request allocations are reclaimed by GC. No threads.
 
 **Worker processes.** Run N worker processes all accepting on the same socket
@@ -219,15 +219,15 @@ retries elsewhere.
 (`PRAGMA journal_mode=WAL`) plus a `busy_timeout`, so concurrent reads across
 workers don't block and writes serialize safely (single host).
 
-**Cost:** `accept` + `read-n` are small C; the FastCGI codec is `lib.l4` (plus an
+**Cost:** `accept` + `read-n` are small C; the FastCGI codec is `lib.h2o` (plus an
 optional tiny C codec for the integer fields); the serve loop and response
-builders are `lib.l4`.
+builders are `lib.h2o`.
 
 ---
 
 ## Foreign function interface
 
-- **Callbacks** — C → logicforth function pointers (`qsort` comparators,
+- **Callbacks** — C → water function pointers (`qsort` comparators,
   `CURLOPT_WRITEFUNCTION` to capture a response body into a string).
 - **Struct-by-value** arguments and returns.
 - **Per-call varargs** — variadic arg types chosen at the call site rather
@@ -241,7 +241,7 @@ builders are `lib.l4`.
 
 Building on the generator primitives:
 
-- Lazy `map` / `filter` / `take` / `zip` as `lib.l4` wrappers that resume the
+- Lazy `map` / `filter` / `take` / `zip` as `lib.h2o` wrappers that resume the
   source on demand, with `lazy>array` to force a finite prefix.
 - A cooperative scheduler (`spawn` / `run-scheduler`, a queue of `T_CONT`s) for
   producer/consumer pipelines.
@@ -252,7 +252,7 @@ Building on the generator primitives:
   — a *complete* search, distinct from the depth-first `amb` / `fail`. Generators
   are the substrate; the interleaving combinators are the work.
 
-All `lib.l4` on the existing primitives — no new C.
+All `lib.h2o` on the existing primitives — no new C.
 
 ---
 
@@ -307,9 +307,9 @@ vector (like `set-add!`) or are value-returning; the word names.
 
 Forth-side construction gathers off the data stack, so any word that builds a
 new array of data-dependent length must allocate and fill in C; words returning
-a scalar, element, or boolean belong in `lib.l4`.
+a scalar, element, or boolean belong in `lib.h2o`.
 
-**`lib.l4` (scalar/element result, or compose C builders):**
+**`lib.h2o` (scalar/element result, or compose C builders):**
 
 - **`find`** — `arr [: pred :] find` → first matching element, or `T_NONE`.
   Short-circuits via `shift`.

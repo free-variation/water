@@ -1,6 +1,6 @@
 \ deepcopy — port of pyperformance bm_deepcopy (the `benchmark` case only; the
 \ reference's reduce/memo cases need custom classes and reference identity,
-\ which logicforth has no analog for). Runs on the current interpreter: the
+\ which water has no analog for). Runs on the current interpreter: the
 \ deep copy uses `copy` and verification uses deep `=`. Booleans use the :1/:0
 \ literals (the reserved boolean symbols), mirroring Python's True/False.
 \ Mirrors benchmark(N) with N=20000; per N it does 30

@@ -1,4 +1,4 @@
-# logicforth reference
+# water reference
 
 Every entry is derived from reading the C source. Stack effects are exact;
 `--` separates the state before (bottom to top, leftmost = deepest) from after.
@@ -42,9 +42,9 @@ incremental collection.
 | `depth` | `( -- n )` | Push current depth | 1 | none | O(1) |
 | `roll` | `( xₙ … x₀ n -- xₙ₋₁ … x₀ xₙ )` | Move the item n deep to the top; memmoves the n above it down | 2 + n | none | O(n) |
 | `clear` | `( … -- )` | Reset data stack depth to 0 | 1 | none | O(1) |
-| `2dup` | `( a b -- a b a b )` | lib.l4: `over over` (inlined) | 10 | none | O(1) |
-| `2drop` | `( a b -- )` | lib.l4: `drop drop` (inlined) | 6 | none | O(1) |
-| `nip` | `( a b -- b )` | lib.l4: `swap drop` (inlined) | 5 | none | O(1) |
+| `2dup` | `( a b -- a b a b )` | lib.h2o: `over over` (inlined) | 10 | none | O(1) |
+| `2drop` | `( a b -- )` | lib.h2o: `drop drop` (inlined) | 6 | none | O(1) |
+| `nip` | `( a b -- b )` | lib.h2o: `swap drop` (inlined) | 5 | none | O(1) |
 
 ---
 
@@ -65,7 +65,7 @@ float fast path first; the heavy cases are captured by the O column.
 | `1+` | `( a -- a+1 )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
 | `1-` | `( a -- a-1 )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
 | `sq` | `( a -- a² )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
-| `pi` | `( -- f )` | lib.l4: `variable` initialized to π (3.141592653589793); invoking it pushes the stored float | 1 | none | O(1) |
+| `pi` | `( -- f )` | lib.h2o: `variable` initialized to π (3.141592653589793); invoking it pushes the stored float | 1 | none | O(1) |
 
 ### In-place matrix arithmetic
 
@@ -140,8 +140,8 @@ Tag-checked; safe. Float input → float; matrix input → new matrix, element-w
 | `truncate` | `( a -- trunc a )` | `trunc` | 2 | matrix `1m(r×c)` | same |
 | `round-up` | `( a -- ceil a )` | `ceil` | 2 | matrix `1m(r×c)` | same |
 | `round-down` | `( a -- floor a )` | `floor` | 2 | matrix `1m(r×c)` | same |
-| `mod` | `( a b -- remainder )` | lib.l4: `% drop`; sign follows dividend | 5 | none | O(1) |
-| `quotient` | `( a b -- quotient )` | lib.l4: `% swap drop`; toward zero | 9 | none | O(1) |
+| `mod` | `( a b -- remainder )` | lib.h2o: `% drop`; sign follows dividend | 5 | none | O(1) |
+| `quotient` | `( a b -- quotient )` | lib.h2o: `% swap drop`; toward zero | 9 | none | O(1) |
 
 ---
 
@@ -153,8 +153,8 @@ Result is `1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural
 |------|-------------|----------|-----|-------|---|
 | `=` | `( a b -- bool )` | structural equality | 3 (float) | none | float O(1); string O(\|s\|); array/set O(n); frame O(n); matrix O(r×c) |
 | `lt` | `( a b -- bool )` | less-than | 3 (float) | none | same |
-| `true` | `( -- bool )` | lib.l4: pushes 1 (inline) | 1 | none | O(1) |
-| `false` | `( -- bool )` | lib.l4: pushes 0 (inline) | 1 | none | O(1) |
+| `true` | `( -- bool )` | lib.h2o: pushes 1 (inline) | 1 | none | O(1) |
+| `false` | `( -- bool )` | lib.h2o: pushes 0 (inline) | 1 | none | O(1) |
 | `gt` | `( a b -- bool )` | greater-than | 3 (float) | none | same |
 | `0=` | `( a -- bool )` | `!truthy(a)`; any type | 2 | none | O(1) |
 | `and` | `( a b -- bool )` | logical and of truthiness | 3 | none | O(1) |
@@ -275,8 +275,8 @@ These compile-time words read a following local name and emit a single fused dep
 | `.a` | `( a -- )` | Like `.` but disables print truncation (show all elements) | 1 + print | none | O(size printed) |
 | `render` | `( a -- s )` | The text `.` would print, returned as a string instead of printed: no truncation, no trailing separator (a matrix grid's final newline is dropped). Strings render raw, symbols by name, collections/frames/matrices in their laid-out form | 1 + size | `1o` | O(size) |
 | `.s` | `( -- )` | Print every stack value, bottom to top; leaves the stack intact | print | none | O(depth) |
-| `print` | `( x -- )` | lib.l4: alias for `.` | 1 + print | none | O(size printed) |
-| `print-stack` | `( -- )` | lib.l4: alias for `.s` | print | none | O(depth) |
+| `print` | `( x -- )` | lib.h2o: alias for `.` | 1 + print | none | O(size printed) |
+| `print-stack` | `( -- )` | lib.h2o: alias for `.s` | print | none | O(depth) |
 | `cr` | `( -- )` | Print a newline | 1 | none | O(1) |
 | `emit` | `( code -- )` | Print the character with codepoint `code`, UTF-8 encoded (1–4 bytes); range-checked `[0, 0x10FFFF]` | 1 | none | O(1) |
 
@@ -360,12 +360,12 @@ Fixed length, 0-indexed, elements of any type.
 | `destruct-to` | `( source targets -- )` | source and target arrays; assign each source element to the variable named by the corresponding target (symbol or xt), creating it if needed | 2 + n | may create variables | O(n) |
 | `slice!` | `( arr tstart src sstart sstep slen -- arr )` | Copy `slen` elements `src[sstart], src[sstart+sstep], …` into `arr[tstart…]` in place | 6 + slen | self-overlap may malloc slen | O(slen) |
 | `to-slice!` | `( v₀ … vₙ₋₁ arr offset n -- arr )` | Store the n values just below `arr` into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
-| `last` | `( arr n -- arr )` | lib.l4: `swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
-| `skip` | `( arr n -- arr )` | lib.l4: `over size swap - swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
+| `last` | `( arr n -- arr )` | lib.h2o: `swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
+| `skip` | `( arr n -- arr )` | lib.h2o: `over size swap - swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
 | `sort` | `( arr -- arr )` | Sorted copy in `val_cmp` order; array only | 1 + n log n | `1a(n)` | O(n log n) |
 | `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
 | `sample` | `( arr/set count repl -- arr )` | Draw `count` elements; `repl` truthy = with replacement, else without (count ≤ len) | 3 + n | `1a(count)` (+ `malloc(n)` without replacement) | O(n) |
-| `iota` | `( n -- arr )` | lib.l4: `[0…n−1]`, empty when n ≤ 0 | 3 + n | `1a(n)` | O(n) |
+| `iota` | `( n -- arr )` | lib.h2o: `[0…n−1]`, empty when n ≤ 0 | 3 + n | `1a(n)` | O(n) |
 
 ---
 
@@ -448,7 +448,7 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `0-matrix` | `( r c -- m )` | r×c zero matrix (calloc) | 3 | `1m(r×c)` | O(1)+ |
 | `matrix` | `( arr r c -- m )` or `( arr r -- m )` | Build from a float array; two-arg form takes r = rows and infers columns | 3 + r×c | `1m(r×c)` | O(r×c) |
 | `diagonal-matrix` | `( fill n -- m )` | n×n matrix with `fill` on the diagonal | 2 + n | `1m(n×n)` | O(n) |
-| `identity-matrix` | `( n -- m )` | lib.l4: `1 swap diagonal-matrix` | n | `1m(n×n)` | O(n) |
+| `identity-matrix` | `( n -- m )` | lib.h2o: `1 swap diagonal-matrix` | n | `1m(n×n)` | O(n) |
 | `matrix-range` | `( start end step -- m )` | 1×N row of evenly spaced values | 3 + N | `1m(1×N)` | O(N) |
 
 ### Shape and indexing
@@ -461,8 +461,8 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `reshape` | `( m r c -- m' )` | Same elements, new shape (must match); memcpy | 3 + r×c | `1m(r×c)` | O(r×c) |
 | `transpose` | `( m -- m' )` | Rows/columns swapped | 1 + r×c | `1m(c×r)` | O(r×c) |
 | `diagonal` | `( m -- m' )` | Diagonal as a 1×min(r,c) matrix | 1 + min(r,c) | `1m(1×min)` | O(min(r,c)) |
-| `flatten` | `( m -- m' )` | lib.l4: 1×(r·c) reshape | r×c | `1m(1×r·c)` | O(r×c) |
-| `num-elements` | `( m -- n )` | lib.l4: `dim *` | 5 | none | O(1) |
+| `flatten` | `( m -- m' )` | lib.h2o: 1×(r·c) reshape | r×c | `1m(1×r·c)` | O(r×c) |
+| `num-elements` | `( m -- n )` | lib.h2o: `dim *` | 5 | none | O(1) |
 
 ### Multiplication and reductions
 
@@ -485,9 +485,9 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `column-sums` | `( m -- m' )` | 1×c of per-column sums | 1 + r×c | `1m(1×c)` | O(r×c) |
 | `column-maxes` | `( m -- m' )` | 1×c of per-column maxima | 1 + r×c | `1m(1×c)` | O(r×c) |
 | `column-mins` | `( m -- m' )` | 1×c of per-column minima | 1 + r×c | `1m(1×c)` | O(r×c) |
-| `mean` | `( m -- f )` | lib.l4: sum ÷ element count | r×c | none | O(r×c) |
-| `row-means` | `( m -- m' )` | lib.l4: `row-sums` then scalar ÷ | r×c | 2×`1m(r×1)` | O(r×c) |
-| `column-means` | `( m -- m' )` | lib.l4: `column-sums` then scalar ÷ | r×c | 2×`1m(1×c)` | O(r×c) |
+| `mean` | `( m -- f )` | lib.h2o: sum ÷ element count | r×c | none | O(r×c) |
+| `row-means` | `( m -- m' )` | lib.h2o: `row-sums` then scalar ÷ | r×c | 2×`1m(r×1)` | O(r×c) |
+| `column-means` | `( m -- m' )` | lib.h2o: `column-sums` then scalar ÷ | r×c | 2×`1m(1×c)` | O(r×c) |
 
 ### Reshaping, selection, statistics
 
@@ -541,10 +541,10 @@ A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a co
 |------|-------------|----------|-----|-------|---|
 | `read-tsv` | `( path -- rows )` | Read a TSV file into an array of row-arrays; an empty cell → `none`, a numeric cell → float, else a string. No header handling | 1 + bytes | `1a(r)` + one array per row + a string per text cell | O(bytes) |
 | `write-tsv` | `( rows path -- )` | Write an array of row-arrays as TSV; `none` → empty, a whole-number float → integer, strings raw; errors on a tab/newline inside a string or a non-array row | 2 + r·c | none (to file) | O(r·c) |
-| `rows>dataset` | `( table header? -- dataset )` | lib.l4: column-oriented frame from a table; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
-| `rows>relation` | `( table index-cols header? -- relation )` | lib.l4: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
-| `dataset>matrix` | `( dataset cols -- m )` | lib.l4: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
-| `resample-indices` | `( n -- arr )` | lib.l4: n indices drawn from [0,n) with replacement (bootstrap) | 2n | `2×1a(n)` | O(n) |
+| `rows>dataset` | `( table header? -- dataset )` | lib.h2o: column-oriented frame from a table; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
+| `rows>relation` | `( table index-cols header? -- relation )` | lib.h2o: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
+| `dataset>matrix` | `( dataset cols -- m )` | lib.h2o: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
+| `resample-indices` | `( n -- arr )` | lib.h2o: n indices drawn from [0,n) with replacement (bootstrap) | 2n | `2×1a(n)` | O(n) |
 
 ---
 
@@ -587,22 +587,22 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 | `shift` | `( -- k )` | Capture the return-stack slice up to the nearest `reset`, remove the mark and that slice, push k | L | `1o` (cont) | O(L) |
 | `shift-with` | `( xt -- )` | Capture as `shift`, then run xt in the outer context with k on the stack and begin unwinding | L + xt | `1o` (cont) | O(L + xt) |
 | `resume` | `( k -- … )` | Pop k and re-enter it (multi-shot — the continuation object survives, so a retained copy can be resumed again); pushes whatever the resumed code yields | L + resumed | none | O(L + resumed) |
-| `throw` | `( exc -- )` | lib.l4: `[: drop 1 :] shift-with` | — | `1o` (cont) | O(stack depth) |
-| `catch` | `( xt -- result 0 \| exc 1 )` | lib.l4: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (the error message becomes the exception value) | — | cont if thrown; `1s` on a caught interpreter error | O(xt) |
-| `try-catch` | `( normal-xt err-xt -- … )` | lib.l4: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack | — | cont if thrown; `1s` on a caught interpreter error | O(normal-xt) |
+| `throw` | `( exc -- )` | lib.h2o: `[: drop 1 :] shift-with` | — | `1o` (cont) | O(stack depth) |
+| `catch` | `( xt -- result 0 \| exc 1 )` | lib.h2o: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (the error message becomes the exception value) | — | cont if thrown; `1s` on a caught interpreter error | O(xt) |
+| `try-catch` | `( normal-xt err-xt -- … )` | lib.h2o: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack | — | cont if thrown; `1s` on a caught interpreter error | O(normal-xt) |
 
 ---
 
 ## Generators
 
-Coroutines over the continuation substrate: a producer `yield`s values one at a time and a driver `resume`s it for the next. All lib.l4 on `shift`/`reset`/`resume`. `L` = captured return-stack length per step.
+Coroutines over the continuation substrate: a producer `yield`s values one at a time and a driver `resume`s it for the next. All lib.h2o on `shift`/`reset`/`resume`. `L` = captured return-stack length per step.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `yield` | `( v -- resumed )` | lib.l4: `shift` — emit v to the driver; returns whatever the driver passes back via `resume` | L | `1o` (cont) | O(L) |
-| `start-generator` | `( producer -- value generator )` | lib.l4: `reset execute` — run producer to its first `yield`; leaves the yielded value and a resumable continuation | L | `1o` (cont) | O(producer to first yield) |
-| `gen-take` | `( producer count -- array )` | lib.l4: the first `count` values the producer yields, collected into an array | — | `1a(count)` + cont/step | O(count · L) |
-| `gen-each` | `( producer consumer -- )` | lib.l4: run consumer on each value the producer yields until the producer falls off (a `:gen-end` sentinel marks exhaustion) | — | cont/step | O(values · consumer) |
+| `yield` | `( v -- resumed )` | lib.h2o: `shift` — emit v to the driver; returns whatever the driver passes back via `resume` | L | `1o` (cont) | O(L) |
+| `start-generator` | `( producer -- value generator )` | lib.h2o: `reset execute` — run producer to its first `yield`; leaves the yielded value and a resumable continuation | L | `1o` (cont) | O(producer to first yield) |
+| `gen-take` | `( producer count -- array )` | lib.h2o: the first `count` values the producer yields, collected into an array | — | `1a(count)` + cont/step | O(count · L) |
+| `gen-each` | `( producer consumer -- )` | lib.h2o: run consumer on each value the producer yields until the producer falls off (a `:gen-end` sentinel marks exhaustion) | — | cont/step | O(values · consumer) |
 
 ---
 
@@ -615,12 +615,12 @@ Logic variables, unification, and committed choice, built on the trail and a `PR
 | `lvar` | `( -- v )` | Push a fresh, unbound logic variable | 2 | `1 lvar` | O(1) |
 | `_` | `( -- wild )` | The anonymous wildcard — unifies with anything, binds nothing, allocates nothing (a constant, not a fresh var) | 2 | none | O(1) |
 | `unify` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A `_` on either side matches anything and binds nothing. On a mismatch, `fail`s. | n | none | O(n) |
-| `~` | `( a b -- term )` | lib.l4: `unify` (inlined) | n | none | O(n) |
+| `~` | `( a b -- term )` | lib.h2o: `unify` (inlined) | n | none | O(n) |
 | `deref` | `( v -- val )` | Follow a logic var's binding chain to the first non-variable value (v itself if unbound). Shallow — a returned structure still has bound vars inside; for a fully resolved snapshot use `reify` or `copy` | d | none | O(d) |
-| `$` | `( v -- val )` | lib.l4: `deref` (inlined) | d | none | O(d) |
+| `$` | `( v -- val )` | lib.h2o: `deref` (inlined) | d | none | O(d) |
 | `amb` | `( xt1 xt2 -- … )` | Run xt1; if it fails (a `unify` mismatch or `fail`), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds. | xt1 | none | O(xt1 + xt2) |
 | `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
-| `choose` | `( list cont -- )` | lib.l4: run cont with each element of a cons list in turn, committing to the first for which it succeeds; `fail` if none do (n-way `amb` over a list) | n·cont | none | O(n·cont) |
+| `choose` | `( list cont -- )` | lib.h2o: run cont with each element of a cons list in turn, committing to the first for which it succeeds; `fail` if none do (n-way `amb` over a list) | n·cont | none | O(n·cont) |
 | `matches?` | `( a b -- flag )` | Non-destructive unify test: mark the trail, unify a and b, roll the trail back, push whether they unified. Leaves no bindings and never backtracks (so it composes in straight-line code, unlike `unify`) | n | none | O(n) |
 | `symbol?` | `( v -- flag )` | True when v is a symbol | 2 | none | O(1) |
 
@@ -634,7 +634,7 @@ Rows live in a set, so an identical row asserted twice dedups to one (a relation
 
 `query` is unification: a pattern frame unifies against rows as an open record — shared keys must match, a logic var matches anything (projection), extra columns are ignored — which is SQL selection and projection. It collects every match (returning an array of the matching rows) by testing each candidate with `matches?` and rolling bindings back, so the pattern is left unbound. Candidates come from the index when the pattern grounds an indexed column to a symbol (intersecting buckets across several such columns, empty when a value was never asserted); otherwise it scans `:rows`.
 
-The relation/query machinery is built from lib.l4 helpers (`bucket-of`, `candidates`, `covering?`, `smallest-set`, `tsv-keys`, `retract-row`, `update-row!`) that are internal implementation details and are not listed individually.
+The relation/query machinery is built from lib.h2o helpers (`bucket-of`, `candidates`, `covering?`, `smallest-set`, `tsv-keys`, `retract-row`, `update-row!`) that are internal implementation details and are not listed individually.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -648,7 +648,7 @@ The relation/query machinery is built from lib.l4 helpers (`bucket-of`, `candida
 | `load-bag` | `( rel rows-array -- rel )` | Like `bulk-load`, but `:rows` stays a **bag** (the array, duplicates kept) rather than a deduped set; only `:index` is built | n | frame + sets | O(n) |
 | `create-index` | `( rel cols -- rel )` | Index a relation on the symbol columns `cols`: intern each indexed column's value to a symbol (so it keys the bucket and matches a `{ :col :val }` pattern), then `load-bag` into a `cols`-indexed relation. Other columns keep their type; `:rows` stays a bag. The explicit bridge from a `db-query` result to an indexed relation | n | frame + sets | O(n) |
 
-These are lib.l4 over the C primitives `matches?`, `symbol?`, `set-add!`, `set-remove!`, `array>set`, and `group-by`. Building a relation with one `assert` per row is super-linear (each insert shifts the sorted `:rows` set, and per-value frames grow the same way); `bulk-load` avoids that with `array>set` for `:rows` (one sort) and a one-pass `group-by` per indexed column (which buckets by the interned symbol value, then sorts each small bucket — no global sort). `load-bag` and `create-index` skip the `:rows` dedup entirely, keeping a bag; `create-index` also interns the indexed columns to symbols. Candidate narrowing drives from the smallest matching bucket.
+These are lib.h2o over the C primitives `matches?`, `symbol?`, `set-add!`, `set-remove!`, `array>set`, and `group-by`. Building a relation with one `assert` per row is super-linear (each insert shifts the sorted `:rows` set, and per-value frames grow the same way); `bulk-load` avoids that with `array>set` for `:rows` (one sort) and a one-pass `group-by` per indexed column (which buckets by the interned symbol value, then sorts each small bucket — no global sort). `load-bag` and `create-index` skip the `:rows` dedup entirely, keeping a bag; `create-index` also interns the indexed columns to symbols. Candidate narrowing drives from the smallest matching bucket.
 
 ---
 
@@ -697,7 +697,7 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 | `see-tree` | `( xt -- )` | Like `see-compiled`, but each colon-word call is expanded inline, indented two spaces, recursively down to primitives; recursive calls print as `name ...` | body scan | none | O(expanded body) |
 | `see-tree>string` | `( xt -- s )` | The text `see-tree` would print, returned as a string (trailing newline stripped) | body scan | `1o` | O(expanded body) |
 | `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
-| `help` | `( "name" -- )` | lib.l4: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
+| `help` | `( "name" -- )` | lib.h2o: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |
 | `alloc-stats` | `( -- )` | Print and reset the allocation counters since the last call (`lvars=… arrays=…`) | 2 | none | O(1) |
 | `bye` | `( -- )` | `exit(0)` | — | — | — |
@@ -712,7 +712,7 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 |------|-------------|----------|-----|-------|---|
 | `load` | `( s -- )` | Run a source file as if typed; record it for `reload` | file read + run | input buffer | O(file) |
 | `reload` | `( -- )` | Truncate user state, re-run every loaded file in order | forget + N loads | — | O(Σ files) |
-| `save` | `( s -- )` | Write all user words as re-loadable `.l4` source | dict scan + write | file I/O | O(\|user dict\|) |
+| `save` | `( s -- )` | Write all user words as re-loadable `.h2o` source | dict scan + write | file I/O | O(\|user dict\|) |
 | `save-image` | `( s -- )` | Binary snapshot of full state (dict, objects, stacks, continuations) | serialize all | file I/O | O(objects + dict) |
 | `load-image` | `( s -- )` | Restore a binary snapshot, replacing current state | deserialize all | reallocates all objects | O(objects) |
 
@@ -739,19 +739,19 @@ A stream (`T_STREAM`) wraps an OS file descriptor — a pipe to a child process.
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `start-process` | `( argv -- proc )` | fork/exec `argv[0]` with `argv` as its arguments; return `{ :pid :in :out :err }` (the three streams are `T_STREAM`) | fork + 3 pipes | `1o` frame + 3 streams | O(argc) |
-| `run-result` | `( argv -- frame )` | lib.l4: run `argv` to completion and return `{ :out :err :status }`, closing the streams and reaping the child | fork + drain | `1fr` + output strings | O(output) |
+| `run-result` | `( argv -- frame )` | lib.h2o: run `argv` to completion and return `{ :out :err :status }`, closing the streams and reaping the child | fork + drain | `1fr` + output strings | O(output) |
 | `write` | `( s stream -- )` | Write the string's bytes to the stream; loops over partial writes, retries `EINTR` | write syscalls | none | O(\|s\|) |
 | `read` | `( stream -- s )` | Read the stream to EOF into one string | read syscalls | `1o` + buffer growth | O(bytes) |
 | `close` | `( stream -- )` | Close the fd; closing a child's `:in` sends it EOF | 1 syscall | none | O(1) |
 | `wait` | `( pid -- status )` | Block until the child exits; return its exit code, or `128 + signo` if it was killed by a signal | blocks | none | O(1) |
 | `stop` | `( pid -- status )` | `SIGKILL` the child then reap it (137 = 128+9, or its code if it had already exited) | 2 syscalls | none | O(1) |
 | `running?` | `( pid -- bool )` | Non-blocking liveness via `waitid`+`WNOHANG`+`WNOWAIT`; true while running, false once exited. Non-reaping, so a later `wait` still returns the status | 1 syscall | none | O(1) |
-| `run` | `( s -- proc )` | lib.l4: split a command string on runs of spaces and `start-process` it (`" +" split start-process`) | split + fork | `1a` + `1o` frame + 3 streams | O(\|s\| + argc) |
-| `write-in` | `( s proc -- )` | lib.l4: write the string to the child's `:in` stream | write syscalls | none | O(\|s\|) |
-| `read-out` | `( proc -- s )` | lib.l4: read the child's `:out` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
-| `read-err` | `( proc -- s )` | lib.l4: read the child's `:err` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
-| `end-process` | `( proc -- )` | lib.l4: the teardown mirror of `start-process` — close `:in`/`:out`/`:err` and `wait` `:pid` (graceful, blocks until exit) | 3 closes + wait | none | O(1) |
-| `parallel-run` | `( commands width -- results )` | lib.l4: run each argv array in `commands` as a subprocess, at most `width` at once; collect `{ :out :err :status }` per command in input order, refilling a slot as each child finishes | fork per command + poll | `1a` + per-child frames/streams | O(critical path) |
+| `run` | `( s -- proc )` | lib.h2o: split a command string on runs of spaces and `start-process` it (`" +" split start-process`) | split + fork | `1a` + `1o` frame + 3 streams | O(\|s\| + argc) |
+| `write-in` | `( s proc -- )` | lib.h2o: write the string to the child's `:in` stream | write syscalls | none | O(\|s\|) |
+| `read-out` | `( proc -- s )` | lib.h2o: read the child's `:out` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
+| `read-err` | `( proc -- s )` | lib.h2o: read the child's `:err` stream to EOF | read syscalls | `1o` + buffer growth | O(bytes) |
+| `end-process` | `( proc -- )` | lib.h2o: the teardown mirror of `start-process` — close `:in`/`:out`/`:err` and `wait` `:pid` (graceful, blocks until exit) | 3 closes + wait | none | O(1) |
+| `parallel-run` | `( commands width -- results )` | lib.h2o: run each argv array in `commands` as a subprocess, at most `width` at once; collect `{ :out :err :status }` per command in input order, refilling a slot as each child finishes | fork per command + poll | `1a` + per-child frames/streams | O(critical path) |
 
 Line access is `read "\n" split`.
 
@@ -768,13 +768,13 @@ Embedded relational storage via the vendored SQLite amalgamation, built into the
 | `db-exec` | `( db statement params -- n )` | Bind `params` to the statement's `?` placeholders and run it with no result set (INSERT / UPDATE / DELETE / CREATE / …); return the affected-row count as a float (0 for DDL). One statement per call. On a bad statement, errors with SQLite's message | per statement | none | O(statement) |
 | `db-query` | `( db query params -- rel )` | Bind `params` to the query's `?` placeholders and run it; return an index-less relation `{ :rows <array of row frames> :index { } }`. Each row is a frame keyed by column-name symbols, with INTEGER/REAL → float, TEXT → string, NULL → `null`, BLOB → string of raw bytes. `:rows` is a **bag** — duplicates kept, in result order. On a bad query, errors with SQLite's message | n·c | `1o` relation + `1a(n)` + `1o`/row + a string per text/blob cell | O(n·c) |
 
-Using a closed handle errors (`database is closed`). Do selection, projection, and joins in the SQL itself; logicforth materializes the result. Indexing a result is a separate, explicit step — `create-index` (see Fact database) — because it interns the indexed columns to symbols, which only makes sense for low-cardinality categorical columns you choose.
+Using a closed handle errors (`database is closed`). Do selection, projection, and joins in the SQL itself; water materializes the result. Indexing a result is a separate, explicit step — `create-index` (see Fact database) — because it interns the indexed columns to symbols, which only makes sense for low-cardinality categorical columns you choose.
 
 ---
 
 ## Foreign function interface
 
-Call C functions in any shared library at runtime via `libdl` + `libffi` — no per-library glue. `ffi-open` loads a library; `ffi-function` / `ffi-variadic` resolve a symbol and define a logicforth word that marshals its arguments and result. Types are symbols: `:void :int :long :double :ptr :string` — logicforth floats marshal to/from C `int`/`long`/`double`, strings pass as `const char*` (a returned `char*` is copied into a logicforth string), and `:ptr` is an opaque C pointer held as a `T_PTR` handle (a registry index, since a 64-bit pointer doesn't fit a Val's 44-bit payload). FFI is unsafe: a wrong signature corrupts or crashes — argument *count* is checked, types are the caller's responsibility.
+Call C functions in any shared library at runtime via `libdl` + `libffi` — no per-library glue. `ffi-open` loads a library; `ffi-function` / `ffi-variadic` resolve a symbol and define a water word that marshals its arguments and result. Types are symbols: `:void :int :long :double :ptr :string` — water floats marshal to/from C `int`/`long`/`double`, strings pass as `const char*` (a returned `char*` is copied into a water string), and `:ptr` is an opaque C pointer held as a `T_PTR` handle (a registry index, since a 64-bit pointer doesn't fit a Val's 44-bit payload). FFI is unsafe: a wrong signature corrupts or crashes — argument *count* is checked, types are the caller's responsibility.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -785,7 +785,7 @@ Call C functions in any shared library at runtime via `libdl` + `libffi` — no 
 | `ffi-variadic` | `( lib symbol arg-types ret-type n-fixed -- ) <name>` | Like `ffi-function` for a variadic C function: `n-fixed` leading arguments use the fixed convention, the rest the variadic one (`ffi_prep_cif_var`). Variadic argument types are fixed per binding, so declare one word per type combination (e.g. a `:string` `setopt` and a `:long` `setopt`) | dlsym + prep_cif_var | 1 binding | O(argc) |
 | `ffi-free` | `( ptr -- )` | `free` a C buffer held as a `T_PTR` (e.g. from `malloc`) and clear its registry slot. Not for library handles | free | none | O(1) |
 
-A defined FFI word pops its arguments, marshals each per the declared signature, calls through libffi, and pushes the marshalled return (`:void` pushes nothing). The build links `-lffi`; `dlopen` is in libSystem. Callbacks (C → logicforth), struct-by-value, varargs-per-call, and finer numeric types (`float`, unsigned) are not yet supported.
+A defined FFI word pops its arguments, marshals each per the declared signature, calls through libffi, and pushes the marshalled return (`:void` pushes nothing). The build links `-lffi`; `dlopen` is in libSystem. Callbacks (C → water), struct-by-value, varargs-per-call, and finer numeric types (`float`, unsigned) are not yet supported.
 
 ---
 

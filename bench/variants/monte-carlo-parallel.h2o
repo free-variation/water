@@ -3,8 +3,8 @@
 \ quarter circle: estimate = 4 · (#inside / #samples).
 \
 \ scimark's own RNG is a strict serial sequence (see pyperformance/scimark-
-\ montecarlo.l4), so it can't be parallelised. This variant instead draws from
-\ logicforth's native random stream, which gives each worker its own
+\ montecarlo.h2o), so it can't be parallelised. This variant instead draws from
+\ water's native random stream, which gives each worker its own
 \ deterministic sub-stream from the shared base seed. WORKERS chunks are run one
 \ per worker (CHUNKS = WORKERS, claim 1), so every worker samples exactly one
 \ chunk from its own stream and the total is independent of scheduling order —

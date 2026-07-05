@@ -1,15 +1,15 @@
-\ SQLite load test — stresses logicforth's result materialization and index
+\ SQLite load test — stresses water's result materialization and index
 \ construction, NOT sqlite. A recursive CTE generates the rows, so sqlite does
 \ negligible work; the load is db-query building N row frames (+ a string per
 \ cat cell) into a growable array, and create-index symbolizing those cells and
 \ bulk-loading 1M frames (array>set + group-by) while the symbol pool grows.
 \
-\ Run:  ./logicforth -b < bench/sqlite-load.l4
+\ Run:  ./water -b < bench/sqlite-load.h2o
 \ The default 64M object ceiling is never hit (≈2M live objects), so the build
 \ just grows the table. To force GC *during* the build — exercising the gc_root
 \ discipline around the :rows array and the in-flight row — lower the ceiling
 \ near the live set:
-\   ./logicforth -b --max-objects 4000000 < bench/sqlite-load.l4
+\   ./water -b --max-objects 4000000 < bench/sqlite-load.h2o
 
 1000000 constant *row-count*
 

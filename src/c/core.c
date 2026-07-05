@@ -20,7 +20,7 @@ static platform_mutex_t intern_lock = PLATFORM_MUTEX_INIT;
 static void *xmalloc(size_t bytes) {
 	void *block = malloc(bytes);
 	if (!block) {
-		fprintf(stderr, "logicforth: out of memory\n");
+		fprintf(stderr, "water: out of memory\n");
 		exit(1);
 	}
 	return block;
@@ -29,7 +29,7 @@ static void *xmalloc(size_t bytes) {
 static void *xcalloc(size_t count, size_t size) {
 	void *block = calloc(count, size);
 	if (!block) {
-		fprintf(stderr, "logicforth: out of memory\n");
+		fprintf(stderr, "water: out of memory\n");
 		exit(1);
 	}
 	return block;
@@ -38,7 +38,7 @@ static void *xcalloc(size_t count, size_t size) {
 static void arena_init(void) {
 	arena.base = platform_reserve(&arena.reserved);
 	if (!arena.base) {
-		fprintf(stderr, "logicforth: arena reserve failed\n");
+		fprintf(stderr, "water: arena reserve failed\n");
 		exit(1);
 	}
 
@@ -62,7 +62,7 @@ static inline void *arena_bump(AllocContext *ctx, size_t advance_bytes) {
 		size_t slab_claim_bytes = advance_bytes > SLAB_BYTES ? advance_bytes : SLAB_BYTES;
 		size_t claimed = atomic_fetch_add(&arena.used, slab_claim_bytes);
 		if (claimed + slab_claim_bytes > arena.reserved) {
-			fprintf(stderr, "logicforth: arena exhausted\n");
+			fprintf(stderr, "water: arena exhausted\n");
 			exit(1);
 		}
 		ctx->slab_next = arena.base + claimed;
@@ -1455,7 +1455,7 @@ int intern_symbol(Interpreter *interp, const char *name) {
 void dict_ensure(Interpreter *interp, int extra) {
 	(void)interp;
 	if (vocab.here + extra > VOCABULARY_INIT_SIZE) {
-		fprintf(stderr, "logicforth: dictionary full\n");
+		fprintf(stderr, "water: dictionary full\n");
 		exit(1);
 	}
 }
@@ -3420,7 +3420,7 @@ void p_save(Interpreter *interp) {
 			collected_cfas[num_cfas++] = cfa;
 	}
 
-	fprintf(file, "\\ logicforth vocabulary\n\n");
+	fprintf(file, "\\ water vocabulary\n\n");
 
 	for (int i = num_cfas - 1; i >= 0; i--) {
 		int cfa = collected_cfas[i];
@@ -3863,7 +3863,7 @@ void p_load_image(Interpreter *interp) {
 
 	char magic[4];
 	if (fread(magic, 1, 4, file) != 4 || memcmp(magic, IMAGE_MAGIC, 4) != 0) {
-		fail(interp, "%s: not a logicforth image", filename);
+		fail(interp, "%s: not a water image", filename);
 		fclose(file);
 		return;
 	}
@@ -4669,17 +4669,17 @@ int main(int argc, char **argv) {
 			load_lib = 0;
 		else if (strcmp(argv[i], "--max-objects") == 0) {
 			if (i + 1 >= argc) {
-				fprintf(stderr, "logicforth: --max-objects needs a value\n");
+				fprintf(stderr, "water: --max-objects needs a value\n");
 				return 2;
 			}
 			max_objects_arg = strtol(argv[++i], NULL, 10);
 			if (max_objects_arg < 1) {
-				fprintf(stderr, "logicforth: --max-objects must be a positive integer\n");
+				fprintf(stderr, "water: --max-objects must be a positive integer\n");
 				return 2;
 			}
 		}
 		else {
-			fprintf(stderr, "logicforth: unknown option '%s'\n", argv[i]);
+			fprintf(stderr, "water: unknown option '%s'\n", argv[i]);
 			return 2;
 		}
 	}

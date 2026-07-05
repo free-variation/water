@@ -1,13 +1,13 @@
 #!/bin/sh
-# Disassemble every word defined in each bench/**.l4 file.
+# Disassemble every word defined in each bench/**.h2o file.
 #
-# For each .l4 under ./bench: extract its colon-definition names, load the
+# For each .h2o under ./bench: extract its colon-definition names, load the
 # file's definitions (the trailing benchmark run is stripped), and run
 # see-compiled on each word, dumping the disassembly to stdout. Useful for
 # auditing which sequences fused across the real benchmarks.
 
 root=$(cd "$(dirname "$0")/.." && pwd)
-bin="$root/logicforth"
+bin="$root/water"
 
 # The benchmark runner injects these per-run params; the bench words reference
 # them, so define them (dummy values) or the files won't compile.
@@ -17,7 +17,7 @@ variable ITERATIONS 1.0 to ITERATIONS
 variable SAMPLES 1.0 to SAMPLES
 variable WORKERS 1.0 to WORKERS'
 
-find "$root/bench" -name '*.l4' | sort | while IFS= read -r file; do
+find "$root/bench" -name '*.h2o' | sort | while IFS= read -r file; do
 	echo "================================================================"
 	echo "# $file"
 	echo "================================================================"

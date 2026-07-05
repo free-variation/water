@@ -1,7 +1,7 @@
 """Generate a huge, deep, varied JSON file for load-testing json>frame / frame>json.
 
 Deterministic (fixed seed). Stresses every dimension the parser/serializer touches:
-  - deep nesting (under logicforth's JSON_MAX_DEPTH = 1024 guard)
+  - deep nesting (under water's JSON_MAX_DEPTH = 1024 guard)
   - a very wide flat array (hundreds of thousands of mixed-type elements)
   - a very wide object (many distinct keys -> exercises symbol interning + sort)
   - multi-megabyte strings, with embedded escapes (" \\ newline tab) and raw UTF-8

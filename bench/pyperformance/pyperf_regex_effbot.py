@@ -3,7 +3,7 @@
 Standalone CPython side of pyperformance bm_regex_effbot (Fredrik Lundh's
 regex benchmarks). The data-building functions are copied verbatim from the
 pyperformance source; only the pyperf harness is replaced by a plain timing
-main that also prints a match count for cross-checking the logicforth port.
+main that also prints a match count for cross-checking the water port.
 """
 
 import re

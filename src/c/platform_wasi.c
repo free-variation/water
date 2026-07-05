@@ -18,7 +18,7 @@ void platform_init(void) {
 int platform_repl_begin(struct Interpreter *interp, int want_interactive) {
 	(void)interp;
 	if (want_interactive)
-		printf("logicforth %s\n", VERSION);
+		printf("water %s\n", VERSION);
 	return want_interactive;
 }
 

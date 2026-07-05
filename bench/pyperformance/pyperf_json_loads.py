@@ -4,7 +4,7 @@ DICT, TUPLE, mutate_dict, the fixed-seed random_source, DICT_GROUP, and
 bench_json_loads are copied verbatim from the pyperformance reference; only the
 pyperf Runner is replaced with a plain timed loop. Prints a `bytes:` line
 (total canonical length of each input round-tripped through loads then dumps
-with sort_keys=True, which the logicforth side reproduces with
+with sort_keys=True, which the water side reproduces with
 `json>frame frame>json size`) and an `elapsed:` line over LOOPS passes of the
 measured phase.
 """

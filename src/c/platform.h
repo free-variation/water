@@ -1,5 +1,5 @@
-#ifndef LOGICFORTH_PLATFORM_H
-#define LOGICFORTH_PLATFORM_H
+#ifndef WATER_PLATFORM_H
+#define WATER_PLATFORM_H
 
 #include <stddef.h>
 

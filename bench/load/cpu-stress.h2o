@@ -4,7 +4,7 @@
 \ every core at once. One line per round; let it run to hear the fans, Ctrl-C
 \ to stop.
 \
-\ Run:  ./logicforth -b < bench/cpu-stress.l4
+\ Run:  ./water -b < bench/cpu-stress.h2o
 \ Knobs: ITERS (work per item), DOMAIN (items/round), WORKERS (cores), ROUNDS.
 
 variable *t0*

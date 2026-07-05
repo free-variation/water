@@ -182,7 +182,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 
 - **Interactive REPL** with full isocline line editing: theme-adaptive **syntax highlighting**, **matching-brace** highlighting, **inline hints** and **Tab completion** (word names from the live dictionary, filenames inside string literals), persistent history (`.water_history`), and **multi-line editing** — `Ctrl+J` inserts a line, `Enter` submits the whole buffer. A `count|top` prompt shows stack depth and the top value, green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
 - **`load`** runs a source file as if typed.
-- **`save`** writes the user's vocabulary as a re-loadable `.l4` source file.
+- **`save`** writes the user's vocabulary as a re-loadable `.h2o` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
 - **`reload`** truncates user state and re-runs every file `load`ed this session, in order.
 - **`read-file`** / **`write-file`** / **`append-file`** — read a whole file as one (byte-safe) string; write or append a string's bytes to a path.
@@ -195,7 +195,7 @@ Drive external programs over pipes (`fork`/`execvp`/`pipe`/`waitpid`; binary-saf
 - **`argv start-process`** — launch from an argv array; returns a frame `{ :pid :in :out :err }` with the child's pid and its stdin/stdout/stderr as `T_STREAM` values.
 - **`write`** / **`read`** / **`close`** — write a string to a stream, read a stream to EOF, close one (closing `:in` sends EOF).
 - **`running?`** / **`wait`** / **`stop`** — non-blocking liveness check, block-until-exit, signal-and-reap.
-- `lib.l4` conveniences: **`run`** (split a command line and start it), **`read-out`** / **`read-err`** / **`write-in`**.
+- `lib.h2o` conveniences: **`run`** (split a command line and start it), **`read-out`** / **`read-err`** / **`write-in`**.
 - **`commands width parallel-run`** — run a batch of argv arrays concurrently, at most `width` at a time, collecting `{ :out :err :status }` per command in input order (refills a slot as each child finishes). Process-level parallelism — e.g. firing off many `curl` requests at once.
 
 ### SQLite
@@ -206,7 +206,7 @@ Embedded relational storage via the vendored SQLite amalgamation — built into 
 - **`db-exec`** — `( db statement params -- n )` — run an INSERT/UPDATE/DELETE/CREATE with `params` bound to its `?` placeholders; returns the affected-row count (0 for DDL).
 - **`db-query`** — `( db query params -- rel )` — run a query; returns a fact-database relation `{ :rows <bag of row frames> :index { } }`, each row keyed by column-name symbols (INTEGER/REAL → float, TEXT → string, NULL → `null`, BLOB → raw bytes). Duplicates are kept, in result order; the result drops straight into `query` / `inner-join`.
 - **Bound parameters** — `params` is an array bound positionally to the `?` placeholders (`[ ]` for none); floats, strings, symbols, and `null` bind, so string values need no hand-escaping.
-- **`create-index`** — `( rel cols -- rel )`, `lib.l4` — index a query result on `cols`, interning those columns to symbols so the fact-db index and `query` can use them.
+- **`create-index`** — `( rel cols -- rel )`, `lib.h2o` — index a query result on `cols`, interning those columns to symbols so the fact-db index and `query` can use them.
 
 ### Data: TSV, datasets, and statistics
 
@@ -216,7 +216,7 @@ TSV is the one tabular file format (convert other formats to TSV before loading)
 - **`rows>dataset`** — `( table header? -- frame )` a column-oriented frame, one array per column; **`rows>relation`** — `( table index-cols header? -- relation )` a deduped, indexed fact-database relation; **`dataset>matrix`** — `( dataset cols -- m )` an observations×columns numeric matrix from named columns.
 - **`resample-indices`** — `( n -- arr )` n indices drawn from `[0,n)` with replacement, for bootstrap resampling.
 
-The statistics library (`lib/statistics.l4`, loaded on demand) builds on the matrix and FFI layers:
+The statistics library (`lib/statistics.h2o`, loaded on demand) builds on the matrix and FFI layers:
 
 - **Descriptive** — `std`, `se`, `median`, `percentile`, `iqr`, `ci` (percentile confidence interval).
 - **Resampling** — `bootstrap` / `pbootstrap` (parallel) over a fit quotation.
@@ -245,7 +245,7 @@ A four-primitive substrate the rest of the control story is built on. See `docs/
 
 ### Generators
 
-Coroutines on the continuation primitives, in `lib.l4`:
+Coroutines on the continuation primitives, in `lib.h2o`:
 
 - **`yield`** — emit a value to the driver and suspend until resumed.
 - **`start-generator`** — run a producer to its first `yield`, leaving the yielded value and a resumable continuation.
@@ -257,7 +257,7 @@ A third stack for stashing arbitrary Vals without disturbing the data or return 
 
 ### Exceptions (library)
 
-Built in `lib.l4` on top of the continuation primitives:
+Built in `lib.h2o` on top of the continuation primitives:
 
 - **`throw`** — non-local exit with a value.
 - **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — returning the error message as the exception value, so a runtime fault is recoverable, not just a user `throw`.
@@ -305,8 +305,8 @@ src/c/logic.c          — logic variables, unification, amb, fact database
 src/c/database.c       — SQLite integration
 src/c/foreign.c        — FFI (libffi), pointer registry, matrix/segment bridges
 src/c/help_table.c     — generated help/man text (from docs/reference.md)
-src/forth/lib.l4       — standard library (embedded, auto-loaded at startup)
-lib/                   — loadable libraries: statistics.l4, files.l4, claude.l4
+src/forth/lib.h2o       — standard library (embedded, auto-loaded at startup)
+lib/                   — loadable libraries: statistics.h2o, files.h2o, claude.h2o
 external/              — vendored deps: pcre2, sqlite, isocline, lapacke
 tests/                 — golden-output test files
 bench/                 — benchmark suite (water vs CPython) and inventory

@@ -5,7 +5,7 @@ regex set (bm_regex_v8 + bm_regex_effbot, via bm_regex_compile) once, cold.
 
 Each process invocation starts with an empty re cache, so a single pass over
 the distinct patterns is a cold compile of each — the same thing the
-logicforth bench measures (its 64-slot pattern cache can't hold 239, so every
+water bench measures (its 64-slot pattern cache can't hold 239, so every
 pass is all misses). The harness runs this in fresh processes and takes the
 median, so no re.purge() is needed.
 """

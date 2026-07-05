@@ -2,9 +2,9 @@
 \ logistic regression on the synthetic 1M-row dataset, serial vs parallel.
 \ Resamples REPS times, fits every resample each way, and times both. The
 \ serial==parallel check is a corruption canary for the worker-local collector.
-\ Regenerate data/logistic-sim.tsv with bench/gen-logistic-sim.l4 if missing.
+\ Regenerate data/logistic-sim.tsv with bench/gen-logistic-sim.h2o if missing.
 
-"lib/statistics.l4" load
+"lib/statistics.h2o" load
 
 50 constant *reps*
 6 constant *workers*

@@ -54,8 +54,8 @@ OBJS = \
 
 .SUFFIXES: .c .o
 
-logicforth.wasm: $(OBJS)
-	$(CC) $(LDFLAGS) $(STACK) -o logicforth.wasm $(OBJS)
+water.wasm: $(OBJS)
+	$(CC) $(LDFLAGS) $(STACK) -o water.wasm $(OBJS)
 
 .c.o:
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -63,10 +63,10 @@ logicforth.wasm: $(OBJS)
 $(SQLITE)/sqlite3.o: $(SQLITE)/sqlite3.c $(SQLITE)/sqlite3.h
 	$(CC) $(SQLITE_CFLAGS) -c $(SQLITE)/sqlite3.c -o $(SQLITE)/sqlite3.o
 
-$(OBJS): src/c/logicforth.h src/c/platform.h
+$(OBJS): src/c/water.h src/c/platform.h
 
-test: logicforth.wasm
+test: water.wasm
 	WASM_EXEC=wasm sh tests/run-wasm.sh
 
 clean:
-	rm -f $(OBJS) logicforth.wasm
+	rm -f $(OBJS) water.wasm

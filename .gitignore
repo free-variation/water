@@ -53,7 +53,7 @@ dkms.conf
 
 # debug information files
 *.dwo
-logicforth
+water
 .DS_Store
 
 # cached upstream leibniz.py benchmark reference (fetched on demand)
@@ -63,7 +63,7 @@ bench/*.log
 bench/*.md
 
 .claude
-.logicforth_history
+.water_history
 
 # transient benchmark run reports / logs
 bench/results/

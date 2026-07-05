@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Run the logicforth benchmark suite against CPython and emit a markdown
+# Run the water benchmark suite against CPython and emit a markdown
 # report on stdout (the same shape as bench/baseline-post-*.md). All progress
 # and build output goes to stderr, so the report can be captured cleanly:
 #
@@ -8,7 +8,7 @@
 #
 # Environment overrides:
 #   PYTHON        python interpreter            (default: python3.14)
-#   REPS          logicforth reps per bench     (default: 5)
+#   REPS          water reps per bench     (default: 5)
 #   REPS_PY       python reps per bench         (default: 3)
 #   SKIP_LEIBNIZ  set to 1 to skip leibniz      (it is the slow one: ~min)
 #
@@ -18,7 +18,7 @@ set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
-bin="$root/logicforth"
+bin="$root/water"
 
 python=${PYTHON:-python3.14}
 # crypto-pyaes needs the pure-Python `pyaes` module; prefer the repo .venv
@@ -65,7 +65,7 @@ trap 'rm -rf "$work"' EXIT
 log() { printf '%s\n' "$*" >&2; }
 
 # --- build -----------------------------------------------------------------
-log "building logicforth..."
+log "building water..."
 (cd "$root" && make) >&2 || { log "build failed"; exit 1; }
 
 # --- helpers ---------------------------------------------------------------
@@ -96,7 +96,7 @@ fmt_ms() {
 	}'
 }
 
-# python-over-logicforth ratio, e.g. 1.28× or ~37×
+# python-over-water ratio, e.g. 1.28× or ~37×
 ratio() {
 	awk -v p="$1" -v l="$2" 'BEGIN {
 		r = p / l
@@ -105,35 +105,35 @@ ratio() {
 	}'
 }
 
-# --- logicforth command wrappers (each prints a full bench run) ------------
-lf_leibniz()  { "$bin" < "$here/pyperformance/leibniz.l4"; }
-lf_leibniz_matrix() { "$bin" < "$here/variants/leibniz-matrix.l4"; }
-lf_leibniz_parallel() { "$bin" < "$here/variants/leibniz-parallel.l4"; }
-lf_nqueens()  { "$bin" < "$here/pyperformance/nqueens.l4"; }
-lf_nqueens_iter() { "$bin" < "$here/variants/nqueens-iter.l4"; }
-lf_fannkuch() { "$bin" < "$here/pyperformance/fannkuch.l4"; }
-lf_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.l4"; } | "$bin"; }
-lf_raytrace() { { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.l4"; } | "$bin"; }
-lf_float()    { "$bin" < "$here/pyperformance/float.l4"; }
-lf_crypto()   { "$bin" < "$here/pyperformance/crypto-pyaes.l4"; }
-lf_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.l4"; } | "$bin"; }
-lf_spectral_matrix() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/variants/spectral-norm-matrix.l4"; } | "$bin"; }
-lf_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.l4"; } | "$bin"; }
-lf_scimark_sor() { { echo "variable ITERATIONS $scimark_sor_loops to ITERATIONS"; cat "$here/pyperformance/scimark-sor.l4"; } | "$bin"; }
-lf_scimark_sparse() { { echo "variable CYCLES $scimark_sparse_cycles to CYCLES"; cat "$here/pyperformance/scimark-sparse.l4"; } | "$bin"; }
-lf_scimark_fft() { { echo "variable LOOPS $fft_loops to LOOPS"; echo "variable CYCLES $fft_cycles to CYCLES"; cat "$here/pyperformance/scimark-fft.l4"; } | "$bin"; }
-lf_barnes()   { { echo "variable ITERATIONS $barnes_iterations to ITERATIONS"; echo "variable LOOPS $barnes_loops to LOOPS"; cat "$here/pyperformance/barnes-hut.l4"; } | "$bin"; }
-lf_scimark_mc() { { echo "variable SAMPLES $montecarlo_samples to SAMPLES"; echo "variable LOOPS $montecarlo_loops to LOOPS"; cat "$here/pyperformance/scimark-montecarlo.l4"; } | "$bin"; }
-lf_montecarlo_par() { { echo "variable SAMPLES $((montecarlo_samples * montecarlo_loops)) to SAMPLES"; echo "variable WORKERS 10 to WORKERS"; cat "$here/variants/monte-carlo-parallel.l4"; } | "$bin"; }
-lf_meteor()   { { echo "variable LOOPS $meteor_loops to LOOPS"; cat "$here/pyperformance/meteor.l4"; } | "$bin"; }
-lf_hexiom()   { { echo "variable LOOPS $hexiom_loops to LOOPS"; cat "$here/pyperformance/hexiom.l4"; } | "$bin"; }
-lf_regex_dna() { "$bin" < "$here/pyperformance/regex-dna.l4"; }
-lf_regex_compile() { "$bin" < "$here/pyperformance/regex-compile.l4"; }
-lf_regex_effbot() { "$bin" < "$here/pyperformance/regex-effbot.l4"; }
-lf_regex_v8() { "$bin" < "$here/pyperformance/regex-v8.l4"; }
-lf_deepcopy() { "$bin" < "$here/pyperformance/deepcopy.l4"; }
-lf_json_loads() { "$bin" < "$here/pyperformance/json-loads.l4"; }
-lf_json_dumps() { "$bin" < "$here/pyperformance/json-dumps.l4"; }
+# --- water command wrappers (each prints a full bench run) ------------
+h2o_leibniz()  { "$bin" < "$here/pyperformance/leibniz.h2o"; }
+h2o_leibniz_matrix() { "$bin" < "$here/variants/leibniz-matrix.h2o"; }
+h2o_leibniz_parallel() { "$bin" < "$here/variants/leibniz-parallel.h2o"; }
+h2o_nqueens()  { "$bin" < "$here/pyperformance/nqueens.h2o"; }
+h2o_nqueens_iter() { "$bin" < "$here/variants/nqueens-iter.h2o"; }
+h2o_fannkuch() { "$bin" < "$here/pyperformance/fannkuch.h2o"; }
+h2o_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.h2o"; } | "$bin"; }
+h2o_raytrace() { { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.h2o"; } | "$bin"; }
+h2o_float()    { "$bin" < "$here/pyperformance/float.h2o"; }
+h2o_crypto()   { "$bin" < "$here/pyperformance/crypto-pyaes.h2o"; }
+h2o_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.h2o"; } | "$bin"; }
+h2o_spectral_matrix() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/variants/spectral-norm-matrix.h2o"; } | "$bin"; }
+h2o_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.h2o"; } | "$bin"; }
+h2o_scimark_sor() { { echo "variable ITERATIONS $scimark_sor_loops to ITERATIONS"; cat "$here/pyperformance/scimark-sor.h2o"; } | "$bin"; }
+h2o_scimark_sparse() { { echo "variable CYCLES $scimark_sparse_cycles to CYCLES"; cat "$here/pyperformance/scimark-sparse.h2o"; } | "$bin"; }
+h2o_scimark_fft() { { echo "variable LOOPS $fft_loops to LOOPS"; echo "variable CYCLES $fft_cycles to CYCLES"; cat "$here/pyperformance/scimark-fft.h2o"; } | "$bin"; }
+h2o_barnes()   { { echo "variable ITERATIONS $barnes_iterations to ITERATIONS"; echo "variable LOOPS $barnes_loops to LOOPS"; cat "$here/pyperformance/barnes-hut.h2o"; } | "$bin"; }
+h2o_scimark_mc() { { echo "variable SAMPLES $montecarlo_samples to SAMPLES"; echo "variable LOOPS $montecarlo_loops to LOOPS"; cat "$here/pyperformance/scimark-montecarlo.h2o"; } | "$bin"; }
+h2o_montecarlo_par() { { echo "variable SAMPLES $((montecarlo_samples * montecarlo_loops)) to SAMPLES"; echo "variable WORKERS 10 to WORKERS"; cat "$here/variants/monte-carlo-parallel.h2o"; } | "$bin"; }
+h2o_meteor()   { { echo "variable LOOPS $meteor_loops to LOOPS"; cat "$here/pyperformance/meteor.h2o"; } | "$bin"; }
+h2o_hexiom()   { { echo "variable LOOPS $hexiom_loops to LOOPS"; cat "$here/pyperformance/hexiom.h2o"; } | "$bin"; }
+h2o_regex_dna() { "$bin" < "$here/pyperformance/regex-dna.h2o"; }
+h2o_regex_compile() { "$bin" < "$here/pyperformance/regex-compile.h2o"; }
+h2o_regex_effbot() { "$bin" < "$here/pyperformance/regex-effbot.h2o"; }
+h2o_regex_v8() { "$bin" < "$here/pyperformance/regex-v8.h2o"; }
+h2o_deepcopy() { "$bin" < "$here/pyperformance/deepcopy.h2o"; }
+h2o_json_loads() { "$bin" < "$here/pyperformance/json-loads.h2o"; }
+h2o_json_dumps() { "$bin" < "$here/pyperformance/json-dumps.h2o"; }
 
 # --- python command wrappers -----------------------------------------------
 py_nqueens()  { "$python" "$here/pyperformance/pyperf_nqueens.py" "$nqueens_n"; }
@@ -196,106 +196,106 @@ leibniz_r_version=4.5.2
 # ===========================================================================
 # Run everything
 # ===========================================================================
-log "logicforth: $reps reps/bench   python: $reps_py reps/bench   ($python)"
+log "water: $reps reps/bench   python: $reps_py reps/bench   ($python)"
 
 log "== nqueens =="
-run_reps nqueens_lf lf_nqueens "$reps"
-run_reps nqueens_iter_lf lf_nqueens_iter "$reps"
+run_reps nqueens_h2o h2o_nqueens "$reps"
+run_reps nqueens_iter_h2o h2o_nqueens_iter "$reps"
 run_reps nqueens_py py_nqueens "$reps_py"
 
 log "== nbody =="
-run_reps nbody_lf lf_nbody "$reps"
+run_reps nbody_h2o h2o_nbody "$reps"
 run_reps nbody_py py_nbody "$reps_py"
 
 log "== raytrace =="
-run_reps raytrace_lf lf_raytrace "$reps"
+run_reps raytrace_h2o h2o_raytrace "$reps"
 run_reps raytrace_py py_raytrace "$reps_py"
 
 log "== float =="
-run_reps float_lf lf_float "$reps"
+run_reps float_h2o h2o_float "$reps"
 run_reps float_py py_float "$reps_py"
 
 log "== crypto-pyaes =="
-run_reps crypto_lf lf_crypto "$reps"
+run_reps crypto_h2o h2o_crypto "$reps"
 run_reps crypto_py py_crypto "$reps_py"
 
 log "== fannkuch =="
-run_reps fannkuch_lf lf_fannkuch "$reps"
+run_reps fannkuch_h2o h2o_fannkuch "$reps"
 run_reps fannkuch_py py_fannkuch "$reps_py"
 
 log "== spectral-norm =="
-run_reps spectral_lf lf_spectral "$reps"
-run_reps spectral_matrix_lf lf_spectral_matrix "$reps"
+run_reps spectral_h2o h2o_spectral "$reps"
+run_reps spectral_matrix_h2o h2o_spectral_matrix "$reps"
 run_reps spectral_py py_spectral "$reps_py"
 
 log "== scimark-lu =="
-run_reps scimark_lu_lf lf_scimark_lu "$reps"
+run_reps scimark_lu_h2o h2o_scimark_lu "$reps"
 run_reps scimark_lu_py py_scimark_lu "$reps_py"
 
 log "== scimark-sparse =="
-run_reps scimark_sparse_lf lf_scimark_sparse "$reps"
+run_reps scimark_sparse_h2o h2o_scimark_sparse "$reps"
 run_reps scimark_sparse_py py_scimark_sparse "$reps_py"
 
 log "== scimark-fft =="
-run_reps scimark_fft_lf lf_scimark_fft "$reps"
+run_reps scimark_fft_h2o h2o_scimark_fft "$reps"
 run_reps scimark_fft_py py_scimark_fft "$reps_py"
 
 log "== barnes-hut =="
-run_reps barnes_lf lf_barnes "$reps"
+run_reps barnes_h2o h2o_barnes "$reps"
 run_reps barnes_py py_barnes "$reps_py"
 
 log "== scimark-sor =="
-run_reps scimark_sor_lf lf_scimark_sor "$reps"
+run_reps scimark_sor_h2o h2o_scimark_sor "$reps"
 run_reps scimark_sor_py py_scimark_sor "$reps_py"
 
 log "== scimark-montecarlo =="
-run_reps scimark_mc_lf lf_scimark_mc "$reps"
-run_reps montecarlo_par_lf lf_montecarlo_par "$reps"
+run_reps scimark_mc_h2o h2o_scimark_mc "$reps"
+run_reps montecarlo_par_h2o h2o_montecarlo_par "$reps"
 run_reps scimark_mc_py py_scimark_mc "$reps_py"
 
 log "== meteor =="
-run_reps meteor_lf lf_meteor "$reps"
+run_reps meteor_h2o h2o_meteor "$reps"
 run_reps meteor_py py_meteor "$reps_py"
 
 log "== hexiom =="
-run_reps hexiom_lf lf_hexiom "$reps"
+run_reps hexiom_h2o h2o_hexiom "$reps"
 run_reps hexiom_py py_hexiom "$reps_py"
 
 log "== regex-dna =="
-run_reps regex_dna_lf lf_regex_dna "$reps"
+run_reps regex_dna_h2o h2o_regex_dna "$reps"
 run_reps regex_dna_py py_regex_dna "$reps_py"
 
 log "== regex-compile =="
-run_reps regex_compile_lf lf_regex_compile "$reps_compile"
+run_reps regex_compile_h2o h2o_regex_compile "$reps_compile"
 run_reps regex_compile_py py_regex_compile "$reps_compile"
 
 log "== regex-effbot =="
-run_reps regex_effbot_lf lf_regex_effbot "$reps"
+run_reps regex_effbot_h2o h2o_regex_effbot "$reps"
 run_reps regex_effbot_py py_regex_effbot "$reps_py"
 
 log "== regex-v8 =="
-run_reps regex_v8_lf lf_regex_v8 "$reps"
+run_reps regex_v8_h2o h2o_regex_v8 "$reps"
 run_reps regex_v8_py py_regex_v8 "$reps_py"
 
 log "== deepcopy =="
-run_reps deepcopy_lf lf_deepcopy "$reps"
+run_reps deepcopy_h2o h2o_deepcopy "$reps"
 run_reps deepcopy_py py_deepcopy "$reps_py"
 
 log "== json-loads =="
-run_reps json_loads_lf lf_json_loads "$reps"
+run_reps json_loads_h2o h2o_json_loads "$reps"
 run_reps json_loads_py py_json_loads "$reps_py"
 
 log "== json-dumps =="
-run_reps json_dumps_lf lf_json_dumps "$reps"
+run_reps json_dumps_h2o h2o_json_dumps "$reps"
 run_reps json_dumps_py py_json_dumps "$reps_py"
 
 have_leibniz=0
 have_leibniz_r=0
 if [ "$skip_leibniz" != 1 ]; then
 	log "== leibniz + leibniz-matrix (slow; python/R refs are cached) =="
-	run_reps leibniz_lf lf_leibniz "$reps"
-	run_reps leibniz_matrix_lf lf_leibniz_matrix "$reps"
-	run_reps leibniz_parallel_lf lf_leibniz_parallel "$reps"
+	run_reps leibniz_h2o h2o_leibniz "$reps"
+	run_reps leibniz_matrix_h2o h2o_leibniz_matrix "$reps"
+	run_reps leibniz_parallel_h2o h2o_leibniz_parallel "$reps"
 	have_leibniz=1
 	have_leibniz_r=1
 fi
@@ -311,7 +311,7 @@ emit() { printf '%s\n' "$*"; }
 
 emit "# Benchmark report"
 emit ""
-emit "Generated by \`bench/run-benchmarks.sh\` ($reps logicforth reps, $reps_py python reps; medians)."
+emit "Generated by \`bench/run-benchmarks.sh\` ($reps water reps, $reps_py python reps; medians)."
 emit ""
 emit "## Environment"
 emit ""
@@ -322,92 +322,92 @@ emit "- **Date**: $today"
 emit ""
 
 # ---- standalone table ----
-emit "## Standalone benchmarks — logicforth vs CPython $pyver"
+emit "## Standalone benchmarks — water vs CPython $pyver"
 emit ""
-emit "| benchmark | size | logicforth | python | py / lf |"
+emit "| benchmark | size | water | python | py / h2o |"
 emit "|:----------|:-----|-----------:|-------:|--------:|"
 
 row() {
-	# $1 label  $2 size  $3 lf_key  $4 py_elapsed_or_key  $5 (py is literal?)
-	local label=$1 size=$2 lf_key=$3
-	local lf py
-	lf=$(median_elapsed "$lf_key")
+	# $1 label  $2 size  $3 h2o_key  $4 py_elapsed_or_key  $5 (py is literal?)
+	local label=$1 size=$2 h2o_key=$3
+	local h2o py
+	h2o=$(median_elapsed "$h2o_key")
 	py=$4
-	emit "| $label | $size | $(fmt_s "$lf") | $(fmt_s "$py") | $(ratio "$py" "$lf") |"
+	emit "| $label | $size | $(fmt_s "$h2o") | $(fmt_s "$py") | $(ratio "$py" "$h2o") |"
 }
 
 if [ "$have_leibniz" = 1 ]; then
-	row "leibniz" "${leibniz_rounds} iterations" leibniz_lf "$leibniz_py_elapsed"
-	row "leibniz-matrix" "${leibniz_rounds}, vectorized" leibniz_matrix_lf "$leibniz_py_elapsed"
-	row "leibniz-parallel" "${leibniz_rounds}, pmap" leibniz_parallel_lf "$leibniz_py_elapsed"
+	row "leibniz" "${leibniz_rounds} iterations" leibniz_h2o "$leibniz_py_elapsed"
+	row "leibniz-matrix" "${leibniz_rounds}, vectorized" leibniz_matrix_h2o "$leibniz_py_elapsed"
+	row "leibniz-parallel" "${leibniz_rounds}, pmap" leibniz_parallel_h2o "$leibniz_py_elapsed"
 fi
-row "nqueens" "N = $nqueens_n" nqueens_lf "$(median_elapsed nqueens_py)"
-row "nqueens-iter" "N = $nqueens_n" nqueens_iter_lf "$(median_elapsed nqueens_py)"
-row "nbody" "${nbody_steps} steps" nbody_lf "$(median_elapsed nbody_py)"
-row "raytrace" "${raytrace_loops}× 100×100" raytrace_lf "$(median_elapsed raytrace_py)"
-row "float" "${float_points} pts × ${float_repeat}" float_lf "$(median_elapsed float_py)"
-row "crypto-pyaes" "8192 B, ${crypto_loops}× enc+dec" crypto_lf "$(median_elapsed crypto_py)"
-row "fannkuch" "N = $fannkuch_n" fannkuch_lf "$(median_elapsed fannkuch_py)"
-row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_lf "$(median_elapsed spectral_py)"
-row "spectral-norm-matrix" "N = 130, ${spectral_loops}×" spectral_matrix_lf "$(median_elapsed spectral_py)"
-row "scimark-lu" "N=100, ${scimark_lu_cycles}×" scimark_lu_lf "$(median_elapsed scimark_lu_py)"
-row "scimark-sparse" "N=1000, ${scimark_sparse_cycles}×" scimark_sparse_lf "$(median_elapsed scimark_sparse_py)"
-row "scimark-fft" "N=1024, ${fft_loops}×${fft_cycles}" scimark_fft_lf "$(median_elapsed scimark_fft_py)"
-row "barnes-hut" "200 bodies, ${barnes_loops}×${barnes_iterations}" barnes_lf "$(median_elapsed barnes_py)"
-row "scimark-sor" "N=100, 10 cyc × ${scimark_sor_loops}" scimark_sor_lf "$(median_elapsed scimark_sor_py)"
-row "scimark-montecarlo" "${montecarlo_samples} × ${montecarlo_loops}" scimark_mc_lf "$(median_elapsed scimark_mc_py)"
-row "montecarlo-parallel" "$((montecarlo_samples * montecarlo_loops)) tot, pmap 10w" montecarlo_par_lf "$(median_elapsed scimark_mc_py)"
-row "meteor" "${meteor_loops} solves" meteor_lf "$(median_elapsed meteor_py)"
-row "hexiom" "level 25, ${hexiom_loops} solves" hexiom_lf "$(median_elapsed hexiom_py)"
-row "regex-dna" "100K → 1M" regex_dna_lf "$(median_elapsed regex_dna_py)"
-row "regex-compile" "239 patterns, cold" regex_compile_lf "$(median_elapsed regex_compile_py)"
-row "regex-effbot" "21 pat × 0..10k" regex_effbot_lf "$(median_elapsed regex_effbot_py)"
-row "regex-v8" "12 blocks, browser trace" regex_v8_lf "$(median_elapsed regex_v8_py)"
-row "deepcopy" "N=20000, 60 copies/N" deepcopy_lf "$(median_elapsed deepcopy_py)"
-row "json-loads" "222k parses" json_loads_lf "$(median_elapsed json_loads_py)"
-row "json-dumps" "EMPTY/SIMPLE/NESTED/HUGE ×250" json_dumps_lf "$(median_elapsed json_dumps_py)"
+row "nqueens" "N = $nqueens_n" nqueens_h2o "$(median_elapsed nqueens_py)"
+row "nqueens-iter" "N = $nqueens_n" nqueens_iter_h2o "$(median_elapsed nqueens_py)"
+row "nbody" "${nbody_steps} steps" nbody_h2o "$(median_elapsed nbody_py)"
+row "raytrace" "${raytrace_loops}× 100×100" raytrace_h2o "$(median_elapsed raytrace_py)"
+row "float" "${float_points} pts × ${float_repeat}" float_h2o "$(median_elapsed float_py)"
+row "crypto-pyaes" "8192 B, ${crypto_loops}× enc+dec" crypto_h2o "$(median_elapsed crypto_py)"
+row "fannkuch" "N = $fannkuch_n" fannkuch_h2o "$(median_elapsed fannkuch_py)"
+row "spectral-norm" "N = 130, ${spectral_loops}×" spectral_h2o "$(median_elapsed spectral_py)"
+row "spectral-norm-matrix" "N = 130, ${spectral_loops}×" spectral_matrix_h2o "$(median_elapsed spectral_py)"
+row "scimark-lu" "N=100, ${scimark_lu_cycles}×" scimark_lu_h2o "$(median_elapsed scimark_lu_py)"
+row "scimark-sparse" "N=1000, ${scimark_sparse_cycles}×" scimark_sparse_h2o "$(median_elapsed scimark_sparse_py)"
+row "scimark-fft" "N=1024, ${fft_loops}×${fft_cycles}" scimark_fft_h2o "$(median_elapsed scimark_fft_py)"
+row "barnes-hut" "200 bodies, ${barnes_loops}×${barnes_iterations}" barnes_h2o "$(median_elapsed barnes_py)"
+row "scimark-sor" "N=100, 10 cyc × ${scimark_sor_loops}" scimark_sor_h2o "$(median_elapsed scimark_sor_py)"
+row "scimark-montecarlo" "${montecarlo_samples} × ${montecarlo_loops}" scimark_mc_h2o "$(median_elapsed scimark_mc_py)"
+row "montecarlo-parallel" "$((montecarlo_samples * montecarlo_loops)) tot, pmap 10w" montecarlo_par_h2o "$(median_elapsed scimark_mc_py)"
+row "meteor" "${meteor_loops} solves" meteor_h2o "$(median_elapsed meteor_py)"
+row "hexiom" "level 25, ${hexiom_loops} solves" hexiom_h2o "$(median_elapsed hexiom_py)"
+row "regex-dna" "100K → 1M" regex_dna_h2o "$(median_elapsed regex_dna_py)"
+row "regex-compile" "239 patterns, cold" regex_compile_h2o "$(median_elapsed regex_compile_py)"
+row "regex-effbot" "21 pat × 0..10k" regex_effbot_h2o "$(median_elapsed regex_effbot_py)"
+row "regex-v8" "12 blocks, browser trace" regex_v8_h2o "$(median_elapsed regex_v8_py)"
+row "deepcopy" "N=20000, 60 copies/N" deepcopy_h2o "$(median_elapsed deepcopy_py)"
+row "json-loads" "222k parses" json_loads_h2o "$(median_elapsed json_loads_py)"
+row "json-dumps" "EMPTY/SIMPLE/NESTED/HUGE ×250" json_dumps_h2o "$(median_elapsed json_dumps_py)"
 emit ""
 
 # ---- R reference for the vectorized variant ----
 if [ "$skip_leibniz" != 1 ] && [ "$have_leibniz_r" = 1 ]; then
-	lf_matrix=$(median_elapsed leibniz_matrix_lf)
-	emit "**Vectorized reference (R).** logicforth's leibniz-matrix mirrors the R"
+	h2o_matrix=$(median_elapsed leibniz_matrix_h2o)
+	emit "**Vectorized reference (R).** water's leibniz-matrix mirrors the R"
 	emit "one-liner \`sum(4 / seq.int(...))\`. R $leibniz_r_version runs it in"
-	emit "$(fmt_s "$leibniz_r_elapsed") (π = $leibniz_r_result); logicforth's leibniz-matrix is"
-	emit "$(ratio "$lf_matrix" "$leibniz_r_elapsed") that at $(fmt_s "$lf_matrix")."
+	emit "$(fmt_s "$leibniz_r_elapsed") (π = $leibniz_r_result); water's leibniz-matrix is"
+	emit "$(ratio "$h2o_matrix" "$leibniz_r_elapsed") that at $(fmt_s "$h2o_matrix")."
 	emit ""
 fi
 
 # ---- verification ----
 emit "## Verification (results must match)"
 emit ""
-emit "| benchmark | logicforth | python |"
+emit "| benchmark | water | python |"
 emit "|:----------|:-----------|:-------|"
-emit "| nqueens | $(result_line nqueens_lf 'solutions') | $(result_line nqueens_py 'solutions') |"
-emit "| nbody | $(result_line nbody_lf 'final energy') | $(result_line nbody_py 'final energy') |"
-emit "| raytrace | $(result_line raytrace_lf 'checksum') | $(result_line raytrace_py 'checksum') |"
-emit "| float | $(result_line float_lf 'result:') | $(result_line float_py 'result:') |"
-emit "| crypto-pyaes | $(result_line crypto_lf 'checksum:') | $(result_line crypto_py 'checksum:') |"
-emit "| fannkuch | $(result_line fannkuch_lf 'max flips') | $(result_line fannkuch_py 'max flips') |"
-emit "| spectral-norm | $(result_line spectral_lf 'estimate') | $(result_line spectral_py 'estimate') |"
-emit "| scimark-lu | $(result_line scimark_lu_lf 'checksum') | $(result_line scimark_lu_py 'checksum') |"
-emit "| scimark-sparse | $(result_line scimark_sparse_lf 'checksum') | $(result_line scimark_sparse_py 'checksum') |"
-emit "| scimark-fft | $(result_line scimark_fft_lf 'checksum') | $(result_line scimark_fft_py 'checksum') |"
-emit "| barnes-hut | $(result_line barnes_lf 'final energy') | $(result_line barnes_py 'final energy') |"
-emit "| scimark-sor | $(result_line scimark_sor_lf 'checksum') | $(result_line scimark_sor_py 'checksum') |"
-emit "| scimark-montecarlo | $(result_line scimark_mc_lf 'estimate') | $(result_line scimark_mc_py 'estimate') |"
-emit "| meteor | $(result_line meteor_lf 'last:') | $(result_line meteor_py 'last:') |"
-emit "| hexiom | $(result_line hexiom_lf 'signature') | $(result_line hexiom_py 'signature') |"
-emit "| regex-dna | $(result_line regex_dna_lf 'result:') | $(result_line regex_dna_py 'result:') |"
-emit "| regex-compile | $(result_line regex_compile_lf 'patterns:') | $(result_line regex_compile_py 'patterns:') |"
-emit "| regex-effbot | $(result_line regex_effbot_lf 'matches:') | $(result_line regex_effbot_py 'matches:') |"
-emit "| regex-v8 | $(result_line regex_v8_lf 'checksum:') | $(result_line regex_v8_py 'checksum:') |"
-emit "| deepcopy | $(result_line deepcopy_lf 'equal:') | $(result_line deepcopy_py 'equal:') |"
-emit "| json-loads | $(result_line json_loads_lf 'bytes:') | $(result_line json_loads_py 'bytes:') |"
-emit "| json-dumps | $(result_line json_dumps_lf 'bytes:') | $(result_line json_dumps_py 'bytes:') |"
+emit "| nqueens | $(result_line nqueens_h2o 'solutions') | $(result_line nqueens_py 'solutions') |"
+emit "| nbody | $(result_line nbody_h2o 'final energy') | $(result_line nbody_py 'final energy') |"
+emit "| raytrace | $(result_line raytrace_h2o 'checksum') | $(result_line raytrace_py 'checksum') |"
+emit "| float | $(result_line float_h2o 'result:') | $(result_line float_py 'result:') |"
+emit "| crypto-pyaes | $(result_line crypto_h2o 'checksum:') | $(result_line crypto_py 'checksum:') |"
+emit "| fannkuch | $(result_line fannkuch_h2o 'max flips') | $(result_line fannkuch_py 'max flips') |"
+emit "| spectral-norm | $(result_line spectral_h2o 'estimate') | $(result_line spectral_py 'estimate') |"
+emit "| scimark-lu | $(result_line scimark_lu_h2o 'checksum') | $(result_line scimark_lu_py 'checksum') |"
+emit "| scimark-sparse | $(result_line scimark_sparse_h2o 'checksum') | $(result_line scimark_sparse_py 'checksum') |"
+emit "| scimark-fft | $(result_line scimark_fft_h2o 'checksum') | $(result_line scimark_fft_py 'checksum') |"
+emit "| barnes-hut | $(result_line barnes_h2o 'final energy') | $(result_line barnes_py 'final energy') |"
+emit "| scimark-sor | $(result_line scimark_sor_h2o 'checksum') | $(result_line scimark_sor_py 'checksum') |"
+emit "| scimark-montecarlo | $(result_line scimark_mc_h2o 'estimate') | $(result_line scimark_mc_py 'estimate') |"
+emit "| meteor | $(result_line meteor_h2o 'last:') | $(result_line meteor_py 'last:') |"
+emit "| hexiom | $(result_line hexiom_h2o 'signature') | $(result_line hexiom_py 'signature') |"
+emit "| regex-dna | $(result_line regex_dna_h2o 'result:') | $(result_line regex_dna_py 'result:') |"
+emit "| regex-compile | $(result_line regex_compile_h2o 'patterns:') | $(result_line regex_compile_py 'patterns:') |"
+emit "| regex-effbot | $(result_line regex_effbot_h2o 'matches:') | $(result_line regex_effbot_py 'matches:') |"
+emit "| regex-v8 | $(result_line regex_v8_h2o 'checksum:') | $(result_line regex_v8_py 'checksum:') |"
+emit "| deepcopy | $(result_line deepcopy_h2o 'equal:') | $(result_line deepcopy_py 'equal:') |"
+emit "| json-loads | $(result_line json_loads_h2o 'bytes:') | $(result_line json_loads_py 'bytes:') |"
+emit "| json-dumps | $(result_line json_dumps_h2o 'bytes:') | $(result_line json_dumps_py 'bytes:') |"
 if [ "$have_leibniz" = 1 ]; then
-	emit "| leibniz | $(result_line leibniz_lf 'pi:') | pi = $leibniz_py_result |"
-	emit "| leibniz-matrix | $(result_line leibniz_matrix_lf 'pi:') | pi = $leibniz_py_result |"
+	emit "| leibniz | $(result_line leibniz_h2o 'pi:') | pi = $leibniz_py_result |"
+	emit "| leibniz-matrix | $(result_line leibniz_matrix_h2o 'pi:') | pi = $leibniz_py_result |"
 fi
 emit ""
 

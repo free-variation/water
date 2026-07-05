@@ -2,7 +2,7 @@
 
 ## Context
 
-logicforth has a single numeric type (NaN-boxed `double`) plus raw-`double` matrices. We're adding **dimensioned quantities**: a magnitude carrying a unit, with arithmetic that propagates units automatically (`10 m 2 s / → 5 m/s`). The goal is dimensional *checking and algebra*, not unit *conversion*: units are rational-exponent vectors over user-declared base dimensions, magnitudes just compute, no scale factors or affine offsets.
+water has a single numeric type (NaN-boxed `double`) plus raw-`double` matrices. We're adding **dimensioned quantities**: a magnitude carrying a unit, with arithmetic that propagates units automatically (`10 m 2 s / → 5 m/s`). The goal is dimensional *checking and algebra*, not unit *conversion*: units are rational-exponent vectors over user-declared base dimensions, magnitudes just compute, no scale factors or affine offsets.
 
 Two hard requirements from review:
 1. **Zero performance impact on dimensionless processing.** Plain floats and raw matrices are the hot paths; they must run byte-for-byte the same code they do today. Dimensioned values are opt-in and boxed.
@@ -25,7 +25,7 @@ base unit m   base unit s   base unit kg
 Dimensionless processing means plain `T_FLOAT` and raw `T_MATRIX` values — these never carry any unit machinery, and their code paths stay untouched:
 
 - In every arithmetic word (`p_add`/`p_sub`/`p_mul`/`p_div`, words.c) the float×float branch is **first** and the raw-matrix branches follow; the new `T_QUANTITY` arms are **appended after** them, so a float (or raw-matrix) op dispatches exactly as today — no extra comparison before it.
-- `truthy` (logicforth.h) returns on the `T_FLOAT` branch first; the quantity arm sits after it.
+- `truthy` (water.h) returns on the `T_FLOAT` branch first; the quantity arm sits after it.
 - `val_cmp_depth` (core.c) handles `T_FLOAT` early; the quantity arm is reached only when both tags are `T_QUANTITY`.
 - `unary_op`/`binary_op` and the `f+`/`f*`/fused superwords are not touched on their float paths; quantities are intercepted in the three specific unary words and `p_power` *before* delegating.
 - The quantity magnitude combinators call the existing `matrix_add`/`matrix_mul`/broadcast macros directly — **raw-matrix arithmetic is not refactored**; its inline arms stay as-is. No shared extraction that could de-inline the hot matrix path.
@@ -35,9 +35,9 @@ Dimensionless processing means plain `T_FLOAT` and raw `T_MATRIX` values — the
 
 ## Representation
 
-NaN-boxing gives a 7-bit tag at shift 44 and a 44-bit payload (logicforth.h). A `double` magnitude doesn't fit 44 bits, so a quantity is stored indirectly in **one pair-table slot**:
+NaN-boxing gives a 7-bit tag at shift 44 and a 44-bit payload (water.h). A `double` magnitude doesn't fit 44 bits, so a quantity is stored indirectly in **one pair-table slot**:
 
-- New tag `T_QUANTITY` appended to the `Tag` enum and `static inline Val make_quantity(int slot)` beside the other `make_*` constructors (logicforth.h). Payload = pair-slot index.
+- New tag `T_QUANTITY` appended to the `Tag` enum and `static inline Val make_quantity(int slot)` beside the other `make_*` constructors (water.h). Payload = pair-slot index.
 - The pair slot (`Pair{head,tail}`) holds: **`head` = the magnitude `Val` — a `T_FLOAT` or a `T_MATRIX`**; `tail.bits = (uint64_t)unit_id`. A small int's bit pattern is outside the NaN-box region, so `VAL_IS_FLOAT(tail)` is true and existing pair/image machinery treats the tail as an inert float, never a heap reference. Read via `(int)pairs.table[slot].tail.bits`.
 - Allocation reuses `object_new_pair` + `INIT_PAIR`.
 - **Collapse rule, centralized** in `void push_quantity(Interpreter*, Val magnitude, int unit_id)`: if `unit_id` is the empty/dimensionless descriptor → `push(interp, magnitude)` unchanged (dimensionless result re-enters as a bare float or matrix); else allocate a slot, store `head=magnitude`/`tail.bits=unit_id`, `push(make_quantity(slot))`. Every `*`/`/`/`^`/`sqrt`/`dounit` result funnels through this, so `m/m → 3` and dimensionless-matrix collapse fall out for free.
@@ -53,12 +53,12 @@ T_QUANTITY Val ──payload──▶ pairs.table[slot]
 - **Dimensions table**: growable array; entry = name as symbol-pool offset (or a sentinel for "unnamed"). `dim-id` = index. `base` appends an unnamed dim; `unit name` back-patches the name.
 - **Units table**: interned **unit descriptors**, each a sorted list of `(dim-id, num, den)` with `num≠0, den>0, gcd=1`. Interning dedups so unit-equality and every `*`/`/` result are a single `unit-id` (O(1) identity; linear-scan intern is fine — user units are few). A reserved id = the **empty/dimensionless** descriptor; never stored in a quantity.
 - Helpers (units.c): `gcd`, rational add/normalize; `unit_multiply`/`unit_divide`(=multiply with negated exps)/`unit_pow(unit_id,num,den)` (`sqrt`=pow 1/2) that merge descriptors, combine exponents, drop zeros, re-intern; `render_unit(unit_id)` → string.
-- Declared via structs + `extern` + prototypes in logicforth.h; defined in units.c. Add `src/c/units.c` to `SRCS` in **Makefile**.
+- Declared via structs + `extern` + prototypes in water.h; defined in units.c. Add `src/c/units.c` to `SRCS` in **Makefile**.
 
 ## Implementation order
 
 ```
-1. Representation + tables   logicforth.h + units.c
+1. Representation + tables   water.h + units.c
 2. Declaration words         units.c: p_base, p_unit, dounit; + full handler wiring (core.c)
 3. Arithmetic dispatch       words.c: quantity arms; magnitude combinators; neg/abs/sqrt/power
 4. Core value machinery      core.c: tag_name, val_cmp_depth, mark_value, print_val(_compact)
@@ -129,7 +129,7 @@ Quantities live in pair slots, already serialized wholesale by `p_save_image`/`p
 ## Step 7 — docs & tests
 
 - Add `base`/`unit` rows + a units section to **docs/reference.md**, then regen: `python3 tools/gen-help.py` and `python3 tools/gen-editors.py`. Update/remove the **PLAN.md** entry.
-- New golden test **tests/NNN_units.l4** + **.expected** (batch: `logicforth -b < in`, exact stdout):
+- New golden test **tests/NNN_units.h2o** + **.expected** (batch: `water -b < in`, exact stdout):
   - base + arithmetic: `base unit m base unit s  10 m 2 s / render "5 m/s" = .`
   - add/sub same unit; cross-unit add errors; quantity ± bare-float errors.
   - dimensionless collapse: `6 m 2 m / 3 = .` (bare float `1`).
@@ -142,20 +142,20 @@ Quantities live in pair slots, already serialized wholesale by `p_save_image`/`p
 
 ## Files touched
 
-- **src/c/logicforth.h** — `T_QUANTITY`; `make_quantity`; `truthy` arm (`return truthy(pairs.table[VAL_DATA].head)`); dims/units structs + externs; `init_n_dims`/`init_n_units`; prototypes (`p_base`, `p_unit`, `dounit`, `push_quantity`, `q_mag_*`, unit helpers, `render_unit`).
+- **src/c/water.h** — `T_QUANTITY`; `make_quantity`; `truthy` arm (`return truthy(pairs.table[VAL_DATA].head)`); dims/units structs + externs; `init_n_dims`/`init_n_units`; prototypes (`p_base`, `p_unit`, `dounit`, `push_quantity`, `q_mag_*`, unit helpers, `render_unit`).
 - **src/c/units.c** (new; add to Makefile `SRCS`) — tables, rational/`gcd`, intern, `unit_multiply`/`unit_divide`/`unit_pow`, `render_unit`, `push_quantity`, `p_base`, `p_unit`, `dounit`.
 - **src/c/words.c** — quantity arms in `p_add`/`p_sub`/`p_mul`/`p_div` (appended after existing branches); `q_mag_*` combinators; `p_neg`; `abs`/`sqrt` un-macro'd with quantity arms; `p_power`.
 - **src/c/core.c** — `tag_name`, `val_cmp_depth`, `mark_value` (guard + arm), `print_val`, `print_val_compact`; image save/load of the two tables + watermarks; `loaded_handle_ok`; **`execute_cfa`** (`dounit` case), **`call_open`** (guard), **`see_compiled_body`/`see_tree_body`** (`dounit` case), **`image_op_cells`** (`dounit` → 2); `construct_vocabulary` registers `base`/`unit`; `handler_registry` + `emit_call` learn `dounit`; init watermarks.
 - **src/c/functional.c** — `references_region_depth` arm.
-- **docs/reference.md** (+ regen), **PLAN.md**, **tests/NNN_units.l4** + `.expected`.
+- **docs/reference.md** (+ regen), **PLAN.md**, **tests/NNN_units.h2o** + `.expected`.
 
 Reuse: `intern_symbol`, `object_new_pair`/`INIT_PAIR`, `create_header`/`emit`/`emit_call`/`next_token`, `define_primitive`, the `dosym` template, `matrix_add`/`matrix_mul`/`matrix_sub`/`matrix_div` + `BROADCAST_*` macros, `val_cmp`, `print_double`/`print_matrix_grid`, `fail`, the symbol-pool watermark machinery.
 
 ## Verification
 
-1. `make && sh tests/run.sh` — full golden suite green, including tests/NNN_units.l4.
+1. `make && sh tests/run.sh` — full golden suite green, including tests/NNN_units.h2o.
 2. **`make bench`** — dimensionless float **and** raw-matrix benchmarks show no regression vs. baseline (requirement #1 gate).
-3. **ASan/UBSan build over the units test** (new tag in `mark_value`/image + dimensioned-matrix Objects are the risk areas): build with `-fsanitize=address,undefined -g -O1` over all SRCS incl. units.c, run `lf_asan -b < tests/NNN_units.l4` — clean, output matches `.expected`. Stress GC (allocate many dimensioned floats and matrices in a loop, force `gc`) and a `save-image`/`load-image` cycle under ASan.
+3. **ASan/UBSan build over the units test** (new tag in `mark_value`/image + dimensioned-matrix Objects are the risk areas): build with `-fsanitize=address,undefined -g -O1` over all SRCS incl. units.c, run `lf_asan -b < tests/NNN_units.h2o` — clean, output matches `.expected`. Stress GC (allocate many dimensioned floats and matrices in a loop, force `gc`) and a `save-image`/`load-image` cycle under ASan.
 
 ## Out of scope (future)
 

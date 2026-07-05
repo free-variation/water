@@ -1,7 +1,7 @@
 """
-AES-128 CTR benchmark, the reference for crypto-pyaes.l4. Mirrors the .l4's
+AES-128 CTR benchmark, the reference for crypto-pyaes.h2o. Mirrors the .h2o's
 exact workload (same key, message, loop count, counter, checksum) so the
-py / lf comparison and verification line line up. Uses the pure-Python `pyaes`
+py / water comparison and verification line line up. Uses the pure-Python `pyaes`
 module (pip install pyaes), as pyperformance bm_crypto_pyaes does.
 """
 import sys
@@ -15,7 +15,7 @@ MSG = bytes((167 * i + 31) % 251 for i in range(NBYTES))
 
 
 def encrypt(data):
-    # default Counter starts at 1, matching the .l4 (counter = block index + 1)
+    # default Counter starts at 1, matching the .h2o (counter = block index + 1)
     return pyaes.AESModeOfOperationCTR(KEY).encrypt(data)
 
 

@@ -1,15 +1,15 @@
-" Vim indent file for logicforth (.l4)
+" Vim indent file for water (.h2o)
 
 if exists("b:did_indent")
   finish
 endif
 let b:did_indent = 1
 
-setlocal indentexpr=GetLogicforthIndent()
+setlocal indentexpr=GetWaterIndent()
 setlocal indentkeys=!^F,o,O,0=then,0=else,0=until,0=again,0=repeat,0=;,0=:],0=},0=],0=>,0=)]
 setlocal nolisp nosmartindent
 
-if exists("*GetLogicforthIndent")
+if exists("*GetWaterIndent")
   finish
 endif
 
@@ -62,7 +62,7 @@ let s:bclose = {'}': 1, ']': 1, '>': 1, ':]': 1, ')]': 1}
 let s:cfopen = {'if': 1, '?if': 1, 'begin': 1}
 let s:cfclose = {'then': 1, 'until': 1, 'again': 1, 'repeat': 1, ';': 1}
 
-function! GetLogicforthIndent() abort
+function! GetWaterIndent() abort
   let sw = shiftwidth()
   let stack = []
 

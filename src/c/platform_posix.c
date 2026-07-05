@@ -147,8 +147,8 @@ static void repl_completer(ic_completion_env_t *cenv, const char *prefix) {
 
 int platform_repl_begin(struct Interpreter *interp, int want_interactive) {
 	if (want_interactive) {
-		printf("logicforth %s\n", VERSION);
-		ic_set_history(".logicforth_history", -1);
+		printf("water %s\n", VERSION);
+		ic_set_history(".water_history", -1);
 		repl_interp = interp;
 		ic_set_default_completer(repl_completer, NULL);
 		ic_set_default_highlighter(repl_highlighter, NULL);

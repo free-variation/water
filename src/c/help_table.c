@@ -275,7 +275,7 @@ const HelpEntry help_entries[] = {
 	{ "run-result", "( argv -- frame )", "lib.h2o: run argv to completion and return { :out :err :status }, closing the streams and reaping the child", "fork + drain", "1fr + output strings", "O(output)" },
 	{ "running?", "( pid -- bool )", "Non-blocking liveness via waitid+WNOHANG+WNOWAIT; true while running, false once exited. Non-reaping, so a later wait still returns the status", "1 syscall", "none", "O(1)" },
 	{ "sample", "( arr/set count repl -- arr )", "Draw count elements; repl truthy = with replacement, else without (count ≤ len)", "3 + n", "1a(count) (+ malloc(n) without replacement)", "O(n)" },
-	{ "save", "( s -- )", "Write all user words as re-loadable .l4 source", "dict scan + write", "file I/O", "O(|user dict|)" },
+	{ "save", "( s -- )", "Write all user words as re-loadable .h2o source", "dict scan + write", "file I/O", "O(|user dict|)" },
 	{ "save-image", "( s -- )", "Binary snapshot of full state (dict, objects, stacks, continuations)", "serialize all", "file I/O", "O(objects + dict)" },
 	{ "see", "( xt -- )", "Print a word's source (: name … ;), or variable/symbol/primitive form", "dict scan", "none", "O(|dict|)" },
 	{ "see-compiled", "( xt -- )", "Disassemble a colon definition's compiled cells", "body scan", "none", "O(body)" },

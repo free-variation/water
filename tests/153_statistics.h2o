@@ -1,6 +1,6 @@
 \ Statistics library. Reductions first: var (C primitive) and the std / se
 \ one-liners built on it. Deterministic on fixed inputs, so values are golden.
-"lib/statistics.l4" load
+"lib/statistics.h2o" load
 
 \ 1..10 : var is the sample variance (n-1); std = sqrt(var); se = std / sqrt(n)
 [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix var . cr   \ 9.16667

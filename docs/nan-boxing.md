@@ -1,6 +1,6 @@
-# NaN-boxing in logicforth
+# NaN-boxing in water
 
-This is a primer on how logicforth packs a tagged value into 8 bytes by
+This is a primer on how water packs a tagged value into 8 bytes by
 exploiting unused bit patterns in the IEEE 754 double format. By the end you
 should understand:
 
@@ -11,7 +11,7 @@ should understand:
 - The one place care is required — telling a real float NaN from a boxed value
 - How the single-word representation shapes the surrounding code
 
-It's a conceptual tour; the encoding lives in `src/c/logicforth.h`, behind the
+It's a conceptual tour; the encoding lives in `src/c/water.h`, behind the
 `Val` type and its accessor and constructor helpers. Every site that creates or
 inspects a value goes through those helpers, so only they need to know the bit
 layout. The aim is to make that layout feel obvious in retrospect.
@@ -20,12 +20,12 @@ layout. The aim is to make that layout feel obvious in retrospect.
 
 ## Part 1: Why a value needs a tag
 
-logicforth is dynamically typed. A value on the stack might be a float, a symbol,
+water is dynamically typed. A value on the stack might be a float, a symbol,
 an array handle, an execution token, or any of about a dozen kinds, and the
 interpreter has to know which to do anything: adding two floats is one machine
 instruction, adding two arrays is concatenation, adding a float to an array is an
 error. So every value carries both *what it is* (a tag) and *the value itself* (a
-payload). The pair is what logicforth calls a `Val`.
+payload). The pair is what water calls a `Val`.
 
 The obvious layout is a struct with a tag field and a 64-bit payload field. With
 alignment that comes to 16 bytes per value — a few tag bits, padding, and eight
@@ -65,7 +65,7 @@ That's the loophole. We pick one NaN pattern to mean "this really is a float NaN
 and reinterpret all the others as tagged non-float values. By convention a *quiet*
 NaN — the ordinary kind hardware produces — has the top mantissa bit set, so any
 pattern with the exponent all ones *and* the top mantissa bit set looks like a
-quiet NaN to the floating-point unit. logicforth keys on exactly that signature,
+quiet NaN to the floating-point unit. water keys on exactly that signature,
 which leaves the remaining low bits (and the unused sign bit) free to claim for a
 tag and a payload.
 
@@ -93,7 +93,7 @@ one mask and one compare against the signature. Given a boxed value, one accesso
 extracts its tag and another its payload; for a float, "the value" is just the
 double, and "the payload" is the full 64-bit pattern (so a value's bits survive a
 round-trip to and from the dictionary verbatim). The 44-bit payload is wide enough
-for every non-float kind logicforth has — object handles, symbol-pool offsets,
+for every non-float kind water has — object handles, symbol-pool offsets,
 dictionary positions, file descriptors, small markers — because none of those
 needs a full 64 bits; a 32-bit handle has headroom to spare.
 
@@ -111,12 +111,12 @@ the hardware's canonical one — can fall inside the signature region that means
 "boxed." Left alone, the gatekeeper would look at a genuine float NaN, see the
 signature, and decode a bogus tag and payload from it.
 
-logicforth's handling is partial but sufficient. The float constructor
+water's handling is partial but sufficient. The float constructor
 canonicalizes any signature-region NaN to one fixed pattern, so a float built from
 *any* NaN-producing computation always ends up with the same bits — behavior is
 deterministic. It does not *resolve* the collision: that canonical pattern still
 carries the signature, so a value holding it would still read as boxed. The scheme
-is sound in practice because logicforth programs essentially never produce float
+is sound in practice because water programs essentially never produce float
 NaNs — ordinary arithmetic doesn't hit the cases, and no primitive lets a user
 construct a specific NaN bit pattern. This is the one place NaN-boxing demands care
 that a plain tagged struct wouldn't; the payoff — half the bytes per value, half
@@ -145,7 +145,7 @@ The cost is qualitative: a tag check is a mask-and-compare on bits already in a
 register rather than a field read — cheap, but a touch more to read in the source
 — and the float-NaN corner above is sharp. The runtime infers float-versus-boxed
 from the bit pattern alone, so a program that could manufacture arbitrary NaN
-patterns could confuse it; logicforth exposes no way to do that, so in practice
+patterns could confuse it; water exposes no way to do that, so in practice
 the inference always holds.
 
 ---

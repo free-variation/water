@@ -1,6 +1,6 @@
 \ A load that fails (file can't be opened) must NOT be recorded for reload.
 \ Before the fix, reload re-ran the missing file and errored a second time.
 
-"definitely-not-a-file.l4" load
+"definitely-not-a-file.h2o" load
 reload
 "survived" . cr

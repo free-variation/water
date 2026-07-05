@@ -1,4 +1,4 @@
-\ ask-claude.l4 — ask Claude twenty questions concurrently via the Anthropic
+\ ask-claude.h2o — ask Claude twenty questions concurrently via the Anthropic
 \ Messages API, five requests in flight at a time.
 \ exercises: frame>json (request bodies), env (API key), parallel-run +
 \ subprocesses (concurrent curl), json>frame (replies), frame + array access.

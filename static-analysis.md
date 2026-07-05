@@ -1,4 +1,4 @@
-# logicforth static analysis — crash scenarios & performance bottlenecks
+# water static analysis — crash scenarios & performance bottlenecks
 
 Static (no-run) review of `src/c/` (~11k lines). Vendored pcre2/sqlite/isocline/sljit
 excluded. Re-verified against current `dev` (post `47dac82 fixed crash scenarios`,

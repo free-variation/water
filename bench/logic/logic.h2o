@@ -1,4 +1,4 @@
-\ logic.l4 — heavy benchmark for the logic subsystem, sized to profile.
+\ logic.h2o — heavy benchmark for the logic subsystem, sized to profile.
 \ Stresses unify (deep spine, wide, nested open-record frames), bind_var + the
 \ trail, deref, and the committed-amb machinery (push_prompt, backtrack,
 \ trail_undo_to, execute_cfa, run_inner) under a long exponential search.

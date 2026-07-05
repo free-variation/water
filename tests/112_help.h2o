@@ -1,6 +1,6 @@
 \ man ( xt -- fr ): frame of a word's reference entry, or null if undocumented.
 \ lookup ( "name" -- xt ): parse the next word at run time, push its xt.
-\ help ( "name" -- ): lib.l4 convenience, prints a word's man frame.
+\ help ( "name" -- ): lib.h2o convenience, prints a word's man frame.
 
 \ a runtime word: the three base keys carry the documented strings
 ' sin man :word @ "sin" = . cr                    \ 1
@@ -21,8 +21,8 @@
 ' if man :order has? . cr                         \ 0
 ' if man size . cr                                \ 3
 
-\ a lib.l4 word is documented like any other
-' 2dup man :summary @ "lib.l4: over over (inlined)" = . cr   \ 1
+\ a lib.h2o word is documented like any other
+' 2dup man :summary @ "lib.h2o: over over (inlined)" = . cr   \ 1
 
 \ man resolves its own entry
 ' man man :word @ "man" = . cr                    \ 1

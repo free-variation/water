@@ -1,9 +1,9 @@
-# Multicore in logicforth
+# Multicore in water
 
-This is a primer on how logicforth spreads work across CPU cores — what `pmap`
+This is a primer on how water spreads work across CPU cores — what `pmap`
 does and the machinery underneath it. By the end you should understand:
 
-- The three ways a runtime can use multiple cores, and why logicforth threads
+- The three ways a runtime can use multiple cores, and why water threads
   over one shared heap rather than forking or copying results back
 - What state is shared between threads and what each thread keeps private
 - How a parallel loop load-balances itself with a dynamic work cursor
@@ -20,7 +20,7 @@ It's a conceptual tour. The machinery is in `src/c/core.c` and
 
 ---
 
-## Part 1: Three ways to use cores, and the one logicforth uses
+## Part 1: Three ways to use cores, and the one water uses
 
 A single-threaded interpreter leaves a multicore machine mostly idle. There are
 three established ways to spread an interpreter's work across cores, differing
@@ -39,9 +39,9 @@ mainly in what they do with *memory*.
 
 - **Threads over one shared heap.** Workers share the address space *and* the
   heap. A value a worker builds is, immediately, a value the coordinator can
-  name. This is what logicforth does.
+  name. This is what water does.
 
-The shared-heap choice pays off because of how logicforth already represents
+The shared-heap choice pays off because of how water already represents
 values. A value on a stack is a tagged word whose payload, for a heap type, is a
 *handle* — an index into a global table, not a raw pointer (see `gc.md`). The
 object table and the cons-pair table are one-per-process globals. So when a

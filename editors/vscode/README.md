@@ -1,6 +1,6 @@
-# logicforth — VS Code support
+# water — VS Code support
 
-Syntax highlighting, indentation, and bracket matching for logicforth (`.l4`).
+Syntax highlighting, indentation, and bracket matching for water (`.h2o`).
 
 - **Highlighting** — comments (`\ …`, `( … )`), strings (`""` escape), numbers,
   `:symbol` / `/path` literals, capitalized logic variables, control flow,
@@ -16,11 +16,11 @@ Symlink (or copy) this folder into your VS Code extensions directory, then
 reload the window:
 
 ```sh
-ln -s "$PWD/editors/vscode" ~/.vscode/extensions/logicforth-0.1.0
+ln -s "$PWD/editors/vscode" ~/.vscode/extensions/water-0.1.0
 ```
 
-In VS Code: **Developer: Reload Window** (Cmd/Ctrl-Shift-P). Open any `.l4`
-file — the status bar should show **logicforth**.
+In VS Code: **Developer: Reload Window** (Cmd/Ctrl-Shift-P). Open any `.h2o`
+file — the status bar should show **water**.
 
 (For VS Code Insiders use `~/.vscode-insiders/extensions/`; for a portable
 install, its `data/extensions/`.)
@@ -29,6 +29,6 @@ install, its `data/extensions/`.)
 
 ```sh
 npm install -g @vscode/vsce
-cd editors/vscode && vsce package          # produces logicforth-0.1.0.vsix
-code --install-extension logicforth-0.1.0.vsix
+cd editors/vscode && vsce package          # produces water-0.1.0.vsix
+code --install-extension water-0.1.0.vsix
 ```

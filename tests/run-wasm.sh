@@ -1,8 +1,8 @@
 #!/bin/sh
-# Golden-output test harness for the WASM/WASI build of logicforth.
+# Golden-output test harness for the WASM/WASI build of water.
 #
-# Mirrors run.sh but runs logicforth.wasm under a WASI runtime instead of
-# the native binary. Uses the same <name>.l4 / <name>.expected pairs.
+# Mirrors run.sh but runs water.wasm under a WASI runtime instead of
+# the native binary. Uses the same <name>.h2o / <name>.expected pairs.
 #
 # A test may be skipped ONLY when it exercises a feature WASI lacks
 # (database, ffi, interactive REPL) — list it in wasm-skip.txt as
@@ -14,13 +14,13 @@
 #             on stdin), overriding the default. On a-shell, which has no
 #             separate runtime, set WASM_EXEC=wasm.
 #   WASMTIME  WASI runtime used when WASM_EXEC is unset (default: wasmtime)
-#   WASM      module path (default: ../logicforth.wasm)
+#   WASM      module path (default: ../water.wasm)
 
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
-module=${WASM:-$root/logicforth.wasm}
+module=${WASM:-$root/water.wasm}
 skiplist="$here/wasm-skip.txt"
 
 if [ -n "${WASM_EXEC:-}" ]; then
@@ -36,9 +36,9 @@ pass=0
 fail=0
 skip=0
 
-for input in "$here"/*.l4; do
+for input in "$here"/*.h2o; do
     [ -e "$input" ] || { echo "no tests found"; exit 1; }
-    name=$(basename "$input" .l4)
+    name=$(basename "$input" .h2o)
     expected="$here/$name.expected"
     if [ ! -f "$expected" ]; then
         echo "SKIP $name (no .expected file)"

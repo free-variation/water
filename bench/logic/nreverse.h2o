@@ -1,11 +1,11 @@
-\ nreverse.l4 — naive reverse, the classic Prolog unification / LIPS benchmark
-\ (van Roy / Aquarius suite), ported to logicforth. A list is a chain of cons
+\ nreverse.h2o — naive reverse, the classic Prolog unification / LIPS benchmark
+\ (van Roy / Aquarius suite), ported to water. A list is a chain of cons
 \ pairs built with `cons` and terminated by `null`; append and nrev are
 \ relational, using `unify` to build and destructure and committed `amb` for
 \ clause selection — the direct analogue of Prolog's two clauses per predicate.
 \
 \ nrev of a 30-element list is 496 logical inferences; LIPS = 496 x reps / s.
-\ logicforth has no first-argument indexing, so each clause choice pays an
+\ water has no first-argument indexing, so each clause choice pays an
 \ amb plus a failed unify and a backtrack.
 
 : lappend  ( a b r -- )                   \ r = a ++ b

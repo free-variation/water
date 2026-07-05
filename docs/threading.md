@@ -1,6 +1,6 @@
-# Threaded code in logicforth
+# Threaded code in water
 
-This is a primer on how logicforth's inner dispatch loop is organized, and why.
+This is a primer on how water's inner dispatch loop is organized, and why.
 By the end you should understand:
 
 - What "threaded code" means — and that it has nothing to do with concurrency —
@@ -52,7 +52,7 @@ The spectrum of ways to run a program:
   reads the next opcode and switches on it. Cache-friendly, but every dispatch
   pays an opcode→handler lookup.
 - **Threaded code.** Each op in the compiled stream is *itself* the dispatch
-  target — the opcode→handler lookup is gone. This is what logicforth uses.
+  target — the opcode→handler lookup is gone. This is what water uses.
 - **JIT.** Emit machine code and let the CPU run it directly. Fastest, but
   requires native codegen, executable memory, and patching.
 
@@ -73,7 +73,7 @@ dispatch loop. It's fast, but it means generating native code (per-architecture,
 per-OS, unportable), it isn't relocatable (CALL targets are addresses, so a saved
 image breaks when code moves), and you can't hook dispatch for profiling or
 tracing without injecting trampolines. Interpreted threading keeps dispatch in
-software, in one place, for a few nanoseconds per op; logicforth's tail-call
+software, in one place, for a few nanoseconds per op; water's tail-call
 dispatch (Part 7) recovers much of subroutine threading's speed while keeping the
 op stream as inspectable, relocatable data.
 
@@ -89,7 +89,7 @@ code field disambiguates a colon definition from a variable from a symbol), and
 tokens are small stable indices that survive being written to disk.
 
 In *direct*-threaded code a body holds the handler addresses themselves — one read
-instead of two. logicforth uses direct threading, and pays for the saved read in
+instead of two. water uses direct threading, and pays for the saved read in
 two places, each handled elsewhere in this document:
 
 - Body cells now hold raw function pointers, which aren't stable across launches
@@ -178,7 +178,7 @@ and a body walk either runs off the end or reads an operand as code.
 ## Part 7: The dispatch chain
 
 Because body cells hold handler pointers directly, "dispatch" is: read the cell,
-call it. logicforth does that with no central loop in the hot path — each handler
+call it. water does that with no central loop in the hot path — each handler
 ends by **tail-calling the next**. A small macro (`DISPATCH`) is the shared tail:
 it reads the handler at the current instruction pointer, advances the pointer, and
 jumps to that handler with a forced tail call (`musttail`), so the next handler

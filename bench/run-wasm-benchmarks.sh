@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
-# Run the wasm-eligible logicforth benchmarks three ways — CPython, native
-# logicforth, and the wasm/WASI build under a WASI runtime — and emit a markdown
+# Run the wasm-eligible water benchmarks three ways — CPython, native
+# water, and the wasm/WASI build under a WASI runtime — and emit a markdown
 # comparison on stdout. All progress goes to stderr:
 #
 #   bench/run-wasm-benchmarks.sh > bench/wasm-$(date +%Y%m%d).md
@@ -22,8 +22,8 @@ set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
 root=$(cd "$here/.." && pwd)
-bin="$root/logicforth"
-wasm="$root/logicforth.wasm"
+bin="$root/water"
+wasm="$root/water.wasm"
 
 python=${PYTHON:-python3.14}
 if [ -n "${CRYPTO_PYTHON:-}" ]; then
@@ -70,7 +70,7 @@ log() { printf '%s\n' "$*" >&2; }
 
 # --- build -----------------------------------------------------------------
 log "building native + wasm..."
-(cd "$root" && make logicforth) >&2 || { log "native build failed"; exit 1; }
+(cd "$root" && make water) >&2 || { log "native build failed"; exit 1; }
 (cd "$root" && make wasm) >&2 || { log "wasm build failed"; exit 1; }
 if ! command -v "$wasmtime" >/dev/null 2>&1 && [ ! -x "$wasmtime" ]; then
 	log "wasmtime not found (set WASMTIME to a WASI runtime on PATH or a path)"; exit 1
@@ -95,31 +95,31 @@ ratio() {
 }
 
 # --- bench input feeds (stdin for native and wasm) -------------------------
-feed_nqueens()  { cat "$here/pyperformance/nqueens.l4"; }
-feed_fannkuch() { cat "$here/pyperformance/fannkuch.l4"; }
-feed_nbody()    { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.l4"; }
-feed_raytrace() { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.l4"; }
-feed_float()    { cat "$here/pyperformance/float.l4"; }
-feed_crypto()   { cat "$here/pyperformance/crypto-pyaes.l4"; }
-feed_spectral() { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.l4"; }
-feed_scimark_lu() { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.l4"; }
-feed_scimark_sor() { echo "variable ITERATIONS $scimark_sor_loops to ITERATIONS"; cat "$here/pyperformance/scimark-sor.l4"; }
-feed_scimark_sparse() { echo "variable CYCLES $scimark_sparse_cycles to CYCLES"; cat "$here/pyperformance/scimark-sparse.l4"; }
-feed_scimark_fft() { echo "variable LOOPS $fft_loops to LOOPS"; echo "variable CYCLES $fft_cycles to CYCLES"; cat "$here/pyperformance/scimark-fft.l4"; }
-feed_barnes()   { echo "variable ITERATIONS $barnes_iterations to ITERATIONS"; echo "variable LOOPS $barnes_loops to LOOPS"; cat "$here/pyperformance/barnes-hut.l4"; }
-feed_scimark_mc() { echo "variable SAMPLES $montecarlo_samples to SAMPLES"; echo "variable LOOPS $montecarlo_loops to LOOPS"; cat "$here/pyperformance/scimark-montecarlo.l4"; }
-feed_meteor()   { echo "variable LOOPS $meteor_loops to LOOPS"; cat "$here/pyperformance/meteor.l4"; }
-feed_hexiom()   { echo "variable LOOPS $hexiom_loops to LOOPS"; cat "$here/pyperformance/hexiom.l4"; }
-feed_regex_dna() { cat "$here/pyperformance/regex-dna.l4"; }
-feed_regex_compile() { cat "$here/pyperformance/regex-compile.l4"; }
-feed_regex_effbot() { cat "$here/pyperformance/regex-effbot.l4"; }
-feed_regex_v8() { cat "$here/pyperformance/regex-v8.l4"; }
-feed_deepcopy() { cat "$here/pyperformance/deepcopy.l4"; }
-feed_json_loads() { cat "$here/pyperformance/json-loads.l4"; }
-feed_json_dumps() { cat "$here/pyperformance/json-dumps.l4"; }
-feed_leibniz()  { cat "$here/pyperformance/leibniz.l4"; }
-feed_logic()    { cat "$here/logic/logic.l4"; }
-feed_nreverse() { cat "$here/logic/nreverse.l4"; }
+feed_nqueens()  { cat "$here/pyperformance/nqueens.h2o"; }
+feed_fannkuch() { cat "$here/pyperformance/fannkuch.h2o"; }
+feed_nbody()    { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.h2o"; }
+feed_raytrace() { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.h2o"; }
+feed_float()    { cat "$here/pyperformance/float.h2o"; }
+feed_crypto()   { cat "$here/pyperformance/crypto-pyaes.h2o"; }
+feed_spectral() { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.h2o"; }
+feed_scimark_lu() { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.h2o"; }
+feed_scimark_sor() { echo "variable ITERATIONS $scimark_sor_loops to ITERATIONS"; cat "$here/pyperformance/scimark-sor.h2o"; }
+feed_scimark_sparse() { echo "variable CYCLES $scimark_sparse_cycles to CYCLES"; cat "$here/pyperformance/scimark-sparse.h2o"; }
+feed_scimark_fft() { echo "variable LOOPS $fft_loops to LOOPS"; echo "variable CYCLES $fft_cycles to CYCLES"; cat "$here/pyperformance/scimark-fft.h2o"; }
+feed_barnes()   { echo "variable ITERATIONS $barnes_iterations to ITERATIONS"; echo "variable LOOPS $barnes_loops to LOOPS"; cat "$here/pyperformance/barnes-hut.h2o"; }
+feed_scimark_mc() { echo "variable SAMPLES $montecarlo_samples to SAMPLES"; echo "variable LOOPS $montecarlo_loops to LOOPS"; cat "$here/pyperformance/scimark-montecarlo.h2o"; }
+feed_meteor()   { echo "variable LOOPS $meteor_loops to LOOPS"; cat "$here/pyperformance/meteor.h2o"; }
+feed_hexiom()   { echo "variable LOOPS $hexiom_loops to LOOPS"; cat "$here/pyperformance/hexiom.h2o"; }
+feed_regex_dna() { cat "$here/pyperformance/regex-dna.h2o"; }
+feed_regex_compile() { cat "$here/pyperformance/regex-compile.h2o"; }
+feed_regex_effbot() { cat "$here/pyperformance/regex-effbot.h2o"; }
+feed_regex_v8() { cat "$here/pyperformance/regex-v8.h2o"; }
+feed_deepcopy() { cat "$here/pyperformance/deepcopy.h2o"; }
+feed_json_loads() { cat "$here/pyperformance/json-loads.h2o"; }
+feed_json_dumps() { cat "$here/pyperformance/json-dumps.h2o"; }
+feed_leibniz()  { cat "$here/pyperformance/leibniz.h2o"; }
+feed_logic()    { cat "$here/logic/logic.h2o"; }
+feed_nreverse() { cat "$here/logic/nreverse.h2o"; }
 
 # --- python wrappers -------------------------------------------------------
 py_nqueens()  { "$python" "$here/pyperformance/pyperf_nqueens.py" "$nqueens_n"; }

@@ -1,4 +1,4 @@
-" logicforth filetype plugin: word characters, comments, paren matching
+" water filetype plugin: word characters, comments, paren matching
 if exists("b:did_ftplugin")
   finish
 endif
