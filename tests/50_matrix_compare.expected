@@ -1,1 +1,19 @@
-1 0 0 1 1 1 2 1 
+1 
+0 
+0 
+<matrix 1x3>
+          1          0          0
+<matrix 1x3>
+          0          1          0
+<matrix 2x2>
+          1          1
+          0          0
+<matrix 2x2>
+          0          0
+          1          1
+<matrix 2x2>
+          0          0
+          1          1
+error: lt: matrix shapes differ (1x2 vs 1x3)
+2 
+1 

@@ -159,6 +159,7 @@ const HelpEntry help_entries[] = {
 	{ "frame", "( keys values -- fr )", "Build from parallel key and value arrays of equal length", "2 + n log n", "1o + reallocs", "O(n log n)" },
 	{ "frame>array", "( fr -- arr )", "Flatten to a key-sorted alternating-kv array; inverse of array>frame", "1 + n", "1o", "O(n)" },
 	{ "frame>json", "( val -- s )", "Serialize a value to JSON. Floats use the shortest round-trip form; strings are escaped (non-ASCII emitted raw); object keys are the symbol names", "walk + build", "1o string", "O(tree size)" },
+	{ "frobenius-norm", "( m -- f )", "√(Σ aᵢⱼ²) over all elements (same value as norm)", "1 + n", "none", "O(n)" },
 	{ "fround", "( a -- round a ) ⚠", "nearest, in place", "1", "none", "O(1)" },
 	{ "fround-down", "( a -- floor a ) ⚠", "in place", "1", "none", "O(1)" },
 	{ "fround-up", "( a -- ceil a ) ⚠", "in place", "1", "none", "O(1)" },
@@ -172,7 +173,7 @@ const HelpEntry help_entries[] = {
 	{ "gen-each", "( producer consumer -- )", "lib.h2o: run consumer on each value the producer yields until the producer falls off (a :gen-end sentinel marks exhaustion)", "—", "cont/step", "O(values · consumer)" },
 	{ "gen-take", "( producer count -- array )", "lib.h2o: the first count values the producer yields, collected into an array", "—", "1a(count) + cont/step", "O(count · L)" },
 	{ "group-by", "( array col -- frame )", "Group an array of frames by their symbol-valued col into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted", "n log n", "frame + sets", "O(n log n)" },
-	{ "gt", "( a b -- bool )", "greater-than", "3 (float)", "none", "same" },
+	{ "gt", "( a b -- bool ) or ( m x -- m )", "greater-than; element-wise 1/0 matrix on matrix operands (scalar broadcast)", "3 (float)", "matrix 1m(r×c)", "same; matrix O(r×c)" },
 	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)" },
 	{ "head-tail", "( pair -- head tail )", "Split a pair — head under, tail on top; no auto-deref; errors on a non-pair", "1", "none", "O(1)" },
 	{ "help", "( \"name\" -- )", "lib.h2o: parse the next word and print its man frame (lookup man .)", "dict scan + log n", "1o + strings + print", "O(|dict|)" },
@@ -196,7 +197,7 @@ const HelpEntry help_entries[] = {
 	{ "lookup", "( \"name\" -- xt )", "Parse the following word at run time and push its xt — the non-immediate counterpart of '", NULL, NULL, NULL },
 	{ "lowest-bit", "( a -- i )", "0-indexed position of the lowest set bit (-1 if a is 0)", "1", "none", "O(1)" },
 	{ "lshift", "( a n -- f )", "left shift a by n bits", "2", "none", "O(1)" },
-	{ "lt", "( a b -- bool )", "less-than", "3 (float)", "none", "same" },
+	{ "lt", "( a b -- bool ) or ( m x -- m )", "less-than; element-wise 1/0 matrix on matrix operands (scalar broadcast)", "3 (float)", "matrix 1m(r×c)", "same; matrix O(r×c)" },
 	{ "lvar", "( -- v )", "Push a fresh, unbound logic variable", "2", "1 lvar", "O(1)" },
 	{ "man", "( xt -- fr )", "Frame of a word's reference entry (:word :effect :summary, plus :ops :alloc :order for runtime words); T_NONE if undocumented", "dict scan + log n", "1o + strings", "O(|dict|)" },
 	{ "map", "( arr/set xt -- arr )", "Apply xt to each element; xt must net exactly one value", "2 + n·xt", "1a(n)", "O(n·xt)" },
@@ -215,6 +216,7 @@ const HelpEntry help_entries[] = {
 	{ "mod", "( a b -- remainder )", "lib.h2o: % drop; sign follows dividend", "5", "none", "O(1)" },
 	{ "negate", "( a -- -a )", "float or matrix (element-wise)", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
 	{ "nip", "( a b -- b )", "lib.h2o: swap drop (inlined)", "5", "none", "O(1)" },
+	{ "norm", "( m -- f )", "Euclidean (L2) norm: √(Σ aᵢⱼ²) over all elements — a vector's length; for a matrix the Frobenius (entrywise 2-)norm, not the spectral norm", "1 + n", "none", "O(n)" },
 	{ "not", "( a -- bool )", "logical not of truthiness", "2", "none", "O(1)" },
 	{ "now", "( -- f )", "CLOCK_MONOTONIC seconds as a float", "1", "none", "O(1)" },
 	{ "null", "( -- none )", "Push the none value (T_NONE) — what JSON null parses to, and what an unset env returns", "1", "none", "O(1)" },
@@ -352,6 +354,7 @@ const HelpEntry help_entries[] = {
 	{ "vfsqrt", "vfsqrt a", "Square root of variable a, push the result", NULL, NULL, NULL },
 	{ "vftan", "vftan a", "tangent of variable a, push the result", NULL, NULL, NULL },
 	{ "vftanh", "vftanh a", "hyperbolic tangent of variable a, push the result", NULL, NULL, NULL },
+	{ "vstack", "( a b -- m )", "Stack two matrices row-wise (a on top of b); errors unless column counts match", "2 + r·c", "1m(r×c)", "O(r·c)" },
 	{ "vvf*", "vvf* a b", "Load variables a and b, multiply, push the result", NULL, NULL, NULL },
 	{ "vvf*+", "vvf*+ b c", "( t -- t*b+c ), reading variables b and c", NULL, NULL, NULL },
 	{ "vvf*-", "vvf*- b c", "( t -- c-t*b ), reading variables b and c", NULL, NULL, NULL },
@@ -369,4 +372,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 363;
+const int help_entry_count = 366;

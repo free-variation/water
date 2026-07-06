@@ -147,15 +147,15 @@ Tag-checked; safe. Float input → float; matrix input → new matrix, element-w
 
 ## Comparison and logic
 
-Result is `1.0` (true) or `0.0` (false). `=`/`lt`/`gt` use `val_cmp` (structural), with a float fast path.
+Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_cmp` (structural): matrices compare by shape then row-major contents, so they order for set membership. `lt`/`gt` are structural too, **except on matrices**, where they compare element-wise and return a 1.0/0.0 matrix (same shape, or a scalar broadcasts over the matrix). Directly before `if`/`while`/`until` a comparison fuses into a compare-and-branch, which stays structural — branching on a matrix result isn't meaningful.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `=` | `( a b -- bool )` | structural equality | 3 (float) | none | float O(1); string O(\|s\|); array/set O(n); frame O(n); matrix O(r×c) |
-| `lt` | `( a b -- bool )` | less-than | 3 (float) | none | same |
+| `lt` | `( a b -- bool )` or `( m x -- m )` | less-than; element-wise 1/0 matrix on matrix operands (scalar broadcast) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
 | `true` | `( -- bool )` | lib.h2o: pushes 1 (inline) | 1 | none | O(1) |
 | `false` | `( -- bool )` | lib.h2o: pushes 0 (inline) | 1 | none | O(1) |
-| `gt` | `( a b -- bool )` | greater-than | 3 (float) | none | same |
+| `gt` | `( a b -- bool )` or `( m x -- m )` | greater-than; element-wise 1/0 matrix on matrix operands (scalar broadcast) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
 | `0=` | `( a -- bool )` | `!truthy(a)`; any type | 2 | none | O(1) |
 | `and` | `( a b -- bool )` | logical and of truthiness | 3 | none | O(1) |
 | `or` | `( a b -- bool )` | logical or of truthiness | 3 | none | O(1) |
@@ -496,10 +496,13 @@ Row-major `double` storage. `r` rows, `c` columns.
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `augment` | `( a b -- m )` | Concatenate two matrices column-wise; errors unless row counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
+| `vstack` | `( a b -- m )` | Stack two matrices row-wise (a on top of b); errors unless column counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `submatrix` | `( m rs re cs ce -- m )` | Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end | 5 + r·c | `1m(r×c)` | O(r·c) |
 | `select-rows` | `( m idx -- m )` | New matrix of the rows named by the float index array `idx`; errors on a non-float or out-of-range index | 2 + k·c | `1m(k×c)` | O(k·c) |
 | `var` | `( m -- f )` | Sample variance (÷ n−1) over all elements; errors with fewer than 2 | 1 + n | none | O(n) |
 | `quantile` | `( m p -- f )` | Linearly-interpolated quantile at p ∈ [0,1] over all elements (sorts a copy); errors if p out of range or empty | 2 + n log n | `malloc(n)` | O(n log n) |
+| `norm` | `( m -- f )` | Euclidean (L2) norm: √(Σ aᵢⱼ²) over all elements — a vector's length; for a matrix the Frobenius (entrywise 2-)norm, not the spectral norm | 1 + n | none | O(n) |
+| `frobenius-norm` | `( m -- f )` | √(Σ aᵢⱼ²) over all elements (same value as `norm`) | 1 + n | none | O(n) |
 
 ---
 

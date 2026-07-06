@@ -111,9 +111,10 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
 - **Selection** — `augment` (concatenate two matrices column-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array).
 - **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `argmax`, `argmin` (flat row-major index of the extreme element), `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
+- **Norms** — `norm` (Euclidean/L2) and `frobenius-norm`, both √(Σ elements²) over the matrix.
 - **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the loadable statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, and `ci` on these.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
-- **Total ordering** — `=`/`lt`/`gt` compare matrices by shape then row-major contents, so matrices work as set members.
+- **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `lt`/`gt` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). On scalars, strings, and collections all three are structural.
 
 ### Bitwise
 

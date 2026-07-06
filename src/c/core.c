@@ -3888,6 +3888,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "submatrix", p_submatrix, 0);
 	define_primitive(interp, "select-rows", p_select_rows, 0);
 	define_primitive(interp, "augment", p_augment, 0);
+	define_primitive(interp, "vstack", p_vstack, 0);
 	define_primitive(interp, "diagonal-matrix", p_diagonal_matrix, 0);
 	vocab.at_i_cfa = define_primitive(interp, "@i", p_at_i, 0);
 	define_primitive(interp, "!i", p_store_i, 0);
@@ -3899,6 +3900,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "sum", p_sum, 0);
 	define_primitive(interp, "var", p_variance, 0);
 	define_primitive(interp, "quantile", p_quantile, 0);
+	define_primitive(interp, "norm", p_norm, 0);
+	define_primitive(interp, "frobenius-norm", p_frobenius_norm, 0);
 	define_primitive(interp, "row-sums", p_row_sums, 0);
 	define_primitive(interp, "column-sums", p_column_sums, 0);
 	define_primitive(interp, "max", p_max, 0);

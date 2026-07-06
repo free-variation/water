@@ -153,6 +153,7 @@ format
 frame
 frame>array
 frame>json
+frobenius-norm
 fround
 fround-down
 fround-up
@@ -209,6 +210,7 @@ min
 mod
 negate
 nip
+norm
 not
 now
 null
@@ -346,6 +348,7 @@ vfsq
 vfsqrt
 vftan
 vftanh
+vstack
 vvf*
 vvf*+
 vvf*-

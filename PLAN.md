@@ -4,16 +4,6 @@ A TODO list of pending work.
 
 ---
 
-## Matrix
-
-- **Vertical stacking** — `vstack`, concatenating two matrices row-wise (the
-  row counts of the result sum; column counts must match).
-- **Element-wise comparison** — `<` etc. returning a matrix of `1`/`0`, as
-  a polymorphic extension of the comparison words.
-- **Norms** — `norm` (L2), `frobenius-norm`.
-
----
-
 ## String operations
 
 ### Wrappers

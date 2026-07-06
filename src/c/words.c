@@ -320,6 +320,8 @@ static double scalar_negate(double x) { return -x; }
 static double scalar_inc(double x) { return x + 1.0; }
 static double scalar_dec(double x) { return x - 1.0; }
 static double scalar_sq(double x) { return x * x; }
+static double scalar_lt(double a, double b) { return a < b; }
+static double scalar_gt(double a, double b) { return a > b; }
 
 void p_neg(Interpreter *interp) {
 	POP(operand);
@@ -340,8 +342,25 @@ void p_neg(Interpreter *interp) {
 	}
 
 COMPARISON_OP(p_eq, ==)
-COMPARISON_OP(p_lt, <)
-COMPARISON_OP(p_gt, >)
+
+/* lt/gt are element-wise on matrices (a 1.0/0.0 matrix, same shape or scalar
+   broadcast, via binary_op) after the float fast path; other types keep the
+   structural val_cmp bool. `=` stays structural so matrices order for set
+   membership. */
+#define MATRIX_COMPARISON_OP(name, op, sfn, word) \
+	void name(Interpreter *interp) { \
+		POP(right); \
+		POP(left); \
+		if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) \
+			push(interp, make_bool(VAL_NUMBER(left) op VAL_NUMBER(right))); \
+		else if (VAL_TAG(left) == T_MATRIX || VAL_TAG(right) == T_MATRIX) \
+			binary_op(interp, left, right, sfn, word); \
+		else \
+			push(interp, make_bool(val_cmp(interp, left, right) op 0)); \
+		DISPATCH(interp); \
+	}
+MATRIX_COMPARISON_OP(p_lt, <, scalar_lt, "lt")
+MATRIX_COMPARISON_OP(p_gt, >, scalar_gt, "gt")
 
 #define UNARY_FLOAT_OP(name, opname, expr) \
 	void name(Interpreter *interp) { \

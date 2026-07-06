@@ -576,6 +576,15 @@ double matrix_variance_overall(Object *source) {
 
 	return (sum_of_squares - sum * sum/(double)n) / (double)(n - 1);
 }
+
+static double matrix_frobenius_overall(Object *source) {
+	size_t n = (size_t)source->matrix.rows * (size_t)source->matrix.columns;
+	const double * restrict elements = source->matrix.elements;
+	double sum_of_squares = 0.0;
+	for (size_t i = 0; i < n; i++)
+		sum_of_squares += elements[i] * elements[i];
+	return sqrt(sum_of_squares);
+}
 #pragma float_control(pop)
 
 int create_matrix(Interpreter *interp) {
@@ -817,6 +826,8 @@ REDUCE_OVERALL_HANDLER(p_max, "max", matrix_max_overall)
 REDUCE_OVERALL_HANDLER(p_min, "min", matrix_min_overall)
 REDUCE_OVERALL_HANDLER(p_argmax, "argmax", matrix_argmax_index)
 REDUCE_OVERALL_HANDLER(p_argmin, "argmin", matrix_argmin_index)
+REDUCE_OVERALL_HANDLER(p_norm, "norm", matrix_frobenius_overall)
+REDUCE_OVERALL_HANDLER(p_frobenius_norm, "frobenius-norm", matrix_frobenius_overall)
 REDUCE_AXIS_HANDLER(p_row_sums, "row-sums", matrix_sum_rows)
 REDUCE_AXIS_HANDLER(p_row_maxes, "row-maxes", matrix_max_rows)
 REDUCE_AXIS_HANDLER(p_row_mins, "row-mins", matrix_min_rows)
@@ -922,6 +933,33 @@ void p_augment(Interpreter *interp) {
 	}
 
 	interp->data_stack[interp->dsp - 2] = make_matrix(augmented_handle);
+	interp->dsp--;
+
+	DISPATCH(interp);
+}
+
+void p_vstack(Interpreter *interp) {
+	PEEK_TYPE_AT(b_val, 0, "vstack", T_MATRIX);
+	PEEK_TYPE_AT(a_val, 1, "vstack", T_MATRIX);
+	Object *a = OBJECT_AT(VAL_DATA(a_val));
+	Object *b = OBJECT_AT(VAL_DATA(b_val));
+
+	if (a->matrix.columns != b->matrix.columns) {
+		fail(interp, "vstack: column counts differ (%d vs %d)", a->matrix.columns, b->matrix.columns);
+		return;
+	}
+
+	int columns = a->matrix.columns;
+	int a_rows = a->matrix.rows;
+	int b_rows = b->matrix.rows;
+	NEW_MATRIX(stacked_handle, stacked, a_rows + b_rows, columns);
+
+	size_t a_cells = (size_t)a_rows * (size_t)columns;
+	memcpy(stacked->matrix.elements, a->matrix.elements, sizeof(double) * a_cells);
+	memcpy(stacked->matrix.elements + a_cells, b->matrix.elements,
+			sizeof(double) * (size_t)b_rows * (size_t)columns);
+
+	interp->data_stack[interp->dsp - 2] = make_matrix(stacked_handle);
 	interp->dsp--;
 
 	DISPATCH(interp);

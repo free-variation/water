@@ -1,0 +1,10 @@
+5 
+5 
+5 
+7 
+0 
+5.47723 
+1 
+1.73205 
+error: norm: expected a matrix; got an array
+error: frobenius-norm: expected a matrix; got a string

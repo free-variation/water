@@ -48,3 +48,19 @@ error: select-rows: index 1 is a symbol, expected a float
           8          3          4
 error: augment: row counts differ (2 vs 3)
 error: augment: expected a matrix; got an array
+<matrix 3x2>
+          1          2
+          3          4
+          5          6
+<matrix 2x3>
+          1          2          3
+          4          5          6
+<matrix 2x2>
+          1          2
+          3          4
+<matrix 3x2>
+          1          2
+          3          4
+          5          6
+error: vstack: column counts differ (2 vs 3)
+error: vstack: expected a matrix; got an array
