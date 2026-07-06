@@ -1,0 +1,45 @@
+2 3 0 0 1 1024 3 0.5 1 <matrix 2x2>
+          1          4
+          9         16
+<matrix 1x4>
+          1          2          4          8
+<matrix 1x3>
+          8          9          4
+error: ^: expected floats or matrices; got a string and a float
+error: ^: matrix shapes differ (1x2 vs 1x3)
+3 2 
+2 1 
+-2 -1 
+5 0 
+2 1.5 
+1 
+2 
+error: %: division by zero
+error: %: expected two floats; got a string and a float
+3 
+3 
+1 
+0 
+3 
+0 
+1 
+0.785398 
+3 
+3 
+2 
+-2 
+-5 
+6 
+4 
+25 
+1024 
+-1 
+5 
+6 
+12 
+3 
+3 
+8 
+4 
+1 
+error: fsqrt: data stack underflow

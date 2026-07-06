@@ -1,0 +1,226 @@
+"hello" " " + "world" + .
+"abc" size .
+"" size .
+"a" "b" + "c" + size .
+
+clear
+\ format ( … template -- string ) — positional {n} fill from the stack.
+\ Plain string literals are raw; only format substitutes, and only {n}.
+
+42 "value: {0}" format .
+"foo" "name={0}" format .
+1 2 3 "{0} {1} {2}" format .
+
+\ non-numeric braces are left literal (no variable lookup)
+"keep {x} literal" format .
+
+\ a plain literal is raw — no substitution at all
+"raw {0}" .
+
+\ "" escape: a doubled "" yields one "; a lone " closes the string
+"he said ""hi""" size .                 \ 12  (he said "hi")
+"""" size .                             \ 1   (a single quote char)
+"a""b" size .                           \ 3   (a"b)
+"" size .                               \ 0   (empty string stays empty)
+"a""b" 1 2 substring  """" =  .         \ 1   (the embedded byte is a quote)
+.s
+
+\ regression: the format output buffer must fit the expanded result (was
+\ sized 4*template_len + 64, which overflowed for a long value or many {n}).
+"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" "{0}" format . cr
+"0123456789ABCDEF" "{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}{0}" format . cr
+"zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz" "{0}" format . cr
+
+\ --- format specs: printf-style mini-language after a colon ---
+
+\ float precision
+3.14159 "{0:.2f}" format "3.14" = . cr
+3.14159 "{0:.0f}" format "3" = . cr
+2.0 "{0:.3f}" format "2.000" = . cr
+1234.5 "{0:e}" format "1.234500e+03" = . cr
+0.0001 "{0:g}" format "0.0001" = . cr
+
+\ float field width, right- and left-justified
+3.14159 "[{0:8.2f}]" format "[    3.14]" = . cr
+3.14159 "[{0:-8.2f}]" format "[3.14    ]" = . cr
+
+\ float flags: leading +, zero pad
+3.5 "{0:+.1f}" format "+3.5" = . cr
+3.5 "{0:06.1f}" format "0003.5" = . cr
+
+\ integer cast (d): truncates toward zero
+255 "{0:d}" format "255" = . cr
+3.9 "{0:d}" format "3" = . cr
+-3.9 "{0:d}" format "-3" = . cr
+7 "{0:04d}" format "0007" = . cr
+255 "[{0:6d}]" format "[   255]" = . cr
+255 "[{0:-6d}]" format "[255   ]" = . cr
+255 "{0:+d}" format "+255" = . cr
+
+\ string field width and precision
+"hi" "[{0:6}]" format "[    hi]" = . cr
+"hi" "[{0:-6}]" format "[hi    ]" = . cr
+"hi" "[{0:6s}]" format "[    hi]" = . cr
+"hello" "{0:.3}" format "hel" = . cr
+
+\ symbol and float route through the default render under a width spec
+:sym "[{0:5}]" format "[  sym]" = . cr
+3.5 "[{0:6}]" format "[   3.5]" = . cr
+
+\ empty spec is a plain substitution
+5 "{0:}" format "5" = . cr
+
+\ multiple specs, and a spec mixed with a plain ref
+1.5 2.5 "{1:.1f} and {0:.1f}" format "1.5 and 2.5" = . cr
+42 "{0:d} = {0}" format "42 = 42" = . cr
+
+\ an unterminated spec brace stays literal and consumes no value
+"a{0:b" format "a{0:b" = . cr
+
+\ errors (each clears at the REPL, so they are independent)
+"x" "{0:d}" format
+"x" "{0:.2f}" format
+5 "{0:z}" format
+5 "{0:.2x}" format
+
+clear
+\ substring ( string start end -- substring ) — half-open [start, end), codepoint-indexed.
+"hello" 1 4 substring . cr        \ ell
+"hello" 0 5 substring . cr        \ hello   (whole)
+"hello" 0 1 substring . cr        \ h       (prefix)
+"hello" 4 5 substring . cr        \ o       (last char)
+"hello" 2 2 substring . cr        \ (empty)
+"hello" 5 5 substring . cr        \ (empty at end)
+\ errors
+"hello" 0 6 substring             \ end past length
+"hello" -1 3 substring            \ negative start
+"hello" 3 1 substring             \ start > end
+5 0 1 substring                   \ not a string
+
+\ --- multibyte: substring is codepoint-indexed; byte-substring is byte-indexed.
+"héllo wörld" 0 5 substring . cr      \ héllo  (5 codepoints)
+"héllo wörld" 6 11 substring . cr     \ wörld
+"héllo" 0 5 byte-substring . cr       \ héll   (5 bytes)
+"héllo" 1 3 byte-substring . cr       \ é      (bytes 1..3)
+
+\ --- size: codepoints (bare) vs bytes (marked)
+"héllo" size . cr                     \ 5
+"héllo" byte-size . cr                \ 6
+"héllo wörld" size . cr               \ 11
+"héllo wörld" byte-size . cr          \ 13
+
+\ --- char-at (one-char string) / codepoint-at (integer)
+"héllo" 0 char-at . cr                \ h
+"héllo" 1 char-at . cr                \ é
+"x😀y" 1 char-at . cr                 \ 😀
+"héllo" 1 codepoint-at . cr           \ 233
+"x😀y" 1 codepoint-at . cr            \ 128512
+"héllo" 5 char-at                     \ index out of bounds
+"héllo" -1 codepoint-at               \ negative index
+
+\ --- string>chars / string>codepoints
+"héllo" string>chars . cr             \ [ "h" "é" "l" "l" "o" ]
+"x😀y" string>chars . cr              \ [ "x" "😀" "y" ]
+"héllo" string>codepoints . cr        \ [ 104 233 108 108 111 ]
+"" string>chars . cr                  \ [ ]
+
+\ --- codepoint>char / codepoints>string (round-trip, range-checked)
+233 codepoint>char . cr               \ é
+128512 codepoint>char . cr            \ 😀
+[ 104 233 108 108 111 ] codepoints>string . cr   \ héllo
+[ 120 128512 121 ] codepoints>string . cr        \ x😀y
+[ ] codepoints>string . cr            \ (empty)
+"héllo 😀 wörld" string>codepoints codepoints>string . cr  \ round-trip
+1114112 codepoint>char                \ codepoint out of range
+[ 65 -1 ] codepoints>string           \ element out of range
+
+\ --- trim ( s -- s' ): strip leading/trailing ASCII whitespace; interior preserved.
+"  hi  " trim . cr
+"  hi  " trim size . cr
+"mid word" trim . cr
+"	
+data " trim . cr
+"" trim size . cr
+"  	 " trim size . cr
+5 trim
+
+clear
+\ join ( array separator -- string ) — concatenate elements, separator between them.
+[ "a" "b" "c" ] "," join . cr        \ a,b,c
+[ "a" "b" "c" ] "" join . cr         \ abc      (pure concatenation)
+[ "x" ] "," join . cr                \ x        (single element, no separator)
+[ ] "," join . cr                    \ (empty array -> empty string)
+[ "chr" "1" ] "" join . cr           \ chr1
+[ "one" "two" ] " - " join . cr      \ one - two
+[ "a" 5 "c" ] "," join               \ non-string element -> error
+
+clear
+\ format ( … template -- s ) — careful test.
+\ {n} fills from the nth-from-top stack value; after the fill, exactly the
+\ referenced positions are dropped (unreferenced values stay). Plain string
+\ literals are raw; only {digits} substitute.
+
+\ --- basic positional fill; the referenced value is consumed ---
+42 "value: {0}" format  "value: 42" =  . cr                  \ 1
+
+\ --- several refs in stack order; all referenced positions dropped ---
+1 2 3 "{0} {1} {2}" format  "3 2 1" =  . cr                  \ 1
+
+\ --- a repeated ref drops its one position once ---
+5 "{0}+{0}" format  "5+5" =  . cr                            \ 1
+
+\ --- sparse: {2} references only depth 2 (=10); 20 and 30 stay ---
+10 20 30 "{2}" format  "10" =  . cr                          \ 1
++ . cr                                                       \ 50  (kept 20 30)
+
+\ --- sparse mixed: {0} {2} drop depths 0 and 2; depth 1 (=20) stays ---
+10 20 30 "{0} {2}" format drop  . cr                         \ 20
+
+\ --- no references: nothing dropped, the value is retained ---
+99 "plain" format  "plain" =  . cr                           \ 1
+. cr                                                         \ 99
+
+\ --- non-digit / empty braces are left literal; nothing dropped ---
+7 "keep {x} and {} here" format  "keep {x} and {} here" =  . cr   \ 1
+. cr                                                         \ 7
+
+\ --- rendering: float (non-int / int), string, symbol ---
+3.5  "{0}" format  "3.5" =  . cr                             \ 1
+100  "{0}" format  "100" =  . cr                             \ 1
+"hi" "<{0}>" format  "<hi>" =  . cr                          \ 1
+:sym "{0}" format  "sym" =  . cr                             \ 1
+
+\ --- a plain literal is raw: no substitution ---
+"raw {0} {1}"  "raw {0} {1}" =  . cr                         \ 1
+
+\ --- errors (each clears at the REPL, so they are independent) ---
+"{0}" format                                                 \ empty stack
+5 "{3}" format                                               \ needs 4, has 1
+5 format                                                     \ template not a string
+
+clear
+\ string>number ( s -- n | none ) — parse a decimal/float string to a float
+\ (via strtod, like a numeric literal), surrounding whitespace ignored; the
+\ none value when the whole string is not a number.
+
+"42" string>number 42 = . cr
+"3.14" string>number 3.14 = . cr
+"-7" string>number -7 = . cr
+"-3.5" string>number -3.5 = . cr
+".5" string>number 0.5 = . cr
+"1e3" string>number 1000 = . cr
+"  12.5e2  " string>number 1250 = . cr
+
+\ non-numeric / partial / empty / all-whitespace -> none
+"abc" string>number null = . cr
+"12abc" string>number null = . cr
+"" string>number null = . cr
+"   " string>number null = . cr
+
+\ a real number is not none
+"42" string>number null = . cr
+
+\ composes arithmetically and round-trips through render
+"10" string>number "20" string>number + 30 = . cr
+42 render string>number 42 = . cr
+3.14 render string>number 3.14 = . cr

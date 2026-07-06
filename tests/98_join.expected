@@ -1,7 +1,0 @@
-a,b,c 
-abc 
-x 
- 
-chr1 
-one - two 
-error: join: element 1 is a float, expected a string

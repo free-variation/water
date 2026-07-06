@@ -1,0 +1,41 @@
+1 
+1 
+5 
+1 
+1 
+108894 
+1 
+error: read: expected a stream; got a float
+1 
+1 
+1 
+error: cd: cannot change to /no/such/dir
+error: read: Bad file descriptor
+1 
+1 
+1 
+3 
+error: write: expected a stream; got a float
+1 
+1 
+1 
+1 
+1 
+5 
+error: close: expected a stream; got a float
+0 
+1 
+42 
+137 
+0 
+error: wait: expected a float pid; got a string
+137 
+137 
+error: stop: expected a float pid; got a string
+1 
+0 
+0 
+error: running?: expected a float pid; got a string
+error: stop: invalid pid 0 (expected a spawned process id)
+error: stop: invalid pid -1 (expected a spawned process id)
+error: wait: invalid pid 0 (expected a spawned process id)

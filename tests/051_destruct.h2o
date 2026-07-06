@@ -1,0 +1,87 @@
+\ destruct ( coll -- v0 v1 ... vN-1 ) — push the elements of a collection
+\ onto the data stack. For frames, pushes :key v :key v ... in key order.
+\ Accepts array, set, and frame; errors on other types.
+
+\ basic array destruct
+[ 10 20 30 ] destruct .s clear cr        \ [ 10 20 30 ]
+
+\ empty array — nothing pushed
+[ ] destruct .s clear cr                 \ [ ]
+
+\ single-element array
+[ 42 ] destruct . cr                     \ 42
+
+\ mixed types
+[ "a" 5 :sym ] destruct .s clear cr      \ [ a 5 :sym ]
+
+\ nested values stay intact (each item pushed as-is)
+[ [ 1 2 ] [ 3 4 ] ] destruct .s clear cr \ [ [ 1 2 ] [ 3 4 ] ]
+
+\ set: elements come out in the set's internal (sorted) order
+< 3 1 2 > destruct .s clear cr           \ [ 1 2 3 ]
+
+\ empty set
+< > destruct .s clear cr                 \ [ ]
+
+\ frame: pushes :key value :key value ... in key-sort order
+{ :a 1 :b 2 } destruct .s clear cr       \ [ :a 1 :b 2 ]
+
+\ frame: keys come back as symbols (not raw cells)
+{ :x 10 } destruct swap . . cr           \ :x 10
+
+\ empty frame
+{ } destruct .s clear cr                 \ [ ]
+
+\ round-trip: destruct an array then rebuild
+[ 1 2 3 ] destruct 3 array . cr          \ [ 1 2 3 ]
+
+\ non-collection — error
+42 destruct
+"hello" destruct
+:sym destruct
+
+\ empty stack — underflow
+destruct
+
+\ destruct-to ( source target -- )
+\ Writes each item of source into the variable named by the corresponding
+\ target item. Target items may be symbols (auto-create variable if missing,
+\ cache as XT on the way) or XTs (used directly, must reference a variable).
+\ Source and target must be arrays of equal length.
+
+\ Basic: auto-create three new variables from symbol targets
+[ 1 2 3 ] [ :dta :dtb :dtc ] destruct-to
+dta . dtb . dtc . cr                            \ 1 2 3
+
+\ Re-use existing variables
+[ 10 20 30 ] [ :dta :dtb :dtc ] destruct-to
+dta . dtb . dtc . cr                            \ 10 20 30
+
+\ Caching: re-using the same target array across calls — first call resolves
+\ symbols, subsequent calls hit the cached XTs.
+variable dt-targets
+[ :dtd :dte ] to dt-targets
+[ 7 8 ] dt-targets destruct-to                  \ first call resolves
+[ 11 12 ] dt-targets destruct-to                \ second call uses cached XTs
+dtd . dte . cr                                  \ 11 12
+
+\ Mixed targets: XT (pre-declared) and symbol (auto-create) in same array
+variable dtf
+[ 100 200 300 ] [ ' dtf :dtg :dth ] destruct-to
+dtf . dtg . dth . cr                            \ 100 200 300
+
+\ Mixed value types: any Val tag works on the source side
+[ "hi" :sym 42 ] [ :dt-str :dt-sym :dt-num ] destruct-to
+dt-str . dt-sym . dt-num . cr                   \ hi :sym 42
+
+\ Length mismatch — error
+[ 1 2 ] [ :dtx :dty :dtz ] destruct-to
+
+\ Non-array source — error
+42 [ :dtx ] destruct-to
+
+\ Non-array target — error
+[ 1 ] 42 destruct-to
+
+\ Bad target item (neither symbol nor xt) — error
+[ 1 ] [ 99 ] destruct-to

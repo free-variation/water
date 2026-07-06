@@ -1,0 +1,138 @@
+10 21 7 0 4 0 1 15 45 error: sum: expected a matrix; got a string
+error: sum: expected a matrix; got an array
+<matrix 2x1>
+          6
+         15
+<matrix 3x1>
+          3
+          7
+         11
+<matrix 2x1>
+          3
+          7
+<matrix 1x1>
+          7
+<matrix 3x1>
+          1
+          1
+          1
+<matrix 4x1>
+          0
+          0
+          0
+          0
+<matrix 1x1>
+          6
+<matrix 1x3>
+          5          7          9
+<matrix 1x2>
+          9         12
+<matrix 1x2>
+          4          6
+<matrix 1x1>
+          7
+<matrix 1x3>
+          1          1          1
+<matrix 1x4>
+          0          0          0          0
+<matrix 1x1>
+          6
+<matrix 2x1>
+          6
+         15
+
+<matrix 1x2>
+          6         15
+
+2.5 2 7 0 0.333333 5 error: row-sums: expected a matrix; got a string
+error: column-sums: expected a matrix; got a string
+error: column-sums: expected a matrix; got an array
+<matrix 2x1>
+          2
+          5
+<matrix 3x1>
+        1.5
+        3.5
+        5.5
+<matrix 2x1>
+        1.5
+        3.5
+<matrix 1x1>
+          7
+<matrix 3x1>
+     0.3333
+     0.3333
+     0.3333
+<matrix 4x1>
+          0
+          0
+          0
+          0
+<matrix 1x1>
+        2.5
+<matrix 1x3>
+        2.5        3.5        4.5
+<matrix 1x2>
+          3          4
+<matrix 1x2>
+          2          3
+<matrix 1x1>
+          7
+<matrix 1x3>
+     0.3333     0.3333     0.3333
+<matrix 1x4>
+          0          0          0          0
+<matrix 1x1>
+        2.5
+<matrix 2x1>
+          2
+          5
+
+<matrix 1x2>
+          2          5
+
+9 1 -1 -9 7 7 0 0 1 0 <matrix 3x1>
+          4
+          9
+          8
+<matrix 3x1>
+          1
+          2
+          3
+<matrix 3x1>
+         -1
+          0
+          1
+<matrix 3x1>
+         -1
+          0
+          1
+<matrix 1x4>
+          5          9          5          8
+<matrix 1x4>
+          3          1          2          1
+<matrix 1x3>
+          1          2          3
+<matrix 1x3>
+          1          2          3
+<matrix 3x1>
+          4
+          9
+          8
+
+<matrix 1x3>
+          4          9          8
+
+1 5 1 0 0 0 2 0 error: max: expected a matrix; got a string
+error: min: expected a matrix; got a set
+error: row-maxes: expected a matrix; got an array
+5 
+5 
+5 
+7 
+0 
+5.47723 
+1 
+1.73205 
+error: norm: expected a matrix; got an array
+error: frobenius-norm: expected a matrix; got a string

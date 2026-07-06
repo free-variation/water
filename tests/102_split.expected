@@ -1,2 +1,0 @@
-[ "a" "b" "c" ] [ "a" "" "b" ] [ "" "a" "" ] [ "nodelim" ] [ "" ] [ "a" "b" "c" ] [ "a" "b" "c" ] 1 
-error: split: expected a string; got a float

@@ -1,0 +1,44 @@
+\ times ( xt n -- ) — run xt n times. No arity contract on the xt.
+
+\ basic: print '*' five times
+[: 42 emit :] 5 times cr
+
+\ zero count: quotation never runs
+[: "boom" . :] 0 times
+
+\ quotation that leaves values: data stack grows each iter
+[: 7 :] 3 times .s clear cr
+
+\ each-side-effect ordering: 0 1 2 3 4 printed in order
+: count-up | i | 0 to i  [: i . i 1 + to i :] 5 times ;
+count-up cr
+
+\ wrong types
+[: :] -1 times
+"x" [: :] times
+5 5 times
+
+clear
+\ i-times ( xt n -- ) — run xt n times, pushing the index 0..n-1 before each call.
+
+\ basic: print 0 1 2 3 4
+[: . :] 5 i-times cr
+
+\ zero count: never runs
+[: "boom" . :] 0 i-times
+
+\ index is the only thing pushed; quotation that ignores it leaves it
+[: drop :] 3 i-times .s clear cr
+
+\ sum of 0..9 via accumulator: 45
+: sum-up-to | acc | 0 to acc  [: acc + to acc :] swap i-times  acc ;
+10 sum-up-to . cr
+
+\ sum of squares 0..4: 0+1+4+9+16 = 30
+: sum-sq | acc | 0 to acc  [: dup * acc + to acc :] swap i-times  acc ;
+5 sum-sq . cr
+
+\ wrong types
+[: drop :] -1 i-times
+"x" [: drop :] i-times
+5 5 i-times

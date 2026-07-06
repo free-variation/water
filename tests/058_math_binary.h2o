@@ -1,0 +1,91 @@
+\ log is base-10, ln is natural, ^ is polymorphic power ( base exp -- base^exp ).
+
+\ ---- log base-10 ----
+100 log .            \ 2
+1000 log .           \ 3
+1 log .              \ 0
+
+\ ---- ln natural ----
+1 ln .               \ 0
+1 exp ln .           \ 1  (ln of e)
+
+\ ---- ^ : scalar ----
+2 10 ^ .             \ 1024
+9 0.5 ^ .            \ 3
+2 -1 ^ .             \ 0.5
+5 0 ^ .              \ 1
+
+\ ---- ^ : matrix ^ scalar (element-wise) ----
+[ 1 2 3 4 ] 2 2 matrix 2 ^ .           \ [1 4 9 16]
+
+\ ---- ^ : scalar ^ matrix ----
+2 [ 0 1 2 3 ] 1 4 matrix ^ .           \ [1 2 4 8]
+
+\ ---- ^ : matrix ^ matrix (element-wise, same shape) ----
+[ 2 3 4 ] 1 3 matrix  [ 3 2 1 ] 1 3 matrix  ^ .   \ [8 9 4]
+
+\ ---- failures ----
+"x" 2 ^
+[ 1 2 ] 1 2 matrix  [ 1 2 3 ] 1 3 matrix  ^
+
+clear
+\ % is Forth /mod: ( a b -- rem quot ), quotient on top.
+\ Printing with `. .` shows quotient first (top of stack), then remainder.
+
+17 5 % . . cr        \ 3 2     (quot 3, rem 2)
+7 3 % . . cr         \ 2 1
+-7 3 % . . cr        \ -2 -1   (remainder takes the sign of the dividend)
+10 2 % . . cr        \ 5 0
+5.5 2 % . . cr       \ 2 1.5
+
+\ remainder alone (mod) via drop; quotient alone via swap drop
+7 3 % drop . cr      \ 1   (the remainder)
+7 3 % swap drop . cr \ 2   (the quotient)
+
+\ failures
+5 0 %
+"x" 2 %
+
+clear
+\ Monomorphic float-only ops (f-prefixed): no tag check, depth-guarded.
+\ The polymorphic versions (abs, sqrt, +, ^, ...) are tested elsewhere; these
+\ are the fast unsafe counterparts and must match on float inputs.
+
+\ unary functions
+-3.0 fabs . cr        \ 3
+9.0 fsqrt . cr        \ 3
+0.0 fexp . cr         \ 1
+1.0 fln . cr          \ 0
+1000.0 flog . cr      \ 3
+0.0 fsin . cr         \ 0
+0.0 fcos . cr         \ 1
+1.0 fatan . cr        \ 0.785398
+2.7 fround . cr       \ 3
+2.1 fround-up . cr    \ 3
+2.9 fround-down . cr  \ 2
+-2.9 ftruncate . cr   \ -2
+5.0 fnegate . cr      \ -5
+5.0 f1+ . cr          \ 6
+5.0 f1- . cr          \ 4
+5.0 fsq . cr          \ 25
+
+\ binary
+2.0 10.0 f^ . cr      \ 1024
+-7.0 3.0 fmod . cr    \ -1
+2.0 3.0 f+ . cr       \ 5
+10.0 4.0 f- . cr      \ 6
+3.0 4.0 f* . cr       \ 12
+12.0 4.0 f/ . cr      \ 3
+
+\ f++ / f-- : unsafe float local increment / decrement (immediate; named local)
+: finc | n |  0 to n  f++ n  f++ n  f++ n  n ;
+finc . cr             \ 3
+: fdec | n |  10 to n  f-- n  f-- n  n ;
+fdec . cr             \ 8
+: fmix |> x |  f++ x  f-- x  f-- x  x ;
+5 fmix . cr           \ 4
+: fnest | n |  0 to n  [: f++ n :] execute  n ;   \ outer local via depth-path fallback
+fnest . cr            \ 1
+
+\ depth guard (empty stack)
+fsqrt

@@ -1,9 +1,0 @@
-2 3 0 0 1 1024 3 0.5 1 <matrix 2x2>
-          1          4
-          9         16
-<matrix 1x4>
-          1          2          4          8
-<matrix 1x3>
-          8          9          4
-error: ^: expected floats or matrices; got a string and a float
-error: ^: matrix shapes differ (1x2 vs 1x3)

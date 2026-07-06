@@ -1,5 +1,0 @@
-[ 4 5 ] [ ] [ 1 2 3 ] [ ] [ 3 4 5 ] 3 [ 9 16 ] error: filter: expected an execution token; got a float
-error: filter: expected array or set; got a float
-error: filter: predicate must leave exactly one value per element, but changed the stack by 2
-1 1 1 1 1 [ 2 4 6 ] [ ] [ 1 2 3 ] [ ] [ 3 4 5 ] [ 2 4 ] [ 2 4 ] [ 1 2 3 4 ] 3 error: pfilter-ext: expected an execution token; got a float
-error: pfilter-ext: expected array or set; got a float

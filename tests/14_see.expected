@@ -1,6 +1,0 @@
-: double 2 * ;
-: square dup * ;
-variable counter  \ current value: 42
-symbol red
-+ is a primitive
-[: ... :]  \ anonymous, no source

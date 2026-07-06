@@ -1,0 +1,133 @@
+\ Superinstructions: vv = two variable operands, v = one, then f + op.
+\ All are compile-only immediate words that read variable names that follow.
+
+variable A  20.0 to A
+variable B  5.0 to B
+variable C  2.0 to C
+
+\ vvf+ vvf- vvf* vvf/ : ( -- A op B )
+: s+ vvf+ A B ;   s+ . cr            \ 25
+: s- vvf- A B ;   s- . cr            \ 15
+: s* vvf* A B ;   s* . cr            \ 100
+: s/ vvf/ A B ;   s/ . cr            \ 4
+
+\ vfsq : ( -- A*A )
+: ssq vfsq A ;   ssq . cr            \ 400
+
+\ vvf*- : ( a -- C2 - a*A )  here a comes from the stack, A and C2 inline
+\   C vvf*- A B  ->  B - C*A  =  5 - 2*20  =  -35
+: sfms C vvf*- A B ;   sfms . cr     \ -35
+
+\ vvf*+ : ( a -- a*A + C2 )
+\   C vvf*+ A B  ->  C*A + B  =  2*20 + 5  =  45
+: sfma C vvf*+ A B ;   sfma . cr     \ 45
+
+\ composition: (A-B) squared via a temp
+variable T1
+: combo
+  vvf- A B to T1       \ T1 = 20 - 5 = 15
+  vfsq T1 ;            \ 15*15 = 225
+combo . cr                           \ 225
+
+\ fractional values
+variable P  0.5 to P
+variable Q  0.25 to Q
+: sfrac vvf+ P Q ;   sfrac . cr      \ 0.75
+: sfracsq vfsq P ;   sfracsq . cr    \ 0.25
+
+\ unary ops: one inline variable applied to the stack value.
+\   vf+ X ( a -- a + X )   vf- X ( a -- a - X )
+\   vf* X ( a -- a * X )   vf/ X ( a -- a / X )
+: u+ vf+ B ;   100 u+ . cr           \ 105
+: u- vf- B ;   100 u- . cr           \ 95
+: u* vf* B ;   100 u* . cr           \ 500
+: u/ vf/ B ;   100 u/ . cr           \ 20
+
+\ unary order: subtract/divide use the stack value as the left operand
+: uorder 7 vf- C ;   uorder . cr     \ 7 - 2 = 5
+
+\ chains with the binary forms
+: uchain vvf* A B  vf+ C ;   uchain . cr   \ 20*5 + 2 = 102
+
+clear
+\ Auto-fusion: idiomatic float ops over variables are fused to superwords
+\ at compile time. Results must equal the unfused forms, and fusion inside
+\ control flow must preserve branch offsets.
+
+variable A  3.0 to A
+variable B  4.0 to B
+
+\ two variables + binop -> vvf
+: t1 A B f- ;   t1 . cr          \ -1
+: t2 A B f* ;   t2 . cr          \ 12
+
+\ stack value + one variable -> vf
+: t3 10.0 A f- ;   t3 . cr       \ 7
+: t4 10.0 A f/ ;   t4 . cr       \ 3.33333
+
+\ unary function of one variable -> vfn
+: t5 A sq ;     t5 . cr          \ 9
+: t6 B sqrt ;   t6 . cr          \ 2
+
+\ stack value + two variables, fused multiply -> vvf*- / vvf*+
+\ f*- is ( a b c -- c - a*b ),  f*+ is ( a b c -- a*b + c )
+: t7 5.0 A B f*- ;   t7 . cr     \ 4 - 5*3 = -11
+: t8 5.0 A B f*+ ;   t8 . cr     \ 5*3 + 4 = 19
+
+\ fusion inside both arms of if/else
+: branchy 0 gt if A B f* else A B f+ then ;
+1 branchy . cr                   \ 12
+0 branchy . cr                   \ 7
+
+\ fusion inside a begin/until loop body
+variable ACC
+variable I
+: loopy
+  0.0 to ACC  0.0 to I
+  begin  A B f* ACC f+ to ACC  I 1+ to I  I 3.0 = until
+  ACC ;
+loopy . cr                       \ 36
+
+\ a non-fusing case for contrast: locals, not variables
+: withlocal | x y | A to x  B to y  x y f- ;   withlocal . cr   \ -1
+
+clear
+\ Store fusion: <superword> to <var> folds into one op that writes the
+\ variable directly (verified via see-compiled separately; here we check
+\ the results are correct).
+
+variable A  10.0 to A
+variable B  3.0 to B
+variable C
+
+\ two-var binary -> vvf*!
+: s1 A B f- to C ;   s1 C . cr      \ 7
+: s2 A B f* to C ;   s2 C . cr      \ 30
+: s3 A B f+ to C ;   s3 C . cr      \ 13
+: s4 A B f/ to C ;   s4 C . cr      \ 3.33333
+
+\ stack value + one var -> vf*!
+: s5 100.0 A f- to C ;   s5 C . cr  \ 100 - 10 = 90
+
+\ unary function -> vfn!
+: s6 A sq to C ;       s6 C . cr    \ 100
+: s7 A negate to C ;   s7 C . cr    \ -10
+
+\ fused multiply -> vvf*-! / vvf*+!  (f*- is c - a*b, f*+ is a*b + c)
+: s8 5.0 A B f*- to C ;   s8 C . cr  \ 3 - 5*10 = -47
+: s9 5.0 A B f*+ to C ;   s9 C . cr  \ 5*10 + 3 = 53
+
+\ store target same as a source (the nbody writeback pattern): C = A * C
+2.0 to C
+: s10 A C f* to C ;   s10 C . cr     \ 10 * 2 = 20 (reads old C before writing)
+
+clear
+\ Fusion floor: a local loaded before `begin` and one loaded after it must not
+\ fuse across the loop-back target. Before the floor, `start begin step f+` fused
+\ start+step into a single (ll+0) straddling the begin point, so the loop's
+\ back-branch landed inside that op and the word crashed silently. It must run
+\ the loop (i: 5..1) and leave 3 + 4*5 = 23.
+: floor-test | start step i |
+  3.0 to start  4.0 to step  5.0 to i
+  start begin step f+ i 1.0 f- to i i 0.0 fgt 0= until ;
+floor-test . cr

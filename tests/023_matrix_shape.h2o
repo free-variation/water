@@ -1,0 +1,55 @@
+[ 1 2 3 4 5 6 ] 2 3 matrix transpose .
+[ 1 2 3 4 5 6 ] 3 2 matrix transpose .
+[ 1 2 3 4 ] 2 2 matrix transpose .
+[ 7 ] 1 1 matrix transpose .
+[ 1 2 3 4 ] 2 2 matrix transpose transpose .
+
+clear
+\ reshape successes
+[ 1 2 3 4 5 6 ] 2 3 matrix 3 2 reshape .
+[ 1 2 3 4 5 6 ] 2 3 matrix 6 1 reshape .
+[ 1 2 3 4 5 6 ] 2 3 matrix 1 6 reshape .
+[ 7 ] 1 1 matrix 1 1 reshape .
+[ 1 2 3 4 5 6 7 8 ] 4 2 matrix 2 4 reshape .
+[ 1 2 3 4 5 6 7 8 ] 4 2 matrix 8 1 reshape .
+
+\ flatten successes
+[ 1 2 3 4 5 6 ] 2 3 matrix flatten .
+[ 1 2 3 ] 1 3 matrix flatten .
+3 identity-matrix flatten .
+
+\ round-trip: flatten then reshape back
+[ 1 2 3 4 5 6 ] 2 3 matrix flatten 2 3 reshape .
+
+\ reshape failures
+[ 1 2 3 4 5 6 ] 2 3 matrix 2 2 reshape
+[ 1 2 3 4 5 6 ] 2 3 matrix "x" 6 reshape
+1 2 3 2 3 reshape
+
+\ negative dims rejected (M4) — -2 * -2 == 4 would pass an int-only equality check
+[ 1 2 3 4 ] 1 4 matrix -2 -2 reshape
+\ element count overflows int (M4)
+[ 1 2 3 4 ] 1 4 matrix 100000 100000 reshape
+
+clear
+\ oversized dimensions are rejected rather than silently overflowing int
+100000 100000 0-matrix
+1000000000 1000000000 0-matrix
+
+\ negative dimensions still rejected
+-1 3 0-matrix
+3 -1 0-matrix
+
+\ a large-but-valid matrix still constructs; dim reports its shape
+100 100 0-matrix dim . .
+
+\ ordinary small matrix is unaffected
+2 3 0-matrix dim . .
+
+\ size reports the element count (rows * columns) — the matrix analog of array/set size
+cr
+2 3 0-matrix size . cr                  \ 6
+100 100 0-matrix size . cr              \ 10000
+[ 1 2 3 4 5 6 ] 1 6 matrix size . cr    \ 6   row vector
+[ 1 2 3 4 5 6 ] 6 1 matrix size . cr    \ 6   column vector
+1 1 0-matrix size . cr                  \ 1   single element

@@ -1,9 +1,0 @@
-3 2 
-2 1 
--2 -1 
-5 0 
-2 1.5 
-1 
-2 
-error: %: division by zero
-error: %: expected two floats; got a string and a float

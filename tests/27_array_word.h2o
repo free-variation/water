@@ -1,4 +1,0 @@
-\ array-of ( init n -- arr ) — n-element array filled with init.
-0 5 array-of .
-99 3 array-of .
-"x" 4 array-of .

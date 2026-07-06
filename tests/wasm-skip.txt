@@ -2,16 +2,11 @@
 # Only for features WASI lacks (no fork/exec) or features excluded from the
 # wasm build (sqlite, ffi). A test failing for any other reason is a real
 # wasm defect — fix it, do not list it here.
-100_read            start-process: no fork/exec on WASI
-101_write           start-process: no fork/exec on WASI
-103_close           start-process: no fork/exec on WASI
-104_wait            process control (wait): no fork/exec on WASI
-105_stop            process control (stop): no fork/exec on WASI
-106_running         process control (running?): no fork/exec on WASI
-110_env             env!/start-process: not supported on WASI
-113_parallel_run    start-process: no fork/exec on WASI
-144_reload_literals start-process: no fork/exec on WASI
-145_ffi             ffi excluded from the wasm build
-146_ffi_lapacke     ffi/LAPACKE excluded from the wasm build
-152_bootstrap       needs LAPACKE via ffi (excluded from the wasm build)
-153_statistics      needs LAPACKE via ffi (excluded from the wasm build)
+063_subprocess      start-process / process control: no fork/exec on WASI
+066_env             env!/start-process: not supported on WASI
+069_parallel_run    start-process: no fork/exec on WASI
+098_reload_literals start-process: no fork/exec on WASI
+099_ffi             ffi excluded from the wasm build
+100_ffi_lapacke     ffi/LAPACKE excluded from the wasm build
+106_bootstrap       needs LAPACKE via ffi (excluded from the wasm build)
+107_statistics      needs LAPACKE via ffi (excluded from the wasm build)

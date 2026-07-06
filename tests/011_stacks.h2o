@@ -1,0 +1,13 @@
+1 dup . .
+1 2 swap . .
+1 2 over . . .
+1 2 3 rot . . .
+99 88 drop .s
+
+clear
+: dup-via-rs >r r@ r> ;
+7 dup-via-rs . .
+: store-fetch >r r> ;
+42 store-fetch .
+: peek-twice >r r@ r@ r> ;
+9 peek-twice . . .

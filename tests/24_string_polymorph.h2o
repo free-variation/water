@@ -1,4 +1,0 @@
-"hello" " " + "world" + .
-"abc" size .
-"" size .
-"a" "b" + "c" + size .
