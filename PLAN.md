@@ -6,11 +6,6 @@ A TODO list of pending work.
 
 ## String operations
 
-### Wrappers
-
-Over the match/replace layer: `index-of`, `starts-with`, `ends-with`,
-`lines`.
-
 ### Unicode
 
 - **ASCII fast path**: a cached per-string all-ASCII flag to collapse the
@@ -49,13 +44,6 @@ separate date type; durations are floats in seconds, arithmetic is `+` /
   Algorithm: introsort or libc `qsort` with a comparator thunk.
 - `array shuffle` — new array, elements randomly permuted (Fisher-Yates over
   the PRNG stream); input untouched.
-
-### Standard streams
-
-- `stdin` / `stdout` / `stderr` — the three standard streams as `T_STREAM`
-  values (fds 0/1/2). Reading and writing reuse the subprocess stream
-  words: `stdin read` slurps all of stdin, `stdin read "\n" split` its
-  lines, `s stdout write` emits.
 
 ### Re-readable repr
 

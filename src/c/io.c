@@ -376,3 +376,10 @@ void p_close(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+/* The three standard streams as T_STREAM values over fds 0/1/2, so they compose
+   with read/write/close. stdin conflicts with the REPL's own stdin reading;
+   it's for programs loaded from a file, not piped in. */
+void p_stdin(Interpreter *interp)  { push(interp, make_stream(0)); DISPATCH(interp); }
+void p_stdout(Interpreter *interp) { push(interp, make_stream(1)); DISPATCH(interp); }
+void p_stderr(Interpreter *interp) { push(interp, make_stream(2)); DISPATCH(interp); }
+

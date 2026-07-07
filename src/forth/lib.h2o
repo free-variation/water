@@ -37,6 +37,11 @@ inline
 ( arr n -- arr' )  \ all but the first n elements (clamped)
 : skip  over size swap -  swap reverse swap take reverse ;
 
+\ string words
+
+( s pat -- i | -1 )  \ codepoint index of pat's first regex match in s, -1 if none
+: index-of  2dup has? if split 0 @i size else 2drop -1 then ;
+
 \ Exceptions
 : throw ( exc -- ) [: drop 1 :] shift-with ;
 : catch ( xt -- result 0 | exc 1 ) reset (execute-catching) 0 ;

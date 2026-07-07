@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.11.2"
+#define VERSION "0.12.1"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1166,6 +1166,9 @@ void p_start_process(Interpreter *interp);
 void p_write(Interpreter *interp);
 void p_read(Interpreter *interp);
 void p_close(Interpreter *interp);
+void p_stdin(Interpreter *interp);
+void p_stdout(Interpreter *interp);
+void p_stderr(Interpreter *interp);
 void p_db_open(Interpreter *interp);
 void p_db_close(Interpreter *interp);
 void p_ffi_open(Interpreter *interp);

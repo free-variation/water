@@ -111,6 +111,14 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 	return unify_depth(interp, left_val, right_val, 0);
 }
 
+static int enclosing_choice(Interpreter *interp) {
+	for (int i = interp->rsp - 1; i >= 0; i--)
+		if (VAL_TAG(interp->return_stack[i]) == T_MARK
+				&& (VAL_DATA(interp->return_stack[i]) & 1) == PROMPT_CHOICE)
+			return 1;
+	return 0;
+}
+
 void p_unify(Interpreter *interp) {
 	POP(right);
 	POP(left);
@@ -118,10 +126,21 @@ void p_unify(Interpreter *interp) {
 	int unified = unify(interp, left, right);
 	if (interp->error_flag) return;
 
-	if (unified)
+	if (unified) {
 		push(interp, deref(interp, left));
-	else
+	} else if (enclosing_choice(interp)) {
 		backtrack(interp);
+	} else {
+		char *lbuf = NULL, *rbuf = NULL;
+		size_t ln = 0, rn = 0;
+		FILE *lf = open_memstream(&lbuf, &ln);
+		if (lf) { print_val_inspect(lf, interp, deref(interp, left)); fclose(lf); }
+		FILE *rf = open_memstream(&rbuf, &rn);
+		if (rf) { print_val_inspect(rf, interp, deref(interp, right)); fclose(rf); }
+		fail(interp, "unify: cannot unify %s with %s", lbuf ? lbuf : "?", rbuf ? rbuf : "?");
+		free(lbuf);
+		free(rbuf);
+	}
 
 	DISPATCH(interp);
 }

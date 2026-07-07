@@ -32,11 +32,11 @@
 0 
 1 
 1 
-error: no enclosing amb to backtrack to
-error: no enclosing amb to backtrack to
-error: no enclosing amb to backtrack to
-error: no enclosing amb to backtrack to
-error: no enclosing amb to backtrack to
-error: no enclosing amb to backtrack to
-error: no enclosing amb to backtrack to
+error: unify: cannot unify 1 with 2
+error: unify: cannot unify "a" with "b"
+error: unify: cannot unify :foo with :bar
+error: unify: cannot unify [ 1 2 ] with [ 1 2 3 ]
+error: unify: cannot unify [ 1 2 ] with [ 1 9 ]
+error: unify: cannot unify { :a 1 } with { :a 2 }
+error: unify: cannot unify 1 with 2
 1 

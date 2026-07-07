@@ -180,6 +180,7 @@ const HelpEntry help_entries[] = {
 	{ "i-times", "( xt n -- )", "Run xt n times, pushing index 0..n-1 first", "2 + n·(1+xt)", "none", "O(n·xt)" },
 	{ "identity-matrix", "( n -- m )", "lib.h2o: 1 swap diagonal-matrix", "n", "1m(n×n)", "O(n)" },
 	{ "if", "( flag -- )", "Branch past the then/else if flag is falsy", NULL, NULL, NULL },
+	{ "index-of", "( s pat -- i )", "lib.h2o: codepoint index of pat's first regex match in s, or -1 if none (split 0 @i size guarded by has?)", "n", "1a + pieces", "O(n)" },
 	{ "inline", "—", "Mark the most recent definition inline; future calls splice its body", NULL, NULL, NULL },
 	{ "inner-join", "( driver probed col -- [rows] )", "Inner join: each driver row merged (probed columns win collisions) with each probed row sharing col's value; probed must index col", "—", "1a", "O(driver·log probed)" },
 	{ "int-segment", "( n -- seg )", "n-element int segment, zero-filled; errors if n < 0", "1", "1seg(n)", "O(n)" },
@@ -372,4 +373,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 366;
+const int help_entry_count = 367;

@@ -776,7 +776,34 @@ void print_matrix_grid(FILE *out, Object *m) {
 	}
 }
 
+static const char *logic_var_name(int id) {
+	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
+		if ((cfa_handler)vocab.dict[cfa] != dovar)
+			continue;
+		Val stored;
+		stored.bits = (uint64_t)vocab.dict[cfa + 1];
+		if (VAL_TAG(stored) == T_LOGIC_VAR && (int)VAL_DATA(stored) == id)
+			return &vocab.name_pool[WORD_NAME(cfa)];
+	}
+	return NULL;
+}
+
+static void print_logic_var(FILE *out, Interpreter *interp, Val var,
+		void (*pr)(FILE *, Interpreter *, Val)) {
+	Val resolved = deref(interp, var);
+	if (VAL_TAG(resolved) == T_LOGIC_VAR) {
+		int id = (int)VAL_DATA(resolved);
+		const char *name = logic_var_name(id);
+		if (name) fputs(name, out); else fprintf(out, "_%d", id);
+		return;
+	}
+	const char *name = logic_var_name((int)VAL_DATA(var));
+	if (name) fprintf(out, "%s=", name);
+	pr(out, interp, resolved);
+}
+
 void print_val(FILE *out, Interpreter *interp, Val value) {
+	if (VAL_TAG(value) == T_LOGIC_VAR) { print_logic_var(out, interp, value, print_val); return; }
 	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
 		case T_NONE: fputs("null", out); break;
@@ -954,6 +981,7 @@ void print_val_inspect(FILE *out, Interpreter *interp, Val value) {
 }
 
 void print_val_compact(FILE *out, Interpreter *interp, Val value) {
+	if (VAL_TAG(value) == T_LOGIC_VAR) { print_logic_var(out, interp, value, print_val_compact); return; }
 	value = deref(interp, value);
 	switch (VAL_TAG(value)) {
 		case T_NONE: fputs("null", out); break;
@@ -3955,6 +3983,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "write", p_write, 0);
 	define_primitive(interp, "read", p_read, 0);
 	define_primitive(interp, "close", p_close, 0);
+	define_primitive(interp, "stdin", p_stdin, 0);
+	define_primitive(interp, "stdout", p_stdout, 0);
+	define_primitive(interp, "stderr", p_stderr, 0);
 	define_primitive(interp, "db-open", p_db_open, 0);
 	define_primitive(interp, "ffi-open", p_ffi_open, 0);
 	define_primitive(interp, "ffi-function", p_ffi_function, 0);

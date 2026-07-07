@@ -7,3 +7,9 @@
 233 emit cr
 128512 emit cr
 9731 emit cr
+
+\ standard streams: T_STREAM over fds 0/1/2, composing with read/write/close
+stdin . cr                \ <stream 0>
+stdout . cr               \ <stream 1>
+stderr . cr               \ <stream 2>
+"piped" stdout write cr   \ write to fd 1 (appears in stdout)

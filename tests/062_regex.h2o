@@ -187,3 +187,11 @@ clear
 
 \ error: pattern is not a string
 "x" 5 split
+
+\ index-of ( s pat -- i | -1 ): codepoint index of pat's first regex match, else -1
+"abcXdef" "X" index-of . cr          \ 3
+"Xabc" "X" index-of . cr             \ 0
+"abc" "X" index-of . cr              \ -1  no match
+"αβXγ" "X" index-of . cr             \ 2   codepoint index, not byte
+"a.b.c" "\." index-of . cr           \ 1   pat is a regex (escaped dot)
+"aaa" "a+" index-of . cr             \ 0
