@@ -74,7 +74,7 @@ base unit ml
 3 m 0.01 ^
 3 m sin
 base unit foo
-1 foo 3 / unit third
+1 foo 2 sqrt / unit irrational
 
 \ ---- dimensioned matrices ----
 [ 1 2 3 4 ] 2 2 matrix m . cr

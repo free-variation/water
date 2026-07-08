@@ -34,6 +34,10 @@ it with `make vendor-lapacke`.
 \ Matrices: * is element-wise; matrix multiply is dgemm (αAB + βC)
 [ 1 2 3 4 ] 2 2 matrix dup transpose *  \ element-wise product of M and Mᵀ
 
+\ Dimensioned quantities: units propagate, combine, and collapse
+10 m 2 s / .                            \ 5 m.s^-1
+1 kg 1 m * 1 s / 1 s / .                \ 1 newton   (interns to the named unit)
+
 \ Sets and set algebra
 < 1 2 3 > < 2 3 4 > + .                 \ < 1 2 3 4 >  (union via polymorphic +)
 
@@ -66,7 +70,7 @@ it with `make vendor-lapacke`.
 reset producer                          \ leaves (1, k) — next value via resume
 
 \ Logic: unify binds variables; amb is a committed choice
-[ 1 2 3 ] [ X Y Z ] ~ drop  X $ . Y $ . Z $ . cr   \ 1 2 3
+[ 1 2 3 ] [ X Y Z ] ~ drop  X ? . Y ? . Z ? . cr   \ 1 2 3
 [: fail :] [: "fallback" :] amb .                  \ fallback
 
 \ Multi-core: run a quotation across the array on every core
@@ -115,6 +119,14 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the loadable statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, and `ci` on these.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
 - **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `lt`/`gt` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). On scalars, strings, and collections all three are structural.
+
+### Dimensioned quantities
+
+A magnitude (float or matrix) carrying a unit; arithmetic propagates and checks units — dimensional algebra, not unit conversion. Units are rational-exponent vectors over user-declared base dimensions, each with a rational scale.
+
+- **`base` / `unit`** — declare dimensions and units. `base unit m`; `1 kg 1 m * 1 s / 1 s / unit newton` (derived); `1 $ 100 / unit ¢` (scaled sub-unit). A unit word is postfix — `10 m`, `3 newton`.
+- **Arithmetic** — `*`/`/` combine unit exponents and scales (a dimensionless result collapses back to a bare float/matrix); `+`/`-` require the same dimension and rescale across scales; `^`/`sqrt` scale the exponents; `= < >` compare by value, normalizing scale within a dimension. Named units print by name, unnamed compounds in base form.
+- **Standard set** (`lib.h2o`) — SI `m s kg ampere kelvin mol`, derived `hertz newton pascal joule watt coulomb volt`, `minute`/`hour`/`km`, and currencies `$`/`¢`, `£`/`penny`, `€`/`eurocent`.
 
 ### Bitwise
 
@@ -272,7 +284,7 @@ An uncaught `throw` or interpreter error still surfaces at the REPL. The `shift-
 Unification and committed choice, on the trail and the continuation machinery:
 
 - **Logic variables** — `lvar` makes a fresh one; a **capitalized identifier** is a logic-var literal: a persistent global at the REPL, or a fresh per-call variable when declared in `| X |` inside a definition or quotation.
-- **`unify`** (`~`) — unifies two terms, binding logic vars through a trail so they match: atoms by value, arrays element-wise, frames as open records (shared keys must unify, extras allowed); on a mismatch it fails. **`deref`** (`$`) follows a variable's binding chain.
+- **`unify`** (`~`) — unifies two terms, binding logic vars through a trail so they match: atoms by value, arrays element-wise, frames as open records (shared keys must unify, extras allowed); on a mismatch it fails. **`deref`** (`?`) follows a variable's binding chain.
 - **`amb`** / **`fail`** — committed choice: run the first branch; if it fails (a `unify` mismatch or an explicit `fail`), roll its bindings back through the trail and run the second, committing to whichever succeeds. **`choose`** generalizes it to a cons list, running a continuation with each element until one succeeds.
 - **`_`** — the anonymous wildcard: unifies with anything, binds nothing, and allocates nothing.
 - **`matches?`** — a non-destructive `unify` test: marks the trail, unifies, rolls back, and pushes whether the two unified — so it composes in straight-line code.

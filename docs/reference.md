@@ -184,17 +184,17 @@ float. `rshift` is arithmetic (sign-preserving).
 ## Dimensioned quantities
 
 A quantity is a magnitude (a float or a matrix) carrying a unit. Units are
-rational-exponent vectors over user-declared base dimensions; arithmetic
-propagates and checks them. There is no conversion between systems — a unit is
-a dimension vector plus an *integer* scale relative to that dimension's base, so
-`dollar`/`cent` and `kg`/`g` coexist as scaled units, but a non-integer factor
-like `inch`/`cm` does not.
+rational-exponent vectors over user-declared base dimensions, each with a
+rational scale relative to its dimension's base; arithmetic propagates and
+checks them. Same-dimension units at any rational scale coexist and convert
+(`$`/`¢`, `kg`/`g`, `inch`/`cm`). What's excluded is affine offsets — `°C`/`°F`
+need an added zero, not just a scale factor.
 
 Declare with `base` and `unit`:
 
     base unit m   base unit s   base unit kg      \ base dimensions
     1 kg 1 m * 1 s / 1 s / unit newton            \ derived, named
-    base unit cent   100 cent unit dollar         \ scaled: declare the smaller as base
+    base unit $   1 $ 100 / unit ¢                \ scaled sub-unit (1/100)
 
 A unit word is postfix — it attaches its unit to the number before it (`10 m`,
 `3 newton`). Attaching a unit to a matrix makes a dimensioned matrix (`M m`).
@@ -202,12 +202,12 @@ A unit word is postfix — it attaches its unit to the number before it (`10 m`,
 - `*` / `/` — multiply/divide magnitudes; combine unit exponents and scales. A
   dimensionless result collapses back to a bare float or matrix (`3 m 3 m / → 1`).
 - `+` / `-` — require the same dimension; a different-scale operand is rescaled
-  into the left operand's unit (`1 dollar 50 cent + → 1.5 dollar`). Different
+  into the left operand's unit (`1 $ 50 ¢ + → 1.5 $`). Different
   dimension, or a quantity ± a bare number, errors.
 - `^` — rational exponent only; raises the unit's exponents (`q 2 ^`, `q 0.5 ^`).
 - `sqrt` — halves the unit's exponents (`sqrt(m²) → m`).
 - `negate` / `abs` — keep the unit; transcendentals (`sin`, `log`, …) reject a quantity.
-- `= < >` — compare by value, normalizing scale within a dimension (`100 cent 1 dollar = → 1`).
+- `= < >` — compare by value, normalizing scale within a dimension (`100 ¢ 1 $ = → 1`).
 
 Printing shows magnitude then unit: a named unit prints its name (`3 newton`); an
 unnamed compound prints its dimensional form with the scale folded into the
@@ -219,7 +219,7 @@ symbol like `N` or `A` would shadow the capital-letter logic-var convention):
 length `m` (`km`), time `s` (`minute`, `hour`), mass `kg`, current `ampere`,
 temperature `kelvin`, amount `mol`; derived `hertz` `newton` `pascal` `joule`
 `watt` `coulomb` `volt`; and three currencies, each its own dimension —
-`$`/`cent`, `£`/`penny`, `€`/`eurocent`.
+`$`/`¢`, `£`/`penny`, `€`/`eurocent`.
 
 ## Return stack
 

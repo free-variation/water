@@ -154,6 +154,18 @@ static Rational rational_pow(Rational scale, Rational exponent, int *success) {
 }
 
 
+static int rational_of_double(double value, Rational *rational) {
+	for (int denominator = 1; denominator <= 1000000; denominator++) {
+		double scaled = value * denominator;
+		double rounded = round(scaled);
+		if (rounded >= 1 && rounded <= INT_MAX && fabs(scaled - rounded) < 1e-9) {
+			*rational = make_rational((int)rounded, denominator);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 static int new_dimension() {
 	GROW_IF_FULL_SYS(n_dimensions, dimension_cap, dimension_names);
 
@@ -509,13 +521,12 @@ void p_unit(Interpreter *interp) {
 	}
 
 	double value = VAL_NUMBER(magnitude);
-	long long whole = llround(value);
-	if (whole < 1 || whole > INT_MAX || fabs(value - (double)whole) > 1e-9) {
-		fail(interp, "unit: scale must be a positive whole number of the base unit; got %g", value);
+	Rational scale;
+	if (!rational_of_double(value, &scale)) {
+		fail(interp, "unit: scale must be a positive simple rational of the base unit; got %g", value);
 		return;
 	}
-
-	Rational scale = rational_multiply(make_rational((int)whole, 1), units[source_unit].scale);
+	scale = rational_multiply(scale, units[source_unit].scale);
 
 	int base_dimension = DIMENSION_UNNAMED;
 	if (units[source_unit].n_terms == 1

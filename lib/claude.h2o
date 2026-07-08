@@ -91,11 +91,12 @@
 	pmap ;
 
 \ ---- the cost of a cot, as a currency quantity ----
-\ The API returns token usage, not a price, and rates are per model. Set these
-\ to your plan (dollars per token; input and output are priced separately).
-{ :claude-opus-4-8           { :input 0.000015  :output 0.000075 }
-  :claude-sonnet-5           { :input 0.000003  :output 0.000015 }
-  :claude-haiku-4-5-20251001 { :input 0.0000008 :output 0.000004 }
+\ The API returns token usage, not a price, and rates are per model. Rates are
+\ in cents per token (¢ is the money base unit; a call is a fraction of a
+\ cent). Set to your plan; e.g. $75 / Mtoken output = 0.0075 ¢/token.
+{ :claude-opus-4-8           { :input 0.0015   :output 0.0075 }
+  :claude-sonnet-5           { :input 0.0003   :output 0.0015 }
+  :claude-haiku-4-5-20251001 { :input 0.00008  :output 0.0004 }
 } to claude-prices
 
 ( model -- price ) \ the { :input :output } rate frame for a model string
@@ -113,9 +114,9 @@
   body :usage @ to usage
   body :model @ model-price to price
   usage :input_tokens  @ price :input  @ *
-  usage :output_tokens @ price :output @ * +  $ ;
+  usage :output_tokens @ price :output @ * +  ¢ ;
 
 ( -- $ ) \ worst-case output cost of one call at the current model
 : cot-cost-ceiling
-  claude-max-tokens  claude-model model-price :output @ *  $ ;
+  claude-max-tokens  claude-model model-price :output @ *  ¢ ;
 

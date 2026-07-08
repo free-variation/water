@@ -391,8 +391,8 @@ inline
 \ ---- SI units and basic currencies ----
 \ Dimensioned quantities (see the reference). Names are spelled out and
 \ lowercase: a capital symbol like N or A would shadow the capital-letter
-\ logic-var convention. Each currency is its own dimension with the minor unit
-\ as base, so every scale is a whole number.
+\ logic-var convention. Each currency is its own dimension: the major unit is
+\ the base, the minor unit 1/100 of it.
 
 base unit m
 base unit s
@@ -413,7 +413,7 @@ base unit mol
 3600 s   unit hour
 1000 m   unit km
 
-base unit cent      100 cent unit $
-base unit penny     100 penny unit £
-base unit eurocent  100 eurocent unit €
+base unit $   1 $ 100 / unit ¢
+base unit £   1 £ 100 / unit penny
+base unit €   1 € 100 / unit eurocent
 
