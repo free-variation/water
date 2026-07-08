@@ -84,7 +84,7 @@ static int ffi_type_of(Interpreter *interp, Val symbol, FFITypeTag *tag, ffi_typ
 	return 1;
 }
 
-void p_ffi_open(Interpreter *interp) {
+void p_ffi_open(DISPATCH_ARGS) {
 	POP_STRING(library_path, "ffi-open");
 
 	void *library = dlopen(library_path->bytes, RTLD_NOW | RTLD_GLOBAL);
@@ -155,7 +155,7 @@ static void make_ffi_binding(Interpreter *interp, Val library_val, Object *funct
 	emit_call(interp, vocab.exit_cfa);
 }
 
-void p_ffi_function(Interpreter *interp) {
+void p_ffi_function(DISPATCH_ARGS) {
 	POP(return_symbol);
 	POP_ARRAY(arg_types, "ffi-function");
 	POP_STRING(function_name, "ffi-function");
@@ -174,7 +174,7 @@ void p_ffi_function(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_ffi_variadic(Interpreter *interp) {
+void p_ffi_variadic(DISPATCH_ARGS) {
 	POP_INT(fixed_args, "ffi-variadic", "fixed-argument count");
 	POP(return_symbol);
 	POP_ARRAY(arg_types, "ffi-variadic");
@@ -199,7 +199,7 @@ void p_ffi_variadic(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_ffi_call(Interpreter *interp) {
+void p_ffi_call(DISPATCH_ARGS) {
 	POP_INT(index, "ffi-call", "binding");
 	FFIBinding *binding = ffi_bindings[index];
 	
@@ -293,7 +293,7 @@ void p_ffi_call(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_ffi_free(Interpreter *interp) {
+void p_ffi_free(DISPATCH_ARGS) {
 	POP_PTR(index, "ffi-free");
 	free(ffi_pointers[index]);
 	ffi_pointers[index] = NULL;
@@ -306,14 +306,14 @@ int ffi_register_call_cfa(int cfa) {
 	return cfa;
 }
 
-void p_matrix_to_pointer(Interpreter *interp) {
+void p_matrix_to_pointer(DISPATCH_ARGS) {
 	POP_MATRIX(matrix, "matrix>pointer");
 	push(interp, make_pointer(ffi_pointer_intern(matrix->matrix.elements)));
 
 	DISPATCH(interp);
 }
 
-void p_segment_to_pointer(Interpreter *interp) {
+void p_segment_to_pointer(DISPATCH_ARGS) {
 	POP_SEGMENT(segment, "segment>pointer");
 	push(interp, make_pointer(ffi_pointer_intern(segment->segment.data)));
 

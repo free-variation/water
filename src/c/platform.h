@@ -5,16 +5,66 @@
 
 struct Interpreter;
 
+#define SYNC_REGISTERS(interp, reg_ip, reg_sp) do { \
+	(interp)->ip = (int)((reg_ip) - vocab.dict); \
+	(interp)->dsp = (int)((reg_sp) - (interp)->data_stack); \
+} while (0)
+
+#define REQUIRE_STACK_DEPTH_MSG(interp, reg_ip, reg_sp, popped, ...) do { \
+	if ((reg_sp) - (popped) < (interp)->data_stack) { \
+		SYNC_REGISTERS(interp, reg_ip, reg_sp); \
+		fail(interp, __VA_ARGS__); \
+		return; \
+	} \
+} while (0)
+
+#define REQUIRE_STACK_DEPTH(interp, reg_ip, reg_sp, popped) \
+	REQUIRE_STACK_DEPTH_MSG(interp, reg_ip, reg_sp, popped, "data stack underflow")
+
+#define REQUIRE_STACK_ROOM(interp, reg_ip, reg_sp, pushed) do { \
+	if ((reg_sp) + (pushed) > (interp)->data_stack + DATA_STACK_DEPTH) { \
+		SYNC_REGISTERS(interp, reg_ip, reg_sp); \
+		fail(interp, "data stack overflow"); \
+		return; \
+	} \
+} while (0)
+
+#define RETARGET_OP(handler) do { \
+	if (!in_parallel) \
+		chain_ip[-1] = (cell)(handler); \
+} while (0)
+
 #ifdef __wasm__
 #define MUSTTAIL
 #define DISPATCH(interp) do { return; } while (0)
+
+#define DISPATCH_REGISTERS(interp, reg_ip, reg_sp) do { \
+	(interp)->ip = (int)((reg_ip) - vocab.dict); \
+	(interp)->dsp = (int)((reg_sp) - (interp)->data_stack); \
+	return; \
+} while (0)
+
 #else
+
 #define MUSTTAIL __attribute__((musttail))
 #define DISPATCH(interp) do { \
 	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
 		return; \
+	cfa_handler next_op = (cfa_handler)vocab.dict[(interp)->ip++]; \
 	MUSTTAIL \
-	return ((cfa_handler)vocab.dict[(interp)->ip++])(interp); \
+	return next_op(interp, vocab.dict + (interp)->ip, (interp)->data_stack + (interp)->dsp); \
+} while (0)
+
+#define DISPATCH_REGISTERS(interp, reg_ip, reg_sp) do { \
+	int next_handler_index = (int)((reg_ip) - vocab.dict); \
+	(interp)->ip = next_handler_index; \
+	(interp)->dsp = (int)((reg_sp) - (interp)->data_stack); \
+	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
+		return; \
+	(interp)->ip = next_handler_index + 1; \
+	cfa_handler next_op = (cfa_handler)*(reg_ip); \
+	MUSTTAIL \
+	return next_op(interp, (reg_ip) + 1, (reg_sp)); \
 } while (0)
 #endif
 

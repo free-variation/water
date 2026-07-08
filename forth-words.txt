@@ -259,7 +259,6 @@ reshape
 resume
 retract
 reverse
-reverse-slice!
 roll
 rot
 round

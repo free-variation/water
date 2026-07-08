@@ -5,7 +5,7 @@
       POP_TYPED(name, op, T_DB); \
       sqlite3 *name = interp->databases[VAL_DATA(name##_val)]
 
-void p_db_open(Interpreter *interp) {
+void p_db_open(DISPATCH_ARGS) {
 	POP_STRING(path, "db-open");
 
 	int slot = -1;
@@ -36,7 +36,7 @@ void p_db_open(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_db_close(Interpreter *interp) {
+void p_db_close(DISPATCH_ARGS) {
 	POP_DB(db, "db-close");
 
 	if (db) {
@@ -81,7 +81,7 @@ static int db_bind(Interpreter *interp, sqlite3_stmt *statement, Object *params,
 	return 0;
 }
 
-void p_db_exec(Interpreter *interp) {
+void p_db_exec(DISPATCH_ARGS) {
 	POP_ARRAY(params, "db-exec");
 	POP_STRING(statement, "db-exec");
 	POP_DB(db, "db-exec");
@@ -146,7 +146,7 @@ static int db_build_row(Interpreter *interp, sqlite3_stmt *statement, const cell
 	return row_handle;
 }
 
-void p_db_query(Interpreter *interp) {
+void p_db_query(DISPATCH_ARGS) {
 	POP_ARRAY(params, "db-query");
 	POP_STRING(query, "db-query");
 	POP_DB(db, "db-query");

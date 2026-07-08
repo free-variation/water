@@ -23,9 +23,8 @@ variable *max-flips*
   *perm* 0 *perm1* 0 1 *n* slice! drop ;
 inline
 
-: flip-perm ( k -- )
-  *perm* 0 rot f1+ reverse-slice! drop ;
-inline
+: flip-perm ( k -- )        \ reverse perm[0..k] inclusive, matching Python's perm[:k+1] = perm[k::-1]
+  *perm* 0 *perm* 3 roll dup f1+ -1 swap slice! drop ;
 
 : count-flips ( -- flips )
   0

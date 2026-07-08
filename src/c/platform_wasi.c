@@ -44,7 +44,7 @@ void platform_qsort_r(void *base, size_t n, size_t size, void *thunk,
 }
 
 #define WASM_UNSUPPORTED(fn, word) \
-	void fn(Interpreter *interp) { \
+	void fn(DISPATCH_ARGS) { \
 		fail(interp, word ": unsupported on the wasm build"); \
 		DISPATCH(interp); \
 	}

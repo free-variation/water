@@ -1,6 +1,7 @@
-\ Guaranteed-cleanup words: ensure, with-db, with-stream. Each runs its cleanup
-\ on both the normal-exit and the throw path, and re-raises on throw. Batch mode:
-\ every line's exact stdout is the golden output.
+\ Guaranteed cleanup: ensure and with-db. Each runs its cleanup on both the
+\ normal-exit and the throw path, and re-raises on throw. (with-stream is in 117
+\ — it needs start-process, which WASI lacks.) Batch mode: every line's exact
+\ stdout is the golden output.
 
 \ ---- ensure: normal exit runs cleanup; the body's result survives ----
 [: 5 :] [: "clean " . :] ensure . cr                 \ clean 5
@@ -18,10 +19,3 @@
 
 \ ---- with-db: throw mid-body still closes the db; the exception propagates ----
 [: ":memory:" [: drop "kaboom" throw :] with-db :] [: "db-caught " . . :] try-catch cr
-
-\ ---- with-stream: read a child's stdout through the guard; stream closed after ----
-[ "printf" "hello" ] start-process :out @ [: read :] with-stream . cr           \ hello
-
-\ ---- with-stream: throw mid-body still closes the stream; exception propagates ----
-[: [ "printf" "x" ] start-process :out @ [: drop "streamboom" throw :] with-stream :]
-  [: "stream-caught " . . :] try-catch cr

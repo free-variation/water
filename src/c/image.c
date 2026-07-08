@@ -76,7 +76,7 @@ int r_val(FILE *file, Val *out_value) {
 	return 1;
 }
 
-void p_save_image(Interpreter *interp) {
+void p_save_image(DISPATCH_ARGS) {
 	POP_STRING(filename_obj, "save-image");
 	gc_root_push(interp, filename_obj_val);
 	const char *filename = filename_obj->bytes;
@@ -302,7 +302,7 @@ static int validate_loaded(Interpreter *interp) {
 	return 1;
 }
 
-void p_load_image(Interpreter *interp) {
+void p_load_image(DISPATCH_ARGS) {
 	POP_STRING(filename_obj, "load-image");
 
 	char filename[4096];

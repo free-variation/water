@@ -265,7 +265,6 @@ const HelpEntry help_entries[] = {
 	{ "resume", "( k -- … )", "Pop k and re-enter it (multi-shot — the continuation object survives, so a retained copy can be resumed again); pushes whatever the resumed code yields", "L + resumed", "none", "O(L + resumed)" },
 	{ "retract", "( rel pattern -- rel )", "Remove every row matching pattern from :rows and all buckets. Mutates rel, returns it", "matches·(k+n)", "1a", "O(matches·n)" },
 	{ "reverse", "( arr/set -- arr )", "Reversed copy", "1 + n", "1a(n)", "O(n)" },
-	{ "reverse-slice!", "( arr offset n -- arr )", "Reverse the n elements at offset in place; leaves arr", "2 + n", "none", "O(n)" },
 	{ "roll", "( xₙ … x₀ n -- xₙ₋₁ … x₀ xₙ )", "Move the item n deep to the top; memmoves the n above it down", "2 + n", "none", "O(n)" },
 	{ "rot", "( a b c -- b c a )", "Rotate top three", "6", "none", "O(1)" },
 	{ "round", "( a -- round a )", "round", "2", "matrix 1m(r×c)", "same" },
@@ -380,4 +379,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 374;
+const int help_entry_count = 373;

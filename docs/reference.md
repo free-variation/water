@@ -398,7 +398,6 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `remove-last!` | `( arr -- v )` | Remove and return the last element; errors on an empty array | 2 | none | O(1) |
 | `take` | `( arr/set n -- arr )` | First n elements (clamped) | 2 + n | `1a(n)` | O(n) |
 | `reverse` | `( arr/set -- arr )` | Reversed copy | 1 + n | `1a(n)` | O(n) |
-| `reverse-slice!` | `( arr offset n -- arr )` | Reverse the `n` elements at `offset` in place; leaves arr | 2 + n | none | O(n) |
 | `concat` | `( arr/set arr/set -- arr )` | Concatenated copy | 2 + m + n | `1a(m+n)` | O(m+n) |
 | `range` | `( from to -- arr )` | Inclusive integer range, step ±1 | 3 + n | `1a(n)` | O(n) |
 | `destruct` | `( arr/set/fr -- v… )` | Spread elements onto the stack; a frame spreads alternating sym/value | 1 + n | none | O(n) |

@@ -1189,26 +1189,30 @@ static inline __attribute__((always_inline)) void push_symbol(Interpreter *inter
 	push(interp, make_symbol((int)vocab.dict[sym_cfa + 1]));
 }
 
-void docol(Interpreter *interp) {
-	int target_cfa = (int)vocab.dict[interp->ip++];
-	rpush(interp, make_addr(interp->ip));
-	interp->ip = target_cfa + 1;
+void docol(DISPATCH_ARGS) {
+	if (interp->rsp >= RETURN_STACK_DEPTH) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "return stack overflow");
+		return;
+	}
 
-	DISPATCH(interp);
+	interp->return_stack[interp->rsp++] = make_addr((int)(chain_ip + 1 - vocab.dict));
+	
+	DISPATCH_REGISTERS(interp, vocab.dict + (int)*chain_ip + 1, chain_sp);
 }
 
-void dosym(Interpreter *interp) {
-	int sym_cfa = (int)vocab.dict[interp->ip++];
-	push_symbol(interp, sym_cfa);
+void dosym(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 1, chain_sp, 1);
+	*chain_sp = make_symbol((int)vocab.dict[(int)*chain_ip + 1]);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1);
 }
 
-void dovar(Interpreter *interp) {
-	int var_cfa = (int)vocab.dict[interp->ip++];
-	push_variable(interp, var_cfa);
+void dovar(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 1, chain_sp, 1);
+	chain_sp->bits = (uint64_t)vocab.dict[(int)*chain_ip + 1];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1);
 }
 
 static void unwind_locals_scopes(Interpreter *interp) {
@@ -1259,7 +1263,7 @@ void run_inner(Interpreter *interp, int floor) {
 		}
 
 		cfa_handler handler = (cfa_handler)vocab.dict[interp->ip++];
-		handler(interp);
+		handler(interp, vocab.dict + interp->ip, interp->data_stack + interp->dsp);
 	}
 
 	interp->run_floor = saved_floor;
@@ -1385,6 +1389,26 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 	}
 }
 
+static void dispatch_body(Interpreter *interp, int body_start) {
+	if (interp->call_depth >= MAX_CALL_DEPTH) {
+		fail(interp, "call stack too deep (runaway recursion via execute/resume/amb?)");
+		return;
+	}
+	interp->call_depth++;
+	int saved_floor = interp->run_floor;
+	interp->run_floor = interp->rsp;
+
+	interp->running = 1;
+	interp->ip = body_start + 1;
+	((cfa_handler)vocab.dict[body_start])(interp, vocab.dict + body_start + 1, interp->data_stack + interp->dsp);
+
+	if (interp->running && !interp->error_flag)
+		run_inner(interp, interp->run_floor);
+
+	interp->run_floor = saved_floor;
+	interp->call_depth--;
+}
+
 void call_invoke(Interpreter *interp) {
 	if (interp->loop_body_start) {
 		interp->loop_local_refill = 0;
@@ -1392,7 +1416,7 @@ void call_invoke(Interpreter *interp) {
 		int n = interp->loop_n;
 		int base = interp->loop_local_base;
 		int data_start = interp->dsp - n;
-		
+
 		if (interp->loop_slots_ip < 0) {
 			for (int i = 0; i < n; i++)
 				interp->return_stack[base + i] = interp->data_stack[data_start + i];
@@ -1403,15 +1427,11 @@ void call_invoke(Interpreter *interp) {
 		}
 
 		interp->dsp -= n;
-		interp->ip = interp->loop_body_start;
-		interp->running = 1;
-		run_inner(interp, interp->rsp);
+		dispatch_body(interp, interp->loop_body_start);
 		return;
 	}
 
-	interp->ip = interp->trampoline_base;
-	interp->running = 1;
-	run_inner(interp, interp->rsp);
+	dispatch_body(interp, interp->trampoline_base);
 }
 
 void call_close(Interpreter *interp, CallContext *context) {
@@ -1609,7 +1629,7 @@ const char *tag_name(Tag t) {
 	}
 }
 
-void p_exit(Interpreter *interp) {
+void p_exit(DISPATCH_ARGS) {
 	while (interp->rsp > 0 && VAL_TAG(interp->return_stack[interp->rsp - 1]) == T_MARK) 
 		interp->rsp--;
 
@@ -1622,16 +1642,15 @@ void p_exit(Interpreter *interp) {
 	}
 
 	Val saved_ip = interp->return_stack[--interp->rsp];
-	interp->ip = (int)VAL_DATA(saved_ip);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, vocab.dict + (int)VAL_DATA(saved_ip), chain_sp);
 }
 
-void p_stop(Interpreter *interp) {
+void p_stop(DISPATCH_ARGS) {
 	interp->running = 0;
 }
 
-void p_alloc_stats(Interpreter *interp) {
+void p_alloc_stats(DISPATCH_ARGS) {
 	printf("lvars=%ld arrays=%ld\n", alloc_count_lvar, alloc_count_array);
 	alloc_count_lvar = 0;
 	alloc_count_array = 0;
@@ -1639,50 +1658,52 @@ void p_alloc_stats(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_literal(Interpreter *interp) {
-	Val value;
-	value.bits = (uint64_t)vocab.dict[interp->ip++];
-	push(interp, value);
-
-	DISPATCH(interp);
+void p_literal(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 1, chain_sp, 1);
+	chain_sp->bits = (uint64_t)*chain_ip;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1);
 }
 
-void p_branch(Interpreter *interp) {
-	interp->ip += (int)vocab.dict[interp->ip];
+void p_branch(DISPATCH_ARGS) {
+	cell *branch_target = chain_ip + (int)*chain_ip;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, branch_target, chain_sp);
 }
 
-#define ZBRANCH_BODY(get_condition) \
-	cell offset = vocab.dict[interp->ip++]; \
-	get_condition; \
-	int is_false = (VAL_TAG(condition) == T_FLOAT) ? (VAL_NUMBER(condition) == 0.0) \
-	: (VAL_DATA(condition) == 0); \
-	if (is_false) \
-		interp->ip += offset - 1
-
-void p_0branch(Interpreter *interp) {
-	ZBRANCH_BODY(POP(condition));
-
-	DISPATCH(interp);
+static inline int zbranch_falsy(Val condition) {
+	return (VAL_TAG(condition) == T_FLOAT) ? (VAL_NUMBER(condition) == 0.0)
+		: (VAL_DATA(condition) == 0);
 }
 
-void p_qzbranch(Interpreter *interp) {
-	ZBRANCH_BODY(PEEK_AT(condition, 0, "?if"));
+void p_0branch(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	cell *continue_ip = zbranch_falsy(chain_sp[-1]) ? chain_ip + (int)*chain_ip : chain_ip + 1;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, continue_ip, chain_sp - 1);
 }
 
-void p_dostr(Interpreter *interp) {
-	int template_handle = (int)vocab.dict[interp->ip++];
-	push(interp, make_string(interpolate(interp, template_handle)));
+void p_qzbranch(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 1, chain_sp, 1, "?if: stack too shallow");
+	cell *continue_ip = zbranch_falsy(chain_sp[-1]) ? chain_ip + (int)*chain_ip : chain_ip + 1;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, continue_ip, chain_sp);
 }
 
-void p_enter_locals(Interpreter *interp) {
-	int n_locals = (int)vocab.dict[interp->ip++];
+void p_dostr(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 1, chain_sp, 1);
+	SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+	int interpolated = interpolate(interp, (int)*chain_ip);
+	if (interp->error_flag)
+		return;
+	*chain_sp = make_string(interpolated);
+
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1);
+}
+
+void p_enter_locals(DISPATCH_ARGS) {
+	int n_locals = (int)chain_ip[0];
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
 		fail(interp, "return stack overflow");
 		return;
 	}
@@ -1690,65 +1711,64 @@ void p_enter_locals(Interpreter *interp) {
 	interp->rsp += n_locals;
 	interp->local_base = interp->rsp - n_locals;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp);
 }
 
-void p_enter_locals_to(Interpreter *interp) {
-	int n_locals = (int)vocab.dict[interp->ip++];
+void p_enter_locals_to(DISPATCH_ARGS) {
+	int n_locals = (int)chain_ip[0];
 
 	if (interp->loop_local_refill) {
 		interp->loop_local_refill = 0;
-		int data_start = interp->dsp - n_locals;
-		for (int i = 0; i < n_locals; i++) 
-			interp->return_stack[interp->local_base + i] = interp->data_stack[data_start + i];
-		interp->dsp -= n_locals;
+		Val *incoming = chain_sp - n_locals;
+		for (int i = 0; i < n_locals; i++)
+			interp->return_stack[interp->local_base + i] = incoming[i];
 
-		DISPATCH(interp);
+		DISPATCH_REGISTERS(interp, chain_ip + 1, incoming);
 	}
 
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
 		fail(interp, "(enter-locals-to): return stack overflow");
 		return;
 	}
-	if (interp->dsp < n_locals) {
+	if (chain_sp - n_locals < interp->data_stack) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
 		fail(interp, "(enter-locals-to): insufficient values on data stack; need %d", n_locals);
 		return;
 	}
 
 	interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
-	int data_start = interp->dsp - n_locals;
+	Val *incoming = chain_sp - n_locals;
 	for (int i = 0; i < n_locals; i++)
-		interp->return_stack[interp->rsp + i] = interp->data_stack[data_start + i];
+		interp->return_stack[interp->rsp + i] = incoming[i];
 
-	interp->dsp -= n_locals;
 	interp->local_base = interp->rsp;
 	interp->rsp += n_locals;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, incoming);
 }
 
-void p_enter_locals_mixed(Interpreter *interp) {
-	int n_locals = (int)vocab.dict[interp->ip++];
-	int n_received = (int)vocab.dict[interp->ip++];
+void p_enter_locals_mixed(DISPATCH_ARGS) {
+	int n_locals = (int)chain_ip[0];
+	int n_received = (int)chain_ip[1];
 
 	if (interp->loop_local_refill) {
 		interp->loop_local_refill = 0;
-		int data_start = interp->dsp - n_received;
+		Val *incoming = chain_sp - n_received;
 
-		for (int i = 0; i < n_received; i++) {
-			int slot = (int)vocab.dict[interp->ip++];
-			interp->return_stack[interp->local_base + slot] = interp->data_stack[data_start + i];
-		}
-		interp->dsp -= n_received;
+		for (int i = 0; i < n_received; i++)
+			interp->return_stack[interp->local_base + (int)chain_ip[2 + i]] = incoming[i];
 
-		DISPATCH(interp);
+		DISPATCH_REGISTERS(interp, chain_ip + 2 + n_received, incoming);
 	}
 
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
+		SYNC_REGISTERS(interp, chain_ip + 2 + n_received, chain_sp);
 		fail(interp, "(enter-locals-mixed): return stack overflow");
 		return;
 	}
-	if (interp->dsp < n_received) {
+	if (chain_sp - n_received < interp->data_stack) {
+		SYNC_REGISTERS(interp, chain_ip + 2 + n_received, chain_sp);
 		fail(interp, "(enter-locals-mixed): insufficient values on data stack; need %d", n_received);
 		return;
 	}
@@ -1757,33 +1777,35 @@ void p_enter_locals_mixed(Interpreter *interp) {
 	interp->local_base = interp->rsp;
 	interp->rsp += n_locals;
 
-	int data_start = interp->dsp - n_received;
-	for (int i = 0; i < n_received; i++) {
-		int slot = (int)vocab.dict[interp->ip++];
-		interp->return_stack[interp->local_base + slot] = interp->data_stack[data_start + i];
-	}
-	interp->dsp -= n_received;
+	Val *incoming = chain_sp - n_received;
+	for (int i = 0; i < n_received; i++)
+		interp->return_stack[interp->local_base + (int)chain_ip[2 + i]] = incoming[i];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 2 + n_received, incoming);
 }
 
-void p_leave_locals(Interpreter *interp) {
-	int n_locals = (int)vocab.dict[interp->ip++];
+void p_leave_locals(DISPATCH_ARGS) {
+	int n_locals = (int)chain_ip[0];
 
 	if (interp->local_base == interp->loop_local_base) {
-		DISPATCH(interp);
+		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp);
 	}
 
 	interp->rsp -= n_locals;
-	Val locals_header = rpop(interp);
+	if (interp->rsp <= 0) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "return stack underflow");
+		return;
+	}
+	Val locals_header = interp->return_stack[--interp->rsp];
 	interp->local_base = saved_local_base(locals_header);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp);
 }
 
-static Val *local_slot(Interpreter *interp) {
-	int depth = (int)vocab.dict[interp->ip++];
-	int slot  = (int)vocab.dict[interp->ip++];
+static Val *local_slot(Interpreter *interp, cell *chain_ip) {
+	int depth = (int)chain_ip[0];
+	int slot  = (int)chain_ip[1];
 
 	int base = interp->local_base;
 	for (int i = 0; i < depth; i++)
@@ -1792,85 +1814,84 @@ static Val *local_slot(Interpreter *interp) {
 	return &interp->return_stack[base + slot];
 }
 
-void p_local_fetch(Interpreter *interp) {
-	push(interp, *local_slot(interp));
+void p_local_fetch(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
+	*chain_sp = *local_slot(interp, chain_ip);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 1);
 }
 
-void p_local_fetch_1depth(Interpreter *interp) {
-	int slot = (int)vocab.dict[interp->ip++];
+void p_local_fetch_1depth(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 1, chain_sp, 1);
 	int base = saved_local_base(interp->return_stack[interp->local_base - 1]);
-	push(interp, interp->return_stack[base + slot]);
+	*chain_sp = interp->return_stack[base + (int)chain_ip[0]];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1);
 }
 
-void p_local_store(Interpreter *interp) {
-	*local_slot(interp) = pop(interp);
+void p_local_store(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 2, chain_sp, 1);
+	*local_slot(interp, chain_ip) = chain_sp[-1];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp - 1);
 }
 
-void p_local_fetch_0depth(Interpreter *interp) {
-	push(interp, interp->return_stack[interp->local_base + (int)vocab.dict[interp->ip++]]);
+void p_local_fetch_0depth(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 1, chain_sp, 1);
+	*chain_sp = interp->return_stack[interp->local_base + (int)chain_ip[0]];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1);
 }
 
-void p_load2(Interpreter *interp) {
-	cell *d = vocab.dict;
-	Val *r = interp->return_stack;
-	int b = interp->local_base;
-	int ip = interp->ip;
-	push(interp, r[b + (int)d[ip]]);
-	push(interp, r[b + (int)d[ip + 1]]);
-	interp->ip = ip + 2;
+void p_load2(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 2);
+	
+	Val *locals = interp->return_stack + interp->local_base;
+	chain_sp[0] = locals[(int)chain_ip[0]];
+	chain_sp[1] = locals[(int)chain_ip[1]];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 2);
 }
 
-void p_load3(Interpreter *interp) {
-	cell *d = vocab.dict;
-	Val *r = interp->return_stack;
-	int b = interp->local_base;
-	int ip = interp->ip;
-	push(interp, r[b + (int)d[ip]]);
-	push(interp, r[b + (int)d[ip + 1]]);
-	push(interp, r[b + (int)d[ip + 2]]);
-	interp->ip = ip + 3;
 
-	DISPATCH(interp);
+void p_load3(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 3, chain_sp, 3);
+	Val *locals = interp->return_stack + interp->local_base;
+	chain_sp[0] = locals[(int)chain_ip[0]];
+	chain_sp[1] = locals[(int)chain_ip[1]];
+	chain_sp[2] = locals[(int)chain_ip[2]];
+
+	DISPATCH_REGISTERS(interp, chain_ip + 3, chain_sp + 3);
 }
 
-void p_local_store_0depth(Interpreter *interp) {
-	interp->return_stack[interp->local_base + (int)vocab.dict[interp->ip++]] = pop(interp);
+void p_local_store_0depth(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	interp->return_stack[interp->local_base + (int)chain_ip[0]] = chain_sp[-1];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp - 1);
 }
 
 #define LOCAL_ARITH_0DEPTH(name, word_name, expr) \
-	void name(Interpreter *interp) { \
-		int slot = (int)vocab.dict[interp->ip++]; \
-		Val *p = &interp->return_stack[interp->local_base + slot]; \
+	void name(DISPATCH_ARGS) { \
+		Val *p = &interp->return_stack[interp->local_base + (int)chain_ip[0]]; \
 		if (VAL_TAG(*p) != T_FLOAT) { \
+			SYNC_REGISTERS(interp, chain_ip + 1, chain_sp); \
 			fail(interp, word_name ": expected a float local; got %s", tag_name(VAL_TAG(*p))); \
 			return; \
 		} \
 		double n = VAL_NUMBER(*p); \
 		*p = make_float(expr); \
-		DISPATCH(interp); \
+		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp); \
 	}
 LOCAL_ARITH_0DEPTH(p_local_incr_0depth, "(local+!)", n + 1.0)
 LOCAL_ARITH_0DEPTH(p_local_decr_0depth, "(local-!)", n - 1.0)
 
 #define UNSAFE_LOCAL_ARITH_0DEPTH(name, expr) \
-	void name(Interpreter *interp) { \
-		int slot = (int)vocab.dict[interp->ip++]; \
-		Val *p = &interp->return_stack[interp->local_base + slot]; \
+	void name(DISPATCH_ARGS) { \
+		Val *p = &interp->return_stack[interp->local_base + (int)chain_ip[0]]; \
 		double n = p->number; \
 		p->number = (expr); \
-		DISPATCH(interp); \
+		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp); \
 	}
 UNSAFE_LOCAL_ARITH_0DEPTH(p_local_finc_0depth, n + 1.0)
 UNSAFE_LOCAL_ARITH_0DEPTH(p_local_fdec_0depth, n - 1.0)
@@ -1878,23 +1899,20 @@ UNSAFE_LOCAL_ARITH_0DEPTH(p_local_fdec_0depth, n - 1.0)
 #define LOCAL_ACC_OP(suffix, op) \
 	static int local_acc_##suffix##_0_cfa; \
 	static int local_acc_##suffix##_cfa; \
-	static void p_local_acc_##suffix##_0(Interpreter *interp) { \
-		int slot = (int)vocab.dict[interp->ip++]; \
-		Val *p = &interp->return_stack[interp->local_base + slot]; \
-		double x = pop(interp).number; \
-		p->number = x op p->number; \
-		DISPATCH(interp); \
+	static void p_local_acc_##suffix##_0(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1); \
+		Val *p = &interp->return_stack[interp->local_base + (int)chain_ip[0]]; \
+		p->number = chain_sp[-1].number op p->number; \
+		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp - 1); \
 	} \
-	static void p_local_acc_##suffix(Interpreter *interp) { \
-		int depth = (int)vocab.dict[interp->ip++]; \
-		int slot = (int)vocab.dict[interp->ip++]; \
+	static void p_local_acc_##suffix(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH(interp, chain_ip + 2, chain_sp, 1); \
 		int base = interp->local_base; \
-		for (int i = 0; i < depth; i++) \
+		for (int i = 0; i < (int)chain_ip[0]; i++) \
 			base = saved_local_base(interp->return_stack[base - 1]); \
-		Val *p = &interp->return_stack[base + slot]; \
-		double x = pop(interp).number; \
-		p->number = x op p->number; \
-		DISPATCH(interp); \
+		Val *p = &interp->return_stack[base + (int)chain_ip[1]]; \
+		p->number = chain_sp[-1].number op p->number; \
+		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp - 1); \
 	}
 LOCAL_ACC_OP(add, +)
 LOCAL_ACC_OP(sub, -)
@@ -1903,13 +1921,13 @@ LOCAL_ACC_OP(div, /)
 
 #define LOCAL_LOCAL_OP(suffix, op) \
 	static int ll_##suffix##_0_cfa; \
-	static void p_ll_##suffix##_0(Interpreter *interp) { \
-		int slot_a = (int)vocab.dict[interp->ip++]; \
-		int slot_b = (int)vocab.dict[interp->ip++]; \
-		double a = interp->return_stack[interp->local_base + slot_a].number; \
-		double b = interp->return_stack[interp->local_base + slot_b].number; \
-		push(interp, make_float(a op b)); \
-		DISPATCH(interp); \
+	static void p_ll_##suffix##_0(DISPATCH_ARGS) { \
+		REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1); \
+		Val *locals = interp->return_stack + interp->local_base; \
+		double a = locals[(int)chain_ip[0]].number; \
+		double b = locals[(int)chain_ip[1]].number; \
+		*chain_sp = make_float(a op b); \
+		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 1); \
 	}
 LOCAL_LOCAL_OP(add, +)
 LOCAL_LOCAL_OP(sub, -)
@@ -1917,26 +1935,26 @@ LOCAL_LOCAL_OP(mul, *)
 
 #define LOCAL_LIT_OP(suffix, op) \
 	static int ll_lit_##suffix##_0_cfa; \
-	static void p_ll_lit_##suffix##_0(Interpreter *interp) { \
-		int slot_a = (int)vocab.dict[interp->ip++]; \
+	static void p_ll_lit_##suffix##_0(DISPATCH_ARGS) { \
+		REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1); \
 		Val lit; \
-		lit.bits = (uint64_t)vocab.dict[interp->ip++]; \
-		double a = interp->return_stack[interp->local_base + slot_a].number; \
-		push(interp, make_float(a op lit.number)); \
-		DISPATCH(interp); \
+		lit.bits = (uint64_t)chain_ip[1]; \
+		double a = interp->return_stack[interp->local_base + (int)chain_ip[0]].number; \
+		*chain_sp = make_float(a op lit.number); \
+		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 1); \
 	}
 LOCAL_LIT_OP(add, +)
 LOCAL_LIT_OP(sub, -)
 LOCAL_LIT_OP(mul, *)
 
 static int ll_litrev_sub_0_cfa;
-static void p_ll_litrev_sub_0(Interpreter *interp) {
-	int slot_a = (int)vocab.dict[interp->ip++];
+static void p_ll_litrev_sub_0(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
 	Val lit;
-	lit.bits = (uint64_t)vocab.dict[interp->ip++];
-	double a = interp->return_stack[interp->local_base + slot_a].number;
-	push(interp, make_float(lit.number - a));
-	DISPATCH(interp);
+	lit.bits = (uint64_t)chain_ip[1];
+	double a = interp->return_stack[interp->local_base + (int)chain_ip[0]].number;
+	*chain_sp = make_float(lit.number - a);
+	DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 1);
 }
 
 static int at_i_local0_cfa;
@@ -2206,7 +2224,7 @@ int try_fuse_at_i_lit(Interpreter *interp) {
 	return 1;
 }
 
-void p_set(Interpreter *interp) {
+void p_set(DISPATCH_ARGS) {
 	POP_INT(count, "set", "count");
 	if (count < 0 || count > interp->dsp) {
 		fail(interp, "set: count %d out of range (stack has %d available)", count, interp->dsp);
@@ -2702,7 +2720,7 @@ void load_file(Interpreter *interp, const char *filename) {
 	free(saved_inbuf_contents);
 }
 
-void p_load(Interpreter *interp) {
+void p_load(DISPATCH_ARGS) {
 	POP_STRING(filename_obj, "load");
 	gc_root_push(interp, filename_obj_val);
 
@@ -2716,7 +2734,7 @@ void p_load(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_reload(Interpreter *interp) {
+void p_reload(DISPATCH_ARGS) {
 	forget_user(interp);
 
 	for (int i = 0; i < compiler.n_loaded_files; i++) {
@@ -2986,12 +3004,12 @@ void do_copy_reify(Interpreter *interp, int reify) {
 	interp->data_stack[interp->dsp - 1] = copy_val;
 }
 
-void p_copy(Interpreter *interp) {
+void p_copy(DISPATCH_ARGS) {
 	do_copy_reify(interp, 0);
 	DISPATCH(interp);
 }
 
-void p_reify(Interpreter *interp) {
+void p_reify(DISPATCH_ARGS) {
 	do_copy_reify(interp, 1);
 	DISPATCH(interp);
 }
@@ -3436,7 +3454,7 @@ static void see_compiled_render(FILE *out, Interpreter *interp, int target_cfa) 
 	fputs(";\n", out);
 }
 
-void p_see_compiled(Interpreter *interp) {
+void p_see_compiled(DISPATCH_ARGS) {
 	POP_XT(target_cfa, "see-compiled");
 	see_compiled_render(stdout, interp, target_cfa);
 	fflush(stdout);
@@ -3444,7 +3462,7 @@ void p_see_compiled(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_see_compiled_to_string(Interpreter *interp) {
+void p_see_compiled_to_string(DISPATCH_ARGS) {
 	POP_XT(target_cfa, "see-compiled>string");
 	int handle = capture_render(interp, see_compiled_render, target_cfa);
 	if (interp->error_flag)
@@ -3470,7 +3488,7 @@ static void see_tree_render(FILE *out, Interpreter *interp, int target_cfa) {
 	fputs(";\n", out);
 }
 
-void p_see_tree(Interpreter *interp) {
+void p_see_tree(DISPATCH_ARGS) {
 	POP_XT(target_cfa, "see-tree");
 	see_tree_render(stdout, interp, target_cfa);
 	fflush(stdout);
@@ -3478,7 +3496,7 @@ void p_see_tree(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_see_tree_to_string(Interpreter *interp) {
+void p_see_tree_to_string(DISPATCH_ARGS) {
 	POP_XT(target_cfa, "see-tree>string");
 	int handle = capture_render(interp, see_tree_render, target_cfa);
 	if (interp->error_flag)
@@ -3487,7 +3505,7 @@ void p_see_tree_to_string(Interpreter *interp) {
 
 	DISPATCH(interp);
 }
-void p_save(Interpreter *interp) {
+void p_save(DISPATCH_ARGS) {
 	POP_STRING(filename_obj, "save");
 	gc_root_push(interp, filename_obj_val);
 	const char *filename = filename_obj->bytes;
@@ -3848,7 +3866,6 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "frame>json", p_frame_to_json, 0);
 	define_primitive(interp, "take", p_take, 0);
 	define_primitive(interp, "reverse", p_reverse, 0);
-	define_primitive(interp, "reverse-slice!", p_reverse_slice, 0);
 	define_primitive(interp, "concat", p_concat, 0);
 	define_primitive(interp, "flatten-array", p_flatten_array, 0);
 	define_primitive(interp, "sort", p_sort, 0);
@@ -3922,6 +3939,10 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	gather_local0_cfa = define_primitive(interp, "(gather.l0)", p_gather_local0, 4);
 	at_i_ll0_cfa = define_primitive(interp, "(@i.ll0)", p_at_i_ll0, 4);
 	at_i_l1l0_cfa = define_primitive(interp, "(@i.l1l0)", p_at_i_l1l0, 4);
+	define_primitive(interp, "(@i.array)", p_at_i_array, 4);
+	define_primitive(interp, "(@i.segment)", p_at_i_segment, 4);
+	define_primitive(interp, "(!i.array)", p_store_i_array, 4);
+	define_primitive(interp, "(!i-drop.array)", p_store_i_drop_array, 4);
 	ll_add_0_cfa = define_primitive(interp, "(ll+0)", p_ll_add_0, 4);
 	ll_sub_0_cfa = define_primitive(interp, "(ll-0)", p_ll_sub_0, 4);
 	ll_mul_0_cfa = define_primitive(interp, "(ll*0)", p_ll_mul_0, 4);

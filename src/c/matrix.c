@@ -42,109 +42,175 @@ MATRIX_ELEMENTWISE_OP(matrix_sub, "-", -)
 MATRIX_ELEMENTWISE_OP(matrix_mul, "*", *)
 MATRIX_ELEMENTWISE_OP(matrix_div, "/", /)
 
-static void array_index_fetch(Interpreter *interp, Val source_val, int index) {
+static inline __attribute__((always_inline)) Val *array_index_fetch(Interpreter *interp, cell *sync_ip, Val *sp, Val source_val, int index) {
 	if (VAL_TAG(source_val) == T_ARRAY) {
 		Object *array = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= array->len) {
+			SYNC_REGISTERS(interp, sync_ip, sp);
 			fail(interp, "@i: array index %d out of bounds (length %d)", index, array->len);
-			return;
+			return NULL;
 		}
-
-		push(interp, array->items[index]);
-	} else if (VAL_TAG(source_val) == T_MATRIX) {
+		*sp = array->items[index];
+		return sp + 1;
+	}
+	SYNC_REGISTERS(interp, sync_ip, sp);
+	if (VAL_TAG(source_val) == T_MATRIX) {
 		Object *source = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= source->matrix.rows) {
 			fail(interp, "@i: row index %d out of bounds (%d rows)", index, source->matrix.rows);
-			return;
+			return NULL;
 		}
 
 		int num_columns = source->matrix.columns;
-		NEW_MATRIX(row_handle, row, 1, num_columns);
+		int row_handle = object_new_matrix(interp, 1, num_columns);
+		if (interp->error_flag)
+			return NULL;
+		Object *row = OBJECT_AT(row_handle);
 		for (int j = 0; j < num_columns; j++)
 			MAT(row, 0, j) = MAT(source, index, j);
 
-		push(interp, make_matrix(row_handle));
-	} else if (VAL_TAG(source_val) == T_SEGMENT) {
+		*sp = make_matrix(row_handle);
+		return sp + 1;
+	}
+	if (VAL_TAG(source_val) == T_SEGMENT) {
 		Object *segment = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= segment->segment.length) {
 			fail(interp, "@i: segment index %d out of bounds (length %d)", index, segment->segment.length);
-			return;
+			return NULL;
 		}
-		push(interp, make_float(segment_get(segment, index)));
-	} else {
-		fail(interp, "@i: expected an array or matrix; got %s", tag_name(VAL_TAG(source_val)));
+		*sp = make_float(segment_get(segment, index));
+		return sp + 1;
 	}
+	fail(interp, "@i: expected an array or matrix; got %s", tag_name(VAL_TAG(source_val)));
+	return NULL;
 }
 
-void p_at_i(Interpreter *interp) {
-	POP_INT(index, "@i", "index");
-	POP(source_val);
-	array_index_fetch(interp, source_val, index);
 
-	DISPATCH(interp);
+void p_at_i_array(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+
+	Val source_val = chain_sp[-2];
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(source_val) != T_ARRAY || VAL_TAG(index_val) != T_FLOAT) {
+		RETARGET_OP(p_at_i);
+		MUSTTAIL return p_at_i(interp, chain_ip, chain_sp);
+	}
+
+	Object *array = OBJECT_AT(VAL_DATA(source_val));
+	int index = (int)VAL_NUMBER(index_val);
+	if (index <0 || index >= array->len) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@i: array index %d out of bounds (length %d)", index, array->len);
+		return;
+	}
+
+	chain_sp[-2] = array->items[index];
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-void p_at_i_local0(Interpreter *interp) {
-	int slot = (int)vocab.dict[interp->ip++];
-	int index = (int)interp->return_stack[interp->local_base + slot].number;
+void p_at_i_segment(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 
-	POP(source_val);
+	Val source_val = chain_sp[-2];
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(source_val) != T_SEGMENT || VAL_TAG(index_val) != T_FLOAT) {
+		RETARGET_OP(p_at_i);
+		MUSTTAIL return p_at_i(interp, chain_ip, chain_sp);
+	}
 
-	array_index_fetch(interp, source_val, index);
+	Object *segment = OBJECT_AT(VAL_DATA(source_val));
+	int index = (int)VAL_NUMBER(index_val);
+	if (index < 0 || index >= segment->segment.length) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@i: segment index %d out of bounds (length %d)", index, segment->segment.length);
+		return;
+	}
 
-	DISPATCH(interp);
+	chain_sp[-2] = make_float(segment_get(segment, index));
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-void p_at_i_lit(Interpreter *interp) {
-	int index = (int)vocab.dict[interp->ip++];
+void p_at_i(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@i: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
 
-	POP(source_val);
-	array_index_fetch(interp, source_val, index);
 
-	DISPATCH(interp);
+	if (VAL_TAG(chain_sp[-2]) == T_ARRAY)
+		RETARGET_OP(p_at_i_array);
+	else if (VAL_TAG(chain_sp[-2]) == T_SEGMENT)
+		RETARGET_OP(p_at_i_segment);
+	Val *pushed_sp = array_index_fetch(interp, chain_ip, chain_sp - 2, chain_sp[-2], (int)VAL_NUMBER(index_val));
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip, pushed_sp);
 }
 
-void p_at_i_lit_local0(Interpreter *interp) {
-	int slot = (int)vocab.dict[interp->ip++];
-	int index = (int)vocab.dict[interp->ip++];
-	Val source_val = interp->return_stack[interp->local_base + slot];
-	array_index_fetch(interp, source_val, index);
-
-	DISPATCH(interp);
+void p_at_i_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	int index = (int)interp->return_stack[interp->local_base + (int)chain_ip[0]].number;
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 1, chain_sp - 1, chain_sp[-1], index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
 }
 
-void p_at_i_ll0(Interpreter *interp) {
-	int arr_slot = (int)vocab.dict[interp->ip++];
-	int idx_slot = (int)vocab.dict[interp->ip++];
-	Val source_val = interp->return_stack[interp->local_base + arr_slot];
-	int index = (int)interp->return_stack[interp->local_base + idx_slot].number;
-	array_index_fetch(interp, source_val, index);
-
-	DISPATCH(interp);
+void p_at_i_lit(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 1, chain_sp - 1, chain_sp[-1], (int)chain_ip[0]);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
 }
 
-void p_at_i_l1l0(Interpreter *interp) {
-	int arr_slot = (int)vocab.dict[interp->ip++];
-	int idx_slot = (int)vocab.dict[interp->ip++];
+void p_at_i_lit_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
+	Val source_val = interp->return_stack[interp->local_base + (int)chain_ip[0]];
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 2, chain_sp, source_val, (int)chain_ip[1]);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
+}
+
+void p_at_i_ll0(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
+	Val *locals = interp->return_stack + interp->local_base;
+	Val source_val = locals[(int)chain_ip[0]];
+	int index = (int)locals[(int)chain_ip[1]].number;
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 2, chain_sp, source_val, index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
+}
+
+void p_at_i_l1l0(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
 	int enclosing = saved_local_base(interp->return_stack[interp->local_base - 1]);
-	Val source_val = interp->return_stack[enclosing + arr_slot];
-	int index = (int)interp->return_stack[interp->local_base + idx_slot].number;
-	array_index_fetch(interp, source_val, index);
-
-	DISPATCH(interp);
+	Val source_val = interp->return_stack[enclosing + (int)chain_ip[0]];
+	int index = (int)interp->return_stack[interp->local_base + (int)chain_ip[1]].number;
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 2, chain_sp, source_val, index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
 }
 
-void p_gather_local0(Interpreter *interp) {
-	int slot = (int)vocab.dict[interp->ip++];
-	int row_index = (int)interp->return_stack[interp->local_base + slot].number;
-
-	POP(index_array);
-	POP(value_array);
+void p_gather_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 2);
+	int row_index = (int)interp->return_stack[interp->local_base + (int)chain_ip[0]].number;
+	Val index_array = chain_sp[-1];
+	Val value_array = chain_sp[-2];
 
 	double gathered_index;
 	if (VAL_TAG(index_array) == T_SEGMENT) {
 		Object *segment = OBJECT_AT(VAL_DATA(index_array));
 		if (row_index < 0 || row_index >= segment->segment.length) {
+			SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
 			fail(interp, "@i: segment index %d out of bounds (length %d)", row_index, segment->segment.length);
 			return;
 		}
@@ -152,107 +218,133 @@ void p_gather_local0(Interpreter *interp) {
 	} else if (VAL_TAG(index_array) == T_ARRAY) {
 		Object *array = OBJECT_AT(VAL_DATA(index_array));
 		if (row_index < 0 || row_index >= array->len) {
+			SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
 			fail(interp, "@i: array index %d out of bounds (length %d)", row_index, array->len);
 			return;
 		}
 		Val element = array->items[row_index];
 		if (VAL_TAG(element) != T_FLOAT) {
+			SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
 			fail(interp, "@i: gather index must be a number; got %s", tag_name(VAL_TAG(element)));
 			return;
 		}
 		gathered_index = VAL_NUMBER(element);
 	} else {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
 		fail(interp, "@i: expected an array or segment; got %s", tag_name(VAL_TAG(index_array)));
 		return;
 	}
 
-	array_index_fetch(interp, value_array, (int)gathered_index);
-
-	DISPATCH(interp);
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 1, chain_sp - 2, value_array, (int)gathered_index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
 }
 
-void p_store_i(Interpreter *interp) {
-	PEEK_AT(target_val, 2, "!i");
-	PEEK_AT(index_val, 1, "!i");
+static inline __attribute__((always_inline)) int array_element_store(Interpreter *interp, cell *sync_ip, Val *sp, Val target_val, Val index_val, Val value) {
 	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, sync_ip, sp);
 		fail(interp, "!i: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
-		return;
+		return 0;
 	}
 	int index = (int)VAL_NUMBER(index_val);
-	PEEK_AT(value, 0, "!i");
 
 	if (VAL_TAG(target_val) == T_ARRAY) {
 		Object *array = OBJECT_AT(VAL_DATA(target_val));
 		if (index < 0 || index >= array->len) {
+			SYNC_REGISTERS(interp, sync_ip, sp);
 			fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
-			return;
+			return 0;
 		}
 		array->items[index] = value;
-	} else if (VAL_TAG(target_val) == T_SEGMENT) {
+		return 1;
+	}
+	if (VAL_TAG(target_val) == T_SEGMENT) {
 		if (VAL_TAG(value) != T_FLOAT) {
+			SYNC_REGISTERS(interp, sync_ip, sp);
 			fail(interp, "!i: segment stores a float; got %s", tag_name(VAL_TAG(value)));
-			return;
+			return 0;
 		}
 		Object *segment = OBJECT_AT(VAL_DATA(target_val));
-		
 		segment_set(segment, index, VAL_NUMBER(value));
-	} else {
-		fail(interp, "!i: expected an array or segment; got %s", tag_name(VAL_TAG(target_val)));
-		return;
+		return 1;
 	}
-
-	interp->dsp -= 2;
-
-	DISPATCH(interp);
+	SYNC_REGISTERS(interp, sync_ip, sp);
+	fail(interp, "!i: expected an array or segment; got %s", tag_name(VAL_TAG(target_val)));
+	return 0;
 }
 
-void p_store_i_drop(Interpreter *interp) {
-	PEEK_AT(target_val, 2, "!i");
-	PEEK_AT(index_val, 1, "!i");
-	if (VAL_TAG(index_val) != T_FLOAT) {
-		fail(interp, "!i: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
-		return;
-	}
+static inline __attribute__((always_inline)) Val *array_element_store_fast(Interpreter *interp, cell *chain_ip, Val *chain_sp) {
+	Val target_val = chain_sp[-3];
+	Val index_val = chain_sp[-2];
+	if (VAL_TAG(target_val) != T_ARRAY || VAL_TAG(index_val) != T_FLOAT)
+		return NULL;
+	Object *array = OBJECT_AT(VAL_DATA(target_val));
 	int index = (int)VAL_NUMBER(index_val);
-	PEEK_AT(value, 0, "!i");
-
-	if (VAL_TAG(target_val) == T_ARRAY) {
-		Object *array = OBJECT_AT(VAL_DATA(target_val));
-		if (index < 0 || index >= array->len) {
-			fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
-			return;
-		}
-		array->items[index] = value;
-	} else if (VAL_TAG(target_val) == T_SEGMENT) {
-		if (VAL_TAG(value) != T_FLOAT) {
-			fail(interp, "!i: segment stores a float; got %s", tag_name(VAL_TAG(value)));
-			return;
-		}
-		Object *segment = OBJECT_AT(VAL_DATA(target_val));
-		segment_set(segment, index, VAL_NUMBER(value));
-	} else {
-		fail(interp, "!i: expected an array or segment; got %s", tag_name(VAL_TAG(target_val)));
-		return;
+	if (index < 0 || index >= array->len) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "!i: array index %d out of bounds (length %d)", index, array->len);
+		return NULL;
 	}
+	array->items[index] = chain_sp[-1];
+	return chain_sp;
+}
 
-	interp->dsp -= 3;
+void p_store_i_array(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "!i: stack too shallow");
+	if (!array_element_store_fast(interp, chain_ip, chain_sp)) {
+		if (interp->error_flag)
+			return;
+		RETARGET_OP(p_store_i);
+		MUSTTAIL return p_store_i(interp, chain_ip, chain_sp);
+	}
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
+}
 
-	DISPATCH(interp);
+void p_store_i_drop_array(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "!i: stack too shallow");
+	if (!array_element_store_fast(interp, chain_ip, chain_sp)) {
+		if (interp->error_flag)
+			return;
+		RETARGET_OP(p_store_i_drop);
+		MUSTTAIL return p_store_i_drop(interp, chain_ip, chain_sp);
+	}
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 3);
+}
+
+void p_store_i(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "!i: stack too shallow");
+	if (VAL_TAG(chain_sp[-3]) == T_ARRAY)
+		RETARGET_OP(p_store_i_array);
+	if (!array_element_store(interp, chain_ip, chain_sp, chain_sp[-3], chain_sp[-2], chain_sp[-1]))
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
+}
+
+void p_store_i_drop(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "!i: stack too shallow");
+	if (VAL_TAG(chain_sp[-3]) == T_ARRAY)
+		RETARGET_OP(p_store_i_drop_array);
+	if (!array_element_store(interp, chain_ip, chain_sp, chain_sp[-3], chain_sp[-2], chain_sp[-1]))
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 3);
 }
 
 #define ARRAY_STEP_OP(fn, word, delta) \
-void fn(Interpreter *interp) { \
-	PEEK_AT(target_val, 1, word); \
-	PEEK_AT(index_val, 0, word); \
-	int index = (int)VAL_NUMBER(index_val); \
+void fn(DISPATCH_ARGS) { \
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, word ": stack too shallow"); \
+	Val target_val = chain_sp[-2]; \
+	int index = (int)VAL_NUMBER(chain_sp[-1]); \
 	if (VAL_TAG(target_val) == T_ARRAY) { \
 		Object *array = OBJECT_AT(VAL_DATA(target_val)); \
 		if (index < 0 || index >= array->len) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 			fail(interp, word ": array index %d out of bounds (length %d)", index, array->len); \
 			return; \
 		} \
 		Val *element = &array->items[index]; \
 		if (VAL_TAG(*element) != T_FLOAT) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 			fail(interp, word ": array element is not a float; got %s", tag_name(VAL_TAG(*element))); \
 			return; \
 		} \
@@ -260,36 +352,38 @@ void fn(Interpreter *interp) { \
 	} else if (VAL_TAG(target_val) == T_SEGMENT) { \
 		Object *segment = OBJECT_AT(VAL_DATA(target_val)); \
 		if (index < 0 || index >= segment->segment.length) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 			fail(interp, word ": segment index %d out of bounds (length %d)", index, segment->segment.length); \
 			return; \
 		} \
 		segment_set(segment, index, segment_get(segment, index) + (delta)); \
 	} else { \
+		SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 		fail(interp, word ": expected an array or segment; got %s", tag_name(VAL_TAG(target_val))); \
 		return; \
 	} \
-	interp->dsp -= 2; \
-	DISPATCH(interp); \
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2); \
 }
 
 ARRAY_STEP_OP(p_inc_store_i, "(inc!i)", 1.0)
 ARRAY_STEP_OP(p_dec_store_i, "(dec!i)", -1.0)
 
 #define ARRAY_INPLACE_OP(fn, word, op) \
-void fn(Interpreter *interp) { \
-	PEEK_AT(target_val, 2, word); \
-	PEEK_AT(index_val, 1, word); \
-	PEEK_AT(delta_val, 0, word); \
-	int index = (int)VAL_NUMBER(index_val); \
-	double delta = VAL_NUMBER(delta_val); \
+void fn(DISPATCH_ARGS) { \
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, word ": stack too shallow"); \
+	Val target_val = chain_sp[-3]; \
+	int index = (int)VAL_NUMBER(chain_sp[-2]); \
+	double delta = VAL_NUMBER(chain_sp[-1]); \
 	if (VAL_TAG(target_val) == T_ARRAY) { \
 		Object *array = OBJECT_AT(VAL_DATA(target_val)); \
 		if (index < 0 || index >= array->len) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 			fail(interp, word ": array index %d out of bounds (length %d)", index, array->len); \
 			return; \
 		} \
 		Val *element = &array->items[index]; \
 		if (VAL_TAG(*element) != T_FLOAT) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 			fail(interp, word ": array element is not a float; got %s", tag_name(VAL_TAG(*element))); \
 			return; \
 		} \
@@ -297,16 +391,17 @@ void fn(Interpreter *interp) { \
 	} else if (VAL_TAG(target_val) == T_SEGMENT) { \
 		Object *segment = OBJECT_AT(VAL_DATA(target_val)); \
 		if (index < 0 || index >= segment->segment.length) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 			fail(interp, word ": segment index %d out of bounds (length %d)", index, segment->segment.length); \
 			return; \
 		} \
 		segment_set(segment, index, segment_get(segment, index) op delta); \
 	} else { \
+		SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 		fail(interp, word ": expected an array or segment; got %s", tag_name(VAL_TAG(target_val))); \
 		return; \
 	} \
-	interp->dsp -= 3; \
-	DISPATCH(interp); \
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 3); \
 }
 
 ARRAY_INPLACE_OP(p_add_store_i, "(+!i)", +)
@@ -314,42 +409,81 @@ ARRAY_INPLACE_OP(p_sub_store_i, "(-!i)", -)
 ARRAY_INPLACE_OP(p_mul_store_i, "(*!i)", *)
 ARRAY_INPLACE_OP(p_div_store_i, "(/!i)", /)
 
-void p_at_j(Interpreter *interp) {
-	POP_INT(index, "@j", "index");
-	POP_MATRIX(source, "@j");
+void p_at_j(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val index_val = chain_sp[-1];
+	Val source_val = chain_sp[-2];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@j: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+	if (VAL_TAG(source_val) != T_MATRIX) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@j: expected %s; got %s", tag_name(T_MATRIX), tag_name(VAL_TAG(source_val)));
+		return;
+	}
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+	int index = (int)VAL_NUMBER(index_val);
 
 	if (index < 0 || index >= source->matrix.columns) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
 		fail(interp, "@j: column index %d out of bounds (%d columns)", index, source->matrix.columns);
 		return;
 	}
 
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
 	int num_rows = source->matrix.rows;
-	NEW_MATRIX(col_handle, col, num_rows, 1);
+	int col_handle = object_new_matrix(interp, num_rows, 1);
+	if (interp->error_flag)
+		return;
+	Object *col = OBJECT_AT(col_handle);
 	for (int i = 0; i < num_rows; i++)
 		MAT(col, i, 0) = MAT(source, i, index);
 
-	push(interp, make_matrix(col_handle));
+	chain_sp[-2] = make_matrix(col_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-void p_at_ij(Interpreter *interp) {
-	POP_INT(j, "@i,j", "column index");
-	POP_INT(i, "@i,j", "row index");
-	POP_MATRIX(source, "@i,j");
+void p_at_ij(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val j_val = chain_sp[-1];
+	Val i_val = chain_sp[-2];
+	Val source_val = chain_sp[-3];
+	if (VAL_TAG(j_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@i,j: expected a float column index; got %s", tag_name(VAL_TAG(j_val)));
+		return;
+	}
+	if (VAL_TAG(i_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@i,j: expected a float row index; got %s", tag_name(VAL_TAG(i_val)));
+		return;
+	}
+	if (VAL_TAG(source_val) != T_MATRIX) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@i,j: expected %s; got %s", tag_name(T_MATRIX), tag_name(VAL_TAG(source_val)));
+		return;
+	}
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+	int i = (int)VAL_NUMBER(i_val);
+	int j = (int)VAL_NUMBER(j_val);
 
 	if (i < 0 || i >= source->matrix.rows) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
 		fail(interp, "@i,j: row index %d out of bounds (%d rows)", i, source->matrix.rows);
 		return;
 	}
 	if (j < 0 || j >= source->matrix.columns) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
 		fail(interp, "@i,j: column index %d out of bounds (%d columns)", j, source->matrix.columns);
 		return;
 	}
 
-	push(interp, make_float(MAT(source, i, j)));
+	chain_sp[-3] = make_float(MAT(source, i, j));
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
@@ -450,25 +584,25 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	push(interp, make_matrix(matmult_handle));
 }
 
-void p_dgemm_nn(Interpreter *interp) {
+void p_dgemm_nn(DISPATCH_ARGS) {
 	p_dgemm_helper(interp, 0, 0);
 
 	DISPATCH(interp);
 }
 
-void p_dgemm_tn(Interpreter *interp) {
+void p_dgemm_tn(DISPATCH_ARGS) {
 	p_dgemm_helper(interp, 1, 0);
 
 	DISPATCH(interp);
 }
 
-void p_dgemm_nt(Interpreter *interp) {
+void p_dgemm_nt(DISPATCH_ARGS) {
 	p_dgemm_helper(interp, 0, 1);
 
 	DISPATCH(interp);
 }
 
-void p_dgemm_tt(Interpreter *interp) {
+void p_dgemm_tt(DISPATCH_ARGS) {
 	p_dgemm_helper(interp, 1, 1);
 
 	DISPATCH(interp);
@@ -612,7 +746,7 @@ int create_matrix(Interpreter *interp) {
 	return object_new_matrix(interp, num_rows, num_columns);
 }
 
-void p_0_matrix(Interpreter *interp) {
+void p_0_matrix(DISPATCH_ARGS) {
 	int matrix_handle = create_matrix(interp);
 	if (interp->error_flag) return;
 	push(interp, make_matrix(matrix_handle));
@@ -620,7 +754,7 @@ void p_0_matrix(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_diagonal_matrix(Interpreter *interp) {
+void p_diagonal_matrix(DISPATCH_ARGS) {
 	if (interp->dsp > 0) {
 		push(interp, interp->data_stack[interp->dsp - 1]);
 	}
@@ -644,7 +778,7 @@ void p_diagonal_matrix(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_diagonal(Interpreter *interp) {
+void p_diagonal(DISPATCH_ARGS) {
 	POP_MATRIX(source, "diagonal");
 
 	int diag_len = MIN(source->matrix.rows, source->matrix.columns);
@@ -658,7 +792,7 @@ void p_diagonal(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_reshape(Interpreter *interp) {
+void p_reshape(DISPATCH_ARGS) {
 	POP_INT(new_cols, "reshape", "column count");
 	POP_INT(new_rows, "reshape", "row count");
 	POP_MATRIX(source, "reshape");
@@ -688,7 +822,7 @@ void p_reshape(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_matrix(Interpreter *interp) {
+void p_matrix(DISPATCH_ARGS) {
 	if (interp->dsp < 2) {
 		fail(interp, "matrix: stack too shallow (expected array and at least one dimension)");
 		return;
@@ -759,7 +893,7 @@ void p_matrix(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_dim(Interpreter *interp) {
+void p_dim(DISPATCH_ARGS) {
 	POP_MATRIX(m, "dim");
 	push(interp, make_float(m->matrix.rows));
 	push(interp, make_float(m->matrix.columns));
@@ -767,7 +901,7 @@ void p_dim(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_transpose(Interpreter *interp) {
+void p_transpose(DISPATCH_ARGS) {
 	POP_MATRIX(source, "transpose");
 	NEW_MATRIX(target_handle, target, source->matrix.columns, source->matrix.rows);
 	for (int i = 0; i < source->matrix.rows; i++)
@@ -779,7 +913,7 @@ void p_transpose(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_submatrix(Interpreter *interp) {
+void p_submatrix(DISPATCH_ARGS) {
 	POP_INT(col_end, "submatrix", "col-end");
 	POP_INT(col_start, "submatrix", "col-start");
 	POP_INT(row_end, "submatrix", "row-end");
@@ -809,13 +943,13 @@ void p_submatrix(Interpreter *interp) {
 
 
 #define REDUCE_OVERALL_HANDLER(primitive_name, word_name, reduce_fn) \
-	void primitive_name(Interpreter *interp) { \
+	void primitive_name(DISPATCH_ARGS) { \
 		POP_MATRIX(source, word_name); \
 		push(interp, make_float(reduce_fn(source))); \
 	}
 
 #define REDUCE_AXIS_HANDLER(primitive_name, word_name, reduce_fn) \
-	void primitive_name(Interpreter *interp) { \
+	void primitive_name(DISPATCH_ARGS) { \
 		POP_MATRIX(source, word_name); \
 		int target_handle = reduce_fn(interp, source); \
 		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \
@@ -835,7 +969,7 @@ REDUCE_AXIS_HANDLER(p_column_sums, "column-sums", matrix_sum_columns)
 REDUCE_AXIS_HANDLER(p_column_maxes, "column-maxes", matrix_max_columns)
 REDUCE_AXIS_HANDLER(p_column_mins, "column-mins", matrix_min_columns)
 
-void p_matrix_range(Interpreter *interp) {
+void p_matrix_range(DISPATCH_ARGS) {
 	POP(step_val);
 	POP(end_val);
 	POP(start_val);
@@ -877,7 +1011,7 @@ void p_matrix_range(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_select_rows(Interpreter *interp) {
+void p_select_rows(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(indices_val, 0, "select-rows", T_ARRAY);
 	PEEK_TYPE_AT(matrix_val, 1, "select-rows", T_MATRIX);
 	Object *indices = OBJECT_AT(VAL_DATA(indices_val));
@@ -911,7 +1045,7 @@ void p_select_rows(Interpreter *interp) {
 	 DISPATCH(interp);
 }
 
-void p_augment(Interpreter *interp) {
+void p_augment(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(b_val, 0, "augment", T_MATRIX);
 	PEEK_TYPE_AT(a_val, 1, "augment", T_MATRIX);
 	Object *a = OBJECT_AT(VAL_DATA(a_val));
@@ -938,7 +1072,7 @@ void p_augment(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_vstack(Interpreter *interp) {
+void p_vstack(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(b_val, 0, "vstack", T_MATRIX);
 	PEEK_TYPE_AT(a_val, 1, "vstack", T_MATRIX);
 	Object *a = OBJECT_AT(VAL_DATA(a_val));
@@ -965,7 +1099,7 @@ void p_vstack(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_variance(Interpreter *interp) {
+void p_variance(DISPATCH_ARGS) {
 	POP_MATRIX(source, "var");
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
 	if (n < 2) {
@@ -978,7 +1112,7 @@ void p_variance(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_quantile(Interpreter *interp) {
+void p_quantile(DISPATCH_ARGS) {
 	POP_FLOAT(probability, "quantile", "probability");
 	if (probability < 0.0 || probability > 1.0) {
 		fail(interp, "quantile: probability must be in [0,1]; got %g", probability);

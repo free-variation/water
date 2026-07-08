@@ -172,7 +172,7 @@ int string_matches(Interpreter *interp, Object *subject, Object *pattern) {
 	return rc >= 0;
 }
 
-void p_match_all(Interpreter *interp) {
+void p_match_all(DISPATCH_ARGS) {
 	PEEK_STRING_AT(pattern, 0, "match-all");
 	PEEK_STRING_AT(subject, 1, "match-all");
 	COMPILE_PATTERN(compiled, num_groups, pattern);
@@ -228,7 +228,7 @@ void p_match_all(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_match(Interpreter *interp) {
+void p_match(DISPATCH_ARGS) {
 	PEEK_STRING_AT(pattern, 0, "match");
 	PEEK_STRING_AT(subject, 1, "match");
 	COMPILE_PATTERN(compiled, num_groups, pattern);
@@ -253,7 +253,7 @@ void p_match(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_split(Interpreter *interp) {
+void p_split(DISPATCH_ARGS) {
 	PEEK_STRING_AT(pattern, 0, "split");
 	PEEK_STRING_AT(subject, 1, "split");
 	COMPILE_PATTERN(compiled, num_groups, pattern);
@@ -317,7 +317,7 @@ static void append_bytes(Interpreter *interp, char **buffer, int *length, int *c
 	*length += n;
 }
 
-void p_replace(Interpreter *interp) {
+void p_replace(DISPATCH_ARGS) {
 	PEEK_STRING_AT(replacement, 0, "replace");
 	PEEK_STRING_AT(pattern, 1, "replace");
 	PEEK_STRING_AT(subject, 2, "replace");
@@ -391,7 +391,7 @@ void p_replace(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_substring(Interpreter *interp) {
+void p_substring(DISPATCH_ARGS) {
 	POP_INT(end, "substring", "end");
 	POP_INT(start, "substring", "start");
 	PEEK_STRING_AT(source, 0, "substring");
@@ -410,7 +410,7 @@ void p_substring(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_byte_substring(Interpreter *interp) {
+void p_byte_substring(DISPATCH_ARGS) {
       POP_INT(end, "byte-substring", "end");
       POP_INT(start, "byte-substring", "start");
       PEEK_STRING_AT(source, 0, "byte-substring");
@@ -457,13 +457,13 @@ static void char_index_op(Interpreter *interp, const char *op,
 	interp->data_stack[interp->dsp - 1] = result;
 }
 
-void p_char_at(Interpreter *interp) {
+void p_char_at(DISPATCH_ARGS) {
 	char_index_op(interp, "char-at", produce_char_string);
 
 	DISPATCH(interp);
 }
 
-void p_codepoint_at(Interpreter *interp) {
+void p_codepoint_at(DISPATCH_ARGS) {
 	char_index_op(interp, "codepoint-at", produce_codepoint);
 
 	DISPATCH(interp);
@@ -497,19 +497,19 @@ static void string_explode(Interpreter *interp, const char *op,
 	interp->data_stack[interp->dsp - 1] = make_array(handle);
 }
 
-void p_string_to_chars(Interpreter *interp) {
+void p_string_to_chars(DISPATCH_ARGS) {
 	string_explode(interp, "string>chars", produce_char_string);
 
 	DISPATCH(interp);
 }
 
-void p_string_to_codepoints(Interpreter *interp) {
+void p_string_to_codepoints(DISPATCH_ARGS) {
 	string_explode(interp, "string>codepoints", produce_codepoint);
 
 	DISPATCH(interp);
 }
 
-void p_codepoint_to_char(Interpreter *interp) {
+void p_codepoint_to_char(DISPATCH_ARGS) {
 	POP_INT(code, "codepoint>char", "codepoint");
 	if (code < 0 || code > 0x10FFFF) {
 		fail(interp, "codepoint>char: codepoint %d out of range", code);
@@ -523,7 +523,7 @@ void p_codepoint_to_char(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_codepoints_to_string(Interpreter *interp) {
+void p_codepoints_to_string(DISPATCH_ARGS) {
 	POP_ARRAY(codes, "codespoints>string");
 
 	int codepoint_count = codes->len;
@@ -563,7 +563,7 @@ static inline int trim_is_ws(unsigned char c) {
 	return c == ' ' || c == '\t' || c == '\n' || c == '\v' || c == '\f' || c == '\r';
 }
 
-void p_trim(Interpreter *interp) {
+void p_trim(DISPATCH_ARGS) {
 	PEEK_STRING_AT(source, 0, "trim");
 
 	int start = 0;
@@ -579,7 +579,7 @@ void p_trim(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_string_to_number(Interpreter *interp) {
+void p_string_to_number(DISPATCH_ARGS) {
 	POP_STRING(source, "string>number");
 
 	const char *text = source->bytes;
@@ -602,7 +602,7 @@ void p_string_to_number(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_join(Interpreter *interp) {
+void p_join(DISPATCH_ARGS) {
 	PEEK_STRING_AT(separator, 0, "join");
 	PEEK_TYPE_AT(array_val, 1, "join", T_ARRAY);
 	Object *array = OBJECT_AT(VAL_DATA(array_val));

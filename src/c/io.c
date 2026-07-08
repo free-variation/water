@@ -2,7 +2,7 @@
    directory. Split out of words.c; all dependencies are declared in water.h. */
 #include "water.h"
 
-void p_env(Interpreter *interp) {
+void p_env(DISPATCH_ARGS) {
 	POP_STRING(name, "env");
 	const char *value = getenv(name->bytes);
 	if (value == NULL)
@@ -13,7 +13,7 @@ void p_env(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_env_set(Interpreter *interp) {
+void p_env_set(DISPATCH_ARGS) {
 	POP_STRING(value, "env!");
 	POP_STRING(name, "env!");
 	if (setenv(name->bytes, value->bytes, 1) != 0)
@@ -22,7 +22,7 @@ void p_env_set(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_cd(Interpreter *interp) {
+void p_cd(DISPATCH_ARGS) {
 	POP_STRING(path, "cd");
 	if (chdir(path->bytes) != 0)
 		fail(interp, "cd: cannot change to %s", path->bytes);
@@ -30,7 +30,7 @@ void p_cd(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_cwd(Interpreter *interp) {
+void p_cwd(DISPATCH_ARGS) {
 	char buffer[PATH_MAX];
 	if (getcwd(buffer, sizeof buffer) == NULL) {
 		fail(interp, "cwd: cannot read working directory");
@@ -41,7 +41,7 @@ void p_cwd(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_read_file(Interpreter *interp) {
+void p_read_file(DISPATCH_ARGS) {
 	POP_STRING(path, "read-file");
 
 	FILE *file = fopen(path->bytes, "rb");
@@ -93,13 +93,13 @@ static void write_file(Interpreter *interp, const char *mode, const char *op) {
 		fail(interp, "%s: short write to %s", op, path->bytes);
 }
 
-void p_write_file(Interpreter *interp) {
+void p_write_file(DISPATCH_ARGS) {
 	write_file(interp, "wb", "write-file");
 
 	DISPATCH(interp);
 }
 
-void p_append_file(Interpreter *interp) {
+void p_append_file(DISPATCH_ARGS) {
 	write_file(interp, "ab", "append-file");
 
 	DISPATCH(interp);
@@ -149,7 +149,7 @@ static int tsv_row_to_array(Interpreter *interp, char *row, int row_length) {
 	return array_handle;
 }
 
-void p_read_tsv(Interpreter *interp) {
+void p_read_tsv(DISPATCH_ARGS) {
 	POP_STRING(path, "read-tsv");
 
 	FILE *file = fopen(path->bytes, "rb");
@@ -224,7 +224,7 @@ void p_read_tsv(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_write_tsv(Interpreter *interp) {
+void p_write_tsv(DISPATCH_ARGS) {
 	POP_STRING(path, "write-tsv");
 	POP_ARRAY(rows, "write-tsv");
 
@@ -282,7 +282,7 @@ void p_write_tsv(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_write(Interpreter *interp) {
+void p_write(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "write");
 	if (VAL_TAG(stream_val) != T_STREAM) {
 		fail(interp, "write: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
@@ -309,7 +309,7 @@ void p_write(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_read(Interpreter *interp) {
+void p_read(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "read");
 	if (VAL_TAG(stream_val) != T_STREAM) {
 		fail(interp, "read: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
@@ -364,7 +364,7 @@ void p_read(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_close(Interpreter *interp) {
+void p_close(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "close");
 	if (VAL_TAG(stream_val) != T_STREAM) {
 		fail(interp, "close: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
@@ -379,7 +379,7 @@ void p_close(Interpreter *interp) {
 /* The three standard streams as T_STREAM values over fds 0/1/2, so they compose
    with read/write/close. stdin conflicts with the REPL's own stdin reading;
    it's for programs loaded from a file, not piped in. */
-void p_stdin(Interpreter *interp)  { push(interp, make_stream(0)); DISPATCH(interp); }
-void p_stdout(Interpreter *interp) { push(interp, make_stream(1)); DISPATCH(interp); }
-void p_stderr(Interpreter *interp) { push(interp, make_stream(2)); DISPATCH(interp); }
+void p_stdin(DISPATCH_ARGS)  { push(interp, make_stream(0)); DISPATCH(interp); }
+void p_stdout(DISPATCH_ARGS) { push(interp, make_stream(1)); DISPATCH(interp); }
+void p_stderr(DISPATCH_ARGS) { push(interp, make_stream(2)); DISPATCH(interp); }
 

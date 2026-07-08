@@ -130,13 +130,13 @@ int set_difference(Interpreter *interp, int handle_a, int handle_b) {
 		return; \
 	}
 
-void p_setopen(Interpreter *interp) {
+void p_setopen(DISPATCH_ARGS) {
 	push(interp, make_tagged(T_MARK, '<'));
 
 	DISPATCH(interp);
 }
 
-void p_setclose(Interpreter *interp) {
+void p_setclose(DISPATCH_ARGS) {
 	FIND_MARK(mark_index, "> : no matching < on the stack");
 
 	int set_handle = object_new_set(interp);
@@ -150,7 +150,7 @@ void p_setclose(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_frameopen(Interpreter *interp) {
+void p_frameopen(DISPATCH_ARGS) {
 	push(interp, make_tagged(T_MARK, '{'));
 
 	DISPATCH(interp);
@@ -159,7 +159,7 @@ void p_frameopen(Interpreter *interp) {
 
 static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val value, const char *op);
 
-void p_frameclose(Interpreter *interp) {
+void p_frameclose(DISPATCH_ARGS) {
 	FIND_MARK(mark_index, "} : no matching { on the stack");
 
 	int count = interp->dsp - mark_index;
@@ -187,19 +187,19 @@ void p_frameclose(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_array_open(Interpreter *interp) {
+void p_array_open(DISPATCH_ARGS) {
 	push(interp, make_tagged(T_MARK, '['));
 
 	DISPATCH(interp);
 }
 
-void p_list_open(Interpreter *interp) {
+void p_list_open(DISPATCH_ARGS) {
 	push(interp, make_tagged(T_MARK, '('));
 
 	DISPATCH(interp);
 }
 
-void p_array_close(Interpreter *interp) {
+void p_array_close(DISPATCH_ARGS) {
 	FIND_MARK(mark_index, "] : no matching [ on the stack");
 	int num_elements = interp->dsp - mark_index;
 	NEW_ARRAY(array_handle, array, num_elements);
@@ -211,7 +211,7 @@ void p_array_close(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_list_close(Interpreter *interp) {
+void p_list_close(DISPATCH_ARGS) {
 	FIND_MARK(mark_index, ")] : no matching [( on the stack");
 
 	int num_elements = interp->dsp - mark_index;
@@ -233,7 +233,7 @@ void p_list_close(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_array(Interpreter *interp) {
+void p_array(DISPATCH_ARGS) {
 	POP_INT(count, "array", "count");
 	if (count < 0 || count > interp->dsp) {
 		fail(interp, "array: count %d out of range (stack has %d available)", count, interp->dsp);
@@ -252,7 +252,7 @@ void p_array(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_cons(Interpreter *interp) {
+void p_cons(DISPATCH_ARGS) {
 	if (interp->dsp < 2) {
 		fail(interp, "cons: stack too shallow");
 		return;
@@ -271,7 +271,7 @@ void p_cons(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_head_tail(Interpreter *interp) {
+void p_head_tail(DISPATCH_ARGS) {
 	POP_PAIR(pair, "head-tail");
 	Val head = pair->head;
 	Val tail = pair->tail;
@@ -281,7 +281,7 @@ void p_head_tail(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_array_to_cons(Interpreter *interp) {
+void p_array_to_cons(DISPATCH_ARGS) {
 	PEEK_AT(array_val, 0, "array>cons");
 	if (VAL_TAG(array_val) != T_ARRAY) {
 		fail(interp, "array>cons: expected an array; got %s", tag_name(VAL_TAG(array_val)));
@@ -317,7 +317,7 @@ void p_array_to_cons(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_cons_to_array(Interpreter *interp) {
+void p_cons_to_array(DISPATCH_ARGS) {
 	PEEK_AT(list_val, 0, "cons>array");
 
 	int count = 1;
@@ -378,7 +378,7 @@ int build_set_from_values(Interpreter *interp, const Val *values, int count) {
 	return set_handle;
 }
 
-void p_array_to_set (Interpreter *interp) {
+void p_array_to_set(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(array_val, 0, "array>set", T_ARRAY);
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
 
@@ -391,7 +391,7 @@ void p_array_to_set (Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_sort(Interpreter *interp) {
+void p_sort(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(source_val, 0, "sort", T_ARRAY);
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
@@ -406,40 +406,55 @@ void p_sort(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_size(Interpreter *interp) {
-	POP(collection);
+void p_size(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val collection = chain_sp[-1];
+	double elements;
 
 	if (VAL_TAG(collection) == T_STRING) {
 		Object *string = OBJECT_AT(VAL_DATA(collection));
-		push(interp, make_float((double)utf8_codepoint_count(string->bytes, string->len)));
+		elements = (double)utf8_codepoint_count(string->bytes, string->len);
 	} else if (VAL_TAG(collection) == T_SEGMENT) {
-		Object *segment = OBJECT_AT(VAL_DATA(collection));
-		push(interp, make_float((double)segment->segment.length));
+		elements = (double)OBJECT_AT(VAL_DATA(collection))->segment.length;
 	} else if (VAL_TAG(collection) == T_MATRIX) {
 		Object *matrix = OBJECT_AT(VAL_DATA(collection));
-		push(interp, make_float((double)(matrix->matrix.rows * matrix->matrix.columns)));
+		elements = (double)(matrix->matrix.rows * matrix->matrix.columns);
 	} else if (VAL_TAG(collection) == T_SET ||
 			VAL_TAG(collection) == T_ARRAY ||
-			VAL_TAG(collection) == T_FRAME)
-		push(interp, make_float((double)OBJECT_AT(VAL_DATA(collection))->len));
-	else fail(interp, "size: expected a set, array, matrix, string, segment, or frame; got %s", tag_name(VAL_TAG(collection)));
+			VAL_TAG(collection) == T_FRAME) {
+		elements = (double)OBJECT_AT(VAL_DATA(collection))->len;
+	} else {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "size: expected a set, array, matrix, string, segment, or frame; got %s", tag_name(VAL_TAG(collection)));
+		return;
+	}
+	chain_sp[-1] = make_float(elements);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
-void p_byte_size(Interpreter *interp) {
+void p_byte_size(DISPATCH_ARGS) {
 	POP_STRING(string, "byte-size");
 	push(interp, make_float((double)string->len));
 
 	DISPATCH(interp);
 }
 
-void p_member(Interpreter *interp) {
-	POP(value);
-	POP_SET(set, "member?");
-	push(interp, make_bool(set_member(interp, set, value)));
+void p_member(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val set_val = chain_sp[-2];
+	if (VAL_TAG(set_val) != T_SET) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "member?: expected %s; got %s", tag_name(T_SET), tag_name(VAL_TAG(set_val)));
+		return;
+	}
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
+	int present = set_member(interp, (int)VAL_DATA(set_val), chain_sp[-1]);
+	if (interp->error_flag)
+		return;
+	chain_sp[-2] = make_bool(present);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 static void binary_set_op(Interpreter *interp, const char *op,
@@ -454,25 +469,25 @@ static void binary_set_op(Interpreter *interp, const char *op,
 	push(interp, make_set(combined_handle));
 }
 
-void p_union(Interpreter *interp) {
+void p_union(DISPATCH_ARGS) {
 	binary_set_op(interp, "union", set_union);
 
 	DISPATCH(interp);
 }
 
-void p_intersect(Interpreter *interp) {
+void p_intersect(DISPATCH_ARGS) {
 	binary_set_op(interp, "intersection", set_intersect);
 
 	DISPATCH(interp);
 }
 
-void p_difference(Interpreter *interp) {
+void p_difference(DISPATCH_ARGS) {
 	binary_set_op(interp, "difference", set_difference);
 
 	DISPATCH(interp);
 }
 
-void p_set_add(Interpreter *interp) {
+void p_set_add(DISPATCH_ARGS) {
 	POP(value);
 	PEEK_TYPE_AT(set_val, 0, "set-add!", T_SET);
 
@@ -481,7 +496,7 @@ void p_set_add(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_set_remove(Interpreter *interp) {
+void p_set_remove(DISPATCH_ARGS) {
 	POP(value);
 	PEEK_TYPE_AT(set_val, 0, "set-remove!", T_SET);
 	set_remove(interp, (int)VAL_DATA(set_val), value);
@@ -489,33 +504,46 @@ void p_set_remove(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_add_last(Interpreter *interp) {
-	POP(value);
-	PEEK_TYPE_AT(array_val, 0, "add-last!", T_ARRAY);
+void p_add_last(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val array_val = chain_sp[-2];
+	if (VAL_TAG(array_val) != T_ARRAY) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "add-last!: expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(array_val)));
+		return;
+	}
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
-
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
 	GROW_IF_FULL(array->len, array->capacity, array->items);
-	array->items[array->len++] = value;
+	array->items[array->len++] = chain_sp[-1];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-void p_remove_last(Interpreter *interp) {
-	POP_ARRAY(array, "remove-last!");
+void p_remove_last(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val array_val = chain_sp[-1];
+	if (VAL_TAG(array_val) != T_ARRAY) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "remove-last!: expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(array_val)));
+		return;
+	}
+	Object *array = OBJECT_AT(VAL_DATA(array_val));
 	if (array->len == 0) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
 		fail(interp, "remove-last!: empty array");
 		return;
 	}
 
 	array->len--;
-	push(interp, array->items[array->len]);
+	chain_sp[-1] = array->items[array->len];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 
 #define NEW_SEGMENT(name, word, element_type) \
-	void name(Interpreter *interp) { \
+	void name(DISPATCH_ARGS) { \
 		POP_INT(length, word, "length"); \
 		if (length < 0) { \
 			fail(interp, word ": length must be non-negative; got %d", length); \
@@ -530,7 +558,7 @@ void p_remove_last(Interpreter *interp) {
 NEW_SEGMENT(p_int_segment,    "int-segment",    SEGMENT_INT)
 NEW_SEGMENT(p_double_segment, "double-segment", SEGMENT_DOUBLE)
 
-void p_array_of(Interpreter *interp) {
+void p_array_of(DISPATCH_ARGS) {
 	POP_INT(array_len, "array-of", "length");
 	POP(init_val);
 
@@ -548,7 +576,7 @@ static void replace_top_with_array(Interpreter *interp, int handle) {
 	interp->data_stack[interp->dsp - 1] = make_array(handle);
 }
 
-void p_take(Interpreter *interp) {
+void p_take(DISPATCH_ARGS) {
 	POP_INT(n_items, "take", "length");
 	if (n_items < 0) n_items = 0;
 
@@ -566,7 +594,7 @@ void p_take(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_reverse(Interpreter *interp) {
+void p_reverse(DISPATCH_ARGS) {
 	PEEK_SEQUENCE_AT(source_val, 0, "reverse");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
@@ -580,36 +608,7 @@ void p_reverse(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_reverse_slice(Interpreter *interp) {
-	POP_INT(n, "reverse-slice!", "count");
-	POP_INT(offset, "reverse-slice!", "offset");
-	PEEK_TYPE_AT(target_val, 0, "reverse-slice!", T_ARRAY);
-	Object *target = OBJECT_AT(VAL_DATA(target_val));
-
-	if (n < 0) {
-		fail(interp, "reverse-slice!: count must be non-negative; got %d", n);
-		return;
-	}
-	if (offset < 0 || offset + n > target->len) {
-		fail(interp, "reverse-slice!: slice [%d, %d) out of bounds for length %d",
-		     offset, offset + n, target->len);
-		return;
-	}
-
-	int low = offset;
-	int high = offset + n - 1;
-	while (low < high) {
-		Val saved = target->items[low];
-		target->items[low] = target->items[high];
-		target->items[high] = saved;
-		low++;
-		high--;
-	}
-
-	DISPATCH(interp);
-}
-
-void p_concat(Interpreter *interp) {
+void p_concat(DISPATCH_ARGS) {
 	int i;
 
 	PEEK_SEQUENCE_AT(b_val, 0, "concat");
@@ -659,7 +658,7 @@ static void flatten_fill(Object *source, Object *target, int *offset) {
    }
 }
 
-void p_flatten_array(Interpreter *interp) {
+void p_flatten_array(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(arrays_val, 0, "flatten-array", T_ARRAY);
 	Object *arrays = OBJECT_AT(VAL_DATA(arrays_val));
 
@@ -684,7 +683,7 @@ void p_flatten_array(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_sample(Interpreter *interp) {
+void p_sample(DISPATCH_ARGS) {
 	PEEK_SEQUENCE_AT(source_val, 2, "sample");
 	POP(replacement_val);
 	if (interp->error_flag) return;
@@ -738,7 +737,7 @@ void p_sample(Interpreter *interp) {
 
 
 
-void p_range(Interpreter *interp) {
+void p_range(DISPATCH_ARGS) {
 	POP_INT(range_to, "range", "to");
 	POP_INT(range_from, "range", "from");
 
@@ -837,7 +836,7 @@ int frame_delete(Object *frame, cell key) {
 }
 
 
-void p_array_to_frame(Interpreter *interp) {
+void p_array_to_frame(DISPATCH_ARGS) {
 	PEEK_SEQUENCE_AT(source_val, 0, "array>frame");
 	if (VAL_TAG(source_val) != T_ARRAY) {
 		fail(interp, "array>frame: expected an array; got %s", tag_name(VAL_TAG(source_val)));
@@ -985,7 +984,7 @@ static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val v
 		} \
 	} while (0)
 
-void p_frame_get(Interpreter *interp) {
+void p_frame_get(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 1, "@", T_FRAME);
 	PEEK_AT(key_or_path, 0, "@");
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
@@ -1009,7 +1008,7 @@ void p_frame_get(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_frame_set(Interpreter *interp) {
+void p_frame_set(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 2, "!", T_FRAME);
 	PEEK_AT(key_or_path, 1, "!");
 	PEEK_AT(value, 0, "!");
@@ -1030,7 +1029,7 @@ void p_frame_set(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_frame_delete_at(Interpreter *interp) {
+void p_frame_delete_at(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 1, "delete-at", T_FRAME);
 	PEEK_AT(key_or_path, 0, "delete-at");
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
@@ -1057,7 +1056,7 @@ void p_frame_delete_at(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_frame_keys(Interpreter *interp) {
+void p_frame_keys(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 0, "keys", T_FRAME);
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 	NEW_ARRAY(result_handle, result, frame->len);
@@ -1070,7 +1069,7 @@ void p_frame_keys(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_frame_values(Interpreter *interp) {
+void p_frame_values(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 0, "values", T_FRAME);
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 	NEW_ARRAY(result_handle, result, frame->len);
@@ -1083,7 +1082,7 @@ void p_frame_values(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_frame_to_array(Interpreter *interp) {
+void p_frame_to_array(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 0, "frame>array", T_FRAME);
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 	NEW_ARRAY(result_handle, result, frame->len * 2);
@@ -1231,12 +1230,12 @@ static void do_select(Interpreter *interp, SelectMode mode, const char *op) {
 	push(interp, make_array(matches));
 }
 
-void p_select_values(Interpreter *interp) {
+void p_select_values(DISPATCH_ARGS) {
 	do_select(interp, SELECT_VALUES, "select-values");
 	DISPATCH(interp);
 }
 
-void p_select_keys(Interpreter *interp) {
+void p_select_keys(DISPATCH_ARGS) {
 	do_select(interp, SELECT_KEYS, "select-keys");
 	DISPATCH(interp);
 }
@@ -1264,7 +1263,7 @@ static void select_descendants(Interpreter *interp, Val tree_node, Object *path,
 
 
 
-void p_merge(Interpreter *interp) {
+void p_merge(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(right, 0, "merge", T_FRAME);
 	PEEK_TYPE_AT(left, 1, "merge", T_FRAME);
 	Object *right_frame = OBJECT_AT(VAL_DATA(right));
@@ -1318,7 +1317,7 @@ void p_merge(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_frame(Interpreter *interp) {
+void p_frame(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(values_val, 0, "frame", T_ARRAY);
 	PEEK_SEQUENCE_AT(keys_val, 1, "frame");
 	Object *values = OBJECT_AT(VAL_DATA(values_val));
@@ -1349,7 +1348,7 @@ void p_frame(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_has(Interpreter *interp) {
+void p_has(DISPATCH_ARGS) {
 	PEEK_AT(value, 1, "has?");
 	if (VAL_TAG(value) == T_STRING) {
 		POP_STRING(pattern, "has?");
@@ -1399,7 +1398,7 @@ void p_has(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_update_at(Interpreter *interp) {
+void p_update_at(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 2, "update-at", T_FRAME);
 	PEEK_AT(key_or_path, 1, "update-at");
 	PEEK_AT(xt, 0, "update-at");
@@ -1459,7 +1458,7 @@ static int row_cmp(void *interp, const void *left, const void *right) {
 	return val_cmp((Interpreter *)interp, *(const Val *)left, *(const Val *)right);
 }
 
-void p_group_by(Interpreter *interp) {
+void p_group_by(DISPATCH_ARGS) {
 	POP_SYMBOL(col, "group-by");
 
 	PEEK_TYPE_AT(rows_val, 0, "group-by", T_ARRAY);
@@ -1518,7 +1517,7 @@ void p_group_by(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_destruct(Interpreter *interp) {
+void p_destruct(DISPATCH_ARGS) {
 	PEEK_COLLECTION_AT(source_val, 0, "destruct");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	interp->dsp--;
@@ -1535,7 +1534,7 @@ void p_destruct(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_destruct_to(Interpreter *interp) {
+void p_destruct_to(DISPATCH_ARGS) {
 	POP(target_val);
 	POP(source_val);
 
@@ -1585,7 +1584,7 @@ void p_destruct_to(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_slice_store(Interpreter *interp) {
+void p_slice_store(DISPATCH_ARGS) {
 	POP_INT(slen, "slice!", "length");
 	POP_INT(sstep, "slice!", "step");
 	POP_INT(sstart, "slice!", "source-start");
@@ -1652,7 +1651,7 @@ void p_slice_store(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_to_slice(Interpreter *interp) {
+void p_to_slice(DISPATCH_ARGS) {
 	POP_INT(n, "to-slice!", "count");
 	POP_INT(offset, "to-slice!", "offset");
 	PEEK_TYPE_AT(target_val, 0, "to-slice!", T_ARRAY);
@@ -2013,7 +2012,7 @@ static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *desti
 	}
 }
 
-void p_json_to_frame(Interpreter *interp) {
+void p_json_to_frame(DISPATCH_ARGS) {
 	PEEK_STRING_AT(json, 0, "json>frame");
 
 	JSONParser parser;
@@ -2165,7 +2164,7 @@ static void json_write_value(Interpreter *interp, JSONWriter *writer, Val value,
 	}
 }
 
-void p_frame_to_json(Interpreter *interp) {
+void p_frame_to_json(DISPATCH_ARGS) {
 	PEEK_AT(value, 0, "frame>json");
 
 	JSONWriter writer;

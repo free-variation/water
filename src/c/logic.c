@@ -1,6 +1,6 @@
 #include "water.h"
 
-void p_lvar(Interpreter *interp) {
+void p_lvar(DISPATCH_ARGS) {
 	int handle = object_new_logic_var(interp);
 	if (interp->error_flag) return;
 
@@ -119,7 +119,7 @@ static int enclosing_choice(Interpreter *interp) {
 	return 0;
 }
 
-void p_unify(Interpreter *interp) {
+void p_unify(DISPATCH_ARGS) {
 	POP(right);
 	POP(left);
 
@@ -145,7 +145,7 @@ void p_unify(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_matches(Interpreter *interp) {
+void p_matches(DISPATCH_ARGS) {
 	POP(row);
 	POP(pattern);
 
@@ -160,14 +160,14 @@ void p_matches(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_deref(Interpreter *interp) {
+void p_deref(DISPATCH_ARGS) {
 	POP(value);
 	push(interp, deref(interp, value));
 
 	DISPATCH(interp);
 }
 
-void p_amb(Interpreter *interp) {
+void p_amb(DISPATCH_ARGS) {
 	POP_XT(branch2, "amb");
 	POP_XT(branch1, "amb");
 
@@ -195,7 +195,7 @@ void p_amb(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_wildcard(Interpreter *interp) {
+void p_wildcard(DISPATCH_ARGS) {
 	push(interp, make_tagged(T_UNBOUND, 0));
 
 	DISPATCH(interp);

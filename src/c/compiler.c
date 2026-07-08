@@ -6,7 +6,7 @@
 static void enter_compile_scope(Interpreter *interp);
 static void leave_compile_scope(Interpreter *interp);
 
-void p_semicolon(Interpreter *interp) {
+void p_semicolon(DISPATCH_ARGS) {
 	if (compiler.compiling_src_start > 0 && compiler.n_local_scopes > 1) {
 		int partial_cfa = vocab.latest_cfa;
 		vocab.here = partial_cfa - 4;
@@ -70,7 +70,7 @@ static int try_fuse_cmp_branch(Interpreter *interp) {
 }
 
 
-void p_if(Interpreter *interp) {
+void p_if(DISPATCH_ARGS) {
 	if (!try_fuse_cmp_branch(interp))
 		emit_call(interp, vocab.zbranch_cfa);
 	push(interp, make_float((double)vocab.here));
@@ -79,7 +79,7 @@ void p_if(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_qif(Interpreter *interp) {
+void p_qif(DISPATCH_ARGS) {
 	emit_call(interp, vocab.qzbranch_cfa);
 	push(interp, make_float((double)vocab.here));
 	emit(interp, 0);
@@ -95,7 +95,7 @@ static int valid_patch_slot(Interpreter *interp, int slot, const char *op) {
 	return 1;
 }
 
-void p_then(Interpreter *interp) {
+void p_then(DISPATCH_ARGS) {
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
 	if (!valid_patch_slot(interp, slot, "then"))
@@ -106,7 +106,7 @@ void p_then(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_else(Interpreter *interp) {
+void p_else(DISPATCH_ARGS) {
 	POP(slot_val);
 	int slot = (int)VAL_NUMBER(slot_val);
 	if (!valid_patch_slot(interp, slot, "else"))
@@ -119,14 +119,14 @@ void p_else(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_begin(Interpreter *interp) {
+void p_begin(DISPATCH_ARGS) {
 	push(interp, make_float((double)vocab.here));
 	compiler.fuse_floor = vocab.here;
 
 	DISPATCH(interp);
 }
 
-void p_until(Interpreter *interp) {
+void p_until(DISPATCH_ARGS) {
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
 	if (!valid_patch_slot(interp, back, "until"))
@@ -138,7 +138,7 @@ void p_until(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_again(Interpreter *interp) {
+void p_again(DISPATCH_ARGS) {
 	POP(back_val);
 	int back = (int)VAL_NUMBER(back_val);
 	if (!valid_patch_slot(interp, back, "again"))
@@ -149,7 +149,7 @@ void p_again(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_while(Interpreter *interp) {
+void p_while(DISPATCH_ARGS) {
 	if (!try_fuse_cmp_branch(interp))
 		emit_call(interp, vocab.zbranch_cfa);
 	push(interp, make_float((double)vocab.here));
@@ -158,7 +158,7 @@ void p_while(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_repeat(Interpreter *interp) {
+void p_repeat(DISPATCH_ARGS) {
 	POP(exit_slot_val);
 	POP(back_val);
 	int exit_slot = (int)VAL_NUMBER(exit_slot_val);
@@ -189,13 +189,13 @@ static void open_quotation(Interpreter *interp) {
 	push(interp, make_float((double)branch_slot));
 }
 
-void p_qcolon(Interpreter *interp) {
+void p_qcolon(DISPATCH_ARGS) {
 	open_quotation(interp);
 
 	DISPATCH(interp);
 }
 
-void p_qsemi(Interpreter *interp) {
+void p_qsemi(DISPATCH_ARGS) {
 	leave_compile_scope(interp);
 	emit_call(interp, vocab.exit_cfa);
 	POP(branch_slot_val);
@@ -230,7 +230,7 @@ static int parse_word_cfa(Interpreter *interp, const char *op) {
 }
 	
 
-void p_tick(Interpreter *interp) {
+void p_tick(DISPATCH_ARGS) {
 	int target_cfa = parse_word_cfa(interp, "'");
 	if (!target_cfa)
 		return;
@@ -244,7 +244,7 @@ void p_tick(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_lookup(Interpreter *interp) {
+void p_lookup(DISPATCH_ARGS) {
 	int target_cfa = parse_word_cfa(interp, "lookup");
 	if (!target_cfa)
 		return;
@@ -287,7 +287,7 @@ static void leave_compile_scope(Interpreter *interp) {
 	compiler.n_local_names = saved_n_names;
 }
 
-void p_colon(Interpreter *interp) {
+void p_colon(DISPATCH_ARGS) {
 	char *token = next_token();
 	if (!token) {
 		fail(interp, ": expected a name for the new definition");
@@ -315,7 +315,7 @@ int create_variable(Interpreter *interp, const char *name) {
 }
 
 
-void p_variable(Interpreter *interp) {
+void p_variable(DISPATCH_ARGS) {
 	char *token = next_token();
 	if (!token) {
 		fail(interp, "variable: expected a name");
@@ -327,7 +327,7 @@ void p_variable(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_constant(Interpreter *interp) {
+void p_constant(DISPATCH_ARGS) {
 	POP(value);
 	char *token = next_token();
 	if (!token) {
@@ -447,33 +447,33 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 	}
 }
 
-void p_bar(Interpreter *interp) {
+void p_bar(DISPATCH_ARGS) {
 	compile_locals_decl(interp, "|", 0);
 
 	DISPATCH(interp);
 }
 
-void p_bar_to(Interpreter *interp) {
+void p_bar_to(DISPATCH_ARGS) {
 	compile_locals_decl(interp, "|>", 1);
 
 	DISPATCH(interp);
 }
 
-void p_bracket_bar(Interpreter *interp) {
+void p_bracket_bar(DISPATCH_ARGS) {
 	open_quotation(interp);
 	compile_locals_decl(interp, "[|", 0);
 
 	DISPATCH(interp);
 }
 
-void p_bracket_bar_to(Interpreter *interp) {
+void p_bracket_bar_to(DISPATCH_ARGS) {
 	open_quotation(interp);
 	compile_locals_decl(interp, "[>", 1);
 
 	DISPATCH(interp);
 }
 
-void p_to_var(Interpreter *interp) {
+void p_to_var(DISPATCH_ARGS) {
 	int var_cfa = (int)vocab.dict[interp->ip++];
 	POP(value);
 	vocab.dict[var_cfa + 1] = (cell)value.bits;
@@ -481,7 +481,7 @@ void p_to_var(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_to(Interpreter *interp) {
+void p_to(DISPATCH_ARGS) {
 	char *token = next_token();
 	if (!token) {
 		fail(interp, "to: expected a name"); 
@@ -563,7 +563,7 @@ static void compile_local_unary(Interpreter *interp, const char *op,
 	}
 }
 
-void p_increment(Interpreter *interp) {
+void p_increment(DISPATCH_ARGS) {
 	compile_local_unary(interp, "++",
 	                    vocab.local_incr_0depth_cfa,
 	                    vocab.inc_cfa);
@@ -571,7 +571,7 @@ void p_increment(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_decrement(Interpreter *interp) {
+void p_decrement(DISPATCH_ARGS) {
 	compile_local_unary(interp, "--",
 	                    vocab.local_decr_0depth_cfa,
 	                    vocab.dec_cfa);
@@ -579,7 +579,7 @@ void p_decrement(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_f_increment(Interpreter *interp) {
+void p_f_increment(DISPATCH_ARGS) {
 	compile_local_unary(interp, "f++",
 	                    vocab.local_finc_0depth_cfa,
 	                    vocab.finc_cfa);
@@ -587,7 +587,7 @@ void p_f_increment(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_f_decrement(Interpreter *interp) {
+void p_f_decrement(DISPATCH_ARGS) {
 	compile_local_unary(interp, "f--",
 	                    vocab.local_fdec_0depth_cfa,
 	                    vocab.fdec_cfa);
@@ -595,7 +595,7 @@ void p_f_decrement(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_inline(Interpreter *interp) {
+void p_inline(DISPATCH_ARGS) {
 	int latest = vocab.latest_cfa;
 	if (!latest) {
 		fail(interp, "inline: no recent definition");
@@ -607,7 +607,7 @@ void p_inline(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_symbol(Interpreter *interp) {
+void p_symbol(DISPATCH_ARGS) {
 	char *token = next_token();
 	if (!token) {
 		fail(interp, "symbol: expected a name");
@@ -624,14 +624,14 @@ void p_symbol(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_string_to_symbol(Interpreter *interp) {
+void p_string_to_symbol(DISPATCH_ARGS) {
 	POP_STRING(string, "string>symbol");
 	push(interp, make_symbol(intern_symbol(interp, string->bytes)));
 
 	DISPATCH(interp);
 }
 
-void p_forget(Interpreter *interp) {
+void p_forget(DISPATCH_ARGS) {
 	char *token = next_token();
 	if (!token) {
 		fail(interp, "forget: expected a name");

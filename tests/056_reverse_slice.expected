@@ -5,8 +5,8 @@
 [ 1 2 3 4 5 ] 
 [ 9 ] 
 [ 5 4 3 2 1 ] 
-error: reverse-slice!: slice [0, 5) out of bounds for length 3
-error: reverse-slice!: slice [2, 4) out of bounds for length 3
-error: reverse-slice!: slice [-1, 1) out of bounds for length 3
-error: reverse-slice!: count must be non-negative; got -1
-error: reverse-slice!: expected an array; got a float
+error: slice!: target [0, 5) out of bounds for length 3
+error: slice!: target [2, 4) out of bounds for length 3
+error: slice!: target [-1, 1) out of bounds for length 3
+error: slice!: length must be non-negative; got -1
+error: slice!: source must be an array or set; got a float

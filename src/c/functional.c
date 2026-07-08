@@ -6,7 +6,7 @@ static _Thread_local Interpreter *worker_interp;
 static _Thread_local int worker_slot;
 static _Atomic int parallel_error;
 
-void p_map(Interpreter *interp) {
+void p_map(DISPATCH_ARGS) {
 	POP_XT(xt, "map");
 	PEEK_SEQUENCE_AT(source_val, 0, "map");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
@@ -41,7 +41,7 @@ void p_map(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_mapn(Interpreter *interp) {
+void p_mapn(DISPATCH_ARGS) {
 	POP_INT(arity, "mapn", "arity");
 	if (arity < 1) {
 		fail(interp, "mapn: arity must be >= 1; got %d", arity);
@@ -101,7 +101,7 @@ void p_mapn(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_filter(Interpreter *interp) {
+void p_filter(DISPATCH_ARGS) {
 	POP_XT(xt, "filter");
 	PEEK_SEQUENCE_AT(source_val, 0, "filter");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
@@ -149,7 +149,7 @@ void p_filter(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_reduce(Interpreter *interp) {
+void p_reduce(DISPATCH_ARGS) {
 	POP_XT(combiner, "reduce");
 	POP(init_val);
 	PEEK_SEQUENCE_AT(source_val, 0, "reduce");
@@ -177,7 +177,7 @@ void p_reduce(Interpreter *interp) {
 }
 
 #define COUNTED_LOOP(name, word_name, per_iter) \
-	void name(Interpreter *interp) { \
+	void name(DISPATCH_ARGS) { \
 		POP_INT(n, word_name, "count"); \
 		POP_XT(xt, word_name); \
 		if (n < 0) { \
@@ -241,7 +241,7 @@ static int cpu_count(void) {
 	return n_cores > 0 ? (int)n_cores : 1;
 }
 
-void p_num_cores(Interpreter *interp) {
+void p_num_cores(DISPATCH_ARGS) {
 	push(interp, make_float(cpu_count()));
 	DISPATCH(interp);
 }
@@ -358,7 +358,7 @@ static void pfilter_kernel(int start_index, int end_index, void *context) {
 	}
 }
 
-void p_pfilter(Interpreter *interp) {
+void p_pfilter(DISPATCH_ARGS) {
 	POP_XT(predicate, "pfilter-ext");
 	POP_INT(items_per_claim, "pfilter-ext", "items per claim");
 	POP_INT(worker_count, "pfilter", "worker count");
@@ -444,7 +444,7 @@ static void debug_check_no_old_to_young(int object_base, int pair_base, int imag
 }
 #endif
 
-void p_pmap(Interpreter *interp) {
+void p_pmap(DISPATCH_ARGS) {
 	POP_XT(function, "pmap-ext");
 	POP_INT(items_per_claim, "pmap-ext", "items per claim");
 	POP_INT(worker_count, "pmap", "worker count");
@@ -522,7 +522,7 @@ static void pmap_reduce_kernel(int start_index, int end_index, void *context) {
 	reduction->partials->items[worker_slot] = accumulator;
 }
 
-void p_pmap_reduce(Interpreter *interp) {
+void p_pmap_reduce(DISPATCH_ARGS) {
 	POP_XT(combine_function, "pmap-reduce-ext");
 	POP_XT(map_function, "pmap-reduce-ext");
 	POP(identity);

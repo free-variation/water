@@ -1,0 +1,10 @@
+\ with-stream: run a body over an already-open stream and close it however the
+\ body exits. Uses start-process, so this test is skipped under WASI (no
+\ fork/exec) via wasm-skip.txt. Batch mode: every line's exact stdout is golden.
+
+\ ---- normal: read a child's stdout through the guard; stream closed after ----
+[ "printf" "hello" ] start-process :out @ [: read :] with-stream . cr           \ hello
+
+\ ---- throw mid-body still closes the stream; the exception propagates ----
+[: [ "printf" "x" ] start-process :out @ [: drop "streamboom" throw :] with-stream :]
+  [: "stream-caught " . . :] try-catch cr

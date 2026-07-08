@@ -67,180 +67,133 @@ static void compile_one_var_op(Interpreter *interp, int runtime_cfa, const char 
 	emit(interp, (cell)slot);
 }
 
-static void p_fmul_add(Interpreter *interp) {
-	if (interp->dsp < 3) {
-		fail(interp, "f*+: data stack underflow");
-		return;
-	}
-	Val *a = &interp->data_stack[interp->dsp - 3];
-	Val *b = &interp->data_stack[interp->dsp - 2];
-	Val *c = &interp->data_stack[interp->dsp - 1];
-	a->number = a->number * b->number + c->number;
-	interp->dsp -= 2;
-
-	DISPATCH(interp);
+static void p_fmul_add(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "f*+: data stack underflow");
+	chain_sp[-3].number = chain_sp[-3].number * chain_sp[-2].number + chain_sp[-1].number;
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
-static void p_fmul_sub(Interpreter *interp) {
-	if (interp->dsp < 3) {
-		fail(interp, "f*-: data stack underflow");
-		return;
-	}
-	Val *a = &interp->data_stack[interp->dsp - 3];
-	Val *b = &interp->data_stack[interp->dsp - 2];
-	Val *c = &interp->data_stack[interp->dsp - 1];
-	a->number = c->number - a->number * b->number;
-	interp->dsp -= 2;
-
-	DISPATCH(interp);
+static void p_fmul_sub(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "f*-: data stack underflow");
+	chain_sp[-3].number = chain_sp[-1].number - chain_sp[-3].number * chain_sp[-2].number;
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 #define GEN_VV(suffix, op, base) \
 	static int vv_##suffix##_cfa; \
-	static void p_vv_##suffix(Interpreter *interp) { \
-		cell s1 = vocab.dict[interp->ip++]; \
-		cell s2 = vocab.dict[interp->ip++]; \
+	static void p_vv_##suffix(DISPATCH_ARGS) { \
+		REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1); \
 		Val a, b; \
-		a.bits = (uint64_t)vocab.dict[s1]; \
-		b.bits = (uint64_t)vocab.dict[s2]; \
-		push(interp, make_float(a.number op b.number)); \
-		DISPATCH(interp); \
+		a.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
+		b.bits = (uint64_t)vocab.dict[chain_ip[1]]; \
+		*chain_sp = make_float(a.number op b.number); \
+		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 1); \
 	} \
-	static void p_compile_vv_##suffix(Interpreter *interp) { \
+	static void p_compile_vv_##suffix(DISPATCH_ARGS) { \
 		compile_two_var_op(interp, vv_##suffix##_cfa, "vvf" #op); \
 	}
 FLOAT_BINOPS(GEN_VV)
 
 #define GEN_VV_STORE(suffix, op, base) \
 	static int vv_##suffix##_store_cfa; \
-	static void p_vv_##suffix##_store(Interpreter *interp) { \
-		cell s1 = vocab.dict[interp->ip++]; \
-		cell s2 = vocab.dict[interp->ip++]; \
-		cell dst = vocab.dict[interp->ip++]; \
+	static void p_vv_##suffix##_store(DISPATCH_ARGS) { \
 		Val a, b; \
-		a.bits = (uint64_t)vocab.dict[s1]; \
-		b.bits = (uint64_t)vocab.dict[s2]; \
-		vocab.dict[dst] = (cell)make_float(a.number op b.number).bits; \
-		DISPATCH(interp); \
+		a.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
+		b.bits = (uint64_t)vocab.dict[chain_ip[1]]; \
+		vocab.dict[chain_ip[2]] = (cell)make_float(a.number op b.number).bits; \
+		DISPATCH_REGISTERS(interp, chain_ip + 3, chain_sp); \
 	}
 FLOAT_BINOPS(GEN_VV_STORE)
 
 #define GEN_VF(suffix, op, base) \
 	static int vf_##suffix##_cfa; \
-	static void p_vf_##suffix(Interpreter *interp) { \
-		cell s = vocab.dict[interp->ip++]; \
-		if (interp->dsp < 1) { \
-			fail(interp, "vf" #op ": data stack underflow"); \
-			return; \
-		} \
+	static void p_vf_##suffix(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 1, chain_sp, 1, "vf" #op ": data stack underflow"); \
 		Val x; \
-		x.bits = (uint64_t)vocab.dict[s]; \
-		Val *a = &interp->data_stack[interp->dsp - 1]; \
-		a->number = a->number op x.number; \
-		DISPATCH(interp); \
+		x.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
+		chain_sp[-1].number = chain_sp[-1].number op x.number; \
+		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp); \
 	} \
-	static void p_compile_vf_##suffix(Interpreter *interp) { \
+	static void p_compile_vf_##suffix(DISPATCH_ARGS) { \
 		compile_one_var_op(interp, vf_##suffix##_cfa, "vf" #op); \
 	}
 FLOAT_BINOPS(GEN_VF)
 
 #define GEN_LF(suffix, op, base) \
 	static int lf_##suffix##_cfa; \
-	static void p_lf_##suffix(Interpreter *interp) { \
+	static void p_lf_##suffix(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 1, chain_sp, 1, "lf" #op ": data stack underflow"); \
 		Val k; \
-		k.bits = (uint64_t)vocab.dict[interp->ip++]; \
-		if (interp->dsp < 1) { \
-			fail(interp, "lf" #op ": data stack underflow"); \
-			return; \
-		} \
-		Val *a = &interp->data_stack[interp->dsp - 1]; \
-		a->number = a->number op k.number; \
-		DISPATCH(interp); \
+		k.bits = (uint64_t)chain_ip[0]; \
+		chain_sp[-1].number = chain_sp[-1].number op k.number; \
+		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp); \
 	}
 FLOAT_BINOPS(GEN_LF)
 
 #define GEN_VFN(suffix, expr, base) \
 	static int vfn_##suffix##_cfa; \
-	static void p_vfn_##suffix(Interpreter *interp) { \
-		cell s = vocab.dict[interp->ip++]; \
+	static void p_vfn_##suffix(DISPATCH_ARGS) { \
+		REQUIRE_STACK_ROOM(interp, chain_ip + 1, chain_sp, 1); \
 		Val cell_v; \
-		cell_v.bits = (uint64_t)vocab.dict[s]; \
+		cell_v.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
 		double v = cell_v.number; \
-		push(interp, make_float(expr)); \
-		DISPATCH(interp); \
+		*chain_sp = make_float(expr); \
+		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1); \
 	} \
-	static void p_compile_vfn_##suffix(Interpreter *interp) { \
+	static void p_compile_vfn_##suffix(DISPATCH_ARGS) { \
 		compile_one_var_op(interp, vfn_##suffix##_cfa, "vf" #suffix); \
 	}
 FLOAT_UNARY_FNS(GEN_VFN)
 
 #define GEN_FUSED(suffix, expr, base, name) \
 	static int vv_##suffix##_cfa; \
-	static void p_vv_##suffix(Interpreter *interp) { \
-		cell s1 = vocab.dict[interp->ip++]; \
-		cell s2 = vocab.dict[interp->ip++]; \
-		if (interp->dsp < 1) { \
-			fail(interp, name ": data stack underflow"); \
-			return; \
-		} \
+	static void p_vv_##suffix(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 2, chain_sp, 1, name ": data stack underflow"); \
 		Val b, c; \
-		b.bits = (uint64_t)vocab.dict[s1]; \
-		c.bits = (uint64_t)vocab.dict[s2]; \
-		Val *a = &interp->data_stack[interp->dsp - 1]; \
+		b.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
+		c.bits = (uint64_t)vocab.dict[chain_ip[1]]; \
+		Val *a = &chain_sp[-1]; \
 		a->number = expr; \
-		DISPATCH(interp); \
+		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp); \
 	} \
-	static void p_compile_vv_##suffix(Interpreter *interp) { \
+	static void p_compile_vv_##suffix(DISPATCH_ARGS) { \
 		compile_two_var_op(interp, vv_##suffix##_cfa, name); \
 	}
 FLOAT_FUSED(GEN_FUSED)
 
 #define GEN_FUSED_STORE(suffix, expr, base, name) \
 	static int vv_##suffix##_store_cfa; \
-	static void p_vv_##suffix##_store(Interpreter *interp) { \
-		cell s1 = vocab.dict[interp->ip++]; \
-		cell s2 = vocab.dict[interp->ip++]; \
-		cell dst = vocab.dict[interp->ip++]; \
-		if (interp->dsp < 1) { \
-			fail(interp, name "!: data stack underflow"); \
-			return; \
-		} \
+	static void p_vv_##suffix##_store(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 3, chain_sp, 1, name "!: data stack underflow"); \
 		Val b, c; \
-		b.bits = (uint64_t)vocab.dict[s1]; \
-		c.bits = (uint64_t)vocab.dict[s2]; \
-		Val *a = &interp->data_stack[--interp->dsp]; \
-		vocab.dict[dst] = (cell)make_float(expr).bits; \
-		DISPATCH(interp); \
+		b.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
+		c.bits = (uint64_t)vocab.dict[chain_ip[1]]; \
+		Val *a = &chain_sp[-1]; \
+		vocab.dict[chain_ip[2]] = (cell)make_float(expr).bits; \
+		DISPATCH_REGISTERS(interp, chain_ip + 3, chain_sp - 1); \
 	}
 FLOAT_FUSED(GEN_FUSED_STORE)
 
 #define GEN_VF_STORE(suffix, op, base) \
 	static int vf_##suffix##_store_cfa; \
-	static void p_vf_##suffix##_store(Interpreter *interp) { \
-		cell s = vocab.dict[interp->ip++]; \
-		cell dst = vocab.dict[interp->ip++]; \
-		if (interp->dsp < 1) { \
-			fail(interp, "vf" #op "!: data stack underflow"); \
-			return; \
-		} \
+	static void p_vf_##suffix##_store(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 2, chain_sp, 1, "vf" #op "!: data stack underflow"); \
 		Val x; \
-		x.bits = (uint64_t)vocab.dict[s]; \
-		double a = interp->data_stack[--interp->dsp].number; \
-		vocab.dict[dst] = (cell)make_float(a op x.number).bits; \
-		DISPATCH(interp); \
+		x.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
+		double a = chain_sp[-1].number; \
+		vocab.dict[chain_ip[1]] = (cell)make_float(a op x.number).bits; \
+		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp - 1); \
 	}
 FLOAT_BINOPS(GEN_VF_STORE)
 
 #define GEN_VFN_STORE(suffix, expr, base) \
 	static int vfn_##suffix##_store_cfa; \
-	static void p_vfn_##suffix##_store(Interpreter *interp) { \
-		cell s = vocab.dict[interp->ip++]; \
-		cell dst = vocab.dict[interp->ip++]; \
+	static void p_vfn_##suffix##_store(DISPATCH_ARGS) { \
 		Val cell_v; \
-		cell_v.bits = (uint64_t)vocab.dict[s]; \
+		cell_v.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
 		double v = cell_v.number; \
-		vocab.dict[dst] = (cell)make_float(expr).bits; \
-		DISPATCH(interp); \
+		vocab.dict[chain_ip[1]] = (cell)make_float(expr).bits; \
+		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp); \
 	}
 FLOAT_UNARY_FNS(GEN_VFN_STORE)
 

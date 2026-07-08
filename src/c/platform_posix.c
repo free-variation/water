@@ -219,7 +219,7 @@ static char *resolve_program_path(const char *name) {
 	}
 }
 
-void p_start_process(Interpreter *interp) {
+void p_start_process(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
 	Object *argv_array = OBJECT_AT(VAL_DATA(argv_val));
 	int argc = argv_array->len;
@@ -301,7 +301,7 @@ void p_start_process(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_wait(Interpreter *interp) {
+void p_wait(DISPATCH_ARGS) {
 	POP_INT(pid, "wait", "pid");
 	if (pid <= 0) {
 		fail(interp, "wait: invalid pid %d (expected a spawned process id)", pid);
@@ -331,7 +331,7 @@ void p_wait(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_stop_process(Interpreter *interp) {
+void p_stop_process(DISPATCH_ARGS) {
 	POP_INT(pid, "stop", "pid");
 	if (pid <= 0) {
 		fail(interp, "stop: invalid pid %d (expected a spawned process id)", pid);
@@ -363,7 +363,7 @@ void p_stop_process(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_running(Interpreter *interp) {
+void p_running(DISPATCH_ARGS) {
 	POP_INT(pid, "running?", "pid");
 
 	siginfo_t info;

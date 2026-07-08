@@ -524,7 +524,7 @@ int quantity_truthy(Val quantity) {
 	return truthy(pairs.table[VAL_DATA(quantity)].head);
 }
 
-void p_base(Interpreter *interp) {
+void p_base(DISPATCH_ARGS) {
 	int dimension = new_dimension();
 	int unit = unit_of_dimension(dimension);
 
@@ -545,7 +545,7 @@ void apply_unit(Interpreter *interp, int cfa) {
 	push_quantity(interp, magnitude, unit);
 }
 
-void dounit(Interpreter *interp) {
+void dounit(DISPATCH_ARGS) {
 	int cfa = (int)vocab.dict[interp->ip++];
 
 	apply_unit(interp, cfa);
@@ -554,7 +554,7 @@ void dounit(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
-void p_unit(Interpreter *interp) {
+void p_unit(DISPATCH_ARGS) {
 	char *name = next_token();
 	if (!name || !*name) {
 		fail(interp, "unit: expected a name");

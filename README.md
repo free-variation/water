@@ -152,7 +152,7 @@ Flat, fixed-length typed numeric buffers stored off the arena (one allocation, f
 - **Growing at the end** — `add-last!` ( arr v -- arr ) appends over a backing buffer that doubles when full, `remove-last!` ( arr -- v ) pops the last element; both amortized O(1), indexing stays O(1).
 - **Map, fold, zip-map, filter** — `map` for a single source, `reduce` for a left fold with an accumulator, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
 - **Destructuring** — `destruct` spreads a set/array/frame's elements onto the stack (a frame as alternating symbol/value). `destruct-to` ( values names -- ) takes two equal-length arrays and assigns each value to the global variable named by the corresponding symbol, creating it if absent.
-- **In-place slicing** — `slice!` copies a strided run from one array into another, `reverse-slice!` reverses a run in place, `to-slice!` stores values from the stack into a range.
+- **In-place slicing** — `slice!` copies a strided run from one array into another (a negative step with source and target aligned reverses in place), `to-slice!` stores values from the stack into a range.
 
 ### Random
 
