@@ -262,7 +262,9 @@ void p_mul(Interpreter *interp) {
 
 			Val product = pop(interp);
 			interp->dsp -= 2;
-			push_quantity(interp, product, unit_multiply(left_unit, right_unit));
+			int product_unit = unit_multiply(interp, left_unit, right_unit);
+			if (interp->error_flag) return;
+			push_quantity(interp, product, product_unit);
 		}
 		else
 			fail(interp, "* : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s",
@@ -327,7 +329,9 @@ void p_div(Interpreter *interp) {
 
 			Val quotient = pop(interp);
 			interp->dsp -= 2;
-			push_quantity(interp, quotient, unit_divide(left_unit, right_unit));
+			int quotient_unit = unit_divide(interp, left_unit, right_unit);
+			if (interp->error_flag) return;
+			push_quantity(interp, quotient, quotient_unit);
 		}
 		else
 			fail(interp, "/ : expected two floats, two matrices, or scalar/matrix; got %s and %s",

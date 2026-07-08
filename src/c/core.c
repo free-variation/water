@@ -4101,13 +4101,31 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 
 int main(int argc, char **argv) {
 	int interactive = isatty(fileno(stdin));
+	int interactive_set = 0;
 	int load_lib = 1;
 	long max_objects_arg = 0;
+	const char *program_files[64];
+	int n_program_files = 0;
 	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0)
+		if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
 			interactive = 1;
-		else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batch") == 0)
+			interactive_set = 1;
+		}
+		else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batch") == 0) {
 			interactive = 0;
+			interactive_set = 1;
+		}
+		else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--file") == 0) {
+			if (i + 1 >= argc) {
+				fprintf(stderr, "water: %s needs a file\n", argv[i]);
+				return 2;
+			}
+			if (n_program_files >= 64) {
+				fprintf(stderr, "water: too many -f files (max 64)\n");
+				return 2;
+			}
+			program_files[n_program_files++] = argv[++i];
+		}
 		else if (strcmp(argv[i], "--no-lib") == 0)
 			load_lib = 0;
 		else if (strcmp(argv[i], "--max-objects") == 0) {
@@ -4127,6 +4145,9 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	if (n_program_files > 0 && !interactive_set)
+		interactive = 0;
+
 	Interpreter *interp = main_init();
 	if (max_objects_arg > 0) {
 		max_objects_arg = MIN(max_objects_arg, MAX_OBJECTS);
@@ -4135,6 +4156,18 @@ int main(int argc, char **argv) {
 	platform_init();
 	if (construct_vocabulary(interp, load_lib))
 		return 1;
+
+	for (int i = 0; i < n_program_files; i++) {
+		load_file(interp, program_files[i]);
+		if (interp->error_flag) {
+			fprintf(stderr, "error: %s\n", interp->error_message);
+			return 1;
+		}
+		record_loaded_file(interp, program_files[i]);
+	}
+
+	if (n_program_files > 0 && !interactive)
+		return 0;
 
 	interactive = platform_repl_begin(interp, interactive);
 	compiler.interactive = interactive;

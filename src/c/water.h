@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.14.0"
+#define VERSION "0.14.1"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -717,8 +717,8 @@ int object_new_pair(Interpreter *interp);
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip);
 
 void dimension_init();
-int unit_multiply(int left, int right);
-int unit_divide(int left, int right);
+int unit_multiply(Interpreter *interp, int left, int right);
+int unit_divide(Interpreter *interp, int left, int right);
 int unit_pow(Interpreter *interp, int unit, int numerator, int denominator);
 int unit_conversion(int from, int to, double *factor);
 int unit_is_named(int unit);

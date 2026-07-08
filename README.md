@@ -11,7 +11,8 @@ runtime C FFI. A compact C interpreter built with `clang -O3`.
 make           # builds ./water
 make test      # runs the golden-output test suite
 make bench     # runs the benchmark suite (Water vs CPython)
-./water   # REPL
+./water              # REPL
+./water -f prog.h2o  # run a program file and exit (repeatable; -i also to drop into the REPL after)
 ```
 
 Self-contained: its vendored dependencies — PCRE2 (regex), isocline (REPL line

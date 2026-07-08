@@ -90,3 +90,7 @@ base unit clobber
 10 m . cr
 5 newton . cr
 1 dollar 50 cent + . cr
+
+\ ---- scale product that exceeds int range errors instead of wrapping ----
+100000 m unit bigm
+1 bigm 1 bigm *

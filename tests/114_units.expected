@@ -49,3 +49,4 @@ error: unit: scale must be a positive simple rational of the base unit; got 0.70
 10 m 
 5 newton 
 1.5 dollar 
+error: *: unit scale or exponent overflow

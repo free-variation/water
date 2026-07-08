@@ -33,19 +33,19 @@
   "In one sentence, what is Unicode normalization?" ] to questions
 
 \ One curl argv per question, built with lib/claude; run five at a time.
-questions [: |> question | [ question user-message ] request-body build-curl-argv :] map
+questions [> question | [ question user-message ] request-body build-curl-argv :] map
   5 parallel-run to results
 
 \ Print each question with its answer.
-[: |> idx |
+[> idx |
   "Q: " . questions idx @i . cr
   "A: " . results idx @i extract-response . cr
   cr
 :] questions size i-times
 
 \ Total cost of the session: sum response-cost over every successful result.
-results 0 ¢ [: |> total result |
-  result :status @ 0 = if total result response-cost + else total then
+results 0 ¢ [> total result |
+  result :status @ 0= if total result response-cost + else total then
 :] reduce
 "Total cost: " . . cr
 

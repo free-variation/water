@@ -63,6 +63,19 @@ static int gcd(int a, int b) {
 	return a ? a : 1;
 }
 
+static long long gcd_ll(long long a, long long b) {
+	a = a < 0 ? -a : a;
+	b = b < 0 ? -b : b;
+
+	while (b) {
+		long long remainder = a % b;
+		a = b;
+		b = remainder;
+	}
+
+	return a ? a : 1;
+}
+
 static int exact_root(int radicand, int degree, int *root) {
 	for (int candidate = 1; ; candidate++) {
 		long long power = 1;
@@ -94,22 +107,40 @@ static Rational make_rational(int numerator, int denominator) {
 	return reduced;
 }
 
-static Rational rational_add(Rational left, Rational right) {
-	return make_rational(
-			left.numerator * right.denominator + right.numerator * left.denominator,
-			left.denominator * right.denominator);
+static int rational_from_ll(long long numerator, long long denominator, Rational *reduced) {
+	if (denominator < 0) {
+		numerator = -numerator;
+		denominator = -denominator;
+	}
+
+	long long divisor = gcd_ll(numerator, denominator);
+	numerator /= divisor;
+	denominator /= divisor;
+
+	if (numerator < INT_MIN || numerator > INT_MAX || denominator > INT_MAX)
+		return 0;
+
+	reduced->numerator = (int)numerator;
+	reduced->denominator = (int)denominator;
+	return 1;
 }
 
-static Rational rational_multiply(Rational left, Rational right) {
-	return make_rational(
-			left.numerator * right.numerator,
-			left.denominator * right.denominator);
+static int rational_add(Rational left, Rational right, Rational *sum) {
+	return rational_from_ll(
+			(long long)left.numerator * right.denominator + (long long)right.numerator * left.denominator,
+			(long long)left.denominator * right.denominator, sum);
 }
 
-static Rational rational_divide(Rational left, Rational right) {
-	return make_rational(
-			left.numerator * right.denominator,
-			left.denominator * right.numerator);
+static int rational_multiply(Rational left, Rational right, Rational *product) {
+	return rational_from_ll(
+			(long long)left.numerator * right.numerator,
+			(long long)left.denominator * right.denominator, product);
+}
+
+static int rational_divide(Rational left, Rational right, Rational *quotient) {
+	return rational_from_ll(
+			(long long)left.numerator * right.denominator,
+			(long long)left.denominator * right.numerator, quotient);
 }
 
 static Rational rational_pow(Rational scale, Rational exponent, int *success) {
@@ -350,7 +381,8 @@ static int unit_combine(int left, int right, int sign) {
 	Unit *right_unit = &units[right];
 
 	int max_terms = left_unit->n_terms + right_unit->n_terms;
-	DimTerm *merged = malloc(sizeof(DimTerm) * (size_t)max_terms);
+	DimTerm inline_terms[16];
+	DimTerm *merged = max_terms <= 16 ? inline_terms : malloc(sizeof(DimTerm) * (size_t)max_terms);
 	int n_merged = 0;
 
 	for (int i = 0; i < left_unit->n_terms; i++)
@@ -364,7 +396,10 @@ static int unit_combine(int left, int right, int sign) {
 		int dimension_present = 0;
 		for (int j = 0; j < n_merged; j++)
 			if (merged[j].dimension == right_unit->terms[i].dimension) {
-				merged[j].power = rational_add(merged[j].power, power);
+				if (!rational_add(merged[j].power, power, &merged[j].power)) {
+					if (merged != inline_terms) free(merged);
+					return -1;
+				}
 				dimension_present = 1;
 				break;
 			}
@@ -378,23 +413,33 @@ static int unit_combine(int left, int right, int sign) {
 
 	int n_terms = unit_canonicalize(merged, n_merged);
 
-	Rational scale = sign > 0
-		? rational_multiply(left_unit->scale, right_unit->scale)
-		: rational_divide(left_unit->scale, right_unit->scale);
-
+	Rational scale;
+	int scale_ok = sign > 0
+		? rational_multiply(left_unit->scale, right_unit->scale, &scale)
+		: rational_divide(left_unit->scale, right_unit->scale, &scale);
+	if (!scale_ok) {
+		if (merged != inline_terms) free(merged);
+		return -1;
+	}
 
 	int combined_unit = unit_intern(merged, n_terms, scale);
 
-	free(merged);
+	if (merged != inline_terms) free(merged);
 	return combined_unit;
 }
 
-int unit_multiply(int left, int right) {
-	return unit_combine(left, right, 1);
+int unit_multiply(Interpreter *interp, int left, int right) {
+	int combined = unit_combine(left, right, 1);
+	if (combined < 0)
+		fail(interp, "*: unit scale or exponent overflow");
+	return combined;
 }
 
-int unit_divide(int left, int right) {
-	return unit_combine(left, right, -1);
+int unit_divide(Interpreter *interp, int left, int right) {
+	int combined = unit_combine(left, right, -1);
+	if (combined < 0)
+		fail(interp, "/: unit scale or exponent overflow");
+	return combined;
 }
 
 int unit_pow(Interpreter *interp, int unit, int numerator, int denominator) {
@@ -413,7 +458,11 @@ int unit_pow(Interpreter *interp, int unit, int numerator, int denominator) {
 
 	for (int i = 0; i < base_unit->n_terms; i++) {
 		scaled_terms[i].dimension = base_unit->terms[i].dimension;
-		scaled_terms[i].power = rational_multiply(base_unit->terms[i].power, exponent);
+		if (!rational_multiply(base_unit->terms[i].power, exponent, &scaled_terms[i].power)) {
+			free(scaled_terms);
+			fail(interp, "unit: exponent overflow raising to %d/%d", numerator, denominator);
+			return -1;
+		}
 	}
 
 	int n_terms = unit_canonicalize(scaled_terms, base_unit->n_terms);
@@ -526,7 +575,10 @@ void p_unit(Interpreter *interp) {
 		fail(interp, "unit: scale must be a positive simple rational of the base unit; got %g", value);
 		return;
 	}
-	scale = rational_multiply(scale, units[source_unit].scale);
+	if (!rational_multiply(scale, units[source_unit].scale, &scale)) {
+		fail(interp, "unit: scale overflow combining with the base unit");
+		return;
+	}
 
 	int base_dimension = DIMENSION_UNNAMED;
 	if (units[source_unit].n_terms == 1
