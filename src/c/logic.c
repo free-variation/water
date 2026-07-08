@@ -119,11 +119,7 @@ static int enclosing_choice(Interpreter *interp) {
 	return 0;
 }
 
-void p_unify(DISPATCH_ARGS) {
-	POP(right);
-	POP(left);
-
-	int unified = unify(interp, left, right);
+static void unify_outcome(Interpreter *interp, Val left, Val right, int unified) {
 	if (interp->error_flag) return;
 
 	if (unified) {
@@ -141,6 +137,49 @@ void p_unify(DISPATCH_ARGS) {
 		free(lbuf);
 		free(rbuf);
 	}
+
+}
+
+void p_unify(DISPATCH_ARGS) {
+	POP(right);
+	POP(left);
+
+	int unified = unify(interp, left, right);
+	unify_outcome(interp, left, right, unified);
+
+	DISPATCH(interp);
+}
+
+void p_unify_cons(DISPATCH_ARGS) {
+	POP(tail);
+	POP(head);
+	POP(left);
+
+	Val target = deref(interp, left);
+	int unified;
+	Val counterpart = target;
+
+	if (VAL_TAG(target) == T_PAIR) {
+		Pair *pair = &pairs.table[VAL_DATA(target)];
+		unified = unify(interp, pair->head, head) && unify(interp, pair->tail, tail);
+	} else if (VAL_TAG(target) == T_UNBOUND) {
+		unified = 1;
+	} else {
+		int slot = object_new_pair(interp);
+		if (interp->error_flag) return;
+
+		pairs.table[slot].head = head;
+		pairs.table[slot].tail = tail;
+		
+		counterpart = make_pair(slot);
+		if (VAL_TAG(target) == T_LOGIC_VAR) {
+			bind_var(interp, (int)VAL_DATA(target), counterpart);
+			unified = 1;
+		} else
+			unified = 0;
+	}
+
+	unify_outcome(interp, left, counterpart, unified);
 
 	DISPATCH(interp);
 }
@@ -178,7 +217,7 @@ void p_amb(DISPATCH_ARGS) {
 	int mark_index = interp->rsp;
 	int mark_id = push_prompt(interp, PROMPT_CHOICE);
 
-	execute_cfa(interp, branch1);		
+	execute_xt(interp, branch1);		
 
 	if (interp->unwinding && interp->unwind_target == mark_id) {
 		interp->unwinding = 0;
@@ -187,7 +226,7 @@ void p_amb(DISPATCH_ARGS) {
 		trail_undo_to(interp, saved_trail);
 		interp->lvar_top = saved_lvar;
 
-		execute_cfa(interp, branch2);
+		execute_xt(interp, branch2);
 	} else if (!interp->unwinding)
 		interp->rsp = mark_index;
 

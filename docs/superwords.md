@@ -52,10 +52,11 @@ small slice.
 
 A modern bytecode interpreter like CPython narrows this gap with a
 *specializing* interpreter: it fuses and specializes opcodes at runtime so each
-bytecode does more real work. Water has no runtime specializer and does not
-compile to native code. The only lever available is to **do more per dispatch**
-— to recognize, at compile time, that a run of cheap ops can be replaced by one
-op that does all their work.
+bytecode does more real work. Water attacks the gap from both ends: quickening
+(`threading.md`, Part 9) specializes polymorphic ops by observed type at
+runtime, and superinstructions — this document's subject — **do more per
+dispatch**, recognizing at compile time that a run of cheap ops can be replaced
+by one op that does all their work.
 
 That replacement is a *superinstruction*.
 
@@ -110,6 +111,14 @@ trailing operands from variables.
 Every one of these is a normal dictionary word with a normal name, so it can be
 typed directly — but in practice nobody does, because the compiler inserts them
 for you.
+
+Locals have parallel families of their own, generated and fused the same way:
+adjacent local fetches collapse into multi-load ops (`(load2)`, `(load3)`),
+local⊕local and local⊕literal arithmetic into the `(ll…)` forms, the
+read-modify-write of an accumulator into the `(acc…)` forms (Part 6), and a
+float comparison feeding a loop test fuses with its branch into a single
+compare-and-branch op. They live in `src/c/core.c` because they address the
+locals frame rather than dictionary slots.
 
 ---
 
@@ -341,13 +350,15 @@ versus real work.
 - A loop with a tiny body and a store per iteration — `X negate to X`,
   `PI f+ to PI` — folds each store into a store variant, removing a
   push-and-store round trip from every iteration.
-- Loops written with `begin`/`until` over scalar locals are unaffected: fusion
-  keys on variable pushes and float operators, not on local fetches or
-  hand-rolled loop control.
+- Loops written with `begin`/`while`/`repeat` over scalar locals fuse through
+  the local families instead: the loop test collapses to one compare-and-branch
+  op, adjacent local fetches to one multi-load, and the accumulator update to
+  one read-modify-write — a six-op loop body where a naive compilation would
+  dispatch a dozen.
 
-A tight loop of trivial float ops over variables gains the most; a loop
-dominated by array indexing, branching, or genuine arithmetic gains little,
-because there is less dispatch to remove.
+A tight loop of trivial float ops over variables or locals gains the most; a
+loop dominated by array indexing or genuine arithmetic gains less, because
+there is less dispatch to remove.
 
 ---
 

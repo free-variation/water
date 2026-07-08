@@ -159,10 +159,7 @@ inline
 : help lookup man . ;
 
 \ logic words
-
-( a b -- unified )  \ unify two terms; binds, leaves the unified term, fails on mismatch
-: ~ unify ;
-inline
+\ (~ is registered in C as a primitive alias of unify, so cons ~ fuses to (cons~))
 
 ( v -- val )  \ resolve a logic var to its current binding
 : ? deref ;

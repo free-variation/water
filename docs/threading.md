@@ -190,6 +190,31 @@ The dictionary is a single process-global, so the dispatch read is one indexed
 load off a known base — no `interpreter → dictionary` pointer chase. That matters
 because the load happens on every dispatch.
 
+### The register convention
+
+Every handler receives three arguments: the interpreter, a pointer to its first
+operand cell, and a pointer one past the top of the data stack. Because each
+handler tail-calls the next with updated values, those two pointers live in
+argument registers for the whole chain — the instruction pointer and stack
+pointer are never loaded from memory between converted ops. The `Interpreter`
+fields (`ip`, `dsp`) still exist, but as the *spilled* copy of the truth: every
+dispatch stores the current values back (fire-and-forget stores, off the
+critical path), so any C code the chain drops into — `fail`, the collector, a
+handler that still works through the struct — sees coherent state without being
+handed the registers.
+
+That asymmetry — registers authoritative inside the chain, memory refreshed at
+every hop and read only at boundaries — is what the dispatch macros divide
+between them. `DISPATCH_REGISTERS` is the converted handler's tail: store-sync,
+check the break flags, fetch the next handler, tail-call with advanced pointers.
+`DISPATCH` is the unconverted tail: reload the pointers from the struct (such a
+handler has been updating the struct directly) and chain the same way, so
+converted and unconverted ops interleave freely in one body. `SYNC_REGISTERS`
+is the escape hatch a converted handler uses before calling C code that can
+fail or inspect the stack; the stack-guard macros (`REQUIRE_STACK_ROOM`,
+`REQUIRE_STACK_DEPTH`) bundle their bounds compare with that sync on the
+failure path.
+
 The chain has to break cleanly when something interrupts ordinary flow. Before
 jumping, the dispatch tail checks a few interpreter flags and *returns* instead of
 chaining if any is set:
@@ -227,7 +252,13 @@ Beyond direct threading's one-read-per-op, two effects:
   dispatch site — one jump with dozens of targets — predicts far worse.
 - **No prologue/epilogue between ops.** With forced tail calls the chain is a
   sequence of unconditional jumps through handler bodies — no per-op register
-  save/restore, and hot interpreter state stays in registers across handlers.
+  save/restore.
+- **State in registers by construction.** The instruction and stack pointers
+  ride in argument registers through the chain (Part 7's register convention);
+  the struct sees only refresh stores. The memory round trips that would
+  otherwise sit on every op's critical path — load `ip`, load `dsp`, store both
+  back, and the store-to-load stall between one op's write and the next op's
+  read — are gone.
 
 The cost is a per-op test of the break flags (predicted, almost always not taken)
 and a compiler that supports guaranteed tail calls. A computed-goto interpreter
@@ -237,7 +268,30 @@ spread across several source files, while still ending in its own indirect jump.
 
 ---
 
-## Part 9: Calling a word from C — the trampoline
+## Part 9: Quickening — dispatch cells as inline caches
+
+A dispatch cell is writable data, and the register convention hands every
+handler the address of its own cell (one cell before its operands). Water uses
+that for *quickening*: a polymorphic op that observes its operand's type
+rewrites its own call site to a type-specialized handler, so the next execution
+of that site skips the type ladder. The specialized handler re-checks the tags
+it depends on — a *guard* — and on a mismatch rewrites the cell back to the
+generic handler and tail-calls it, so the current occurrence still executes
+correctly and the site re-specializes to whatever it now sees. Every value the
+cell can ever hold is a valid handler, so no ordering of rewrites produces a
+wrong program — only a slower one, if a site's types genuinely alternate.
+
+The rewrites are fenced out of parallel regions (`RETARGET_OP` declines to
+write while workers run): the dictionary is shared across worker threads,
+racing stores on it are undefined behavior, and quickening is only a cache —
+skipping a write costs a missed specialization, never correctness. Specialized
+handlers are registered like any primitive, so the image format (Part 11) saves
+a quickened cell as itself and `see-compiled` names it; each carries the same
+operand-cell count as its generic form, so body walks (Part 6) are unaffected.
+
+---
+
+## Part 10: Calling a word from C — the trampoline
 
 `run_inner` drives the in-loop chain. When C code needs to invoke a word directly
 — to run a quotation — it goes through a small trampoline. Variables and symbols
@@ -256,11 +310,14 @@ restores the saved state. Each interpreter owns its own disjoint trampoline cell
 every worker), so interpreters running concurrently never write each other's — the
 worker model is `multicore.md`'s subject. For tight loops that call a word once per
 iteration (the combinators), the setup is split out so the trampoline is written
-once and only the chain is paid per iteration.
+once and only the chain is paid per iteration — and the per-iteration entry
+skips `run_inner`'s loop entirely, dispatching the body's first handler directly
+and falling back to `run_inner` only when the chain breaks without finishing (a
+GC safepoint or an unwind mid-body).
 
 ---
 
-## Part 10: The GC's view, and the image format
+## Part 11: The GC's view, and the image format
 
 **The GC** has to find every `Val` reachable from compiled code — literals and
 variable values embedded in word bodies — without misreading a dispatch cell or an

@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.14.2"
+#define VERSION "0.15.1"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -761,6 +761,7 @@ void dosym(DISPATCH_ARGS);
 void dovar(DISPATCH_ARGS);
 void run_inner(Interpreter *interp, int floor);
 void execute_cfa(Interpreter *interp, int cfa);
+void execute_xt(Interpreter *interp, int cfa);
 
 typedef struct {
 	int saved_ip;
@@ -906,6 +907,7 @@ void p_symbol_q(DISPATCH_ARGS);
 void p_lvar(DISPATCH_ARGS);
 void p_wildcard(DISPATCH_ARGS);
 void p_unify(DISPATCH_ARGS);
+void p_unify_cons(DISPATCH_ARGS);
 void p_matches(DISPATCH_ARGS);
 void p_deref(DISPATCH_ARGS);
 Val deref(Interpreter *interp, Val value);

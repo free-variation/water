@@ -802,6 +802,43 @@ void frame_sort_dedup(Object *frame) {
 	if (frame->len < 2)
 		return;
 
+	int ascending = 1;
+	for (int i = 1; i < frame->len; i++) {
+		if (frame->frame.keys[i - 1] >= frame->frame.keys[i]) {
+			ascending = 0;
+			break;
+		}
+	}
+	if (ascending)
+		return;
+
+	if (frame->len <= 64) {
+		for (int i = 1; i < frame->len; i++) {
+			cell key = frame->frame.keys[i];
+			Val value = frame->frame.values[i];
+			int j = i - 1;
+			while (j >= 0 && frame->frame.keys[j] > key) {
+				frame->frame.keys[j + 1] = frame->frame.keys[j];
+				frame->frame.values[j + 1] = frame->frame.values[j];
+				j--;
+			}
+			frame->frame.keys[j + 1] = key;
+			frame->frame.values[j + 1] = value;
+		}
+		int unique = 0;
+		for (int i = 0; i < frame->len; i++) {
+			if (unique > 0 && frame->frame.keys[unique - 1] == frame->frame.keys[i])
+				frame->frame.values[unique - 1] = frame->frame.values[i];
+			else {
+				frame->frame.keys[unique] = frame->frame.keys[i];
+				frame->frame.values[unique] = frame->frame.values[i];
+				unique++;
+			}
+		}
+		frame->len = unique;
+		return;
+	}
+
 	FrameEntry *entries = malloc(sizeof(FrameEntry) * (size_t)frame->len);
 	for (int i = 0; i < frame->len; i++) {
 		entries[i].key = frame->frame.keys[i];
@@ -1415,7 +1452,7 @@ void p_update_at(DISPATCH_ARGS) {
 			return;
 			}
 			push(interp, frame->frame.values[at]);
-			execute_cfa(interp, (int)VAL_DATA(xt));
+			execute_xt(interp, (int)VAL_DATA(xt));
 			if (interp->error_flag) return;
 			frame_put(frame, VAL_DATA(key_or_path), pop(interp));
 			interp->dsp -= 2;
@@ -1436,7 +1473,7 @@ void p_update_at(DISPATCH_ARGS) {
 				return;
 			}
 			push(interp, parent_obj->frame.values[at]);
-			execute_cfa(interp, (int)VAL_DATA(xt));
+			execute_xt(interp, (int)VAL_DATA(xt));
 			if (interp->error_flag) return;
 			frame_put(parent_obj, leaf, pop(interp));
 			interp->dsp -= 2;

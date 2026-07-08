@@ -361,6 +361,8 @@ int superword_is_lit_fold(cell handler) {
 	return 0;
 }
 
+static int unify_cons_cfa;
+
 int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_cfa == vocab.at_i_cfa) {
 		if (try_fuse_at_i_ll(interp))
@@ -380,6 +382,14 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 			return 1;
 		vocab.here -= 1;
 		emit_call(interp, store_i_drop_cfa);
+		return 1;
+	}
+
+	if (op_handler == p_unify
+	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
+	    && dict_op_is(vocab.here - 1, p_cons)) {
+		vocab.here -= 1;
+		emit_call(interp, unify_cons_cfa);
 		return 1;
 	}
 
@@ -472,6 +482,7 @@ void define_superwords(Interpreter *interp) {
 	define_primitive(interp, "f*+", p_fmul_add, 0);
 	define_primitive(interp, "f*-", p_fmul_sub, 0);
 	store_i_drop_cfa = define_primitive(interp, "(!i-drop)", p_store_i_drop, 0);
+	unify_cons_cfa = define_primitive(interp, "(cons~)", p_unify_cons, 4);
 	inc_store_i_cfa = define_primitive(interp, "(inc!i)", p_inc_store_i, 4);
 	dec_store_i_cfa = define_primitive(interp, "(dec!i)", p_dec_store_i, 4);
 	add_store_i_cfa = define_primitive(interp, "(+!i)", p_add_store_i, 4);

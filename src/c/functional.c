@@ -561,7 +561,7 @@ void p_pmap_reduce(DISPATCH_ARGS) {
 	push(interp, identity);
 	for (int i = 0; i < worker_count; i++) {
 		push(interp, partials->items[i]);
-		execute_cfa(interp, combine_function);
+		execute_xt(interp, combine_function);
 		if (interp->error_flag) {
 			gc_root_pop(interp);
 			gc_root_pop(interp);

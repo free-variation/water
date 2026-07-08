@@ -1409,6 +1409,45 @@ static void dispatch_body(Interpreter *interp, int body_start) {
 	interp->call_depth--;
 }
 
+void execute_xt(Interpreter *interp, int cfa) {
+	if ((cfa_handler)vocab.dict[cfa] != docol) {
+		execute_cfa(interp, cfa);
+		return;
+	}
+	if (interp->call_depth >= MAX_CALL_DEPTH) {
+		fail(interp, "call stack too deep (runaway recursion via execute/resume/amb?)");
+		return;
+	}
+	interp->call_depth++;
+
+	int saved_ip = interp->ip;
+	int saved_running = interp->running;
+	int saved_floor = interp->run_floor;
+	interp->run_floor = interp->rsp;
+
+	/* The frame the trampoline's docol would push, but aimed at the immortal
+	   stop cell — continuations captured inside the body must see the same
+	   return-stack shape either way. */
+	rpush(interp, make_addr(vocab.stop_cfa));
+	if (interp->error_flag) {
+		interp->run_floor = saved_floor;
+		interp->call_depth--;
+		return;
+	}
+
+	interp->running = 1;
+	interp->ip = cfa + 2;
+	((cfa_handler)vocab.dict[cfa + 1])(interp, vocab.dict + cfa + 2, interp->data_stack + interp->dsp);
+
+	if (interp->running && !interp->error_flag)
+		run_inner(interp, interp->run_floor);
+
+	interp->run_floor = saved_floor;
+	interp->call_depth--;
+	interp->ip = saved_ip;
+	interp->running = saved_running;
+}
+
 void call_invoke(Interpreter *interp) {
 	if (interp->loop_body_start) {
 		interp->loop_local_refill = 0;
@@ -3780,6 +3819,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "lvar", p_lvar, 0);
 	define_primitive(interp, "_", p_wildcard, 0);
 	define_primitive(interp, "unify", p_unify, 0);
+	define_primitive(interp, "~", p_unify, 0);
 	define_primitive(interp, "matches?", p_matches, 0);
 	define_primitive(interp, "deref", p_deref, 0);
 	define_primitive(interp, "amb", p_amb, 0);

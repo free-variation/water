@@ -870,7 +870,7 @@ void p_side_depth(DISPATCH_ARGS) {
 
 void p_execute(DISPATCH_ARGS) {
 	POP_XT(value, "execute");
-	execute_cfa(interp, value);
+	execute_xt(interp, value);
 
 	DISPATCH(interp);
 }
@@ -979,7 +979,7 @@ void p_shift_with(DISPATCH_ARGS) {
 	unwind_to(interp, mark_index);
 	push(interp, make_continuation(cont_slot));
 
-	execute_cfa(interp, handler);
+	execute_xt(interp, handler);
 	if (interp->error_flag)
 		return;
 
@@ -990,7 +990,7 @@ void p_execute_catching(DISPATCH_ARGS) {
 	POP_XT(xt, "(execute-catching)");
 	int base_dsp = interp->dsp;
 
-	execute_cfa(interp, xt);
+	execute_xt(interp, xt);
 
 	if (interp->error_flag) {
 		interp->error_flag = 0;
