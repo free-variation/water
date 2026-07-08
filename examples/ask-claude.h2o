@@ -1,41 +1,14 @@
-\ ask-claude.h2o — ask Claude twenty questions concurrently via the Anthropic
-\ Messages API, five requests in flight at a time.
-\ exercises: frame>json (request bodies), env (API key), parallel-run +
-\ subprocesses (concurrent curl), json>frame (replies), frame + array access.
+\ ask-claude.h2o — ask Claude twenty questions concurrently via lib/claude,
+\ five requests in flight at a time, then report the session's total cost.
+\ exercises: lib/claude (request-body, user-message, build-curl-argv,
+\ extract-response, response-cost), parallel-run, and dimensioned ¢ arithmetic.
 \
 \ Needs ANTHROPIC_API_KEY in the environment and curl on the PATH.
 
-"claude-haiku-4-5-20251001" to MODEL
+"lib/claude.h2o" load
 
-\ Build the Messages-API request body from a question string.
-: request-body ( question -- json )
-  |> question |
-  { :model MODEL  :max_tokens 256
-    :messages [ { :role "user" :content question } ] }
-  frame>json ;
-
-\ Build the curl argv array that POSTs one question to the API.
-: ->curl-argv ( question -- argv )
-  | body >question |
-  question request-body to body
-  [ "curl" "-s" "https://api.anthropic.com/v1/messages"
-    "-H" "x-api-key: " "ANTHROPIC_API_KEY" env +
-    "-H" "anthropic-version: 2023-06-01"
-    "-H" "content-type: application/json"
-    "-d" body ] ;
-
-\ Pull the answer text out of one { :out :err :status } result.
-: extract-answer ( result -- answer )
-  dup :status @ 0 = not if
-    :err @
-  else
-    :out @ json>frame
-    dup :content has? if
-      :content @ 0 @i :text @
-    else
-      frame>json
-    then
-  then ;
+"claude-haiku-4-5-20251001" to claude-model
+256 to claude-max-tokens
 
 \ Twenty short questions.
 [ "In one sentence, what is a stack-based programming language?"
@@ -57,16 +30,23 @@
   "In one sentence, what is a closure?"
   "In one sentence, what is memoization?"
   "In one sentence, what is a finite state machine?"
-  "In one sentence, what is Unicode normalization?" ] to QUESTIONS
+  "In one sentence, what is Unicode normalization?" ] to questions
 
-\ Build the curl commands and run them five at a time.
-QUESTIONS [: ->curl-argv :] map  5 parallel-run  to RESULTS
+\ One curl argv per question, built with lib/claude; run five at a time.
+questions [: |> question | [ question user-message ] request-body build-curl-argv :] map
+  5 parallel-run to results
 
 \ Print each question with its answer.
 [: |> idx |
-  "Q: " . QUESTIONS idx @i . cr
-  "A: " . RESULTS idx @i extract-answer . cr
+  "Q: " . questions idx @i . cr
+  "A: " . results idx @i extract-response . cr
   cr
-:] QUESTIONS size i-times
+:] questions size i-times
+
+\ Total cost of the session: sum response-cost over every successful result.
+results 0 ¢ [: |> total result |
+  result :status @ 0 = if total result response-cost + else total then
+:] reduce
+"Total cost: " . . cr
 
 bye
