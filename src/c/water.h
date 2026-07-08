@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.12.1"
+#define VERSION "0.13.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,7 +83,8 @@ typedef enum {
 	T_UNBOUND,
 	T_DB,
 	T_PTR,
-	T_SEGMENT
+	T_SEGMENT,
+	T_QUANTITY
 } Tag;
 
 typedef union {
@@ -150,15 +151,20 @@ static inline Val make_stream(int file_descriptor) {return make_tagged(T_STREAM,
 static inline Val make_db(int handle) { return make_tagged(T_DB, handle); }
 static inline Val make_pointer(int handle) { return make_tagged(T_PTR, handle); }
 static inline Val make_segment(int handle) { return make_tagged(T_SEGMENT, handle); }
+static inline Val make_quantity(int handle) { return make_tagged(T_QUANTITY, handle); }
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_logic_var(int handle) { return make_tagged(T_LOGIC_VAR, handle); }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
 static inline Val make_bool(int is_true) { return make_float(is_true ? 1.0 : 0.0); }
 
 
+int quantity_truthy(Val quantity);
+
 static inline int truthy(Val value) {
 	if (VAL_TAG(value) == T_FLOAT)
 		return VAL_NUMBER(value) != 0.0;
+	if (VAL_TAG(value) == T_QUANTITY)
+		return quantity_truthy(value);
 	return VAL_DATA(value) != 0;
 }
 
@@ -603,6 +609,7 @@ static inline Val rpop(Interpreter *interp) {
 #define POP_ARRAY(name, op)   POP_TYPED(name, op, T_ARRAY);   Object *name = OBJECT_AT(VAL_DATA(name##_val))
 #define POP_SET(name, op)     POP_TYPED(name, op, T_SET);     int name = (int)VAL_DATA(name##_val)
 #define POP_PAIR(name, op)    POP_TYPED(name, op, T_PAIR);    Pair *name = &pairs.table[VAL_DATA(name##_val)]
+#define POP_QUANTITY(name, op) POP_TYPED(name, op, T_QUANTITY); Pair *name = &pairs.table[VAL_DATA(name##_val)]
 #define POP_CONT(name, op)    POP_TYPED(name, op, T_CONT);    Object *name = OBJECT_AT(VAL_DATA(name##_val))
 #define POP_SYMBOL(name, op)  POP_TYPED(name, op, T_SYMBOL);  cell name = VAL_DATA(name##_val)
 #define POP_PTR(name, op)     POP_TYPED(name, op, T_PTR);     int name = (int)VAL_DATA(name##_val)
@@ -708,6 +715,25 @@ int object_new_segment(Interpreter *interp, int length, SegmentType element_type
 int object_new_logic_var(Interpreter *interp);
 int object_new_pair(Interpreter *interp);
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip);
+
+void dimension_init();
+int unit_multiply(int left, int right);
+int unit_divide(int left, int right);
+int unit_pow(Interpreter *interp, int unit, int numerator, int denominator);
+int unit_conversion(int from, int to, double *factor);
+int unit_is_named(int unit);
+double unit_scale_value(int unit);
+int unit_id_valid(int unit);
+void dimension_freeze(void);
+void dimension_save(FILE *file);
+int dimension_load(FILE *file);
+void render_unit(FILE *out, int unit);
+void push_quantity(Interpreter *interp, Val magnitude, int unit);
+void p_base(Interpreter *interp);
+void p_unit(Interpreter *interp);
+void dounit(Interpreter *interp);
+void apply_unit(Interpreter *interp, int cfa);
+
 int val_cmp(Interpreter *interp, Val left, Val right);
 int double_cmp(const void *left, const void *right);
 void set_add(Interpreter *interp, int set_handle, Val value);
@@ -720,7 +746,7 @@ void print_double(FILE *out, double number);
 void print_items(FILE *out, Interpreter *interp, Object *collection);
 void print_corners(FILE *out, Object *matrix);
 void print_matrix_cell(FILE *out, double value);
-void print_matrix_grid(FILE *out, Object *m);
+void print_matrix_grid(FILE *out, Object *m, int unit);
 void print_val(FILE *out, Interpreter *interp, Val value);
 void print_val_inspect(FILE *out, Interpreter *interp, Val value);
 void pretty_print_array(FILE *out, Interpreter *interp, Val value);

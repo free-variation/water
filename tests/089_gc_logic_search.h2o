@@ -8,7 +8,7 @@ variable K   ex to K drop
 \ a logic var bound to a heap structure survives an explicit collection
 Y [( 1 2 3 null )] ~ drop
 gc
-Y $ . cr                             \ [( 1 2 3 null )]  binding + pair survived GC
+Y ? . cr                             \ [( 1 2 3 null )]  binding + pair survived GC
 
 \ a backtracking search that forces a GC at every step, with the captured
 \ continuation held live throughout; commit to the first option over 4

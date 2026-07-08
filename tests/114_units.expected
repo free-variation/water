@@ -1,0 +1,51 @@
+10 m 
+3 kg 
+10 m 
+12 m^2 
+20 m 
+20 m 
+5 m.s^-1 
+5 
+3 newton 
+6 newton 
+7 m 
+7 m 
+9 m^2 
+8 m^3 
+9 m 
+9 m 
+-3 m 
+3 m 
+0 
+1 
+1 
+3 dollar 
+5 cent 
+1.5 dollar 
+150 cent 
+1 
+1 
+0 
+500 ml.s^-1 
+error: + : unit mismatch
+error: + : cannot add a quantity and a plain number
+error: ^ : exponent must be a number; got a quantity
+error: ^ : exponent must be a simple rational
+error: sin: expected a float or a matrix; got a quantity
+error: unit: scale must be a positive whole number of the base unit; got 0.333333
+<matrix 2x2> m
+          1          2
+          3          4
+
+<matrix 2x2> m
+          2          3
+          4          5
+
+<matrix 2x2>
+          2          3
+          4          5
+
+42 newton 
+10 m 
+5 newton 
+1.5 dollar 

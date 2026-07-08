@@ -83,10 +83,18 @@
 
 ( conversations -- answers ) \ conversations: array of prompt-arrays; run in parallel, failed ones yield null 
 : run-cots
-	[: 
-		[: run-cot :] 
-		[: drop null :] 
-		try-catch 
-	:] 
+	[:
+		[: run-cot :]
+		[: drop null :]
+		try-catch
+	:]
 	pmap ;
+
+\ ---- the cost of a cot, as a currency quantity ----
+\ Rough dollar cost of one cot's output: max output tokens times the per-token
+\ output price. Set the rate to your plan's price (dollars per output token).
+0.000075 to claude-token-price
+
+( -- $ ) \ estimated output cost of a cot, as a dollar quantity
+: cot-cost  claude-max-tokens claude-token-price * $ ;
 

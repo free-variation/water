@@ -6,7 +6,6 @@
 const HelpEntry help_entries[] = {
 	{ "!", "( fr sym/path val -- fr )", "Set by key or path, vivifying intermediates; mutates fr; errors on a search path", "d log n", "realloc on growth; 1o per vivified frame", "O(d log n) amortized" },
 	{ "!i", "( arr i val -- arr )", "Store val at index i in place; leaves arr on the stack", "4", "none", "O(1)" },
-	{ "$", "( v -- val )", "lib.h2o: deref (inlined)", "d", "none", "O(d)" },
 	{ "%", "( a b -- remainder quotient )", "floats only; truncating division: pushes a − trunc(a/b)·b then trunc(a/b); errors on zero", "4", "none", "O(1)" },
 	{ "'", "( \"name\" -- xt )", "Parse the following word at compile time and push its xt (immediate; folds the xt in as a literal)", NULL, NULL, NULL },
 	{ "*", "( a b -- a*b )", "float: multiply. set∩set: intersection. matrix: element-wise. scalar/matrix broadcast.", "3 (float)", "as +", "as +" },
@@ -34,6 +33,7 @@ const HelpEntry help_entries[] = {
 	{ "=", "( a b -- bool )", "structural equality", "3 (float)", "none", "float O(1); string O(|s|); array/set O(n); frame O(n); matrix O(r×c)" },
 	{ ">r", "( a -- ) → return stack", "Move top to return stack", "2", "none", "O(1)" },
 	{ ">side", "( a -- )", "Push to side stack", "2", "none", "O(1)" },
+	{ "?", "( v -- val )", "lib.h2o: deref (inlined)", "d", "none", "O(d)" },
 	{ "?if", "( flag -- flag )", "Like if, but peeks the flag instead of consuming it — the flag stays on the stack in both branches", NULL, NULL, NULL },
 	{ "@", "( fr sym/path -- val )", "Get by key or path; errors if absent or if the path is a search path", "3 + d log n", "none", "O(d log n)" },
 	{ "@i", "( arr i -- val )", "Array element; on a matrix returns row i as a 1×c matrix", "3 (array)", "matrix 1m(1×c)", "O(1) array; O(c) matrix" },
@@ -60,6 +60,7 @@ const HelpEntry help_entries[] = {
 	{ "assert", "( rel row -- rel )", "Add row to :rows and to each indexed column's bucket; identical row is a no-op. Mutates rel in place, returns it", "k + n", "reallocs", "O(n)" },
 	{ "atan", "( a -- atan a )", "inverse tangent", "2", "matrix 1m(r×c)", "same" },
 	{ "augment", "( a b -- m )", "Concatenate two matrices column-wise; errors unless row counts match", "2 + r·c", "1m(r×c)", "O(r·c)" },
+	{ "base", "( -- q )", "Push a base quantity — a fresh dimension with its base unit, magnitude 1.0. Paired with unit to declare a base dimension (base unit m)", NULL, NULL, NULL },
 	{ "begin", "—", "Mark a loop top", NULL, NULL, NULL },
 	{ "bit-and", "( a b -- f )", "bitwise AND", "2", "none", "O(1)" },
 	{ "bit-not", "( a -- f )", "two's-complement complement", "1", "none", "O(1)" },
@@ -336,6 +337,7 @@ const HelpEntry help_entries[] = {
 	{ "try-catch", "( normal-xt err-xt -- … )", "lib.h2o: run normal-xt; on a throw or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack", "—", "cont if thrown; 1s on a caught interpreter error", "O(normal-xt)" },
 	{ "unify", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A _ on either side matches anything and binds nothing. On a mismatch, fails.", "n", "none", "O(n)" },
 	{ "union", "( s₁ s₂ -- s₃ )", "Union into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)" },
+	{ "unit", "( q -- )", "Read the following name; pop a quantity whose magnitude is a positive whole number, and define a postfix word attaching that unit. The magnitude is the unit's integer scale relative to its dimension's base (100 cent unit dollar). A single unnamed base dimension gets named after the word", NULL, NULL, NULL },
 	{ "until", "( flag -- )", "Branch back to begin if flag is falsy", NULL, NULL, NULL },
 	{ "update-at", "( fr sym/path xt -- fr )", "Apply xt to the value at the key, store the result back; errors on a search path", "d log n + xt", "none", "O(d log n + xt)" },
 	{ "values", "( fr -- arr )", "Values in key order", "1 + n", "1a(n)", "O(n)" },
@@ -373,4 +375,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 367;
+const int help_entry_count = 369;

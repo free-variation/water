@@ -151,7 +151,7 @@ inline
 inline
 
 ( v -- val )  \ resolve a logic var to its current binding
-: $ deref ;
+: ? deref ;
 inline
 
 ( list cont -- )  \ run cont with each element of list in turn; commit to the first element for which cont succeeds, fail if none do
@@ -205,7 +205,7 @@ inline
 ( rel pattern col -- bucket ) \ rows bucket for pattern's value in column col, empty if that value was never asserted
 : bucket-of
 	|> rel pattern col |
-	rel :index @ col @  pattern col @ $
+	rel :index @ col @  pattern col @ ?
 	2dup has? if @ else 2drop < > then ;
 
 ( [sets] -- set ) \ the smallest set in a non-empty array
@@ -217,7 +217,7 @@ inline
 : candidates
 	|> rel pattern |
 	rel :index @ keys
-	[: |> col | pattern col has? if pattern col @ $ symbol? else 0 then :] filter
+	[: |> col | pattern col has? if pattern col @ ? symbol? else 0 then :] filter
 	[: |> col | rel pattern col bucket-of :] map
 	dup size 0 = if
 		drop rel :rows @
@@ -229,7 +229,7 @@ inline
 : covering?
 	|> rel pattern |
 	pattern keys 1
-	[: |> covered? col | covered? rel :index @ col has? and pattern col @ $ symbol? and :] reduce ;
+	[: |> covered? col | covered? rel :index @ col has? and pattern col @ ? symbol? and :] reduce ;
 
 ( rel pattern -- [rows] ) \ rows matching pattern; scans :rows
 : query
@@ -387,4 +387,33 @@ inline
 : resample-indices
 	| >n |
 	n iota n true sample ;
+
+\ ---- SI units and basic currencies ----
+\ Dimensioned quantities (see the reference). Names are spelled out and
+\ lowercase: a capital symbol like N or A would shadow the capital-letter
+\ logic-var convention. Each currency is its own dimension with the minor unit
+\ as base, so every scale is a whole number.
+
+base unit m
+base unit s
+base unit kg
+base unit ampere
+base unit kelvin
+base unit mol
+
+1 1 s /                 unit hertz
+1 kg 1 m * 1 s / 1 s /  unit newton
+1 newton 1 m / 1 m /    unit pascal
+1 newton 1 m *          unit joule
+1 joule 1 s /           unit watt
+1 ampere 1 s *          unit coulomb
+1 watt 1 ampere /       unit volt
+
+60 s     unit minute
+3600 s   unit hour
+1000 m   unit km
+
+base unit cent      100 cent unit $
+base unit penny     100 penny unit £
+base unit eurocent  100 eurocent unit €
 

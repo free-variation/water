@@ -1,0 +1,92 @@
+\ Comprehensive dimensioned-quantity test: declaration, arithmetic with unit
+\ propagation, dimensionless collapse, scaled units, cross-scale add/compare,
+\ power/sqrt/negate/abs, dimensioned matrices, error paths, and an image
+\ round-trip. Batch mode: every line's exact stdout is the golden output.
+
+\ ---- base dimensions ----
+base unit m
+base unit s
+base unit kg
+
+\ ---- application (dounit), top-level and compiled ----
+10 m . cr
+3 kg . cr
+: dist 10 m ;
+dist . cr
+
+\ ---- multiplication: compound and scalar ----
+3 m 4 m * . cr
+10 m 2 * . cr
+2 10 m * . cr
+
+\ ---- division: compound and dimensionless collapse ----
+10 m 2 s / . cr
+10 m 2 m / . cr
+
+\ ---- derived unit built by arithmetic, named, then interning reuses name ----
+1 kg 1 m * 1 s / 1 s / unit newton
+3 newton . cr
+2 kg 3 m * 1 s / 1 s / . cr
+
+\ ---- addition / subtraction, same unit ----
+3 m 4 m + . cr
+10 m 3 m - . cr
+
+\ ---- power / sqrt on quantities ----
+3 m 2 ^ . cr
+2 m 3 ^ . cr
+9 m 9 m * sqrt . cr
+9 m 9 m * 0.5 ^ . cr
+
+\ ---- negate / abs keep the unit ----
+3 m negate . cr
+3 m negate abs . cr
+
+\ ---- comparison, same unit ----
+3 m 2 m lt . cr
+2 m 3 m lt . cr
+3 m 3 m = . cr
+
+\ ---- scaled units: declare the smaller as base ----
+base unit cent
+100 cent unit dollar
+3 dollar . cr
+5 cent . cr
+
+\ ---- cross-scale add: result in the left operand's unit ----
+1 dollar 50 cent + . cr
+50 cent 1 dollar + . cr
+
+\ ---- cross-scale comparison: value-normalized ----
+100 cent 1 dollar = . cr
+50 cent 1 dollar lt . cr
+1 dollar 50 cent lt . cr
+
+\ ---- unnamed compound inheriting a scale folds to base names ----
+base unit ml
+1000 ml unit l
+2 l 4 s / . cr
+
+\ ---- error paths ----
+3 m 4 s +
+3 m 2 +
+3 m 2 m ^
+3 m 0.01 ^
+3 m sin
+base unit foo
+1 foo 3 / unit third
+
+\ ---- dimensioned matrices ----
+[ 1 2 3 4 ] 2 2 matrix m . cr
+[ 1 2 3 4 ] 2 2 matrix m  [ 1 1 1 1 ] 2 2 matrix m  + . cr
+[ 4 6 8 10 ] 2 2 matrix m  2 m /  . cr
+
+\ ---- image round-trip: define units, push a quantity, save, clobber, reload ----
+42 newton
+"/tmp/water-units.image" save-image
+base unit clobber
+"/tmp/water-units.image" load-image
+. cr
+10 m . cr
+5 newton . cr
+1 dollar 50 cent + . cr

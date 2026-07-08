@@ -5,11 +5,12 @@
 #include "water.h"
 
 #define IMAGE_MAGIC "LF4I"
-#define IMAGE_VERSION ((uint32_t)4)
+#define IMAGE_VERSION ((uint32_t)5)
 
 #define HANDLER_DOCOL 1
 #define HANDLER_DOVAR 2
 #define HANDLER_DOSYM 3
+#define HANDLER_DOUNIT 4
 
 int handler_to_id(cell value) {
 	for (int i = 0; i < compiler.n_handlers; i++)
@@ -26,7 +27,7 @@ int handler_to_id(cell value) {
    id->pointer before calling this). */
 static int image_op_cells(int cursor) {
 	cell handler = vocab.dict[cursor];
-	if (handler == (cell)dovar || handler == (cell)dosym)
+	if (handler == (cell)dovar || handler == (cell)dosym || handler == (cell)dounit)
 		return 2;
 	return op_cell_count(cursor);
 }
@@ -165,7 +166,8 @@ void p_save_image(Interpreter *interp) {
 		cfa_handler h = (cfa_handler)vocab.dict[c];
 		uint8_t kind = (h == docol) ? HANDLER_DOCOL
 			: (h == dovar) ? HANDLER_DOVAR
-			: (h == dosym) ? HANDLER_DOSYM : 0;
+			: (h == dosym) ? HANDLER_DOSYM
+			: (h == dounit) ? HANDLER_DOUNIT : 0;
 		if (kind == 0) {
 			fail(interp, "save-image: unrecognised handler at cfa %d", c);
 			fclose(file);
@@ -179,6 +181,8 @@ void p_save_image(Interpreter *interp) {
 	fwrite(&vocab.name_pool[vocab.init_names_here], 1, (size_t)user_namepool_bytes, file);
 	fwrite(&vocab.source_pool[vocab.init_source_here], 1, (size_t)user_sourcepool_bytes, file);
 	fwrite(&vocab.symbol_pool[vocab.init_symbol_pool_here], 1, (size_t)user_symbolpool_bytes, file);
+
+	dimension_save(file);
 
 	for (int slot = 0; slot < arena.object_space.n; slot++) {
 		Object *obj = arena.objects[slot];
@@ -259,6 +263,8 @@ static int loaded_handle_ok(Interpreter *interp, Val v) {
 		case T_MATRIX: want = OBJECT_MATRIX; break;
 		case T_CONT:   want = OBJECT_CONTINUATION; break;
 		case T_PAIR:      return handle >= 0 && handle < pairs.space.n;
+		case T_QUANTITY:  return handle >= 0 && handle < pairs.space.n
+								 && unit_id_valid((int)pairs.table[handle].tail.bits);
 		case T_LOGIC_VAR: return handle >= 0 && handle < interp->lvar_top;
 		case T_SYMBOL:    return handle >= 0 && handle < vocab.symbol_pool_here;
 		case T_XT:        return handle >= DICT_RESERVED && handle < vocab.here;
@@ -407,7 +413,8 @@ void p_load_image(Interpreter *interp) {
 		}
 		cfa_handler h = (kind == HANDLER_DOCOL) ? docol
 			: (kind == HANDLER_DOVAR) ? dovar
-			: (kind == HANDLER_DOSYM) ? dosym : NULL;
+			: (kind == HANDLER_DOSYM) ? dosym
+			: (kind == HANDLER_DOUNIT) ? dounit : NULL;
 		if (!h) {
 			fail(interp, "%s: bad handler kind %u", filename, kind);
 			goto done;
@@ -448,6 +455,11 @@ void p_load_image(Interpreter *interp) {
 	vocab.source_here = vocab.init_source_here + user_sourcepool_bytes;
 	vocab.symbol_pool_here = vocab.init_symbol_pool_here + user_symbolpool_bytes;
 	rebuild_symbol_hash();
+
+	if (!dimension_load(file)) {
+		fail(interp, "%s: truncated unit tables", filename);
+		goto done;
+	}
 
 	if (saved_n_objects > arena.object_space.max) {
 		fail(interp, "%s: image has too many objects", filename);

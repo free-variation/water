@@ -5,7 +5,7 @@ gc
 prod . cr                                       \ 42   fused superword
 5 poly . cr                                     \ 11   locals + inlined call
 4 sumto . cr                                    \ 10   recursion + branch
-V $ . cr                                        \ 99   bound logic var
+V ? . cr                                        \ 99   bound logic var
 P reify . cr                                    \ [( 5 5 null )]   shared var preserved
 REL { :role :wizard } query size . cr           \ 1    relation query
 REL { :role :wizard } query 0 @i :name @ . cr    \ :gandalf   row content

@@ -1,0 +1,14 @@
+10 m 
+6 newton 
+20 volt 
+1.5 km 
+2.5 hour 
+7 $ 
+1.5 $ 
+3 £ 
+2 € 
+<matrix 2x2> km
+          2          4
+          6          8
+
+error: + : unit mismatch

@@ -1,6 +1,5 @@
 !
 !i
-$
 %
 '
 *
@@ -28,6 +27,7 @@ $
 =
 >r
 >side
+?
 ?if
 @
 @i
@@ -54,6 +54,7 @@ asin
 assert
 atan
 augment
+base
 begin
 bit-and
 bit-not
@@ -330,6 +331,7 @@ truncate
 try-catch
 unify
 union
+unit
 until
 update-at
 values

@@ -537,6 +537,10 @@ void parallel_for(int n_items, int n_threads, int items_per_claim,
 		platform_thread_join(threads[worker]);
 }
 
+static int compare_double(double a, double b) {
+	return a < b ? -1 : a > b ? 1 : 0;
+}
+
 int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 	if (depth > MAX_NESTING_DEPTH) {
 		fail(interp, "compare: structure too deeply nested (cycle?)");
@@ -547,15 +551,23 @@ int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 		return (int)VAL_TAG(left) - (int)VAL_TAG(right);
 
 	switch (VAL_TAG(left)) {
-		case T_FLOAT: {
-						  double left_value = VAL_NUMBER(left);
-						  double right_value = VAL_NUMBER(right);
-						  if (left_value < right_value)
-						  	return -1;
-						  if (left_value > right_value)
-						  	return 1;
-						  return 0;
-					  }
+		case T_FLOAT:
+			return compare_double(VAL_NUMBER(left), VAL_NUMBER(right));
+		case T_QUANTITY: {
+							 int left_unit  = (int)pairs.table[VAL_DATA(left)].tail.bits;
+							 int right_unit = (int)pairs.table[VAL_DATA(right)].tail.bits;
+							 Val left_magnitude  = pairs.table[VAL_DATA(left)].head;
+							 Val right_magnitude = pairs.table[VAL_DATA(right)].head;
+
+							 double factor;
+							 if (VAL_TAG(left_magnitude) == T_FLOAT && VAL_TAG(right_magnitude) == T_FLOAT
+									 && unit_conversion(right_unit, left_unit, &factor))
+								 return compare_double(VAL_NUMBER(left_magnitude), VAL_NUMBER(right_magnitude) * factor);
+
+							 if (left_unit != right_unit)
+								 return left_unit - right_unit;
+							 return val_cmp_depth(interp, left_magnitude, right_magnitude, depth + 1);
+						 }
 		case T_SYMBOL: case T_XT: case T_ADDR: case T_LOGIC_VAR:
 
 					  if (VAL_DATA(left) < VAL_DATA(right))
@@ -745,7 +757,7 @@ void print_matrix_cell(FILE *out, double value) {
 	fprintf(out, " %10.4g", value);
 }
 
-void print_matrix_grid(FILE *out, Object *m) {
+void print_matrix_grid(FILE *out, Object *m, int unit) {
 	int rows = m->matrix.rows;
 	int cols = m->matrix.columns;
 	int rows_trunc = print_truncate
@@ -753,7 +765,12 @@ void print_matrix_grid(FILE *out, Object *m) {
 	int cols_trunc = print_truncate
 		&& cols > MATRIX_DISP_FIRST_COLS + MATRIX_DISP_LAST_COLS;
 
-	fprintf(out, "<matrix %dx%d>\n", rows, cols);
+	fprintf(out, "<matrix %dx%d>", rows, cols);
+	if (unit > 0) {
+		putc(' ', out);
+		render_unit(out, unit);
+	}
+	putc('\n', out);
 
 	for (int i = 0; i < rows; i++) {
 		if (rows_trunc) {
@@ -800,6 +817,12 @@ static void print_logic_var(FILE *out, Interpreter *interp, Val var,
 	const char *name = logic_var_name((int)VAL_DATA(var));
 	if (name) fprintf(out, "%s=", name);
 	pr(out, interp, resolved);
+}
+
+static Val quantity_display_magnitude(Val magnitude, int unit) {
+	if (!unit_is_named(unit) && VAL_TAG(magnitude) == T_FLOAT)
+		return make_float(VAL_NUMBER(magnitude) * unit_scale_value(unit));
+	return magnitude;
 }
 
 void print_val(FILE *out, Interpreter *interp, Val value) {
@@ -891,6 +914,14 @@ void print_val(FILE *out, Interpreter *interp, Val value) {
 						   print_depth_leave();
 						   break;
 					   }
+		case T_QUANTITY: {
+							 int slot = (int)VAL_DATA(value);
+							 int unit = (int)pairs.table[slot].tail.bits;
+							 print_val(out, interp, quantity_display_magnitude(pairs.table[slot].head, unit));
+							 putc(' ', out);
+							 render_unit(out, unit);
+							 break;
+						 }
 		case T_FRAME: {
 						  Object *frame = OBJECT_AT(VAL_DATA(value));
 						  print_depth_enter();
@@ -1036,6 +1067,14 @@ void print_val_compact(FILE *out, Interpreter *interp, Val value) {
 						   print_depth_leave();
 						   break;
 					   }
+		case T_QUANTITY: {
+							 int slot = (int)VAL_DATA(value);
+							 int unit = (int)pairs.table[slot].tail.bits;
+							 print_val_compact(out, interp, quantity_display_magnitude(pairs.table[slot].head, unit));
+							 putc(' ', out);
+							 render_unit(out, unit);
+							 break;
+						 }
 		case T_XT: {
 					   int target = (int)VAL_DATA(value);
 					   const char *name = NULL;
@@ -1240,6 +1279,11 @@ void execute_cfa(Interpreter *interp, int cfa) {
 		return;
 	}
 
+	if (handler == dounit) {
+		apply_unit(interp, cfa);
+		return;
+	}
+
 	int saved_ip = interp->ip;
 	int saved_running = interp->running;
 	cell saved_slot_0 = vocab.dict[interp->trampoline_base];
@@ -1273,7 +1317,7 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 
 	context->reuses_locals = 0;
 
-	if (handler == dovar || handler == dosym) {
+	if (handler == dovar || handler == dosym || handler == dounit) {
 		context->fast = 0;
 		return;
 	}
@@ -1522,7 +1566,7 @@ void emit_call(Interpreter *interp, int target_cfa) {
 	emit(interp, (cell)handler);
 	dict_is_handler[vocab.here - 1] = 1;
 
-	if (handler == docol || handler == dovar || handler == dosym) {
+	if (handler == docol || handler == dovar || handler == dosym || handler == dounit) {
 		emit(interp, (cell)target_cfa);
 	}
 }
@@ -1560,6 +1604,7 @@ const char *tag_name(Tag t) {
 		case T_DB: return "a database";
 		case T_PTR: return "a pointer";
 		case T_SEGMENT: return "a segment";
+		case T_QUANTITY: return "a quantity";
 		default:       return "an unknown value";
 	}
 }
@@ -2709,7 +2754,8 @@ void mark_value(Interpreter *interp, Val value) {
 				VAL_TAG(value) != T_FRAME &&
 				VAL_TAG(value) != T_MATRIX &&
 				VAL_TAG(value) != T_SEGMENT &&
-				VAL_TAG(value) != T_CONT) return;
+				VAL_TAG(value) != T_CONT &&
+				VAL_TAG(value) != T_QUANTITY) return;
 
 		if (VAL_TAG(value) == T_PAIR) {
 			int slot = (int)VAL_DATA(value);
@@ -2722,6 +2768,18 @@ void mark_value(Interpreter *interp, Val value) {
 			mark_value(interp, pairs.table[slot].head);
 			value = pairs.table[slot].tail;
 			continue;
+		}
+
+		if (VAL_TAG(value) == T_QUANTITY) {
+			int slot = (int)VAL_DATA(value);
+			if (slot < interp->gc_pair_base)
+				return;
+			GC_ASSERT(!in_parallel || handle_in_chunks(slot, thread_alloc.pairs.chunks, thread_alloc.pairs.n_chunks, thread_alloc.pairs.next), "worker marked a quantity outside its own chunks");
+			if (pairs.mark_epoch[slot] == interp->gc_epoch)
+				return;
+			pairs.mark_epoch[slot] = interp->gc_epoch;
+			mark_value(interp, pairs.table[slot].head);
+			return;
 		}
 
 		int handle = (int)VAL_DATA(value);
@@ -3236,7 +3294,7 @@ static void see_compiled_body(FILE *out, Interpreter *interp, int body_start, in
 			continue;
 		}
 
-		if (handler_fn == docol || handler_fn == dovar) {
+		if (handler_fn == docol || handler_fn == dovar || handler_fn == dounit) {
 			int target = (int)vocab.dict[cursor + 1];
 			if (target >= 4 && target < vocab.here)
 				fprintf(out, "%s\n", &vocab.name_pool[WORD_NAME(target)]);
@@ -3315,7 +3373,7 @@ static void see_tree_body(FILE *out, Interpreter *interp, int body_start, int in
 			}
 			continue;
 		}
-		if (handler_fn == dovar) {
+		if (handler_fn == dovar || handler_fn == dounit) {
 			int target = (int)vocab.dict[cursor + 1];
 			if (target >= 4 && target < vocab.here)
 				fprintf(out, "%s\n", &vocab.name_pool[WORD_NAME(target)]);
@@ -3607,6 +3665,8 @@ Interpreter *main_init(void) {
 	pairs.space.free = xmalloc(sizeof(int) * PAIR_TABLE_DEPTH);
 	pairs.space.n_free = 0;
 
+	dimension_init();
+
 	vocab.false_symbol = intern_symbol(interp, "0");
 	vocab.true_symbol = intern_symbol(interp, "1");
 	vocab.wildcard_symbol = intern_symbol(interp, "*");
@@ -3630,6 +3690,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	compiler.handler_registry[compiler.n_handlers++] = (void *)docol;
 	compiler.handler_registry[compiler.n_handlers++] = (void *)dovar;
 	compiler.handler_registry[compiler.n_handlers++] = (void *)dosym;
+	compiler.handler_registry[compiler.n_handlers++] = (void *)dounit;
 	define_primitive(interp, "+", p_add, 0);
 	define_primitive(interp, "-", p_sub, 0);
 	define_primitive(interp, "*", p_mul, 0);
@@ -3886,6 +3947,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "variable", p_variable, 0);
 	define_primitive(interp, "constant", p_constant, 0);
 	define_primitive(interp, "symbol", p_symbol, 0);
+	define_primitive(interp, "base", p_base, 0);
+	define_primitive(interp, "unit", p_unit, 0);
 	define_primitive(interp, "string>symbol", p_string_to_symbol, 0);
 	define_primitive(interp, "forget", p_forget, 0);
 	define_primitive(interp, "'", p_tick, 1);
@@ -4028,6 +4091,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.init_symbol_pool_here = vocab.symbol_pool_here;
 	arena.object_space.init = arena.object_space.n;
 	pairs.space.init = pairs.space.n;
+	dimension_freeze();
 
 	vocab.lib_end_latest_cfa = vocab.latest_cfa;
 	return 0;

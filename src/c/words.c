@@ -47,6 +47,41 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 		interp->dsp--; \
 	} while (0)
 
+static double scalar_negate(double x) { return -x; }
+static double scalar_inc(double x) { return x + 1.0; }
+static double scalar_dec(double x) { return x - 1.0; }
+static double scalar_sq(double x) { return x * x; }
+static double scalar_lt(double a, double b) { return a < b; }
+static double scalar_gt(double a, double b) { return a > b; }
+static double scalar_add(double a, double b) { return a + b; }
+static double scalar_sub(double a, double b) { return a - b; }
+static double scalar_mul(double a, double b) { return a * b; }
+static double scalar_div(double a, double b) { return a / b; }
+
+static void unwrap_quantity(Val value, int is_quantity, Val *magnitude, int *unit) {
+	if (is_quantity) {
+		int slot = (int)VAL_DATA(value);
+		*magnitude = pairs.table[slot].head;
+		*unit = (int)pairs.table[slot].tail.bits;
+	} else {
+		*magnitude = value;
+		*unit = 0;
+	}
+}
+
+static void unary_quantity_op(Interpreter *interp, Val quantity, double (*function)(double), const char *name, int result_unit) {
+	int slot = (int)VAL_DATA(quantity);
+
+	gc_root_push(interp, quantity);
+	unary_op(interp, pairs.table[slot].head, function, name);
+	gc_root_pop(interp);
+
+	if (interp->error_flag)
+		return;
+
+	push_quantity(interp, pop(interp), result_unit);
+}
+
 void p_add(Interpreter *interp) {
 	PEEK_AT(left, 1, "+");
 	PEEK_AT(right, 0, "+");
@@ -82,8 +117,41 @@ void p_add(Interpreter *interp) {
 		BROADCAST_MATRIX_OP_SCALAR(+);
 	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY)
 		execute_cfa(interp, find("concat"));
-	else
-		fail(interp, "+ : expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	else {
+		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
+		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
+
+		if (left_is_quantity && right_is_quantity) {
+			Val left_magnitude, right_magnitude;
+			int left_unit, right_unit;
+			unwrap_quantity(left,  1, &left_magnitude,  &left_unit);
+			unwrap_quantity(right, 1, &right_magnitude, &right_unit);
+			int base = interp->dsp - 2;
+
+			if (left_unit != right_unit) {
+				double factor;
+				if (!unit_conversion(right_unit, left_unit, &factor)) {
+					fail(interp, "+ : unit mismatch");
+					return;
+				}
+				binary_op(interp, right_magnitude, make_float(factor), scalar_mul, "*");
+				if (interp->error_flag) return;
+				right_magnitude = interp->data_stack[interp->dsp - 1];
+			}
+
+			binary_op(interp, left_magnitude, right_magnitude, scalar_add, "+");
+			if (interp->error_flag) return;
+
+			Val sum = pop(interp);
+			interp->dsp = base;
+			push_quantity(interp, sum, left_unit);
+		}
+		else if (left_is_quantity || right_is_quantity)
+			fail(interp, "+ : cannot add a quantity and a plain number");
+		else
+			fail(interp, "+ : expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s",
+					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	}
 
 	DISPATCH(interp);
 }
@@ -114,8 +182,41 @@ void p_sub(Interpreter *interp) {
 		BROADCAST_SCALAR_OP_MATRIX(-);
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
 		BROADCAST_MATRIX_OP_SCALAR(-);
-	else
-		fail(interp, "- : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	else {
+		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
+		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
+
+		if (left_is_quantity && right_is_quantity) {
+			Val left_magnitude, right_magnitude;
+			int left_unit, right_unit;
+			unwrap_quantity(left,  1, &left_magnitude,  &left_unit);
+			unwrap_quantity(right, 1, &right_magnitude, &right_unit);
+			int base = interp->dsp - 2;
+
+			if (left_unit != right_unit) {
+				double factor;
+				if (!unit_conversion(right_unit, left_unit, &factor)) {
+					fail(interp, "- : unit mismatch");
+					return;
+				}
+				binary_op(interp, right_magnitude, make_float(factor), scalar_mul, "*");
+				if (interp->error_flag) return;
+				right_magnitude = interp->data_stack[interp->dsp - 1];
+			}
+
+			binary_op(interp, left_magnitude, right_magnitude, scalar_sub, "-");
+			if (interp->error_flag) return;
+
+			Val difference = pop(interp);
+			interp->dsp = base;
+			push_quantity(interp, difference, left_unit);
+		}
+		else if (left_is_quantity || right_is_quantity)
+			fail(interp, "- : cannot subtract a quantity and a plain number");
+		else
+			fail(interp, "- : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s",
+					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	}
 
 	DISPATCH(interp);
 }
@@ -146,8 +247,27 @@ void p_mul(Interpreter *interp) {
 		BROADCAST_SCALAR_OP_MATRIX(*);
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
 		BROADCAST_MATRIX_OP_SCALAR(*);
-	else
-		fail(interp, "* : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	else {
+		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
+		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
+
+		if (left_is_quantity || right_is_quantity) {
+			Val left_magnitude, right_magnitude;
+			int left_unit, right_unit;
+			unwrap_quantity(left,  left_is_quantity,  &left_magnitude,  &left_unit);
+			unwrap_quantity(right, right_is_quantity, &right_magnitude, &right_unit);
+
+			binary_op(interp, left_magnitude, right_magnitude, scalar_mul, "*");
+			if (interp->error_flag) return;
+
+			Val product = pop(interp);
+			interp->dsp -= 2;
+			push_quantity(interp, product, unit_multiply(left_unit, right_unit));
+		}
+		else
+			fail(interp, "* : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s",
+					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	}
 
 	DISPATCH(interp);
 }
@@ -187,8 +307,32 @@ void p_div(Interpreter *interp) {
 		}
 		BROADCAST_MATRIX_OP_SCALAR(/);
 	}
-	else
-		fail(interp, "/ : expected two floats, two matrices, or scalar/matrix; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	else {
+		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
+		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
+
+		if (left_is_quantity || right_is_quantity) {
+			Val left_magnitude, right_magnitude;
+			int left_unit, right_unit;
+			unwrap_quantity(left,  left_is_quantity,  &left_magnitude,  &left_unit);
+			unwrap_quantity(right, right_is_quantity, &right_magnitude, &right_unit);
+
+			if (VAL_TAG(right_magnitude) == T_FLOAT && VAL_NUMBER(right_magnitude) == 0.0) {
+				fail(interp, "/ : division by zero");
+				return;
+			}
+
+			binary_op(interp, left_magnitude, right_magnitude, scalar_div, "/");
+			if (interp->error_flag) return;
+
+			Val quotient = pop(interp);
+			interp->dsp -= 2;
+			push_quantity(interp, quotient, unit_divide(left_unit, right_unit));
+		}
+		else
+			fail(interp, "/ : expected two floats, two matrices, or scalar/matrix; got %s and %s",
+					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
+	}
 
 	DISPATCH(interp);
 }
@@ -312,20 +456,6 @@ void p_div_f(Interpreter *interp) {
 	}
 	left->number = left->number / right->number;
 	interp->dsp--;
-
-	DISPATCH(interp);
-}
-
-static double scalar_negate(double x) { return -x; }
-static double scalar_inc(double x) { return x + 1.0; }
-static double scalar_dec(double x) { return x - 1.0; }
-static double scalar_sq(double x) { return x * x; }
-static double scalar_lt(double a, double b) { return a < b; }
-static double scalar_gt(double a, double b) { return a > b; }
-
-void p_neg(Interpreter *interp) {
-	POP(operand);
-	unary_op(interp, operand, scalar_negate, "negate");
 
 	DISPATCH(interp);
 }
@@ -525,19 +655,34 @@ void p_roll(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+static int grid_if_matrix(FILE *out, Val value) {
+	if (VAL_TAG(value) == T_MATRIX) {
+		print_matrix_grid(out, OBJECT_AT(VAL_DATA(value)), 0);
+		return 1;
+	}
+	if (VAL_TAG(value) == T_QUANTITY) {
+		int slot = (int)VAL_DATA(value);
+		if (VAL_TAG(pairs.table[slot].head) == T_MATRIX) {
+			print_matrix_grid(out, OBJECT_AT(VAL_DATA(pairs.table[slot].head)), (int)pairs.table[slot].tail.bits);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 void p_dot(Interpreter *interp) {
 	POP(value);
-	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(stdout, OBJECT_AT(VAL_DATA(value)));
-	} else if (VAL_TAG(value) == T_FRAME) {
-		print_frame_pretty(stdout, interp, OBJECT_AT(VAL_DATA(value)), 0);
-		putchar('\n');
-	} else if (VAL_TAG(value) == T_ARRAY) {
-		pretty_print_array(stdout, interp, value);
-		putchar(' ');
-	} else {
-		print_val(stdout, interp, value);
-		putchar(' ');
+	if (!grid_if_matrix(stdout, value)) {
+		if (VAL_TAG(value) == T_FRAME) {
+			print_frame_pretty(stdout, interp, OBJECT_AT(VAL_DATA(value)), 0);
+			putchar('\n');
+		} else if (VAL_TAG(value) == T_ARRAY) {
+			pretty_print_array(stdout, interp, value);
+			putchar(' ');
+		} else {
+			print_val(stdout, interp, value);
+			putchar(' ');
+		}
 	}
 	fflush(stdout);
 
@@ -548,9 +693,7 @@ void p_dot_all(Interpreter *interp) {
 	int saved = print_truncate;
 	print_truncate = 0;
 	POP(value);
-	if (VAL_TAG(value) == T_MATRIX) {
-		print_matrix_grid(stdout, OBJECT_AT(VAL_DATA(value)));
-	} else {
+	if (!grid_if_matrix(stdout, value)) {
 		print_val(stdout, interp, value);
 		putchar(' ');
 	}
@@ -573,20 +716,21 @@ void p_render(Interpreter *interp) {
 
 	int saved_truncate = print_truncate;
 	print_truncate = 0;
-	if (VAL_TAG(value) == T_MATRIX)
-		print_matrix_grid(out, OBJECT_AT(VAL_DATA(value)));
-	else if (VAL_TAG(value) == T_FRAME)
-		print_frame_pretty(out, interp, OBJECT_AT(VAL_DATA(value)), 0);
-	else if (VAL_TAG(value) == T_ARRAY)
-		pretty_print_array(out, interp, value);
-	else
-		print_val(out, interp, value);
+	int gridded = grid_if_matrix(out, value);
+	if (!gridded) {
+		if (VAL_TAG(value) == T_FRAME)
+			print_frame_pretty(out, interp, OBJECT_AT(VAL_DATA(value)), 0);
+		else if (VAL_TAG(value) == T_ARRAY)
+			pretty_print_array(out, interp, value);
+		else
+			print_val(out, interp, value);
+	}
 	print_truncate = saved_truncate;
 
 	fclose(out);
 
 	int length = (int)size;
-	if (VAL_TAG(value) == T_MATRIX && length > 0 && buffer[length - 1] == '\n')
+	if (gridded && length > 0 && buffer[length - 1] == '\n')
 		length--;
 
 	int handle = object_new_string(interp, buffer ? buffer : "", length);
@@ -1321,8 +1465,26 @@ void unary_op(Interpreter *interp, Val operand, double (*function)(double), cons
 	}
 #define UNARY_MATH_OP(name, func) UNARY_MATH_OP_NAMED(name, func, #name)
 
-UNARY_MATH_OP(abs, fabs)
-UNARY_MATH_OP(sqrt, sqrt)
+#define UNARY_QUANTITY_OP(cname, func, word, result_unit) \
+	void p_##cname(Interpreter *interp) { \
+		if (interp->dsp >= 1 && VAL_TAG(interp->data_stack[interp->dsp - 1]) == T_FLOAT) { \
+			Val *top = &interp->data_stack[interp->dsp - 1]; \
+			*top = make_float(func(top->number)); \
+			DISPATCH(interp); \
+		} \
+		POP(operand); \
+		if (VAL_TAG(operand) == T_QUANTITY) { \
+			int unit = (result_unit); \
+			if (interp->error_flag) return; \
+			unary_quantity_op(interp, operand, func, word, unit); \
+		} else \
+			unary_op(interp, operand, func, word); \
+		DISPATCH(interp); \
+	}
+
+UNARY_QUANTITY_OP(neg,  scalar_negate, "negate", (int)pairs.table[VAL_DATA(operand)].tail.bits)
+UNARY_QUANTITY_OP(abs,  fabs,          "abs",    (int)pairs.table[VAL_DATA(operand)].tail.bits)
+UNARY_QUANTITY_OP(sqrt, sqrt,          "sqrt",   unit_pow(interp, (int)pairs.table[VAL_DATA(operand)].tail.bits, 1, 2))
 UNARY_MATH_OP(exp, exp)
 UNARY_MATH_OP(log, log10)
 UNARY_MATH_OP(ln, log)
@@ -1395,11 +1557,56 @@ void binary_op(Interpreter *interp, Val left, Val right, scalar_operator functio
 	     tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 }
 
+static int rational_of_double(double value, int *numerator, int *denominator) {
+	for (int candidate = 1; candidate <= 64; candidate++) {
+		double scaled = value * candidate;
+		double rounded = round(scaled);
+		if (fabs(scaled - rounded) < 1e-9) {
+			*numerator = (int)rounded;
+			*denominator = candidate;
+			return 1;
+		}
+	}
+	return 0;
+}
+
 void p_power(Interpreter *interp) {
 	POP(right);
 	POP(left);
-	binary_op(interp, left, right, pow, "^");
 
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		push(interp, make_float(pow(VAL_NUMBER(left), VAL_NUMBER(right))));
+		DISPATCH(interp);
+		return;
+	}
+
+	if (VAL_TAG(left) == T_QUANTITY) {
+		if (VAL_TAG(right) != T_FLOAT) {
+			fail(interp, "^ : exponent must be a number; got %s", tag_name(VAL_TAG(right)));
+			return;
+		}
+
+		int numerator, denominator;
+		if (!rational_of_double(VAL_NUMBER(right), &numerator, &denominator)) {
+			fail(interp, "^ : exponent must be a simple rational");
+			return;
+		}
+
+		int slot = (int)VAL_DATA(left);
+		int unit = unit_pow(interp, (int)pairs.table[slot].tail.bits, numerator, denominator);
+		if (interp->error_flag) return;
+
+		gc_root_push(interp, left);
+		binary_op(interp, pairs.table[slot].head, right, pow, "^");
+		gc_root_pop(interp);
+		if (interp->error_flag) return;
+
+		push_quantity(interp, pop(interp), unit);
+		DISPATCH(interp);
+		return;
+	}
+
+	binary_op(interp, left, right, pow, "^");
 	DISPATCH(interp);
 }
 

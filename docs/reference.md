@@ -181,6 +181,46 @@ float. `rshift` is arithmetic (sign-preserving).
 
 ---
 
+## Dimensioned quantities
+
+A quantity is a magnitude (a float or a matrix) carrying a unit. Units are
+rational-exponent vectors over user-declared base dimensions; arithmetic
+propagates and checks them. There is no conversion between systems — a unit is
+a dimension vector plus an *integer* scale relative to that dimension's base, so
+`dollar`/`cent` and `kg`/`g` coexist as scaled units, but a non-integer factor
+like `inch`/`cm` does not.
+
+Declare with `base` and `unit`:
+
+    base unit m   base unit s   base unit kg      \ base dimensions
+    1 kg 1 m * 1 s / 1 s / unit newton            \ derived, named
+    base unit cent   100 cent unit dollar         \ scaled: declare the smaller as base
+
+A unit word is postfix — it attaches its unit to the number before it (`10 m`,
+`3 newton`). Attaching a unit to a matrix makes a dimensioned matrix (`M m`).
+
+- `*` / `/` — multiply/divide magnitudes; combine unit exponents and scales. A
+  dimensionless result collapses back to a bare float or matrix (`3 m 3 m / → 1`).
+- `+` / `-` — require the same dimension; a different-scale operand is rescaled
+  into the left operand's unit (`1 dollar 50 cent + → 1.5 dollar`). Different
+  dimension, or a quantity ± a bare number, errors.
+- `^` — rational exponent only; raises the unit's exponents (`q 2 ^`, `q 0.5 ^`).
+- `sqrt` — halves the unit's exponents (`sqrt(m²) → m`).
+- `negate` / `abs` — keep the unit; transcendentals (`sin`, `log`, …) reject a quantity.
+- `= < >` — compare by value, normalizing scale within a dimension (`100 cent 1 dollar = → 1`).
+
+Printing shows magnitude then unit: a named unit prints its name (`3 newton`); an
+unnamed compound prints its dimensional form with the scale folded into the
+magnitude (`10 m 2 s / → 5 m.s^-1`), positive exponents first. Quantities,
+units, and unit words round-trip through `save-image`/`load-image`.
+
+`lib.h2o` predeclares a standard set (names spelled out and lowercase — a capital
+symbol like `N` or `A` would shadow the capital-letter logic-var convention):
+length `m` (`km`), time `s` (`minute`, `hour`), mass `kg`, current `ampere`,
+temperature `kelvin`, amount `mol`; derived `hertz` `newton` `pascal` `joule`
+`watt` `coulomb` `volt`; and three currencies, each its own dimension —
+`$`/`cent`, `£`/`penny`, `€`/`eurocent`.
+
 ## Return stack
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
@@ -235,6 +275,8 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 | `constant` | `( val -- )` | Pop a value and read the following name; define an inline word that pushes it as a literal, so call sites fold to the literal with no run-time fetch. Fixed at definition — `to` cannot reassign it |
 | `to` | `( val -- )` | Assign to the named local (in a definition) or global. At the REPL, auto-creates the global if absent. In a definition, the variable must already exist. May trigger superword store-fusion while compiling. |
 | `symbol` | — | Read the following name; declare a word that pushes a specific interned symbol |
+| `base` | `( -- q )` | Push a base quantity — a fresh dimension with its base unit, magnitude `1.0`. Paired with `unit` to declare a base dimension (`base unit m`) |
+| `unit` | `( q -- )` | Read the following name; pop a quantity whose magnitude is a positive whole number, and define a postfix word attaching that unit. The magnitude is the unit's integer scale relative to its dimension's base (`100 cent unit dollar`). A single unnamed base dimension gets named after the word |
 | `:name` | `( -- sym )` | Symbol literal; interns the name at read time |
 | `string>symbol` | `( s -- sym )` | Intern a computed string as a symbol |
 | `[:` | `( -- xt )` | Open an anonymous quotation (closed by `:]`); compiles its body and pushes its xt |
@@ -621,7 +663,7 @@ Logic variables, unification, and committed choice, built on the trail and a `PR
 | `unify` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A `_` on either side matches anything and binds nothing. On a mismatch, `fail`s. | n | none | O(n) |
 | `~` | `( a b -- term )` | lib.h2o: `unify` (inlined) | n | none | O(n) |
 | `deref` | `( v -- val )` | Follow a logic var's binding chain to the first non-variable value (v itself if unbound). Shallow — a returned structure still has bound vars inside; for a fully resolved snapshot use `reify` or `copy` | d | none | O(d) |
-| `$` | `( v -- val )` | lib.h2o: `deref` (inlined) | d | none | O(d) |
+| `?` | `( v -- val )` | lib.h2o: `deref` (inlined) | d | none | O(d) |
 | `amb` | `( xt1 xt2 -- … )` | Run xt1; if it fails (a `unify` mismatch or `fail`), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds. | xt1 | none | O(xt1 + xt2) |
 | `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
 | `choose` | `( list cont -- )` | lib.h2o: run cont with each element of a cons list in turn, committing to the first for which it succeeds; `fail` if none do (n-way `amb` over a list) | n·cont | none | O(n·cont) |
@@ -806,6 +848,7 @@ A defined FFI word pops its arguments, marshals each per the declared signature,
 | `T_PAIR` | cons cell in the dense, GC'd pair table; `{head, tail}`. Lists are `null`-terminated chains |
 | `T_FRAME` | heap object; sorted parallel keys (`cell[]`) and values (`Val[]`) |
 | `T_MATRIX` | heap object; r×c row-major `double[]` |
+| `T_QUANTITY` | a magnitude (float or matrix) plus a unit id, in a pair-table slot `{magnitude, unit}`; see Dimensioned quantities. Dimensionless results collapse away, so a live quantity always carries a real unit |
 | `T_XT` | execution token (dict index); first-class callable |
 | `T_ADDR` | dict index; used internally for return-stack frames |
 | `T_STREAM` | OS file descriptor (a pipe end to a child process); an inline `int`, like `T_ADDR` |

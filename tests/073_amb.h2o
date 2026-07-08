@@ -1,6 +1,6 @@
 \ Committed amb ( xt1 xt2 -- ): run xt1; if it fails (explicit fail or a unify
 \ mismatch) roll back its bindings and run xt2.  Once a branch succeeds the
-\ choice is committed -- a later failure does NOT reopen it.  ~ is unify, $ deref.
+\ choice is committed -- a later failure does NOT reopen it.  ~ is unify, ? deref.
 
 \ === first branch succeeds: commits, branch 2 never runs ===
 [: 1 :] [: 2 :] amb . cr                          \ 1
@@ -16,11 +16,11 @@
 [: 1 2 ~ :] [: 8 :] amb . cr                      \ 8
 
 \ === trail rollback: branch 1 binds then fails, undone, branch 2 binds ===
-: t  | X |  [: X 1 ~ drop fail :] [: X 2 ~ drop :] amb  X $ . ;
+: t  | X |  [: X 1 ~ drop fail :] [: X 2 ~ drop :] amb  X ? . ;
 t cr                                              \ 2
 
 \ === branch 1 succeeds with a binding: it persists ===
-: u  | X |  [: X 5 ~ drop :] [: X 9 ~ drop :] amb  X $ . ;
+: u  | X |  [: X 5 ~ drop :] [: X 9 ~ drop :] amb  X ? . ;
 u cr                                              \ 5
 
 \ === nested amb in branch 2 (after branch 1 fails) ===
@@ -30,7 +30,7 @@ u cr                                              \ 5
 [: [: 5 :] [: 6 :] amb :] [: 9 :] amb . cr        \ 5
 
 \ === a def's local amb is fresh per call ===
-: pick  | X >n |  [: X n ~ drop :] [: X 0 ~ drop :] amb  X $ ;
+: pick  | X >n |  [: X n ~ drop :] [: X 0 ~ drop :] amb  X ? ;
 3 pick . cr                                       \ 3
 7 pick . cr                                       \ 7
 
