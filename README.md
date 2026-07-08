@@ -278,6 +278,7 @@ Built in `lib.h2o` on top of the continuation primitives:
 - **`throw`** — non-local exit with a value.
 - **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — returning the error message as the exception value, so a runtime fault is recoverable, not just a user `throw`.
 - **`try-catch`** — wraps an xt with a recovery handler that runs on either kind of failure. Arity-agnostic.
+- **`ensure`** — `( body-xt cleanup-xt -- … )` runs cleanup on both the normal and the throw/error path, then re-raises on throw. **`with-db`** / **`with-stream`** build on it to open (or take) a resource, run a body with it, and release it however the body exits.
 
 An uncaught `throw` or interpreter error still surfaces at the REPL. The `shift-with` handler can also resume the captured continuation, giving the Common Lisp restart pattern — exceptions can recover.
 

@@ -112,6 +112,7 @@ dup
 else
 emit
 end-process
+ensure
 env
 env!
 execute
@@ -362,6 +363,8 @@ vvf-
 vvf/
 wait
 while
+with-db
+with-stream
 words
 write
 write-file

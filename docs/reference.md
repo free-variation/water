@@ -638,6 +638,9 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 | `throw` | `( exc -- )` | lib.h2o: `[: drop 1 :] shift-with` | — | `1o` (cont) | O(stack depth) |
 | `catch` | `( xt -- result 0 \| exc 1 )` | lib.h2o: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (the error message becomes the exception value) | — | cont if thrown; `1s` on a caught interpreter error | O(xt) |
 | `try-catch` | `( normal-xt err-xt -- … )` | lib.h2o: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack | — | cont if thrown; `1s` on a caught interpreter error | O(normal-xt) |
+| `ensure` | `( body-xt cleanup-xt -- … )` | lib.h2o: run cleanup-xt (stack-neutral) whether body-xt returns normally or throws/errors, then re-raise on the throw path | — | cont if thrown | O(body-xt) |
+| `with-db` | `( path body-xt -- … )` | lib.h2o: `db-open` the path, run body-xt `( db -- … )` with the handle, `db-close` on either exit | — | 1 db + cont if thrown | O(body-xt) |
+| `with-stream` | `( stream body-xt -- … )` | lib.h2o: run body-xt `( stream -- … )` over an already-open stream, `close` it on either exit | — | cont if thrown | O(body-xt) |
 
 ---
 

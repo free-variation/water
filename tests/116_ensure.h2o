@@ -1,0 +1,27 @@
+\ Guaranteed-cleanup words: ensure, with-db, with-stream. Each runs its cleanup
+\ on both the normal-exit and the throw path, and re-raises on throw. Batch mode:
+\ every line's exact stdout is the golden output.
+
+\ ---- ensure: normal exit runs cleanup; the body's result survives ----
+[: 5 :] [: "clean " . :] ensure . cr                 \ clean 5
+
+\ ---- ensure: throw runs cleanup, then re-raises (caught outside) ----
+[: [: "boom" throw :] [: "cleaned " . :] ensure :] [: "caught " . . :] try-catch cr
+
+\ ---- ensure: an interpreter error (not just a user throw) also triggers cleanup ----
+[: [: 1 0 / :] [: "on-error " . :] ensure :] [: drop "recovered" . :] try-catch cr
+
+\ ---- with-db: body queries the handle; it is closed afterward ----
+":memory:" [: dup "create table t(x)" [ ] db-exec drop
+            dup "insert into t values (42)" [ ] db-exec drop
+            "select x from t" [ ] db-query :rows @ 0 @i :x @ :] with-db . cr   \ 42
+
+\ ---- with-db: throw mid-body still closes the db; the exception propagates ----
+[: ":memory:" [: drop "kaboom" throw :] with-db :] [: "db-caught " . . :] try-catch cr
+
+\ ---- with-stream: read a child's stdout through the guard; stream closed after ----
+[ "printf" "hello" ] start-process :out @ [: read :] with-stream . cr           \ hello
+
+\ ---- with-stream: throw mid-body still closes the stream; exception propagates ----
+[: [ "printf" "x" ] start-process :out @ [: drop "streamboom" throw :] with-stream :]
+  [: "stream-caught " . . :] try-catch cr

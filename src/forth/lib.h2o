@@ -53,6 +53,20 @@ inline
 	else side-drop           \ success: discard saved handler, results stay
 	then ;
 
+\ Guaranteed cleanup: run cleanup-xt whether body-xt returns normally or throws,
+\ then re-raise on the throw path. cleanup-xt is ( -- ), stack-neutral. The side
+\ stack holds it across the unwind, which the return stack does not survive.
+: ensure ( body-xt cleanup-xt -- ... )
+	>side catch side> execute if throw then ;
+
+\ Open a db, run body-xt ( db -- ... ) with the handle, close it on either exit.
+: with-db ( path body-xt -- ... )
+	swap db-open dup >side swap catch side> db-close if throw then ;
+
+\ Run body-xt ( stream -- ... ) over an already-open stream, close it on either exit.
+: with-stream ( stream body-xt -- ... )
+	over >side catch side> close if throw then ;
+
 \ matrix words
 
 ( s -- sxs-identity-matrix )

@@ -124,18 +124,13 @@ backtrack, or by a captured continuation. Resource handles make this concrete �
 a `db`/stream/FFI handle is a registry slot with no GC finalization, so any
 non-local exit past its close leaks it until the process ends.
 
-**Tier 1 — `ensure` over throw and normal exit.** Cleanup that runs on both the
-normal and the throw/interpreter-error path, expressible today on `catch`:
-
-```
-: ensure ( body-xt cleanup-xt -- … )
-    >side  catch  side> execute  if throw then ;
-```
-
-plus resource `with-` helpers — `with-db`, `with-stream`, `with-file` — that
-open, run a body, and close on either exit. Provide these as standard words
-rather than leaving each program to hand-roll the pattern. This tier covers the
-common case (open, use, release-even-on-error in straight-line code).
+**Tier 1 — `ensure` over throw and normal exit — done.** `ensure`
+( body-xt cleanup-xt -- … ) runs cleanup on both the normal and the
+throw/interpreter-error path and re-raises on throw, plus resource guards
+`with-db` and `with-stream` in `lib.h2o`. (`with-file` is not included: files are
+slurped by `read-file`/`write-file`, which open and close internally, so there is
+no persistent handle to guard — it would need a file-opens-a-stream primitive
+first.)
 
 **Tier 2 — `dynamic-wind` across every exit.** A `before body after` whose
 `after` also runs on a `fail` backtrack and a `shift` capture, and whose

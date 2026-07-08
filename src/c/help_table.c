@@ -118,6 +118,7 @@ const HelpEntry help_entries[] = {
 	{ "else", "—", "Separate the true and false arms", NULL, NULL, NULL },
 	{ "emit", "( code -- )", "Print the character with codepoint code, UTF-8 encoded (1–4 bytes); range-checked [0, 0x10FFFF]", "1", "none", "O(1)" },
 	{ "end-process", "( proc -- )", "lib.h2o: the teardown mirror of start-process — close :in/:out/:err and wait :pid (graceful, blocks until exit)", "3 closes + wait", "none", "O(1)" },
+	{ "ensure", "( body-xt cleanup-xt -- … )", "lib.h2o: run cleanup-xt (stack-neutral) whether body-xt returns normally or throws/errors, then re-raise on the throw path", "—", "cont if thrown", "O(body-xt)" },
 	{ "env", "( name -- val )", "Environment variable as a string, or the none value if unset (so set-empty \"\" and unset stay distinct)", "1", "1o on hit", "O(|val|)" },
 	{ "env!", "( name value -- )", "Set an environment variable (overwriting); process-wide, so subsequent start-process children inherit it", "1", "none", "O(1)" },
 	{ "execute", "( xt -- … )", "Call the word at xt", NULL, NULL, NULL },
@@ -368,6 +369,8 @@ const HelpEntry help_entries[] = {
 	{ "vvf/", "vvf/ a b", "Load variables a and b, divide (a/b), push the result", NULL, NULL, NULL },
 	{ "wait", "( pid -- status )", "Block until the child exits; return its exit code, or 128 + signo if it was killed by a signal", "blocks", "none", "O(1)" },
 	{ "while", "( flag -- )", "Exit the loop forward if flag is falsy (begin … while … repeat)", NULL, NULL, NULL },
+	{ "with-db", "( path body-xt -- … )", "lib.h2o: db-open the path, run body-xt ( db -- … ) with the handle, db-close on either exit", "—", "1 db + cont if thrown", "O(body-xt)" },
+	{ "with-stream", "( stream body-xt -- … )", "lib.h2o: run body-xt ( stream -- … ) over an already-open stream, close it on either exit", "—", "cont if thrown", "O(body-xt)" },
 	{ "words", "( -- )", "List all non-internal words, newest first, 8 per line", "dict scan", "none", "O(|dict|)" },
 	{ "write", "( s stream -- )", "Write the string's bytes to the stream; loops over partial writes, retries EINTR", "write syscalls", "none", "O(|s|)" },
 	{ "write-file", "( s path -- )", "Create or truncate the file, then write the string's bytes", "file write", "none", "O(|s|)" },
@@ -377,4 +380,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 371;
+const int help_entry_count = 374;
