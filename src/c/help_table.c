@@ -44,6 +44,7 @@ const HelpEntry help_entries[] = {
 	{ "_", "( -- wild )", "The anonymous wildcard — unifies with anything, binds nothing, allocates nothing (a constant, not a fresh var)", "2", "none", "O(1)" },
 	{ "abs", "( a -- |a| )", "fabs", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)" },
 	{ "acos", "( a -- acos a )", "inverse cosine", "2", "matrix 1m(r×c)", "same" },
+	{ "add-last!", "( arr v -- arr )", "Append v at the end, doubling the backing buffer when full; leaves arr on the stack", "2", "≤1a on grow", "amortized O(1)" },
 	{ "again", "—", "Unconditional branch back to begin", NULL, NULL, NULL },
 	{ "alloc-stats", "( -- )", "Print and reset the allocation counters since the last call (lvars=… arrays=…)", "2", "none", "O(1)" },
 	{ "amb", "( xt1 xt2 -- … )", "Run xt1; if it fails (a unify mismatch or fail), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds.", "xt1", "none", "O(xt1 + xt2)" },
@@ -253,6 +254,7 @@ const HelpEntry help_entries[] = {
 	{ "reify", "( a -- a' )", "Like copy, but each unbound var becomes a canonical inert symbol :_0, :_1, … numbered by first appearance — a ground, storable, comparable snapshot.", "tree size", "one object per node", "O(tree size)" },
 	{ "relation", "( [cols] -- rel )", "New empty relation; cols is an array of column symbols to index", "k", "frames + sets", "O(k)" },
 	{ "reload", "( -- )", "Truncate user state, re-run every loaded file in order", "forget + N loads", "—", "O(Σ files)" },
+	{ "remove-last!", "( arr -- v )", "Remove and return the last element; errors on an empty array", "2", "none", "O(1)" },
 	{ "render", "( a -- s )", "The text . would print, returned as a string instead of printed: no truncation, no trailing separator (a matrix grid's final newline is dropped). Strings render raw, symbols by name, collections/frames/matrices in their laid-out form", "1 + size", "1o", "O(size)" },
 	{ "repeat", "—", "Branch back to begin; patches the while exit", NULL, NULL, NULL },
 	{ "replace", "( s pat rep -- s' )", "Replace **all** matches; in rep, & or \\0 is the whole match, \\1–\\9 a capture, \\& and \\\\ literals", "n", "1o + buffer growth", "O(n)" },
@@ -375,4 +377,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 369;
+const int help_entry_count = 371;

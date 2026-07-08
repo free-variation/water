@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.13.0"
+#define VERSION "0.14.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1001,6 +1001,8 @@ void p_intersect(Interpreter *interp);
 void p_difference(Interpreter *interp);
 void p_set_add(Interpreter *interp);
 void p_set_remove(Interpreter *interp);
+void p_add_last(Interpreter *interp);
+void p_remove_last(Interpreter *interp);
 void p_execute(Interpreter *interp);
 void p_execute_catching(Interpreter *interp);
 int push_prompt(Interpreter *interp, int kind);

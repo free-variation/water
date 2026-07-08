@@ -258,4 +258,50 @@ clear
 0 9999 range reverse array>set 1 take 0 @i . cr  \ 0          smallest first after the sort
 0 100 range  0 100 range  concat  array>set size . cr   \ 101  the doubled range dedups
 
+clear
+\ add-last! ( arr v -- arr ) appends at the end, doubling the backing buffer when
+\ full, and leaves the array. remove-last! ( arr -- v ) removes and returns the
+\ last element. Together they grow and shrink an array in amortized O(1).
+
+\ append leaves the grown array
+[ 1 2 3 ] 4 add-last! . cr                      \ [ 1 2 3 4 ]
+
+\ grows past the initial capacity
+[ 1 2 ] 3 add-last! 4 add-last! 5 add-last! . cr  \ [ 1 2 3 4 5 ]
+
+\ size and indexing track the growth
+[ 1 2 ] 3 add-last! 4 add-last! size . cr       \ 4
+[ 1 2 ] 3 add-last! 4 add-last! 3 @i . cr       \ 4
+
+\ append onto an empty array
+[ ] 1 add-last! . cr                            \ [ 1 ]
+
+\ mutates in place: a bound array reflects the append
+[ 1 2 ] to grow-me
+grow-me 3 add-last! drop  grow-me . cr          \ [ 1 2 3 ]
+
+\ stack shape: ( arr v -- arr ), items below are left alone
+7 [ 1 2 ] 3 add-last! . cr
+.s
+
+clear
+\ remove-last! returns the last element and shrinks the array in place
+[ 1 2 3 ] to shrink-me
+shrink-me remove-last! . cr                     \ 3
+shrink-me size . cr                             \ 2
+shrink-me . cr                                  \ [ 1 2 ]
+
+\ round-trip: append then remove returns the appended value
+[ 1 ] 2 add-last! remove-last! . cr             \ 2
+
+\ remove down to empty, then removing again errors
+[ 9 ] to one-el
+one-el remove-last! . cr                        \ 9
+one-el size . cr                                \ 0
+one-el remove-last!                             \ error: empty array
+
+\ failures
+5 4 add-last!                                   \ error: not an array
+[ ] remove-last!                                \ error: empty array
+
 bye

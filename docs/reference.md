@@ -385,7 +385,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 
 ## Arrays
 
-Fixed length, 0-indexed, elements of any type.
+0-indexed, elements of any type. Grows at the end in amortized O(1) over a backing buffer that doubles on demand; indexing stays O(1).
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -394,6 +394,8 @@ Fixed length, 0-indexed, elements of any type.
 | `array-of` | `( val n -- arr )` | New n-element array, every slot = val | 3 + n | `1a(n)` | O(n) |
 | `@i` | `( arr i -- val )` | Array element; on a matrix returns row i as a 1×c matrix | 3 (array) | matrix `1m(1×c)` | O(1) array; O(c) matrix |
 | `!i` | `( arr i val -- arr )` | Store val at index i in place; leaves arr on the stack | 4 | none | O(1) |
+| `add-last!` | `( arr v -- arr )` | Append v at the end, doubling the backing buffer when full; leaves arr on the stack | 2 | `≤1a` on grow | amortized O(1) |
+| `remove-last!` | `( arr -- v )` | Remove and return the last element; errors on an empty array | 2 | none | O(1) |
 | `take` | `( arr/set n -- arr )` | First n elements (clamped) | 2 + n | `1a(n)` | O(n) |
 | `reverse` | `( arr/set -- arr )` | Reversed copy | 1 + n | `1a(n)` | O(n) |
 | `reverse-slice!` | `( arr offset n -- arr )` | Reverse the `n` elements at `offset` in place; leaves arr | 2 + n | none | O(n) |

@@ -38,6 +38,7 @@
 _
 abs
 acos
+add-last!
 again
 alloc-stats
 amb
@@ -247,6 +248,7 @@ reduce
 reify
 relation
 reload
+remove-last!
 render
 repeat
 replace

@@ -3867,6 +3867,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "difference", p_difference, 0);
 	define_primitive(interp, "set-add!", p_set_add, 0);
 	define_primitive(interp, "set-remove!", p_set_remove, 0);
+	define_primitive(interp, "add-last!", p_add_last, 0);
+	define_primitive(interp, "remove-last!", p_remove_last, 0);
 	define_primitive(interp, "execute", p_execute, 0);
 	define_primitive(interp, "(execute-catching)", p_execute_catching, 4);
 	define_primitive(interp, "map", p_map, 0);

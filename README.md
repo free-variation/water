@@ -91,7 +91,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 ### Core language
 
 - **Tagged Vals** — floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, execution tokens, dictionary addresses, continuations, logic variables, process streams, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
-- **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code — no separate bytecode.
+- **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code.
 - **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `gt while`, `0= until`) fuses into a single compare-and-branch op, and an array read-modify-write (`arr i arr i @i f1- !i` or a `… delta f+ !i` step) collapses to one in-place element update. Variable-fused float words (`vf+`/`vf*`/… on one named variable, `vvf+`/`vvf*`/… on two) collapse the variable load into the float op.
 - **Program and execution state separated** — the dictionary, symbol pool, and object heap live in global structures (`Vocabulary`, `Compiler`, `Arena`) that are read-only during a run; the per-run mutable state — the three stacks, instruction pointer, locals, and GC roots — lives in an `Interpreter`, so one program can be shared across multiple execution contexts.
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
@@ -148,6 +148,7 @@ Flat, fixed-length typed numeric buffers stored off the arena (one allocation, f
 - **`group-by`** — `array :col group-by` groups frames by a symbol field into a frame from each value to a set of rows (the engine behind fast indexing and aggregation).
 - **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), `range` ( from to -- arr ) for an ascending or descending integer sequence, `iota` ( n -- [0..n-1] ), indexed access via `@i`, in-place store via `!i`.
 - **Array operations** — `sort` (a sorted copy in `val_cmp` order), `reverse`, `take`, `concat`, `flatten-array` (flatten one level), and `sample` ( arr count repl -- arr ) drawing elements with or without replacement.
+- **Growing at the end** — `add-last!` ( arr v -- arr ) appends over a backing buffer that doubles when full, `remove-last!` ( arr -- v ) pops the last element; both amortized O(1), indexing stays O(1).
 - **Map, fold, zip-map, filter** — `map` for a single source, `reduce` for a left fold with an accumulator, `mapn` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
 - **Destructuring** — `destruct` spreads a set/array/frame's elements onto the stack (a frame as alternating symbol/value). `destruct-to` ( values names -- ) takes two equal-length arrays and assigns each value to the global variable named by the corresponding symbol, creating it if absent.
 - **In-place slicing** — `slice!` copies a strided run from one array into another, `reverse-slice!` reverses a run in place, `to-slice!` stores values from the stack into a range.
@@ -162,7 +163,7 @@ A thread-local xoshiro256\*\* stream. Each worker thread derives its own stream 
 
 ### Multi-core parallelism
 
-Worker threads over one shared object heap (not `fork`): a quotation runs across the collection on several cores, results joining back by handle with no copy. Allocation in a region is per-worker; a region whose results don't escape is rewound wholesale, and live results are retained by handle.
+Worker threads over one shared object heap: a quotation runs across the collection on several cores, results joining back by handle with no copy. Allocation in a region is per-worker; a region whose results don't escape is rewound wholesale, and live results are retained by handle.
 
 - **`pmap`** — `( arr xt -- arr )` parallel `map`; **`pfilter`** — `( arr pred -- arr )` parallel `filter`, order preserved; **`pmap-reduce`** — `( arr id map-xt combine-xt -- val )` fused parallel map+fold, with `combine-xt` associative and `id` its neutral element.
 - **`-ext` forms** — `pmap-ext` / `pfilter-ext` / `pmap-reduce-ext` take an explicit worker count and items-per-claim; the bare forms default to `num-cores` workers.
@@ -277,7 +278,7 @@ Built in `lib.h2o` on top of the continuation primitives:
 - **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — returning the error message as the exception value, so a runtime fault is recoverable, not just a user `throw`.
 - **`try-catch`** — wraps an xt with a recovery handler that runs on either kind of failure. Arity-agnostic.
 
-An uncaught `throw` or interpreter error still surfaces at the REPL. The `shift-with` handler can also resume the captured continuation, giving the Common Lisp restart pattern — exceptions can recover rather than just abort.
+An uncaught `throw` or interpreter error still surfaces at the REPL. The `shift-with` handler can also resume the captured continuation, giving the Common Lisp restart pattern — exceptions can recover.
 
 ### Logic
 
@@ -289,7 +290,7 @@ Unification and committed choice, on the trail and the continuation machinery:
 - **`_`** — the anonymous wildcard: unifies with anything, binds nothing, and allocates nothing.
 - **`matches?`** — a non-destructive `unify` test: marks the trail, unifies, rolls back, and pushes whether the two unified — so it composes in straight-line code.
 - **Cons lists** — `[( a b c )]` builds cons pairs and `[( H T )]` is the `[H|T]` head/tail pattern under `unify`; with `cons`, `head-tail`, and `array`↔`cons` conversions.
-- **Fact database** — `relation` / `assert` / `query` / `retract` / `count-matches` / `inner-join`. A relation is a frame of a row-set plus per-column indexes (declared symbol columns); rows are column-keyed frames that dedup; `query` matches a pattern by unification, narrowing through the index (and returning the bucket directly when the index covers the whole pattern). `inner-join` merges two relations on a shared column via index probing; `bulk-load` builds a whole relation in one sorted pass (`array>set` for the rows, `group-by` per index) instead of row-by-row. The same row-frame shape is what a SQLite query would return.
+- **Fact database** — `relation` / `assert` / `query` / `retract` / `count-matches` / `inner-join`. A relation is a frame of a row-set plus per-column indexes (declared symbol columns); rows are column-keyed frames that dedup; `query` matches a pattern by unification, narrowing through the index (and returning the bucket directly when the index covers the whole pattern). `inner-join` merges two relations on a shared column via index probing; `bulk-load` builds a whole relation in one sorted pass (`array>set` for the rows, `group-by` per index). The same row-frame shape is what a SQLite query would return.
 
 ### Other
 

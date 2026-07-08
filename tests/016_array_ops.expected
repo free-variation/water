@@ -53,3 +53,19 @@ error: sort: expected an array; got a set
 10000 
 0 
 101 
+[ 1 2 3 4 ] 
+[ 1 2 3 4 5 ] 
+4 
+4 
+[ 1 ] 
+[ 1 2 3 ] 
+[ 1 2 3 ] 
+7 3 
+2 
+[ 1 2 ] 
+2 
+9 
+0 
+error: remove-last!: empty array
+error: add-last!: expected an array; got a float
+error: remove-last!: empty array

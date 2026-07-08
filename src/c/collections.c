@@ -489,6 +489,30 @@ void p_set_remove(Interpreter *interp) {
 	DISPATCH(interp);
 }
 
+void p_add_last(Interpreter *interp) {
+	POP(value);
+	PEEK_TYPE_AT(array_val, 0, "add-last!", T_ARRAY);
+	Object *array = OBJECT_AT(VAL_DATA(array_val));
+
+	GROW_IF_FULL(array->len, array->capacity, array->items);
+	array->items[array->len++] = value;
+
+	DISPATCH(interp);
+}
+
+void p_remove_last(Interpreter *interp) {
+	POP_ARRAY(array, "remove-last!");
+	if (array->len == 0) {
+		fail(interp, "remove-last!: empty array");
+		return;
+	}
+
+	array->len--;
+	push(interp, array->items[array->len]);
+
+	DISPATCH(interp);
+}
+
 
 #define NEW_SEGMENT(name, word, element_type) \
 	void name(Interpreter *interp) { \

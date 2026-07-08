@@ -65,21 +65,14 @@ dedicated `read` ( s -- v ) word is wanted.
 
 ### Loop ergonomics
 
-Counted iteration is `times` / `i-times` (with or without a pushed index) and the
-`begin … until` / `begin … while … repeat` / `again` family; leaving a loop early
-is hand-rolled by threading a flag through the condition. Missing is structured
-early exit and a counted index loop.
+Structured early exit from a loop — today it's hand-rolled by threading a flag
+through the condition.
 
-- `leave` — exit the innermost counted loop immediately; `?leave` ( flag -- ) the
-  conditional form; a skip-to-next-iteration (`continue`).
-- `do … loop` ( limit start -- ) with the index available as `i` (and `j` one
-  level out), and `+loop` for a custom step.
+- `leave` — exit the innermost loop immediately; `?leave` ( flag -- ) the
+  conditional form; `continue` — skip to the next iteration.
 
-To settle: whether to add `do … loop` as a second counted form or instead give
-`i-times` / `begin` a `leave` / `continue`; the index model (`do…loop`'s `i`/`j`
-read the return stack, where `i-times` pushes its index to the data stack — two
-conventions to reconcile or keep apart); how `leave` / `continue` compile
-(forward/back branch patching) and unwind cleanly past loop-local frames.
+To settle: how `leave` / `continue` compile (forward/back branch patching) and
+unwind cleanly past loop-local frames.
 
 ---
 
@@ -249,35 +242,6 @@ In rough priority:
 - **Numeric disjoint-write buffer / work-stealing.** Lower priority: a shared
   unboxed-`double` output buffer threaded under the matrix kernels, and
   work-stealing for skewed workloads.
-
----
-
-## Dynamic vector
-
-Arrays are fixed-length and O(1)-indexed; cons lists grow by O(1) prepend but
-read sequentially. Neither grows at the end *and* indexes cheaply — the shape
-incremental, natural-order construction wants. Today that means accumulating
-onto a cons list and freezing with `cons>array`, or pre-sizing with `array-of`
-and filling by `!i`: a phase boundary, not one structure that is cheap to both
-grow and index.
-
-A fill-pointer vector closes it — a mutable, contiguous buffer with
-amortized-doubling append/remove at the end and O(1) index, update, and length.
-
-- `vector` / `vector-of` — empty, or pre-sized with a fill value.
-- `push` ( vec v -- vec ) append, doubling the backing buffer when full;
-  `pop` ( vec -- v ) remove and return the last element.
-- `@i` / `!i` / `size` extend to the live region (slots past the fill pointer
-  stay invisible), so indexing and update stay O(1).
-- `vector>array` freezes a copy of the live region; an array converts in.
-
-The pieces to hand-roll it already exist (`array-of`, `!i`, `size`, `slice!` /
-`to-slice!`, manual doubling); the value is a standard wordset, so every program
-isn't re-implementing the doubling buffer.
-
-To settle: a distinct type vs a growable mode of the array object (a fill-pointer
-field, so `@i`/`size` work unchanged); whether `push`/`pop` mutate and return the
-vector (like `set-add!`) or are value-returning; the word names.
 
 ---
 
