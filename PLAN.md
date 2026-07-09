@@ -1,83 +1,6 @@
 # Water — future work
 
-A TODO list of pending work.
-
----
-
-## String operations
-
-### Unicode
-
-- **ASCII fast path**: a per-string all-ASCII flag to collapse the byte-offset
-  walk in `substring`/`char-at`/`codepoint-at` to direct byte indexing.
-- **Case folding**: `upcase`/`downcase`. Unicode-correct folding needs
-  tables (ICU or a generated table), so even an ASCII-only first cut should
-  name the boundary.
-
----
-
-## Core language additions
-
-### Path queries — follow-ups
-
-- **Wildcard mutation** — `*` / `//` in `!` / `delete-at` / `update-at` for
-  broadcast writes.
-- **Quotation predicates** — an arbitrary `[: … :]` evaluated per node, built as an
-  explicit element array.
-- **Axes beyond child and descendant.**
-
-### Time / dates — follow-ups
-
-- **Named-timezone conversion** — decompose/compose/format in an explicit
-  zone (`epoch>date-in ( instant zone -- date )`-style, tzdata-backed).
-- **Sub-second rendering** — a fractional-seconds directive in the format
-  words (strftime has none).
-
-### Sort and shuffle with a rule
-
-- `array [ x y -- cmp ] sort-with` — sorted copy under a user comparator
-  quotation that pops two Vals and pushes `-1` / `0` / `1`; input untouched.
-  Algorithm: introsort or libc `qsort` with a comparator thunk.
-- `array shuffle` — new array, elements randomly permuted (Fisher-Yates over
-  the PRNG stream); input untouched.
-
-### Re-readable repr
-
-`render` produces a value's display form, which is not always re-readable —
-strings print raw, a matrix prints as a grid. `frame>json` round-trips, but only
-the JSON-expressible subset (frames, arrays, strings, numbers, booleans).
-Missing is a representation that reads back through the Water reader for
-*any* value.
-
-- `repr` ( v -- s ) — a string of Water source that, read back, reconstructs
-  an equal value: quoted strings (with `""` escaping), `[ ]` arrays, `{ :k v }`
-  frames, `< >` sets, `[( )]` cons lists, `:name` symbols, floats in shortest
-  round-trip form, a matrix as its `[ … ] R C matrix` constructor.
-
-To settle: how a value with no source form (an unbound logic var, continuation,
-stream, db, or ptr) reprs — an error, or a `reify`-style canonical placeholder;
-whether `repr` then `load`-style evaluation is the intended round-trip path or a
-dedicated `read` ( s -- v ) word is wanted.
-
-### Loop ergonomics
-
-Structured early exit from a loop — today it's hand-rolled by threading a flag
-through the condition.
-
-- `leave` — exit the innermost loop immediately; `?leave` ( flag -- ) the
-  conditional form; `continue` — skip to the next iteration.
-
-To settle: how `leave` / `continue` compile (forward/back branch patching) and
-unwind cleanly past loop-local frames.
-
----
-
-## Loader dictionary lookup
-
-Token resolution in the outer interpreter is a linear dictionary walk with a
-string compare per candidate, which dominates the load time of large generated
-source files. A name-hash index over the dictionary (or reuse of the symbol
-hash table) makes resolution O(1) and leaves large-file loads I/O-bound.
+A TODO list of pending work, highest priority first.
 
 ---
 
@@ -120,26 +43,33 @@ or inferred from whether interning happens during compilation.
 
 ---
 
-## Guaranteed cleanup across every exit
+## Error backtraces
 
-**`dynamic-wind`** — a `before body after` whose `after` runs on every exit
-from the region — normal, throw/interpreter error, `fail` backtrack, `shift`
-capture — and whose `before` re-runs on `resume` re-entry. No `catch`-style
-wrapper can provide this: a `fail` unwinds to the nearest *choice* prompt,
-past `catch`'s *exception* prompt, and a region re-entered by `resume` needs
-setup per entry, not a once-only handler. Without it, a `db`/stream/FFI
-handle — a registry slot with no GC finalization — leaks on a backtrack past
-its close until the process ends.
+An error surfaces as a one-line message with no indication of where in the
+program it happened. The return stack holds the colon-word call chain at the
+moment `fail` runs, and each saved address maps back through the dictionary to
+the word containing it — so a word-level trace is a return-stack walk:
 
-The mechanism: a *wind mark* — a return-stack mark, kin to `reset`'s, carrying
-the before/after thunks, recognized by both unwind cascades in the inner loop
-(exception and choice prompts) and by `resume`'s splice so re-entry re-runs
-`before`.
+- On error, print the chain innermost first — `in lappend, called from nrev,
+  called from the top level` — skipping locals frames and marks.
 
-To settle: whether `after` firing once per failed alternative of a multi-shot
-region is the wanted semantics or a footgun; how a wind mark interleaves with
-the locals-frame and trail rewind the unwind already carries; whether
-`before`/`after` observe the region's data stack or run isolated.
+To settle: whether the trace prints on every error or only when nothing
+catches it; how deep to print before eliding the middle; how a quotation
+names itself (by its enclosing definition, or anonymously with a source
+position).
+
+---
+
+## Loop ergonomics
+
+Structured early exit from a loop — today it's hand-rolled by threading a flag
+through the condition.
+
+- `leave` — exit the innermost loop immediately; `?leave` ( flag -- ) the
+  conditional form; `continue` — skip to the next iteration.
+
+To settle: how `leave` / `continue` compile (forward/back branch patching) and
+unwind cleanly past loop-local frames.
 
 ---
 
@@ -151,6 +81,12 @@ TLS termination, HTTP/1.1–3, request parsing, static files, timeouts, rate
 limiting, access logs, load balancing — and forwards each request over a Unix or
 TCP socket as FastCGI records. Water never sees a raw HTTP byte: it decodes
 the records, runs a handler, writes the response.
+
+Depends on symbol collection: a long-lived worker parsing request JSON mints
+symbols from unbounded request keys, so without collection the worker leaks
+until restart. Untrusted request bodies also make fuzzing `json>frame` (and
+`load-image`, if images ever travel) a prerequisite — mutate a seed corpus
+into the ASan build and fix what falls out.
 
 **Instrumentation needed** — less than an in-process server, since the web server
 keeps the HTTP work:
@@ -185,10 +121,65 @@ builders are `lib.h2o`.
 
 ---
 
+## Sort and shuffle with a rule
+
+- `array [ x y -- cmp ] sort-with` — sorted copy under a user comparator
+  quotation that pops two Vals and pushes `-1` / `0` / `1`; input untouched.
+  Algorithm: introsort or libc `qsort` with a comparator thunk. With `sort-by`
+  covering key extraction, this is for orderings that aren't key extractions.
+- `array shuffle` — new array, elements randomly permuted (Fisher-Yates over
+  the PRNG stream); input untouched.
+
+---
+
+## Re-readable repr
+
+`render` produces a value's display form, which is not always re-readable —
+strings print raw, a matrix prints as a grid. `frame>json` round-trips, but only
+the JSON-expressible subset (frames, arrays, strings, numbers, booleans).
+Missing is a representation that reads back through the Water reader for
+*any* value.
+
+- `repr` ( v -- s ) — a string of Water source that, read back, reconstructs
+  an equal value: quoted strings (with `""` escaping), `[ ]` arrays, `{ :k v }`
+  frames, `< >` sets, `[( )]` cons lists, `:name` symbols, floats in shortest
+  round-trip form, a matrix as its `[ … ] R C matrix` constructor.
+
+To settle: how a value with no source form (an unbound logic var, continuation,
+stream, db, or ptr) reprs — an error, or a `reify`-style canonical placeholder;
+whether `repr` then `load`-style evaluation is the intended round-trip path or a
+dedicated `read` ( s -- v ) word is wanted.
+
+---
+
+## Guaranteed cleanup across every exit
+
+**`dynamic-wind`** — a `before body after` whose `after` runs on every exit
+from the region — normal, throw/interpreter error, `fail` backtrack, `shift`
+capture — and whose `before` re-runs on `resume` re-entry. No `catch`-style
+wrapper can provide this: a `fail` unwinds to the nearest *choice* prompt,
+past `catch`'s *exception* prompt, and a region re-entered by `resume` needs
+setup per entry, not a once-only handler. Without it, a `db`/stream/FFI
+handle — a registry slot with no GC finalization — leaks on a backtrack past
+its close until the process ends.
+
+The mechanism: a *wind mark* — a return-stack mark, kin to `reset`'s, carrying
+the before/after thunks, recognized by both unwind cascades in the inner loop
+(exception and choice prompts) and by `resume`'s splice so re-entry re-runs
+`before`.
+
+To settle: whether `after` firing once per failed alternative of a multi-shot
+region is the wanted semantics or a footgun; how a wind mark interleaves with
+the locals-frame and trail rewind the unwind already carries; whether
+`before`/`after` observe the region's data stack or run isolated.
+
+---
+
 ## Foreign function interface
 
 - **Callbacks** — C → Water function pointers (`qsort` comparators,
-  `CURLOPT_WRITEFUNCTION` to capture a response body into a string).
+  `CURLOPT_WRITEFUNCTION` to capture a response body into a string). The same
+  re-entry plumbing `sort-with` needs.
 - **Struct-by-value** arguments and returns.
 - **Per-call varargs** — variadic arg types chosen at the call site rather
   than fixed per declared word.
@@ -197,22 +188,43 @@ builders are `lib.h2o`.
 
 ---
 
-## Coroutines, generators, lazy sequences
+## Time / dates — follow-ups
 
-Building on the generator primitives:
+- **Named-timezone conversion** — decompose/compose/format in an explicit
+  zone (`epoch>date-in ( instant zone -- date )`-style, tzdata-backed).
+- **Sub-second rendering** — a fractional-seconds directive in the format
+  words (strftime has none).
 
-- Lazy `map` / `filter` / `take` / `zip` as `lib.h2o` wrappers that resume the
-  source on demand, with `lazy>array` to force a finite prefix.
-- A cooperative scheduler (`spawn` / `run-scheduler`, a queue of `T_CONT`s) for
-  producer/consumer pipelines.
-- **Kanren-style interleaving streams.** A captured continuation is the
-  suspension a miniKanren stream needs — force it with `resume` and it yields an
-  answer or suspends again. Fair interleaving: `mplus` (merge two streams so an
-  infinite branch can't starve the other) and `bind` (flatMap with interleaving)
-  — a *complete* search, distinct from the depth-first `amb` / `fail`. Generators
-  are the substrate; the interleaving combinators are the work.
+---
 
-All `lib.h2o` on the existing primitives — no new C.
+## Path queries — follow-ups
+
+- **Wildcard mutation** — `*` / `//` in `!` / `delete-at` / `update-at` for
+  broadcast writes.
+- **Quotation predicates** — an arbitrary `[: … :]` evaluated per node, built as an
+  explicit element array.
+- **Axes beyond child and descendant.**
+
+---
+
+## String operations
+
+### Unicode
+
+- **ASCII fast path**: a per-string all-ASCII flag to collapse the byte-offset
+  walk in `substring`/`char-at`/`codepoint-at` to direct byte indexing.
+- **Case folding**: `upcase`/`downcase`. Unicode-correct folding needs
+  tables (ICU or a generated table), so even an ASCII-only first cut should
+  name the boundary.
+
+---
+
+## Loader dictionary lookup
+
+Token resolution in the outer interpreter is a linear dictionary walk with a
+string compare per candidate, which dominates the load time of large generated
+source files. A name-hash index over the dictionary (or reuse of the symbol
+hash table) makes resolution O(1) and leaves large-file loads I/O-bound.
 
 ---
 
@@ -234,30 +246,19 @@ In rough priority:
 
 ---
 
-## Functional primitives
+## Coroutines, generators, lazy sequences
 
-Forth-side construction gathers off the data stack, so any word that builds a
-new array of data-dependent length must allocate and fill in C; words returning
-a scalar, element, or boolean belong in `lib.h2o`.
+Building on the generator primitives:
 
-**`lib.h2o` (scalar/element result, or compose C builders):**
+- Lazy `map` / `filter` / `take` / `zip` as `lib.h2o` wrappers that resume the
+  source on demand, with `lazy>array` to force a finite prefix.
+- A cooperative scheduler (`spawn` / `run-scheduler`, a queue of `T_CONT`s) for
+  producer/consumer pipelines.
+- **Kanren-style interleaving streams.** A captured continuation is the
+  suspension a miniKanren stream needs — force it with `resume` and it yields an
+  answer or suspends again. Fair interleaving: `mplus` (merge two streams so an
+  infinite branch can't starve the other) and `bind` (flatMap with interleaving)
+  — a *complete* search, distinct from the depth-first `amb` / `fail`. Generators
+  are the substrate; the interleaving combinators are the work.
 
-- **`find`** — `arr [: pred :] find` → first matching element, or `T_NONE`.
-  Short-circuits via `shift`.
-- **`any?`** — `arr [: pred :] any?` → boolean float.
-- **`all?`** — `arr [: pred :] all?` → boolean float.
-- **`flat-map`** — `arr [: ( elt -- arr ) :] flat-map` → `map` then a
-  `concat` fold (both C, so not stack-bounded).
-- **`sort-by`** — `arr [: ( elt -- key ) :] sort-by` → sorted by extracted
-  key, atop `sort-with`.
-- **`each`** — `arr [: ( elt -- ) :] each` → apply xt for side effects, no
-  result.
-
-**On frames:**
-
-- **`group-by` (quotation-keyed variant)** — `arr [: ( elt -- key ) :]` grouping
-  by a computed key, under a distinct name from the existing column form.
-- **`partition`** — `arr [: pred :] partition` → matches and non-matches.
-
-Composable in one line: `count` (`[: pred :] filter size`), `min-by` / `max-by`
-(`reduce` with comparison).
+All `lib.h2o` on the existing primitives — no new C.

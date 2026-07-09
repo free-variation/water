@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.17.0"
+#define VERSION "0.18.0"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -57,6 +57,79 @@ inline
 ( arr n -- arr' )  \ all but the first n elements (clamped)
 : skip  over size swap -  swap reverse swap take reverse ;
 
+( items pred -- element )  \ first element satisfying pred, or null
+: find
+	| element i >items >pred |
+	0 to i
+	begin i items size lt while
+		items i @i to element
+		element pred execute if element exit then
+		f++ i
+	repeat
+	null ;
+
+( items pred -- flag )  \ does any element satisfy pred?
+: any?  find none? not ;
+inline
+
+( items pred -- flag )  \ do all elements satisfy pred?
+: all?
+	| i >items >pred |
+	0 to i
+	begin i items size lt while
+		items i @i pred execute not if false exit then
+		f++ i
+	repeat
+	true ;
+
+( items xt -- )  \ run xt ( element -- ) on each element, for side effects
+: each
+	| i >items >xt |
+	0 to i
+	begin i items size lt while
+		items i @i xt execute
+		f++ i
+	repeat ;
+
+( items xt -- items' )  \ xt maps an element to an array; results concatenated
+: flat-map  map flatten-array ;
+inline
+
+( items xt -- items' )  \ sorted by the key xt ( element -- key ) extracts
+: sort-by
+	| >items >xt |
+	items [: dup xt execute swap 2 array :] map
+	sort
+	[: 1 @i :] map ;
+
+( items pred -- matches rest )  \ elements satisfying pred, and the others
+: partition
+	| element i matches rest >items >pred |
+	[ ] to matches
+	[ ] to rest
+	0 to i
+	begin i items size lt while
+		items i @i to element
+		element pred execute if matches else rest then element add-last! drop
+		f++ i
+	repeat
+	matches rest ;
+
+( items xt -- frame )  \ group elements into { key -> set } by the symbol key
+\ xt ( element -- sym ) computes; the quotation-keyed kin of group-by
+: group-with
+	| element key groups i >items >xt |
+	{ } to groups
+	0 to i
+	begin i items size lt while
+		items i @i to element
+		element xt execute to key
+		groups key has? not if groups key < > ! drop then
+		groups key @ element set-add! drop
+		f++ i
+	repeat
+	groups ;
+
 \ string words
 
 ( s pat -- i | -1 )  \ codepoint index of pat's first regex match in s, -1 if none

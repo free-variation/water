@@ -139,11 +139,9 @@ void p_setopen(DISPATCH_ARGS) {
 void p_setclose(DISPATCH_ARGS) {
 	FIND_MARK(mark_index, "> : no matching < on the stack");
 
-	int set_handle = object_new_set(interp);
+	int set_handle = build_set_from_values(interp,
+			&interp->data_stack[mark_index], interp->dsp - mark_index);
 	if (interp->error_flag) return;
-	for (int i = mark_index; i < interp->dsp; i++) {
-		set_add(interp, set_handle, interp->data_stack[i]);
-	}
 	interp->dsp = mark_index - 1;
 	push(interp, make_set(set_handle));
 

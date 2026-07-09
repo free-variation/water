@@ -40,9 +40,11 @@ abs
 acos
 add-last!
 again
+all?
 alloc-stats
 amb
 and
+any?
 append-file
 argmax
 argmin
@@ -116,6 +118,7 @@ dim
 double-segment
 drop
 dup
+each
 else
 emit
 end-process
@@ -153,6 +156,8 @@ ffi-open
 ffi-variadic
 fgt
 filter
+find
+flat-map
 flatten
 flatten-array
 fln
@@ -183,6 +188,7 @@ gc
 gen-each
 gen-take
 group-by
+group-with
 gt
 has?
 head-tail
@@ -242,6 +248,7 @@ over
 pair?
 parallel-run
 parse-time
+partition
 pfilter
 pfilter-ext
 pi
@@ -325,6 +332,7 @@ skip
 sleep
 slice!
 sort
+sort-by
 split
 sq
 sqrt

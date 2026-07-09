@@ -348,7 +348,7 @@ String literals `"…"` are **raw**: bytes between the quotes are copied verbati
 
 ## String operations
 
-Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is compiled once and cached (1024-slot round-robin), so reusing a pattern costs only the match. Patterns are PCRE syntax in raw `"…"` literals — PCRE itself interprets `\n`, `\t`, `\d`, `\x22`, and the rest. Matching is multiline: `^` and `$` bind to line boundaries. Patterns and subjects are treated as **UTF-8**: `.` matches one codepoint, and `\w` `\d` `\s` `\b` use Unicode properties (accented letters, non-ASCII digits). Invalid byte sequences are tolerated — they simply fail to match rather than raising an error. Match offsets are **byte** offsets (pair them with `byte-substring`). Captures come back as strings; an optional group that didn't participate is `0.0`. Booleans are `1.0`/`0.0`. In the cost columns `n` is the subject length.
+Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is compiled once and cached (a 1024-slot hash table keyed on the pattern bytes, bounded probe window), so reusing a pattern costs a hash plus one comparison, then the match. Patterns are PCRE syntax in raw `"…"` literals — PCRE itself interprets `\n`, `\t`, `\d`, `\x22`, and the rest. Matching is multiline: `^` and `$` bind to line boundaries. Patterns and subjects are treated as **UTF-8**: `.` matches one codepoint, and `\w` `\d` `\s` `\b` use Unicode properties (accented letters, non-ASCII digits). Invalid byte sequences are tolerated — they simply fail to match rather than raising an error. Match offsets are **byte** offsets (pair them with `byte-substring`). Captures come back as strings; an optional group that didn't participate is `0.0`. Booleans are `1.0`/`0.0`. In the cost columns `n` is the subject length.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -388,7 +388,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `< v… >` | `( -- set )` | Set literal; `<` pushes a mark, `>` gathers everything above it into a sorted set | n log n | `1o` + reallocs | O(n log n) |
+| `< v… >` | `( -- set )` | Set literal; `<` pushes a mark, `>` gathers everything above it in one sort-and-dedup pass, like `set` | n log n | `1o` + realloc | O(n log n) |
 | `set` | `( v₀ … vₙ₋₁ n -- set )` | Gather the top n values into a new set (the set analog of `array`) | 2 + n log n | `1o` + reallocs | O(n log n) |
 | `union` | `( s₁ s₂ -- s₃ )` | Union into a new set, merging the two sorted arrays | m+n | `1o` + reallocs | O(m+n) |
 | `intersection` | `( s₁ s₂ -- s₃ )` | Intersection into a new set, merging the two sorted arrays | m+n | `1o` + reallocs | O(m+n) |
@@ -398,7 +398,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `member?` | `( set v -- bool )` | Binary-search membership | 3 + log n | none | O(log n) |
 | `array>set` | `( array -- set )` | Sort a copy of the array once and dedup into a set — the fast bulk constructor (one sort, not n inserts); the source array is unchanged | n log n | `1o` + realloc | O(n log n) |
 | `group-by` | `( array col -- frame )` | Group an array of frames by their symbol-valued `col` into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted | n log n | frame + sets | O(n log n) |
-| `size` | `( coll -- n )` | Element count: set/array members, **codepoints** of a string, pair count of a frame | 2 | none | O(n) for a string, O(1) otherwise |
+| `size` | `( coll -- n )` | Element count: set/array members, **codepoints** of a string, pair count of a frame; a string's codepoint count is computed on first use and memoized on the object | 2 | none | O(1); a string's first `size` is O(n) |
 | `byte-size` | `( s -- n )` | Byte length of a string | 2 | none | O(1) |
 
 ---
@@ -455,7 +455,7 @@ Symbol-keyed sorted maps; binary-search lookup. A **path** is an array of steps;
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `{ :k v … }` | `( -- fr )` | Frame literal from alternating key/value pairs above the `{` mark; a path key (`/a/b/c`) vivifies nested frames | n log n | `1o` + reallocs | O(n log n) |
+| `{ :k v … }` | `( -- fr )` | Frame literal from alternating key/value pairs above the `{` mark; a path key (`/a/b/c`) vivifies nested frames. Built by sorted insertion — a binary search plus a shift per pair; `frame` / `array>frame` are the sort-once bulk constructors | n·(log n + n) | `1o` + reallocs | O(n²) |
 | `frame` | `( keys values -- fr )` | Build from parallel key and value arrays of equal length | 2 + n log n | `1o` + reallocs | O(n log n) |
 | `array>frame` | `( arr -- fr )` | Build from an even-length alternating-kv array; a path key (`/a/b/c`) vivifies nested frames | 1 + n log n | `1o` + reallocs | O(n log n) |
 | `frame>array` | `( fr -- arr )` | Flatten to a key-sorted alternating-kv array; inverse of `array>frame` | 1 + n | `1o` | O(n) |
@@ -466,7 +466,7 @@ Symbol-keyed sorted maps; binary-search lookup. A **path** is an array of steps;
 | `update-at` | `( fr sym/path xt -- fr )` | Apply xt to the value at the key, store the result back; errors on a search path | d log n + xt | none | O(d log n + xt) |
 | `keys` | `( fr -- arr )` | Keys (symbols) in sorted order | 1 + n | `1a(n)` | O(n) |
 | `values` | `( fr -- arr )` | Values in key order | 1 + n | `1a(n)` | O(n) |
-| `merge` | `( fr₁ fr₂ -- fr )` | New frame with all keys; fr₂ wins collisions | (m+n) log(m+n) | `1o` + reallocs | O((m+n) log(m+n)) |
+| `merge` | `( fr₁ fr₂ -- fr )` | New frame with all keys; fr₂ wins collisions. A linear two-pointer merge of the two sorted key arrays | m+n | `1o` | O(m+n) |
 | `copy` | `( a -- a' )` | Deep copy of any value, `copy_term`-style: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations, pairs; identity for scalars. Defined generally, not frame-specific. | tree size | one object per node | O(tree size) |
 | `reify` | `( a -- a' )` | Like `copy`, but each unbound var becomes a canonical inert symbol `:_0`, `:_1`, … numbered by first appearance — a ground, storable, comparable snapshot. | tree size | one object per node | O(tree size) |
 
@@ -495,7 +495,7 @@ Objects ↔ frames (keys interned as symbols), arrays ↔ arrays, strings ↔ st
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `json>frame` | `( s -- val )` | Parse a JSON string. Escapes and `\uXXXX` (with surrogate pairs) decode to UTF-8; recursive-descent, depth-guarded; rejects trailing non-whitespace | scan + build | one object per node | O(\|s\|) |
+| `json>frame` | `( s -- val )` | Parse a JSON string. Escapes and `\uXXXX` (with surrogate pairs) decode to UTF-8; recursive-descent, depth-guarded; rejects trailing non-whitespace. Each object's keys are sorted after collection | scan + build | one object per node | O(\|s\| log \|s\|) |
 | `frame>json` | `( val -- s )` | Serialize a value to JSON. Floats use the shortest round-trip form; strings are escaped (non-ASCII emitted raw); object keys are the symbol names | walk + build | `1o` string | O(tree size) |
 | `null` | `( -- none )` | Push the none value (`T_NONE`) — what JSON `null` parses to, and what an unset `env` returns | 1 | none | O(1) |
 
@@ -620,7 +620,7 @@ machinery, so there the `-local` words behave as UTC and `parse-time` lacks
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `wall-now` | `( -- instant )` | lib.h2o: CLOCK_REALTIME epoch seconds as a quantity in `s`; steps when the system clock is adjusted, so time intervals with `now` | 3 | 1 pair | O(1) |
+| `wall-now` | `( -- instant )` | lib.h2o: CLOCK_REALTIME epoch seconds as a quantity in `s`; steps when the system clock is adjusted, so time intervals with `now` | 1 | 1 pair | O(1) |
 | `epoch>date` | `( instant -- date )` | Decompose an instant into a date frame, UTC | 40 | `1o` | O(1) |
 | `epoch>date-local` | `( instant -- date )` | Decompose in the process's timezone | 40 | `1o` | O(1) |
 | `date>epoch` | `( date -- instant )` | Compose an instant from a date frame, UTC; `:year` required, absent fields default, out-of-range fields carry | 30 | 1 pair | O(1) |
@@ -662,6 +662,14 @@ The quotation/predicate cost dominates; `xt` denotes one call.
 | `reduce` | `( arr/set init xt -- val )` | Left fold; xt is `( acc elem -- acc )` | 3 + n·xt | none | O(n·xt) |
 | `times` | `( xt n -- )` | Run xt n times, no index pushed | 2 + n·xt | none | O(n·xt) |
 | `i-times` | `( xt n -- )` | Run xt n times, pushing index 0..n-1 first | 2 + n·(1+xt) | none | O(n·xt) |
+| `find` | `( items pred -- element )` | lib.h2o: the first element for which pred is truthy, or the none value; stops at the first hit | n·xt | none | O(n·xt) |
+| `any?` | `( items pred -- bool )` | lib.h2o: `find none? not` | n·xt | none | O(n·xt) |
+| `all?` | `( items pred -- bool )` | lib.h2o: false at the first element failing pred, else true (vacuously true on empty) | n·xt | none | O(n·xt) |
+| `each` | `( items xt -- )` | lib.h2o: run xt `( element -- )` on every element for its side effects; no result, no allocation | n·xt | none | O(n·xt) |
+| `flat-map` | `( items xt -- arr )` | lib.h2o: `map flatten-array`; xt returns an array per element, results concatenated | n·xt + total | `1a(n)` + `1a(total)` | O(n·xt + total) |
+| `sort-by` | `( items xt -- arr )` | lib.h2o: sorted by the key xt `( element -- key )` extracts — decorate-sort-undecorate over `[ key element ]` pairs, so n key evaluations | n·xt + n log n | 3×`1a(n)` + n×`1a(2)` | O(n·xt + n log n) |
+| `partition` | `( items pred -- matches rest )` | lib.h2o: the elements satisfying pred and the others, one pass, input order kept | n·xt | 2 arrays | O(n·xt) |
+| `group-with` | `( items xt -- fr )` | lib.h2o: group elements into `{ key → set }` by the symbol key xt `( element -- sym )` computes — the quotation-keyed kin of `group-by` | n·(xt + log n) | frame + sets | O(n·xt + n log n) |
 
 ### Parallel (`docs/multicore.md`)
 

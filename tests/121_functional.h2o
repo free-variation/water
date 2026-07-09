@@ -1,0 +1,46 @@
+\ Functional words over arrays: find / any? / all? / each / flat-map /
+\ sort-by / partition / group-with.
+
+\ === find ==================================================================
+[ 1 2 3 4 ] [: 2 mod 0= :] find . cr             \ 2   (first match, not 4)
+[ 1 3 5 ] [: 2 mod 0= :] find . cr               \ null
+[ ] [: drop 1 :] find . cr                       \ null
+[ "a" "bb" "ccc" ] [: size 2 = :] find . cr      \ bb
+
+\ === any? / all? ===========================================================
+[ 1 3 5 ] [: 2 mod 0= :] any? . cr               \ 0
+[ 1 2 3 ] [: 2 mod 0= :] any? . cr               \ 1
+[ ] [: drop 1 :] any? . cr                       \ 0
+[ 2 4 6 ] [: 2 mod 0= :] all? . cr               \ 1
+[ 2 4 5 ] [: 2 mod 0= :] all? . cr               \ 0
+[ ] [: drop 0 :] all? . cr                       \ 1   (vacuously true)
+
+\ === each ==================================================================
+0 to total
+[ 1 2 3 4 ] [: total + to total :] each
+total . cr                                       \ 10
+[ ] [: total + to total :] each
+total . cr                                       \ 10  (no elements, no calls)
+
+\ === flat-map ==============================================================
+[ 1 2 3 ] [: dup 2 array :] flat-map . cr        \ [ 1 1 2 2 3 3 ]
+[ 1 2 3 ] [: drop [ ] :] flat-map . cr           \ [ ]
+[ 1 3 ] [: dup 1 + range :] flat-map . cr        \ [ 1 2 3 4 ]
+
+\ === sort-by ===============================================================
+[ "ccc" "a" "bb" ] [: size :] sort-by . cr       \ [ "a" "bb" "ccc" ]
+[ 3 1 4 1 5 9 2 6 ] [: negate :] sort-by . cr    \ descending
+[ ] [: negate :] sort-by . cr                    \ [ ]
+[ { :n 2 } { :n 1 } ] [: :n @ :] sort-by . cr    \ frames by field
+
+\ === partition =============================================================
+[ 1 2 3 4 5 6 ] [: 2 mod 0= :] partition swap . . cr   \ evens then odds
+[ 1 3 5 ] [: 2 mod 0= :] partition swap . . cr         \ [ ] then all
+[ ] [: drop 1 :] partition swap . . cr                 \ both empty
+
+\ === group-with ============================================================
+[ 1 2 3 4 5 ] [: 2 mod 0= if :even else :odd then :] group-with . cr
+[ ] [: drop :x :] group-with . cr                \ { }
+[ "ant" "bee" "cow" "asp" ] [: 0 1 substring string>symbol :] group-with . cr
+
+bye
