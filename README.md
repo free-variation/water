@@ -1,9 +1,10 @@
 # <img src="water_logo.png" alt="" height="40" align="top"> Water
 
 A Forth-flavored language for numeric and matrix work, statistics and
-regression, set/array/frame manipulation, string/regex processing, logic
-programming, and multi-core data parallelism — with embedded SQLite and a
-runtime C FFI. A compact C interpreter built with `clang -O3`.
+regression, dimensioned quantities and calendar arithmetic, set/array/frame
+manipulation, string/regex processing, logic programming, and multi-core data
+parallelism — with embedded SQLite and a runtime C FFI. A compact C
+interpreter built with `clang -O3`.
 
 ## Building and running
 
@@ -38,6 +39,10 @@ it with `make vendor-lapacke`.
 \ Dimensioned quantities: units propagate, combine, and collapse
 10 m 2 s / .                            \ 5 m.s^-1
 1 kg 1 m * 1 s / 1 s / .                \ 1 newton   (interns to the named unit)
+
+\ Dates: instants are quantities in s, so units do the date arithmetic
+wall-now 2 week + time>iso .            \ the ISO timestamp two weeks from now
+"2026-01-31T09:00:00Z" iso>time { :months 1 } date-shift time>iso .   \ clamps to Feb 28
 
 \ Sets and set algebra
 < 1 2 3 > < 2 3 4 > + .                 \ < 1 2 3 4 >  (union via polymorphic +)
@@ -102,7 +107,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
 - **Variables and symbols** — `variable foo` declares a global; read it by bare name, assign with `42 to foo` (`to` also auto-creates a global on first assignment at the REPL). `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
-- **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (initialized to `0.0`); read by bare name, assign with `to name`. `++ name` / `-- name` increment/decrement a local in place (`f++` / `f--` the unsafe float-only forms). Locals nest through quotations and survive continuation capture.
+- **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (uninitialized — assign before reading); read by bare name, assign with `to name`. A `>` prefix receives a slot from the stack, a `?` prefix fills it with a fresh logic variable per call. `++ name` / `-- name` increment/decrement a local in place (`f++` / `f--` the unsafe float-only forms). Locals nest through quotations and survive continuation capture.
 - **Mark-and-sweep GC** — walks data/return/side stacks, dictionary, and a small `gc_roots` array for in-flight C-level temporaries. It triggers on object-table pressure and on live-byte pressure, and runs at a safepoint between words so popped C-level operands stay live.
 
 ### Numeric / matrix
@@ -127,7 +132,7 @@ A magnitude (float or matrix) carrying a unit; arithmetic propagates and checks 
 
 - **`base` / `unit`** — declare dimensions and units. `base unit m`; `1 kg 1 m * 1 s / 1 s / unit newton` (derived); `1 $ 100 / unit ¢` (scaled sub-unit). A unit word is postfix — `10 m`, `3 newton`.
 - **Arithmetic** — `*`/`/` combine unit exponents and scales (a dimensionless result collapses back to a bare float/matrix); `+`/`-` require the same dimension and rescale across scales; `^`/`sqrt` scale the exponents; `= < >` compare by value, normalizing scale within a dimension. Named units print by name, unnamed compounds in base form.
-- **Standard set** (`lib.h2o`) — SI `m s kg ampere kelvin mol`, derived `hertz newton pascal joule watt coulomb volt`, `minute`/`hour`/`km`, and currencies `$`/`¢`, `£`/`penny`, `€`/`eurocent`.
+- **Standard set** (`lib.h2o`) — SI `m s kg ampere kelvin mol`, derived `hertz newton pascal joule watt coulomb volt`, `minute`/`hour`/`day`/`week`/`km`, and currencies `$`/`¢`, `£`/`penny`, `€`/`eurocent`.
 
 ### Bitwise
 
@@ -161,6 +166,19 @@ A thread-local xoshiro256\*\* stream. Each worker thread derives its own stream 
 - **`seed`** — `( n -- )` set the global base seed and reset the stream.
 - **`random`** — `( -- f )` a uniform float in `[0, 1)`; **`random-int`** — `( bound -- f )` a uniform integer in `[0, bound)`.
 - `sample` (arrays) and `resample-indices` (datasets) draw on this stream.
+
+### Time and dates
+
+An instant is epoch seconds as a quantity in `s`, so the units machinery is the
+date arithmetic: `wall-now 2 hour +` is an instant, instant − instant is a
+duration, `… 1 day /` counts days. Unsuffixed words are UTC and pure Gregorian
+arithmetic, identical on every platform; `-local` twins use the process
+timezone (`TZ` re-read per call).
+
+- **`wall-now`** — `( -- instant )` the absolute wall clock; `now` remains the monotonic interval clock.
+- **`epoch>date`** / **`date>epoch`** — decompose to / compose from a date frame `{ :year :month :day :hour :minute :second :weekday :yearday }`; composition takes a partial frame (`:year` required, the rest defaulted) and carries out-of-range fields mktime-style (`:month 13` → next January). Plus `-local` variants.
+- **`format-time`** / **`parse-time`** — strftime / strptime, with `%z` offsets on parse; **`time>iso`** / **`iso>time`** for the ISO 8601 Z form.
+- **`date-shift`** — `( instant delta -- instant )` calendar-aware shifts: `:years`/`:months` step the calendar with the day clamped to the target month, `:weeks` `:days` `:hours` `:minutes` `:seconds` add exact durations; components combine and may be negative. **`days-in-month`** is leap-aware.
 
 ### Multi-core parallelism
 
@@ -298,7 +316,8 @@ Unification and committed choice, on the trail and the continuation machinery:
 
 - **`dup`**, **`drop`**, **`swap`**, **`over`**, **`rot`**, **`depth`**, **`roll`**, **`clear`** — stack-manipulation primitives.
 - **`copy`** / **`reify`** — deep copy of a value (strings, arrays, sets, frames, matrices); `reify` additionally renames unbound logic vars to canonical `:_0`/`:_1`/… for a ground, storable, comparable snapshot.
-- **`now`** — current Unix time as a float (seconds since epoch).
+- **`type-of`** — `( a -- sym )` the value's type as a symbol (`:float`, `:frame`, `:lvar`, …), with a lib predicate per type (`float?` … `lvar?`); a bound logic var answers as its value.
+- **`now`** — monotonic seconds as a float, for timing intervals (`wall-now`, under Time and dates, is the absolute clock).
 - **`see`** — prints a word's source definition; **`see-compiled`** disassembles its threaded body.
 - **`man`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes). **`help name`** prints it for the named word.
 - **`words`**, **`forget`**, **`bye`**, **`gc`**, **`clear`**, **`.s`**, **`.a`** — interpreter utilities.
@@ -312,7 +331,8 @@ See `PLAN.md`.
 ```
 src/c/water.h          — types, global program structs (Vocabulary/Arena/Compiler), per-run Interpreter, prototypes
 src/c/core.c           — engine: interpreter, dictionary, symbol table, GC, arena, value printing, tokenizer/reader, see, text save
-src/c/words.c          — arithmetic, stack ops, printing words, delimited continuations, format, math, RNG/time
+src/c/words.c          — arithmetic, stack ops, printing words, delimited continuations, format, math, RNG
+src/c/time.c           — clocks and calendar: wall-now, epoch↔date, strftime/strptime
 src/c/compiler.c       — compile-time words: colon/quotation definition, control flow, locals, to/constant/variable/symbol, forget
 src/c/io.c             — file, TSV, stream, and environment I/O
 src/c/image.c          — binary save-image / load-image serialization

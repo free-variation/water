@@ -3800,7 +3800,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, "null", p_null, 0);
 	define_primitive(interp, "type-of", p_type_of, 0);
+
 	type_of_intern_names(interp);
+	
 	define_primitive(interp, "lvar", p_lvar, 0);
 	define_primitive(interp, "_", p_wildcard, 0);
 	define_primitive(interp, "unify", p_unify, 0);
@@ -4080,6 +4082,14 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "random", p_random, 0);
 	define_primitive(interp, "random-int", p_random_int, 0);
 	define_primitive(interp, "now", p_now, 0);
+	define_primitive(interp, "(wall-now)", p_wall_now, 4);
+	define_primitive(interp, "(epoch>date)", p_epoch_to_date, 4);
+	define_primitive(interp, "(epoch>date-local)", p_epoch_to_date_local, 4);
+	define_primitive(interp, "(date>epoch)", p_date_to_epoch, 4);
+	define_primitive(interp, "(date>epoch-local)", p_date_to_epoch_local, 4);
+	define_primitive(interp, "(format-time)", p_format_time, 4);
+	define_primitive(interp, "(format-time-local)", p_format_time_local, 4);
+	define_primitive(interp, "(parse-time)", p_parse_time, 4);
 	define_primitive(interp, "sleep", p_sleep, 0);
 	define_primitive(interp, "env", p_env, 0);
 	define_primitive(interp, "env!", p_env_set, 0);

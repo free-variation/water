@@ -376,7 +376,7 @@ int dimension_load(FILE *file) {
 	return 1;
 }
 
-static int unit_combine(int left, int right, int sign) {
+static int unit_combine(int left, int right, int sign, double *collapse_factor) {
 	Unit *left_unit = &units[left];
 	Unit *right_unit = &units[right];
 
@@ -422,21 +422,25 @@ static int unit_combine(int left, int right, int sign) {
 		return -1;
 	}
 
+	*collapse_factor = 1.0;
+	if (n_terms == 0)
+		*collapse_factor = (double)scale.numerator / (double)scale.denominator;
+
 	int combined_unit = unit_intern(merged, n_terms, scale);
 
 	if (merged != inline_terms) free(merged);
 	return combined_unit;
 }
 
-int unit_multiply(Interpreter *interp, int left, int right) {
-	int combined = unit_combine(left, right, 1);
+int unit_multiply(Interpreter *interp, int left, int right, double *collapse_factor) {
+	int combined = unit_combine(left, right, 1, collapse_factor);
 	if (combined < 0)
 		fail(interp, "*: unit scale or exponent overflow");
 	return combined;
 }
 
-int unit_divide(Interpreter *interp, int left, int right) {
-	int combined = unit_combine(left, right, -1);
+int unit_divide(Interpreter *interp, int left, int right, double *collapse_factor) {
+	int combined = unit_combine(left, right, -1, collapse_factor);
 	if (combined < 0)
 		fail(interp, "/: unit scale or exponent overflow");
 	return combined;

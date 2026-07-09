@@ -442,6 +442,81 @@ base unit mol
 
 60 s     unit minute
 3600 s   unit hour
+86400 s  unit day
+7 day    unit week
+
+( -- instant )  \ wall-clock time: epoch seconds as a quantity in s
+: wall-now (wall-now) s ;
+inline
+
+( instant -- date )  \ { :year :month :day :hour :minute :second :weekday :yearday }, UTC
+: epoch>date  1 s / (epoch>date) ;
+inline
+
+( date -- instant )  \ :year required; :month :day default 1, clock fields 0; UTC
+: date>epoch  (date>epoch) s ;
+inline
+
+( instant -- date )  \ epoch>date in the process's local timezone
+: epoch>date-local  1 s / (epoch>date-local) ;
+inline
+
+( date -- instant )  \ date>epoch in the process's local timezone; mktime resolves DST
+: date>epoch-local  (date>epoch-local) s ;
+inline
+
+( instant format -- string )  \ render an instant with strftime, UTC
+: format-time  swap 1 s / swap (format-time) ;
+inline
+
+( instant format -- string )  \ render an instant with strftime in the local timezone
+: format-time-local  swap 1 s / swap (format-time-local) ;
+inline
+
+( string format -- instant )  \ parse with strptime; unmatched fields default to 1970-01-01
+\ 00:00:00, read as UTC unless the format captures an offset with %z
+: parse-time  (parse-time) s ;
+inline
+
+( instant -- string )  \ ISO 8601 in UTC: 2026-07-09T12:34:56Z
+: time>iso  "%Y-%m-%dT%H:%M:%SZ" format-time ;
+inline
+
+( string -- instant )  \ parse the ISO 8601 Z form time>iso emits
+: iso>time  "%Y-%m-%dT%H:%M:%SZ" parse-time ;
+inline
+
+( year month -- days )
+: days-in-month
+	| >y >m |
+	{ :year y :month m 1 + } date>epoch
+	{ :year y :month m } date>epoch
+	-  1 day / ;
+
+( instant delta -- instant )  \ calendar shift, UTC: :years :months step the
+\ calendar with the day clamped to the target month; :weeks :days :hours
+\ :minutes :seconds add exactly
+: date-shift
+	| date months year month day-of-month >instant >delta |
+	0 to months
+	delta :years  has? if delta :years @ 12 * months + to months then
+	delta :months has? if delta :months @ months + to months then
+	months 0 = not if
+		instant epoch>date to date
+		date :year @ 12 * date :month @ + 1 - months + to months
+		months 12 quotient to year
+		months 12 mod 1 + to month
+		year month days-in-month to day-of-month
+		date :day @ day-of-month lt if date :day @ to day-of-month then
+		{ :year year :month month :day day-of-month
+		  :hour date :hour @ :minute date :minute @ :second date :second @ } date>epoch to instant
+	then
+	delta :weeks   has? if instant delta :weeks @ week + to instant then
+	delta :days    has? if instant delta :days @ day + to instant then
+	delta :hours   has? if instant delta :hours @ hour + to instant then
+	delta :minutes has? if instant delta :minutes @ minute + to instant then
+	delta :seconds has? if instant delta :seconds @ s + to instant then
+	instant ;
 1000 m   unit km
 
 base unit $   1 $ 100 / unit ¢

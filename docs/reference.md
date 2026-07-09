@@ -219,7 +219,8 @@ A unit word is postfix — it attaches its unit to the number before it (`10 m`,
 `3 newton`). Attaching a unit to a matrix makes a dimensioned matrix (`M m`).
 
 - `*` / `/` — multiply/divide magnitudes; combine unit exponents and scales. A
-  dimensionless result collapses back to a bare float or matrix (`3 m 3 m / → 1`).
+  dimensionless result collapses back to a bare float or matrix, folding the
+  scale ratio into the magnitude (`3 m 3 m / → 1`, `1 hour 1 s / → 3600`).
 - `+` / `-` — require the same dimension; a different-scale operand is rescaled
   into the left operand's unit (`1 $ 50 ¢ + → 1.5 $`). Different
   dimension, or a quantity ± a bare number, errors.
@@ -234,7 +235,7 @@ magnitude (`10 m 2 s / → 5 m.s^-1`), positive exponents first. Quantities,
 units, and unit words round-trip through `save-image`/`load-image`.
 
 `lib.h2o` predeclares a standard set (names spelled out and lowercase):
-length `m` (`km`), time `s` (`minute`, `hour`), mass `kg`, current `ampere`,
+length `m` (`km`), time `s` (`minute`, `hour`, `day`, `week`), mass `kg`, current `ampere`,
 temperature `kelvin`, amount `mol`; derived `hertz` `newton` `pascal` `joule`
 `watt` `coulomb` `volt`; and three currencies, each its own dimension —
 `$`/`¢`, `£`/`penny`, `€`/`eurocent`.
@@ -596,6 +597,41 @@ A thread-local xoshiro256\*\* stream; each worker derives its own stream from th
 | `random-int` | `( bound -- f )` | Uniform integer in [0,bound) as a float, by rejection sampling; errors if bound ≤ 0 | 1 | none | O(1)† |
 
 `†` expected O(1); rejection sampling may retry. `sample` (Arrays) and `resample-indices` (Datasets and TSV) draw on this stream.
+
+---
+
+## Wall-clock time and dates
+
+An *instant* is epoch seconds as a quantity in `s`, anchored at
+1970-01-01T00:00:00Z, so the units machinery is the date arithmetic:
+`wall-now 2 hour +` is an instant, instant − instant is a duration, and
+`… 1 day /` counts days. (`now`, under REPL and introspection, is the
+monotonic interval clock; `wall-now` is the absolute one.) A *date* is a frame
+`{ :year :month :day :hour :minute :second :weekday :yearday }` — `:second`
+carries fractions, `:weekday` is 0–6 with 0 = Sunday, `:yearday` is 1-based.
+Composition accepts a partial frame — `:year` required, `:month`/`:day`
+default 1, clock fields 0, other keys ignored — and out-of-range fields carry
+mktime-style: `:month 13` is next January, `:day 0` the last day of the
+previous month. Unsuffixed words are UTC and pure Gregorian arithmetic,
+identical on every platform; the `-local` twins go through libc in the
+process's timezone, re-reading `TZ` on every call. WASI has no timezone
+machinery, so there the `-local` words behave as UTC and `parse-time` lacks
+`%z`.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `wall-now` | `( -- instant )` | lib.h2o: CLOCK_REALTIME epoch seconds as a quantity in `s`; steps when the system clock is adjusted, so time intervals with `now` | 3 | 1 pair | O(1) |
+| `epoch>date` | `( instant -- date )` | Decompose an instant into a date frame, UTC | 40 | `1o` | O(1) |
+| `epoch>date-local` | `( instant -- date )` | Decompose in the process's timezone | 40 | `1o` | O(1) |
+| `date>epoch` | `( date -- instant )` | Compose an instant from a date frame, UTC; `:year` required, absent fields default, out-of-range fields carry | 30 | 1 pair | O(1) |
+| `date>epoch-local` | `( date -- instant )` | Compose via `mktime` in the process's timezone; the zone rules resolve DST | 30 | 1 pair | O(1) |
+| `format-time` | `( instant format -- string )` | Render with strftime, UTC | len | `1s` | O(len) |
+| `format-time-local` | `( instant format -- string )` | Render with strftime in the process's timezone | len | `1s` | O(len) |
+| `parse-time` | `( string format -- instant )` | Parse with strptime; uncaptured fields default to 1970-01-01 00:00:00, read as UTC unless the format captures an offset with `%z`; errors on a mismatch | len | 1 pair | O(len) |
+| `time>iso` | `( instant -- string )` | lib.h2o: `"%Y-%m-%dT%H:%M:%SZ" format-time` | len | `1s` | O(1) |
+| `iso>time` | `( string -- instant )` | lib.h2o: parse the Z form `time>iso` emits | len | 1 pair | O(1) |
+| `days-in-month` | `( year month -- days )` | lib.h2o: length of the month, leap-aware (first of next month minus first of this) | 60 | frames | O(1) |
+| `date-shift` | `( instant delta -- instant )` | lib.h2o: calendar shift, UTC. `:years`/`:months` step the calendar with the day clamped to the target month (Jan 31 + 1 month = Feb 28/29); `:weeks` `:days` `:hours` `:minutes` `:seconds` add exact durations. Components combine and may be negative | 200 | frames + pairs | O(1) |
 
 ---
 

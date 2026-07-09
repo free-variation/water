@@ -11,6 +11,14 @@ int utf8_codepoint_count(const char *bytes, int length) {
 	return count;
 }
 
+int string_codepoint_count(Object *string) {
+	if (string->capacity < 0)
+		return -string->capacity - 1;
+	int count = utf8_codepoint_count(string->bytes, string->len);
+	string->capacity = -count - 1;
+	return count;
+}
+
 static int utf8_byte_offset(const char *bytes, int length, int char_index) {
 	int byte = 0;
 
@@ -76,12 +84,33 @@ static int utf8_decode(const char *bytes, int length, int *codepoint) {
 	return extra + 1;
 }
 
+static unsigned pattern_hash(const char *bytes, int length) {
+	unsigned hash = 2166136261u;
+	for (int i = 0; i < length; i++) {
+		hash ^= (unsigned char)bytes[i];
+		hash *= 16777619u;
+	}
+	return hash;
+}
+
+#define REGEX_PROBE_WINDOW 8
+
 static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
-	for (int i = 0; i < REGEX_CACHE_SIZE; i++)
-		if (interp->regex_cache[i].in_use
+	unsigned hash = pattern_hash(pattern->bytes, pattern->len);
+	int base = (int)(hash & (REGEX_CACHE_SIZE - 1));
+	int free_slot = -1;
+	for (int probe = 0; probe < REGEX_PROBE_WINDOW; probe++) {
+		int i = (base + probe) & (REGEX_CACHE_SIZE - 1);
+		if (!interp->regex_cache[i].in_use) {
+			if (free_slot < 0)
+				free_slot = i;
+			continue;
+		}
+		if (interp->regex_cache[i].pattern_hash == hash
 				&& interp->regex_cache[i].pattern_len == pattern->len
 				&& memcmp(interp->regex_cache[i].pattern, pattern->bytes, (size_t)pattern->len) == 0)
 			return interp->regex_cache[i].re;
+	}
 
 	int errcode;
 	PCRE2_SIZE erroffset;
@@ -95,8 +124,8 @@ static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	}
 	pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
 
-	int slot = interp->regex_cache_next;
-	interp->regex_cache_next = (interp->regex_cache_next + 1) % REGEX_CACHE_SIZE;
+	int slot = free_slot >= 0 ? free_slot
+		: (base + (interp->regex_cache_next++ & (REGEX_PROBE_WINDOW - 1))) & (REGEX_CACHE_SIZE - 1);
 	if (interp->regex_cache[slot].in_use) {
 		pcre2_code_free(interp->regex_cache[slot].re);
 		free(interp->regex_cache[slot].pattern);
@@ -104,6 +133,7 @@ static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	interp->regex_cache[slot].pattern = malloc((size_t)pattern->len);
 	memcpy(interp->regex_cache[slot].pattern, pattern->bytes, (size_t)pattern->len);
 	interp->regex_cache[slot].pattern_len = pattern->len;
+	interp->regex_cache[slot].pattern_hash = hash;
 	interp->regex_cache[slot].re = re;
 	interp->regex_cache[slot].in_use = 1;
 	return re;
@@ -396,7 +426,7 @@ void p_substring(DISPATCH_ARGS) {
 	POP_INT(start, "substring", "start");
 	PEEK_STRING_AT(source, 0, "substring");
 
-	int char_count = utf8_codepoint_count(source->bytes, source->len);
+	int char_count = string_codepoint_count(source);
 	if (start < 0 || end > char_count || start > end) {
 		fail(interp, "substring: range [%d, %d) out of bounds for length %d", start, end, char_count);
 		return;
@@ -443,7 +473,7 @@ static void char_index_op(Interpreter *interp, const char *op,
 	POP_INT(index, op, "index");
 	PEEK_STRING_AT(source, 0, op);
 
-	int char_count = utf8_codepoint_count(source->bytes, source->len);
+	int char_count = string_codepoint_count(source);
 	if (index < 0 || index >= char_count) {
 		fail(interp, "%s: index %d out of bounds for length %d", op, index, char_count);
 		return;
@@ -473,7 +503,7 @@ static void string_explode(Interpreter *interp, const char *op,
 		Val (*produce)(Interpreter *, Object *, int start_byte, int end_byte)) {
 	PEEK_STRING_AT(source, 0, op);
 
-	int char_count = utf8_codepoint_count(source->bytes, source->len);
+	int char_count = string_codepoint_count(source);
 	int handle = object_new_array(interp, char_count);
 	if (interp->error_flag) return;
 	Object *result = OBJECT_AT(handle);

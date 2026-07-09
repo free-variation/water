@@ -69,6 +69,18 @@ static void unwrap_quantity(Val value, int is_quantity, Val *magnitude, int *uni
 	}
 }
 
+static Val scale_collapsed_magnitude(Val magnitude, double factor) {
+	if (VAL_TAG(magnitude) == T_MATRIX) {
+		Object *result = OBJECT_AT(VAL_DATA(magnitude));
+		int n = result->matrix.rows * result->matrix.columns;
+		for (int i = 0; i < n; i++)
+			result->matrix.elements[i] *= factor;
+		return magnitude;
+	}
+
+	return make_float(VAL_NUMBER(magnitude) * factor);
+}
+
 static void unary_quantity_op(Interpreter *interp, Val quantity, double (*function)(double), const char *name, int result_unit) {
 	int slot = (int)VAL_DATA(quantity);
 
@@ -271,8 +283,11 @@ void p_mul(DISPATCH_ARGS) {
 
 			Val product = pop(interp);
 			interp->dsp -= 2;
-			int product_unit = unit_multiply(interp, left_unit, right_unit);
+			double collapse_factor;
+			int product_unit = unit_multiply(interp, left_unit, right_unit, &collapse_factor);
 			if (interp->error_flag) return;
+			if (collapse_factor != 1.0)
+				product = scale_collapsed_magnitude(product, collapse_factor);
 			push_quantity(interp, product, product_unit);
 		}
 		else
@@ -342,8 +357,11 @@ void p_div(DISPATCH_ARGS) {
 
 			Val quotient = pop(interp);
 			interp->dsp -= 2;
-			int quotient_unit = unit_divide(interp, left_unit, right_unit);
+			double collapse_factor;
+			int quotient_unit = unit_divide(interp, left_unit, right_unit, &collapse_factor);
 			if (interp->error_flag) return;
+			if (collapse_factor != 1.0)
+				quotient = scale_collapsed_magnitude(quotient, collapse_factor);
 			push_quantity(interp, quotient, quotient_unit);
 		}
 		else
@@ -1796,14 +1814,6 @@ void p_random_int(DISPATCH_ARGS) {
 		return;
 	}
 	push(interp, make_float((double)random_below(bound)));
-
-	DISPATCH(interp);
-}
-
-void p_now(DISPATCH_ARGS) {
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	push(interp, make_float((double)ts.tv_sec + (double)ts.tv_nsec / 1e9));
 
 	DISPATCH(interp);
 }

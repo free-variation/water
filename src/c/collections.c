@@ -253,32 +253,32 @@ void p_array(DISPATCH_ARGS) {
 }
 
 void p_cons(DISPATCH_ARGS) {
-	if (interp->dsp < 2) {
-		fail(interp, "cons: stack too shallow");
-		return;
-	}
-
+	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "cons: stack too shallow");
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
 	int slot = object_new_pair(interp);
 	if (interp->error_flag) return;
 
-	int first = interp->dsp - 2;
-	pairs.table[slot].head = interp->data_stack[first];
-	pairs.table[slot].tail = interp->data_stack[first + 1];
-	interp->dsp = first;
+	pairs.table[slot].head = chain_sp[-2];
+	pairs.table[slot].tail = chain_sp[-1];
+	chain_sp[-2] = make_pair(slot);
 
-	push(interp, make_pair(slot));
-
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_head_tail(DISPATCH_ARGS) {
-	POP_PAIR(pair, "head-tail");
-	Val head = pair->head;
-	Val tail = pair->tail;
-	push(interp, head);
-	push(interp, tail);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	Val pair_val = chain_sp[-1];
+	if (VAL_TAG(pair_val) != T_PAIR) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "head-tail: expected %s; got %s", tag_name(T_PAIR), tag_name(VAL_TAG(pair_val)));
+		return;
+	}
+	Pair *pair = &pairs.table[VAL_DATA(pair_val)];
+	chain_sp[-1] = pair->head;
+	chain_sp[0] = pair->tail;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 void p_array_to_cons(DISPATCH_ARGS) {
@@ -413,7 +413,7 @@ void p_size(DISPATCH_ARGS) {
 
 	if (VAL_TAG(collection) == T_STRING) {
 		Object *string = OBJECT_AT(VAL_DATA(collection));
-		elements = (double)utf8_codepoint_count(string->bytes, string->len);
+		elements = (double)string_codepoint_count(string);
 	} else if (VAL_TAG(collection) == T_SEGMENT) {
 		elements = (double)OBJECT_AT(VAL_DATA(collection))->segment.length;
 	} else if (VAL_TAG(collection) == T_MATRIX) {

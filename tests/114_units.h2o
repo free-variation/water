@@ -91,6 +91,15 @@ base unit clobber
 5 newton . cr
 1 dollar 50 cent + . cr
 
+\ ---- cancellation folds the scale ratio into the magnitude ----
+60 s unit minute
+1 minute 1 s / . cr                     \ 60
+100 cent 1 dollar / . cr                \ 1
+1 dollar 100 cent / . cr                \ 1
+2 dollar 40 cent / . cr                 \ 5
+3 m 3 m / . cr                          \ 1
+1 minute 1 minute *  1 s 1 s *  / . cr  \ 3600
+
 \ ---- scale product that exceeds int range errors instead of wrapping ----
 100000 m unit bigm
 1 bigm 1 bigm *

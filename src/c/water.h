@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.16.1"
+#define VERSION "0.17.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -442,6 +442,7 @@ typedef struct Interpreter {
 	struct {
 		char *pattern;
 		int pattern_len;
+		unsigned pattern_hash;
 		void *re;
 		int in_use;
 	} regex_cache[REGEX_CACHE_SIZE];
@@ -706,6 +707,7 @@ void rebuild_symbol_hash(void);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
 int object_new_string_uninit(Interpreter *interp, int length);
 int utf8_codepoint_count(const char *bytes, int length);
+int string_codepoint_count(Object *string);
 int utf8_encode(int codepoint, char *out);
 int object_new_set(Interpreter *interp);
 int build_set_from_values(Interpreter *interp, const Val *values, int count);
@@ -718,8 +720,8 @@ int object_new_pair(Interpreter *interp);
 int object_new_continuation(Interpreter *interp, const Val *frames, int return_len, int resume_ip);
 
 void dimension_init();
-int unit_multiply(Interpreter *interp, int left, int right);
-int unit_divide(Interpreter *interp, int left, int right);
+int unit_multiply(Interpreter *interp, int left, int right, double *collapse_factor);
+int unit_divide(Interpreter *interp, int left, int right, double *collapse_factor);
 int unit_pow(Interpreter *interp, int unit, int numerator, int denominator);
 int unit_conversion(int from, int to, double *factor);
 int unit_is_named(int unit);
@@ -1186,6 +1188,14 @@ void p_random(DISPATCH_ARGS);
 void p_random_int(DISPATCH_ARGS);
 int random_below(int bound);
 void p_now(DISPATCH_ARGS);
+void p_wall_now(DISPATCH_ARGS);
+void p_epoch_to_date(DISPATCH_ARGS);
+void p_epoch_to_date_local(DISPATCH_ARGS);
+void p_date_to_epoch(DISPATCH_ARGS);
+void p_date_to_epoch_local(DISPATCH_ARGS);
+void p_format_time(DISPATCH_ARGS);
+void p_format_time_local(DISPATCH_ARGS);
+void p_parse_time(DISPATCH_ARGS);
 void p_sleep(DISPATCH_ARGS);
 void p_env(DISPATCH_ARGS);
 void p_env_set(DISPATCH_ARGS);

@@ -1,12 +1,14 @@
 #include "water.h"
 
 void p_lvar(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
 	int handle = object_new_logic_var(interp);
 	if (interp->error_flag) return;
 
-	push(interp, make_logic_var(handle));
+	chain_sp[0] = make_logic_var(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 Val deref(Interpreter *interp, Val value) {
@@ -200,10 +202,10 @@ void p_matches(DISPATCH_ARGS) {
 }
 
 void p_deref(DISPATCH_ARGS) {
-	POP(value);
-	push(interp, deref(interp, value));
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	chain_sp[-1] = deref(interp, chain_sp[-1]);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_amb(DISPATCH_ARGS) {
@@ -235,7 +237,8 @@ void p_amb(DISPATCH_ARGS) {
 }
 
 void p_wildcard(DISPATCH_ARGS) {
-	push(interp, make_tagged(T_UNBOUND, 0));
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	chain_sp[0] = make_tagged(T_UNBOUND, 0);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }

@@ -1,0 +1,103 @@
+\ Wall-clock time, calendar conversion, and date arithmetic — all UTC, so every
+\ line is machine-independent. Timezone-dependent behavior (the -local words,
+\ %z offset parsing) lives in 120_datetime_zones, which WASI skips.
+
+\ === clocks ================================================================
+wall-now quantity? . cr                                  \ 1
+wall-now 0 s gt . cr                                     \ 1
+wall-now epoch>date :year @ 2025 gt . cr                 \ 1
+
+\ === epoch>date: decomposition ============================================
+0 s epoch>date . cr
+86399.25 s epoch>date :hour @ . cr                       \ 23
+86399.25 s epoch>date :second @ . cr                     \ 59.25
+-1 s epoch>date :year @ . cr                             \ 1969
+-1 s epoch>date :yearday @ . cr                          \ 365
+-1 s epoch>date :weekday @ . cr                          \ 3
+-0.5 s epoch>date :second @ . cr                         \ 59.5
+2147483648 s epoch>date :year @ . cr                     \ 2038 (past 32-bit time_t)
+
+\ weekday cycles 4 5 6 0 1 2 3 over the epoch week
+[> i | i day epoch>date :weekday @ . :] 7 i-times cr
+
+\ === date>epoch: composition and defaults ==================================
+{ :year 1970 } date>epoch . cr                           \ 0 s
+{ :year 1970 } date>epoch quantity? . cr                 \ 1
+{ :year 2026 :month 7 } date>epoch epoch>date :day @ . cr        \ 1
+{ :year 1970 :day 2 } date>epoch 1 day = . cr            \ 1
+{ :year 1970 :hour 1 :minute 1 :second 1.5 } date>epoch 3661.5 s = . cr  \ 1
+{ :year 1970 :weekday 6 :extra 42 } date>epoch . cr      \ 0 s (non-field keys ignored)
+{ :year 2026 :month 7 :day 9 :hour 12 :minute 34 :second 56.5 } date>epoch
+epoch>date :second @ . cr                                \ 56.5
+
+\ === field normalization (mktime-style carries) ============================
+{ :year 2026 :month 13 } date>epoch { :year 2027 :month 1 } date>epoch = . cr    \ 1
+{ :year 2026 :month 0 } date>epoch { :year 2025 :month 12 } date>epoch = . cr    \ 1
+{ :year 2026 :month -11 } date>epoch { :year 2025 :month 1 } date>epoch = . cr   \ 1
+{ :year 2026 :month 1 :day 32 } date>epoch { :year 2026 :month 2 :day 1 } date>epoch = . cr   \ 1
+{ :year 2026 :month 3 :day 0 } date>epoch { :year 2026 :month 2 :day 28 } date>epoch = . cr   \ 1
+{ :year 2026 :hour 25 } date>epoch { :year 2026 :day 2 :hour 1 } date>epoch = . cr            \ 1
+{ :year 2026 :second 90 } date>epoch { :year 2026 :minute 1 :second 30 } date>epoch = . cr    \ 1
+
+\ === errors are catchable ==================================================
+[: { :month 7 } date>epoch :] catch nip . cr             \ 1 (no :year)
+[: { :year 2026 :month "july" } date>epoch :] catch nip . cr    \ 1
+[: 42 epoch>date :] catch nip . cr                       \ 1 (bare float is not an instant)
+[: "nope" iso>time :] catch nip . cr                     \ 1
+
+\ === units integration =====================================================
+1 week 7 day = . cr                                      \ 1
+1 day 24 hour = . cr                                     \ 1
+1 day 1440 minute = . cr                                 \ 1
+1 week 1 day / . cr                                      \ 7
+{ :year 2026 :month 7 :day 9 } date>epoch
+{ :year 2026 :month 7 :day 2 } date>epoch - 1 week = . cr        \ 1
+{ :year 2026 :month 1 :day 1 } date>epoch 36 hour + epoch>date :day @ . cr   \ 2
+{ :year 2027 } date>epoch { :year 2026 } date>epoch - 1 day / . cr           \ 365
+{ :year 2025 } date>epoch { :year 2024 } date>epoch - 1 day / . cr           \ 366
+
+\ === leap years ============================================================
+2024 2 days-in-month . cr                                \ 29
+2025 2 days-in-month . cr                                \ 28
+2000 2 days-in-month . cr                                \ 29 (divisible by 400)
+1900 2 days-in-month . cr                                \ 28 (divisible by 100, not 400)
+2100 2 days-in-month . cr                                \ 28
+{ :year 2024 :month 12 :day 31 } date>epoch epoch>date :yearday @ . cr   \ 366
+{ :year 2025 :month 12 :day 31 } date>epoch epoch>date :yearday @ . cr   \ 365
+{ :year 2024 :month 2 :day 29 } date>epoch epoch>date :day @ . cr        \ 29
+
+\ all twelve months of 2026
+[> m | 2026 m 1 + days-in-month . :] 12 i-times cr
+
+\ === format-time / parse-time ==============================================
+0 s time>iso . cr                                        \ 1970-01-01T00:00:00Z
+0 s "%A %B %j" format-time . cr                          \ Thursday January 001
+-1 s time>iso . cr                                       \ 1969-12-31T23:59:59Z
+"2026-07-09T12:34:56Z" iso>time time>iso . cr
+"2026-07-09T12:34:56Z" iso>time epoch>date :weekday @ . cr       \ 4
+"2026-07" "%Y-%m" parse-time time>iso . cr               \ 2026-07-01T00:00:00Z
+"12:34" "%H:%M" parse-time time>iso . cr                 \ 1970-01-01T12:34:00Z
+\ === date-shift: calendar steps, clamping, exact parts =====================
+"2026-01-31T10:30:15Z" iso>time { :months 1 } date-shift time>iso . cr   \ clamp, time kept
+"2024-01-31T00:00:00Z" iso>time { :months 1 } date-shift time>iso . cr   \ leap clamp
+"2024-02-29T00:00:00Z" iso>time { :years 1 } date-shift time>iso . cr    \ 2025-02-28
+"2024-02-29T00:00:00Z" iso>time { :years 4 } date-shift time>iso . cr    \ 2028-02-29
+"2026-03-31T00:00:00Z" iso>time { :months -1 } date-shift time>iso . cr  \ 2026-02-28
+"2026-01-15T00:00:00Z" iso>time { :months 14 } date-shift time>iso . cr  \ 2027-03-15
+"2026-01-15T00:00:00Z" iso>time { :months -14 } date-shift time>iso . cr \ 2024-11-15
+"2026-07-09T00:00:00Z" iso>time { :months 12 } date-shift
+"2026-07-09T00:00:00Z" iso>time { :years 1 } date-shift = . cr           \ 1
+"2026-01-31T00:00:00Z" iso>time { :months 1 :days 1 } date-shift time>iso . cr   \ clamp, then exact day
+"2026-01-01T00:00:00Z" iso>time { :days -1 } date-shift time>iso . cr    \ 2025-12-31
+"2026-07-09T12:00:00Z" iso>time { } date-shift time>iso . cr             \ identity
+"2026-07-09T12:00:00Z" iso>time { :months 0 } date-shift time>iso . cr   \ identity
+"2026-07-09T00:00:00Z" iso>time { :weeks 2 :days 1 :hours 2 :minutes 3 :seconds 4 } date-shift time>iso . cr
+"2026-07-09T00:00:00Z" iso>time { :hours -25 } date-shift time>iso . cr  \ 2026-07-07T23:00:00Z
+"2026-12-15T00:00:00Z" iso>time { :months 2 :weeks 1 } date-shift time>iso . cr  \ 2027-02-22
+\ repeated +1 month: the clamp is sticky (Jan 31 -> Feb 28 -> Mar 28)
+"2026-01-31T00:00:00Z" iso>time { :months 1 } date-shift { :months 1 } date-shift time>iso . cr
+\ fractional seconds survive a calendar shift
+{ :year 2026 :month 1 :day 31 :second 30.5 } date>epoch { :months 1 } date-shift
+epoch>date :second @ . cr                                \ 30.5
+
+bye

@@ -1,0 +1,23 @@
+\ Timezone-dependent datetime behavior: %z offset parsing (BSD/glibc strptime)
+\ and the -local word family under pinned POSIX TZ strings (EST5 = UTC-5, no
+\ DST). Deterministic on any POSIX host; skipped on WASI, which has no
+\ timezone machinery and whose strptime lacks %z.
+
+\ === parse-time with explicit offsets ======================================
+"2026-07-09T12:34:56+0000" "%Y-%m-%dT%H:%M:%S%z" parse-time
+"2026-07-09T12:34:56Z" iso>time = . cr                   \ 1
+"2026-07-09T12:34:56+0530" "%Y-%m-%dT%H:%M:%S%z" parse-time epoch>date :hour @ . cr   \ 7
+"2026-07-09T12:34:56-0800" "%Y-%m-%dT%H:%M:%S%z" parse-time epoch>date :hour @ . cr   \ 20
+
+\ === local timezone words (POSIX fixed zones, no DST) ======================
+"TZ" "UTC" env!
+5 s epoch>date-local 5 s epoch>date = . cr               \ 1
+"TZ" "EST5" env!
+0 s epoch>date-local :day @ . cr                         \ 31
+0 s epoch>date-local :hour @ . cr                        \ 19
+{ :year 2026 :month 7 :day 9 :hour 12 } date>epoch-local
+{ :year 2026 :month 7 :day 9 :hour 17 } date>epoch = . cr        \ 1
+123456789 s epoch>date-local date>epoch-local 123456789 s = . cr \ 1
+0 s "%H %Z" format-time-local . cr                       \ 19 EST
+
+bye

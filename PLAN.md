@@ -8,9 +8,8 @@ A TODO list of pending work.
 
 ### Unicode
 
-- **ASCII fast path**: a cached per-string all-ASCII flag to collapse the
-  codepoint walk in `size`/`substring`/`char-at`/`codepoint-at` back to byte
-  speed for the common case.
+- **ASCII fast path**: a per-string all-ASCII flag to collapse the byte-offset
+  walk in `substring`/`char-at`/`codepoint-at` to direct byte indexing.
 - **Case folding**: `upcase`/`downcase`. Unicode-correct folding needs
   tables (ICU or a generated table), so even an ASCII-only first cut should
   name the boundary.
@@ -27,15 +26,12 @@ A TODO list of pending work.
   explicit element array.
 - **Axes beyond child and descendant.**
 
-### Time / dates
+### Time / dates — follow-ups
 
-Unix timestamps as `T_FLOAT` (seconds since epoch, fractional allowed). No
-separate date type; durations are floats in seconds, arithmetic is `+` /
-`-`.
-
-- `"%Y-%m-%d %H:%M:%S" time-format` — strftime-style, UTC by default.
-- `"2026-05-25" time-parse` — strptime-style parsing.
-- `"%Y-%m-%dT%H:%M:%SZ"` is the recommended ISO 8601 format string.
+- **Named-timezone conversion** — decompose/compose/format in an explicit
+  zone (`epoch>date-in ( instant zone -- date )`-style, tzdata-backed).
+- **Sub-second rendering** — a fractional-seconds directive in the format
+  words (strftime has none).
 
 ### Sort and shuffle with a rule
 
@@ -73,6 +69,15 @@ through the condition.
 
 To settle: how `leave` / `continue` compile (forward/back branch patching) and
 unwind cleanly past loop-local frames.
+
+---
+
+## Loader dictionary lookup
+
+Token resolution in the outer interpreter is a linear dictionary walk with a
+string compare per candidate, which dominates the load time of large generated
+source files. A name-hash index over the dictionary (or reuse of the symbol
+hash table) makes resolution O(1) and leaves large-file loads I/O-bound.
 
 ---
 
@@ -115,32 +120,21 @@ or inferred from whether interning happens during compilation.
 
 ---
 
-## Guaranteed cleanup
+## Guaranteed cleanup across every exit
 
-`catch`/`try-catch` recover the throw path — user `throw`s and interpreter
-errors both unwind to the enclosing `reset`. What's absent is a cleanup hook
-guaranteed to run however the protected region is left: normally, by throw, by
-backtrack, or by a captured continuation. Resource handles make this concrete —
-a `db`/stream/FFI handle is a registry slot with no GC finalization, so any
-non-local exit past its close leaks it until the process ends.
+**`dynamic-wind`** — a `before body after` whose `after` runs on every exit
+from the region — normal, throw/interpreter error, `fail` backtrack, `shift`
+capture — and whose `before` re-runs on `resume` re-entry. No `catch`-style
+wrapper can provide this: a `fail` unwinds to the nearest *choice* prompt,
+past `catch`'s *exception* prompt, and a region re-entered by `resume` needs
+setup per entry, not a once-only handler. Without it, a `db`/stream/FFI
+handle — a registry slot with no GC finalization — leaks on a backtrack past
+its close until the process ends.
 
-**Tier 1 — `ensure` over throw and normal exit — done.** `ensure`
-( body-xt cleanup-xt -- … ) runs cleanup on both the normal and the
-throw/interpreter-error path and re-raises on throw, plus resource guards
-`with-db` and `with-stream` in `lib.h2o`. (`with-file` is not included: files are
-slurped by `read-file`/`write-file`, which open and close internally, so there is
-no persistent handle to guard — it would need a file-opens-a-stream primitive
-first.)
-
-**Tier 2 — `dynamic-wind` across every exit.** A `before body after` whose
-`after` also runs on a `fail` backtrack and a `shift` capture, and whose
-`before` re-runs on `resume` re-entry. A `catch` wrapper can't reach these:
-`fail` unwinds to the nearest *choice* prompt, past `catch`'s *exception*
-prompt, and a region re-entered by `resume` needs setup per entry, not a
-once-only handler. The mechanism is a *wind mark* — a return-stack mark, kin to
-`reset`'s, carrying the before/after thunks, recognized by both unwind cascades
-in the inner loop (exception and choice prompts) and by `resume`'s splice so
-re-entry re-runs `before`.
+The mechanism: a *wind mark* — a return-stack mark, kin to `reset`'s, carrying
+the before/after thunks, recognized by both unwind cascades in the inner loop
+(exception and choice prompts) and by `resume`'s splice so re-entry re-runs
+`before`.
 
 To settle: whether `after` firing once per failed alternative of a multi-shot
 region is the wanted semantics or a footgun; how a wind mark interleaves with

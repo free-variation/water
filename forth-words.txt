@@ -91,6 +91,10 @@ cr
 create-index
 cwd
 dataset>matrix
+date-shift
+date>epoch
+date>epoch-local
+days-in-month
 db-close
 db-exec
 db-open
@@ -118,6 +122,8 @@ end-process
 ensure
 env
 env!
+epoch>date
+epoch>date-local
 execute
 exit
 exp
@@ -157,6 +163,8 @@ fmod
 fnegate
 forget
 format
+format-time
+format-time-local
 frame
 frame>array
 frame>json
@@ -188,6 +196,7 @@ inner-join
 int-segment
 intersection
 iota
+iso>time
 join
 json>frame
 keys
@@ -232,6 +241,7 @@ or
 over
 pair?
 parallel-run
+parse-time
 pfilter
 pfilter-ext
 pi
@@ -338,6 +348,7 @@ tan
 tanh
 then
 throw
+time>iso
 times
 to
 to-slice!
@@ -377,6 +388,7 @@ vvf+
 vvf-
 vvf/
 wait
+wall-now
 while
 wildcard?
 with-db
