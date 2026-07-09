@@ -1,30 +1,52 @@
 \ nreverse.h2o — naive reverse, the classic Prolog unification / LIPS benchmark
 \ (van Roy / Aquarius suite), ported to water. A list is a chain of cons
-\ pairs built with `cons` and terminated by `null`; append and nrev are
-\ relational, using `unify` to build and destructure and committed `amb` for
-\ clause selection — the direct analogue of Prolog's two clauses per predicate.
+\ pairs built with `cons` and terminated by `null`; append and nrev keep
+\ Prolog's two clauses per predicate.
+\
+\ Clause selection is hand-compiled to what a first-argument-indexed system
+\ generates: dispatch on the dereferenced tag of the first argument (`type-of`
+\ — :pair / :none), committing without a choice point, and destructure a
+\ known-bound cons with `head-tail` instead of general unification (no fresh
+\ lvars, no trail). An unbound first argument falls back to the relational
+\ committed-`amb` clauses, so the predicates stay complete.
 \
 \ nrev of a 30-element list is 496 logical inferences; LIPS = 496 x reps / s.
-\ water has no first-argument indexing, so each clause choice pays an
-\ amb plus a failed unify and a backtrack.
 
 : lappend  ( a b r -- )                   \ r = a ++ b
-  | >A >B >R |
-  [: A null ~ drop   R B ~ drop :]        \ append([], B, B)
-  [| ?H ?T ?R1 |
-     A  H T cons  ~ drop                  \ A = [H|T]
-     R  H R1 cons ~ drop                  \ R = [H|R1]
-     T B R1 lappend :]                    \ append(T, B, R1)
-  amb ;
+  | >A >B >R h t r1 |
+  A type-of :pair = if
+     A ? head-tail to t to h              \ A = [H|T], A known bound
+     lvar to r1
+     R  h r1 cons ~ drop                  \ R = [H|R1]
+     t B r1 lappend                       \ append(T, B, R1)
+  else A type-of :none = if
+     R B ~ drop                           \ append([], B, B)
+  else
+     [: A null ~ drop   R B ~ drop :]
+     [| ?H ?T ?R1 |
+        A  H T cons  ~ drop
+        R  H R1 cons ~ drop
+        T B R1 lappend :]
+     amb
+  then then ;
 
 : nrev  ( l r -- )                        \ r = naive reverse of l
-  | >L >R |
-  [: L null ~ drop   R null ~ drop :]     \ nrev([], [])
-  [| ?H ?T ?RT |
-     L  H T cons  ~ drop                  \ L = [H|T]
-     T RT nrev                            \ nrev(T, RT)
-     RT  H null cons  R lappend :]        \ append(RT, [H], R)
-  amb ;
+  | >L >R h t rt |
+  L type-of :pair = if
+     L ? head-tail to t to h              \ L = [H|T], L known bound
+     lvar to rt
+     t rt nrev                            \ nrev(T, RT)
+     rt  h null cons  R lappend           \ append(RT, [H], R)
+  else L type-of :none = if
+     R null ~ drop                        \ nrev([], [])
+  else
+     [: L null ~ drop   R null ~ drop :]
+     [| ?H ?T ?RT |
+        L  H T cons  ~ drop
+        T RT nrev
+        RT  H null cons  R lappend :]
+     amb
+  then then ;
 
 : iota  ( n -- list )                     \ the null-terminated list [n n-1 ... 1]
   | >n |  null  [> i | i 1+ swap cons :] n i-times ;
@@ -34,6 +56,11 @@ variable t5   5 iota to t5
 lvar to RR
 t5 RR nrev
 RR . cr                                   \ expect [( 1 2 3 4 5 null )]
+
+\ --- reversing through an unbound first argument still relates ------------
+lvar to UB
+UB [( 9 null )] nrev
+UB . cr                                   \ expect UB=[( 9 null )]
 
 \ --- LIPS: naive reverse of a 30-element list ----------------------------
 variable lst

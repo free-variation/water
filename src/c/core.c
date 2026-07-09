@@ -3800,6 +3800,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, "null", p_null, 0);
 	define_primitive(interp, "type-of", p_type_of, 0);
+	type_of_intern_names(interp);
 	define_primitive(interp, "lvar", p_lvar, 0);
 	define_primitive(interp, "_", p_wildcard, 0);
 	define_primitive(interp, "unify", p_unify, 0);

@@ -587,40 +587,30 @@ void p_null(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
+int type_of_symbols[T_QUANTITY + 1];
+
+void type_of_intern_names(Interpreter *interp) {
+	static const char *names[T_QUANTITY + 1] = {
+		[T_NONE] = "none",        [T_SYMBOL] = "symbol",  [T_FLOAT] = "float",
+		[T_STRING] = "string",    [T_SET] = "set",        [T_ARRAY] = "array",
+		[T_PAIR] = "pair",        [T_FRAME] = "frame",    [T_MATRIX] = "matrix",
+		[T_XT] = "xt",            [T_ADDR] = "addr",      [T_CONT] = "continuation",
+		[T_MARK] = "mark",        [T_STREAM] = "stream",  [T_LOGIC_VAR] = "lvar",
+		[T_UNBOUND] = "wildcard", [T_DB] = "db",          [T_PTR] = "ptr",
+		[T_SEGMENT] = "segment",  [T_QUANTITY] = "quantity"
+	};
+	for (int tag = 0; tag <= T_QUANTITY; tag++)
+		type_of_symbols[tag] = intern_symbol(interp, names[tag]);
+}
+
 void p_type_of(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 
 	Val value = chain_sp[-1];
 	if (VAL_TAG(value) == T_LOGIC_VAR)
 		value = deref(interp, value);
-	
-	const char *name;
-	switch (VAL_TAG(value)) {
-		case T_NONE:      name = "none"; break;
-		case T_SYMBOL:    name = "symbol"; break;
-		case T_FLOAT:     name = "float"; break;
-		case T_STRING:    name = "string"; break;
-		case T_SET:       name = "set"; break;
-		case T_ARRAY:     name = "array"; break;
-		case T_PAIR:      name = "pair"; break;
-		case T_FRAME:     name = "frame"; break;
-		case T_MATRIX:    name = "matrix"; break;
-		case T_XT:        name = "xt"; break;
-		case T_ADDR:      name = "addr"; break;
-		case T_CONT:      name = "continuation"; break;
-		case T_MARK:      name = "mark"; break;
-		case T_STREAM:    name = "stream"; break;
-		case T_LOGIC_VAR: name = "lvar"; break;
-		case T_UNBOUND:   name = "wildcard"; break;
-		case T_DB:        name = "db"; break;
-		case T_PTR:       name = "ptr"; break;
-		case T_SEGMENT:   name = "segment"; break;
-		case T_QUANTITY:  name = "quantity"; break;
-		default:          name = "unknown"; break;
-	}
-	
-	SYNC_REGISTERS(interp, chain_ip, chain_sp);
-	chain_sp[-1] = make_symbol(intern_symbol(interp, name));
+
+	chain_sp[-1] = make_symbol(type_of_symbols[VAL_TAG(value)]);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
