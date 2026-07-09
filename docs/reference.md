@@ -292,9 +292,9 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 
 | Syntax | Behavior |
 |--------|----------|
-| `\| x y z \|` | Declare x, y, z, each initialized to `0.0`; read by bare name, assign with `to` |
+| `\| x y z \|` | Declare x, y, z, **uninitialized** (slots keep stale return-stack contents — deliberately no per-call zeroing; assign with `to` before reading); read by bare name |
 | `\|> x y z \|` | Declare and receive from the stack: z ← top, y ← second, x ← third |
-| `\| x >y z \|` | Mixed: a `>` prefix marks an individual name as a receive slot; the rest initialize to 0 |
+| `\| x >y z \|` | Mixed: a `>` prefix marks an individual name as a receive slot; the rest are uninitialized |
 | `[\| x y z \| … :]` | Lambda sugar: `[\|` fuses `[:` and `\|` into one token, opening an anonymous quotation whose body begins with a `\|` locals list (`>` prefixes receive selectively) |
 | `[> x y z \| … :]` | Lambda sugar for the receive-all case: `[>` fuses `[:` and `\|>`, so x, y, z are received from the stack |
 

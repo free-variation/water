@@ -10,8 +10,12 @@
 \ the order-independent sum of the per-channel bytes, accumulated directly.
 \
 \ colourAt is inlined into ray-colour because the two are mutually recursive
-\ (reflection) and only direct self-recursion is available. ambientCoefficient
-\ is computed as 1 - specular - lambert, matching the reference bit-for-bit
+\ (reflection) and only direct self-recursion is available. The sphere/plane
+\ intersection is written directly into the two loops that need it (a shared
+\ word paid a locals frame and argument shuffling ~2M times), objects store
+\ radius² since the radius is only ever used squared, and the shadow test
+\ exits at the first occluder like the reference. ambientCoefficient is
+\ computed as 1 - specular - lambert, matching the reference bit-for-bit
 \ (1.0 - 0.2 - 0.6 is not exactly 0.2 in double precision).
 
 10 to *loops*
@@ -37,7 +41,7 @@ variable *pixw* variable *pixh*
   | >x >y >z mag |
   x x f* y y f* f+ z z f* f+ fsqrt to mag
   1.0 mag f/ to mag
-  x mag f*  y mag f*  z mag f* ;
+  x mag f*  y mag f*  z mag f* ; inline
 
 : vcross ( ax ay az bx by bz -- cx cy cz )
   |> ax ay az bx by bz |
@@ -50,7 +54,7 @@ variable *pixw* variable *pixh*
   sx nx f* sy ny f* f+ sz nz f* f+ to dotv
   sx  nx dotv f* 2.0 f* f-
   sy  ny dotv f* 2.0 f* f-
-  sz  nz dotv f* 2.0 f* f- ;
+  sz  nz dotv f* 2.0 f* f- ; inline
 
 \ --- clamp one colour channel to a 0..255 byte ---------------------------
 : clamp-byte ( v -- f )
@@ -63,13 +67,13 @@ variable *pixw* variable *pixh*
 \ --- scene construction --------------------------------------------------
 \ object layout (18 floats):
 \   0 kind (0=sphere 1=halfspace)
-\   1 2 3 centre/point   4 radius | 4 5 6 normal (unit)
+\   1 2 3 centre/point   4 radius² | 4 5 6 normal (unit)
 \   7 specular  8 lambert  9 ambient
 \   10 11 12 baseColour   13 isChecker   14 15 16 otherColour   17 checkSize
 : sphere-obj ( cx cy cz rad spec lamb br bg bb -- arr )
   | >cx >cy >cz >rad >spec >lamb >br >bg >bb amb |
   1.0 spec f- lamb f- to amb
-  [ 0.0 cx cy cz rad 0.0 0.0 spec lamb amb br bg bb 0.0 0.0 0.0 0.0 1.0 ] ;
+  [ 0.0 cx cy cz rad rad f* 0.0 0.0 spec lamb amb br bg bb 0.0 0.0 0.0 0.0 1.0 ] ;
 
 : checker-plane ( -- arr )
   | amb |
@@ -88,51 +92,58 @@ variable *pixw* variable *pixh*
 : init-lights
   [ 30.0 30.0 10.0 ]  [ -10.0 100.0 30.0 ]  2 array to *lights* ;
 
-\ --- intersection: returns ( t hit ); t valid only when hit is 1 ----------
-: obj-intersect ( obj px py pz dx dy dz -- t hit )
-  | >obj >px >py >pz >dx >dy >dz cx cy cz rad nx ny nz v disc |
-  obj 0 @i 0.0 = if
-     obj 1 @i px f- to cx
-     obj 2 @i py f- to cy
-     obj 3 @i pz f- to cz
-     obj 4 @i to rad
-     cx dx f* cy dy f* f+ cz dz f* f+ to v
-     rad rad f*  cx cx f* cy cy f* f+ cz cz f* f+  v v f* f-  f- to disc
-     disc 0.0 lt if 0.0 0.0
-     else disc fsqrt  v swap f-  1.0 then
-  else
-     obj 4 @i to nx  obj 5 @i to ny  obj 6 @i to nz
-     dx nx f* dy ny f* f+ dz nz f* f+ to v
-     v 0= if 0.0 0.0
-     else 1.0 v fnegate f/  1.0 then
-  then ;
-
 \ --- is a light visible from a surface point along a unit shadow ray? -----
 : light-visible? ( hx hy hz sdx sdy sdz -- flag )
-  | >hx >hy >hz >sdx >sdy >sdz vis |
-  1.0 to vis
-  [> oi |
-     *objects* oi @i  hx hy hz sdx sdy sdz  obj-intersect
-     if *epsilon* gt if 0.0 to vis then
-     else drop then
-  :] *nobj* i-times
-  vis ;
+  | >hx >hy >hz >sdx >sdy >sdz oi obj cx cy cz v disc |
+  0.0 to oi
+  begin oi *nobj* lt while
+     *objects* oi @i to obj
+     obj 0 @i 0.0 = if
+        obj 1 @i hx f- to cx
+        obj 2 @i hy f- to cy
+        obj 3 @i hz f- to cz
+        cx sdx f* cy sdy f* f+ cz sdz f* f+ to v
+        obj 4 @i  cx cx f* cy cy f* f+ cz cz f* f+  v v f* f-  f- to disc
+        disc 0.0 lt if else
+           v disc fsqrt f- *epsilon* gt if 0.0 exit then
+        then
+     else
+        sdx obj 4 @i f* sdy obj 5 @i f* f+ sdz obj 6 @i f* f+ to v
+        v 0= if else
+           1.0 v fnegate f/ *epsilon* gt if 0.0 exit then
+        then
+     then
+     f++ oi
+  repeat
+  1.0 ;
 
 \ --- trace one ray to a colour (specular reflection recurses) -------------
 : ray-colour ( px py pz dx dy dz -- r g b )
-  | >px >py >pz >dx >dy >dz found besti bestt obj hx hy hz nrmx nrmy nrmz br bg bb cr cg cb spec lamb amb lam lf rr rg rb rfx rfy rfz lightarr sdx sdy sdz |
+  | >px >py >pz >dx >dy >dz oi li found besti bestt obj cx cy cz v disc t hx hy hz nrmx nrmy nrmz br bg bb cr cg cb spec lamb amb lam lf rr rg rb rfx rfy rfz lightarr sdx sdy sdz |
   *rdepth* 3.0 gt if 0.0 0.0 0.0 exit then
   *rdepth* 1+ to *rdepth*
-  0.0 to found  0.0 to besti  0.0 to bestt
-  [> oi |
-     *objects* oi @i  px py pz dx dy dz  obj-intersect
-     if
-        dup *negeps* gt if
-           found 0= if to bestt oi to besti 1.0 to found
-           else dup bestt lt if to bestt oi to besti else drop then then
-        else drop then
-     else drop then
-  :] *nobj* i-times
+  0.0 to found  0.0 to besti  0.0 to bestt  0.0 to oi
+  begin oi *nobj* lt while
+     *objects* oi @i to obj
+     obj 0 @i 0.0 = if
+        obj 1 @i px f- to cx
+        obj 2 @i py f- to cy
+        obj 3 @i pz f- to cz
+        cx dx f* cy dy f* f+ cz dz f* f+ to v
+        obj 4 @i  cx cx f* cy cy f* f+ cz cz f* f+  v v f* f-  f- to disc
+        disc 0.0 lt if -1.0 to t
+        else v disc fsqrt f- to t then
+     else
+        dx obj 4 @i f* dy obj 5 @i f* f+ dz obj 6 @i f* f+ to v
+        v 0= if -1.0 to t
+        else 1.0 v fnegate f/ to t then
+     then
+     t *negeps* gt if
+        found 0= if t to bestt oi to besti 1.0 to found
+        else t bestt lt if t to bestt oi to besti then then
+     then
+     f++ oi
+  repeat
   found 0= if
      0.0 to cr 0.0 to cg 0.0 to cb
   else
@@ -168,8 +179,8 @@ variable *pixw* variable *pixh*
      then
      obj 8 @i to lamb
      lamb 0.0 gt if
-        0.0 to lam
-        [> li |
+        0.0 to lam  0.0 to li
+        begin li *nlights* lt while
            *lights* li @i to lightarr
            lightarr 0 @i hx f- to sdx
            lightarr 1 @i hy f- to sdy
@@ -179,7 +190,8 @@ variable *pixw* variable *pixh*
               sdx nrmx f* sdy nrmy f* f+ sdz nrmz f* f+
               dup 0.0 gt if lam f+ to lam else drop then
            then
-        :] *nlights* i-times
+           f++ li
+        repeat
         lam 1.0 gt if 1.0 to lam then
         lamb lam f* to lf
         cr lf br f* f+ to cr
