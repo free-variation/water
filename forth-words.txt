@@ -51,6 +51,7 @@ array-of
 array>cons
 array>frame
 array>set
+array?
 asin
 assert
 atan
@@ -82,6 +83,7 @@ concat
 cons
 cons>array
 constant
+continuation?
 copy
 cos
 count-matches
@@ -93,6 +95,7 @@ db-close
 db-exec
 db-open
 db-query
+db?
 delete-at
 depth
 deref
@@ -147,6 +150,7 @@ filter
 flatten
 flatten-array
 fln
+float?
 flog
 flt
 fmod
@@ -156,6 +160,7 @@ format
 frame
 frame>array
 frame>json
+frame?
 frobenius-norm
 fround
 fround-down
@@ -197,6 +202,7 @@ lowest-bit
 lshift
 lt
 lvar
+lvar?
 man
 map
 mapn
@@ -206,6 +212,7 @@ matches?
 matrix
 matrix-range
 matrix>pointer
+matrix?
 max
 mean
 member?
@@ -214,6 +221,7 @@ min
 mod
 negate
 nip
+none?
 norm
 not
 now
@@ -222,6 +230,7 @@ num-cores
 num-elements
 or
 over
+pair?
 parallel-run
 pfilter
 pfilter-ext
@@ -232,7 +241,9 @@ pmap-reduce
 pmap-reduce-ext
 print
 print-stack
+ptr?
 quantile
+quantity?
 query
 quotient
 r>
@@ -285,12 +296,14 @@ see-tree>string
 see>string
 seed
 segment>pointer
+segment?
 select-keys
 select-rows
 select-values
 set
 set-add!
 set-remove!
+set?
 shift
 shift-with
 side-depth
@@ -308,10 +321,12 @@ sqrt
 start-generator
 start-process
 stop
+stream?
 string>chars
 string>codepoints
 string>number
 string>symbol
+string?
 submatrix
 substring
 sum
@@ -331,6 +346,7 @@ trim
 true
 truncate
 try-catch
+type-of
 unify
 union
 unit
@@ -362,6 +378,7 @@ vvf-
 vvf/
 wait
 while
+wildcard?
 with-db
 with-stream
 words
@@ -369,5 +386,6 @@ write
 write-file
 write-in
 write-tsv
+xt?
 yield
 ~

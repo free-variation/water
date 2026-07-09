@@ -4,19 +4,19 @@
 \ tight timed loops so the engine can be profiled (perf / Instruments).
 \
 \ Knobs:
-\   HOT  — iterations of the cheap-query loop (4 queries each). The default runs
+\   hot  — iterations of the cheap-query loop (4 queries each). The default runs
 \          ~1 billion queries. Each select-values allocates a result set, so at
 \          this scale GC fires repeatedly and re-marks the resident json graph;
-\          lower HOT to isolate the walk/dispatch from collection cost.
-\   WIDE — iterations of the 12k-child wildcard + predicate loop: set build and
+\          lower hot to isolate the walk/dispatch from collection cost.
+\   wide — iterations of the 12k-child wildcard + predicate loop: set build and
 \          predicate evaluation over a wide frame.
-\   DEEP — iterations of the descendant loop over the 800-level chain: deep
+\   deep — iterations of the descendant loop over the 800-level chain: deep
 \          recursion in select_descendants.
 
 variable org
-250000000 constant *hot*
-3000 constant *wide*
-3000 constant *deep*
+250000000 constant hot
+3000 constant wide
+3000 constant deep
 
 "bench/fixtures/big.json" read-file json>frame to org
 
@@ -32,21 +32,21 @@ now
   org /meta/generator        select-values drop
   org /meta/*                select-values drop
   org /wide_object/key_11999 select-values drop
-:] *hot* times
-now swap -  *hot* 4 *  "{0} hot queries in {1} s" format . cr
+:] hot times
+now swap -  hot 4 *  "{0} hot queries in {1} s" format . cr
 
 \ wide: 12k-child wildcard and a self-predicate over it — set build + predicate
 now
 [:
   org /wide_object/*          select-values drop
   org /wide_object/*[.>6000]  select-values drop
-:] *wide* times
-now swap -  *wide* 2 *  "{0} wide queries in {1} s" format . cr
+:] wide times
+now swap -  wide 2 *  "{0} wide queries in {1} s" format . cr
 
 \ deep: descendant-or-self over the 800-level chain — deep recursion
 now
 [:
   org /deep//tag   select-values drop
   org /deep//depth select-values drop
-:] *deep* times
-now swap -  *deep* 2 *  "{0} deep queries in {1} s" format . cr
+:] deep times
+now swap -  deep 2 *  "{0} deep queries in {1} s" format . cr

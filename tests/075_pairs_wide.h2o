@@ -4,11 +4,11 @@
 \ logic-variable bindings.
 
 \ a kept pair survives heavy pair churn plus a collection
-variable KEEP
-[( 7 8 9 null )] to KEEP
+variable kept
+[( 7 8 9 null )] to kept
 [: |> i | [( i i 1+ null )] drop :] 200000 i-times
 gc
-KEEP . cr                                          \ [( 7 8 9 null )]
+kept . cr                                          \ [( 7 8 9 null )]
 
 \ a pair reachable only through a logic-variable binding survives GC
 variable V

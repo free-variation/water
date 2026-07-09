@@ -1,6 +1,12 @@
-\ raytrace — port of pyperformance bm_raytrace (a toy recursive ray tracer).
+\ raytrace, parallel — pmap variant of pyperformance bm_raytrace.
 \ Renders a scene of 8 objects (a big sphere, 6 small spheres, a checkerboard
 \ plane) under 2 point lights, with specular reflection to recursion depth 3.
+\ Scanlines render in parallel (pmap-reduce, one row per claim); the scene and
+\ camera globals are read-only during the render, and the recursion depth is a
+\ ray-colour parameter rather than a global so workers don't share state. Every
+\ summand in the checksum is a whole number and the total stays far below 2^53,
+\ so float addition is exact in any order and the checksum matches the serial
+\ version and the reference exactly.
 \
 \ Vectors and points are carried as three stack cells (x y z); the Point/Vector
 \ type distinction in the original only guards type errors and never changes a
@@ -26,7 +32,6 @@ variable objects  variable lights
 100.0 constant height
 0.00001 constant epsilon
 -0.00001 constant negeps
-variable rdepth
 variable checksum
 
 variable epx  variable epy  variable epz        \ eye point
@@ -118,10 +123,9 @@ variable pixw variable pixh
   1.0 ;
 
 \ --- trace one ray to a colour (specular reflection recurses) -------------
-: ray-colour ( px py pz dx dy dz -- r g b )
-  | >px >py >pz >dx >dy >dz oi li found besti bestt obj cx cy cz v disc t hx hy hz nrmx nrmy nrmz br bg bb cr cg cb spec lamb amb lam lf rr rg rb rfx rfy rfz lightarr sdx sdy sdz |
-  rdepth 3.0 gt if 0.0 0.0 0.0 exit then
-  rdepth 1+ to rdepth
+: ray-colour ( px py pz dx dy dz depth -- r g b )
+  | >px >py >pz >dx >dy >dz >depth oi li found besti bestt obj cx cy cz v disc t hx hy hz nrmx nrmy nrmz br bg bb cr cg cb spec lamb amb lam lf rr rg rb rfx rfy rfz lightarr sdx sdy sdz |
+  depth 3.0 gt if 0.0 0.0 0.0 exit then
   0.0 to found  0.0 to besti  0.0 to bestt  0.0 to oi
   begin oi nobj lt while
      objects oi @i to obj
@@ -172,7 +176,7 @@ variable pixw variable pixh
      obj 7 @i to spec
      spec 0.0 gt if
         dx dy dz nrmx nrmy nrmz vreflect vnorm to rfz to rfy to rfx
-        hx hy hz rfx rfy rfz ray-colour to rb to rg to rr
+        hx hy hz rfx rfy rfz depth 1+ ray-colour to rb to rg to rr
         spec rr f* to cr
         spec rg f* to cg
         spec rb f* to cb
@@ -205,7 +209,6 @@ variable pixw variable pixh
         cb amb bb f* f+ to cb
      then
   then
-  rdepth 1- to rdepth
   cr cg cb ;
 
 \ --- camera setup (matches Scene.render's eye/viewport math) --------------
@@ -220,22 +223,25 @@ variable pixw variable pixh
   halfw 2.0 f* width 1.0 f- f/ to pixw
   halfh 2.0 f* height 1.0 f- f/ to pixh ;
 
-\ --- render one frame, summing pixel bytes into CHECKSUM ------------------
+\ --- render one frame: rows in parallel, each returning its byte sum ------
+: render-row ( y -- rowbytes )
+  | >y x sx sy rdx rdy rdz pr pg pb rowbytes |
+  y pixh f* halfh f- to sy
+  0.0 to rowbytes  0.0 to x
+  begin x width lt while
+     x pixw f* halfw f- to sx
+     rx sx f* evx f+ ux sy f* f+ to rdx
+     ry sx f* evy f+ uy sy f* f+ to rdy
+     rz sx f* evz f+ uz sy f* f+ to rdz
+     rdx rdy rdz vnorm to rdz to rdy to rdx
+     epx epy epz rdx rdy rdz 0.0 ray-colour to pb to pg to pr
+     pr clamp-byte  pg clamp-byte f+  pb clamp-byte f+  rowbytes f+ to rowbytes
+     f++ x
+  repeat
+  rowbytes ;
+
 : render-frame
-  | sx sy rdx rdy rdz pr pg pb |
-  0.0 to checksum
-  [> y |
-     [> x |
-        x pixw f* halfw f- to sx
-        y pixh f* halfh f- to sy
-        rx sx f* evx f+ ux sy f* f+ to rdx
-        ry sx f* evy f+ uy sy f* f+ to rdy
-        rz sx f* evz f+ uz sy f* f+ to rdz
-        rdx rdy rdz vnorm to rdz to rdy to rdx
-        epx epy epz rdx rdy rdz ray-colour to pb to pg to pr
-        pr clamp-byte  pg clamp-byte f+  pb clamp-byte f+  checksum f+ to checksum
-     :] width i-times
-  :] height i-times ;
+  height iota  0.0  ' render-row  [: f+ :]  pmap-reduce to checksum ;
 
 : raytrace-run ( frames -- )
   | >frames t0 |

@@ -5,30 +5,30 @@
 \ Permutations are generated via the cycle-rotation algorithm (same family
 \ as itertools.permutations).
 
-9 constant *n*
-variable *perm1*
-variable *perm*
-variable *count*
-variable *max-flips*
+9 constant n
+variable perm1
+variable perm
+variable count
+variable max-flips
 
 : init-arrays
-  0 *n* array-of to *perm1*
-  [> k | *perm1* k k !i drop :] *n* i-times
-  0 *n* array-of to *perm*
-  [> k | *perm* k k !i drop :] *n* i-times
-  0 *n* array-of to *count*
-  [> k | *count* k  k f1+  !i drop :] *n* i-times ;
+  0 n array-of to perm1
+  [> k | perm1 k k !i drop :] n i-times
+  0 n array-of to perm
+  [> k | perm k k !i drop :] n i-times
+  0 n array-of to count
+  [> k | count k  k f1+  !i drop :] n i-times ;
 
 : copy-perm1
-  *perm* 0 *perm1* 0 1 *n* slice! drop ;
+  perm 0 perm1 0 1 n slice! drop ;
 inline
 
 : flip-perm ( k -- )        \ reverse perm[0..k] inclusive, matching Python's perm[:k+1] = perm[k::-1]
-  *perm* 0 *perm* 3 roll dup f1+ -1 swap slice! drop ;
+  perm 0 perm 3 roll dup f1+ -1 swap slice! drop ;
 
 : count-flips ( -- flips )
   0
-  begin *perm* 0 @i dup while
+  begin perm 0 @i dup while
     flip-perm
     f1+
   repeat
@@ -38,32 +38,32 @@ inline
   dup 0 = if
     drop
   else
-    *perm1* 0 @i >r
+    perm1 0 @i >r
     >r
-    *perm1* 0 *perm1* 1 1 r@ slice! drop
-    *perm1* r> r> !i drop
+    perm1 0 perm1 1 1 r@ slice! drop
+    perm1 r> r> !i drop
   then ;
 inline
 
 : update-max ( flips -- )
-  dup *max-flips* gt if to *max-flips* else drop then ;
+  dup max-flips gt if to max-flips else drop then ;
 
 : fannkuch
   | r all-done |
-  0 to *max-flips*
+  0 to max-flips
   init-arrays
-  *n* to r
+  n to r
 
   begin
     \ Reset COUNT[r-1..0]
     begin r 1 gt while
-      *count* r f1-  r  !i drop
+      count r f1-  r  !i drop
       f-- r
     repeat
 
     \ Skip equivalent perms
-    *perm1* 0 @i if
-      *perm1* *n* f1- @i *n* f1- = 0 = if
+    perm1 0 @i if
+      perm1 n f1- @i n f1- = 0 = if
         copy-perm1
         count-flips update-max
       then
@@ -72,13 +72,13 @@ inline
     \ Advance permutation
     0 to all-done
     begin
-      r *n* = if
+      r n = if
         1 to all-done
         -1
       else
         r rotate-perm1
-        *count* r  *count* r @i f1-  !i drop
-        *count* r @i 0 gt if
+        count r  count r @i f1-  !i drop
+        count r @i 0 gt if
           -1
         else
           f++ r
@@ -95,7 +95,7 @@ inline
   now to t0
   fannkuch
   "elapsed: " . now t0 - . "s" . cr
-  "max flips: " . *max-flips* . cr ;
+  "max flips: " . max-flips . cr ;
 
 fannkuch-run
 bye

@@ -11,7 +11,7 @@
 : lappend  ( a b r -- )                   \ r = a ++ b
   | >A >B >R |
   [: A null ~ drop   R B ~ drop :]        \ append([], B, B)
-  [| H T R1 |
+  [| ?H ?T ?R1 |
      A  H T cons  ~ drop                  \ A = [H|T]
      R  H R1 cons ~ drop                  \ R = [H|R1]
      T B R1 lappend :]                    \ append(T, B, R1)
@@ -20,7 +20,7 @@
 : nrev  ( l r -- )                        \ r = naive reverse of l
   | >L >R |
   [: L null ~ drop   R null ~ drop :]     \ nrev([], [])
-  [| H T RT |
+  [| ?H ?T ?RT |
      L  H T cons  ~ drop                  \ L = [H|T]
      T RT nrev                            \ nrev(T, RT)
      RT  H null cons  R lappend :]        \ append(RT, [H], R)
@@ -30,15 +30,15 @@
   | >n |  null  [> i | i 1+ swap cons :] n i-times ;
 
 \ --- correctness: reverse a 5-element list -------------------------------
-variable T5   5 iota to T5
+variable t5   5 iota to t5
 lvar to RR
-T5 RR nrev
+t5 RR nrev
 RR . cr                                   \ expect [( 1 2 3 4 5 null )]
 
 \ --- LIPS: naive reverse of a 30-element list ----------------------------
-variable LST
-30 iota to LST
-now [: [: LST lvar nrev fail :] [: :] amb :] 30000 times
+variable lst
+30 iota to lst
+now [: [: lst lvar nrev fail :] [: :] amb :] 30000 times
 now swap -
 dup dup "elapsed: {0} s" format . cr
 "nrev(30) x 30000:  {0} s" format . cr

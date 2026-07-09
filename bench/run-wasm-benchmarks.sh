@@ -97,19 +97,19 @@ ratio() {
 # --- bench input feeds (stdin for native and wasm) -------------------------
 feed_nqueens()  { cat "$here/pyperformance/nqueens.h2o"; }
 feed_fannkuch() { cat "$here/pyperformance/fannkuch.h2o"; }
-feed_nbody()    { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.h2o"; }
-feed_raytrace() { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.h2o"; }
+feed_nbody()    { cat "$here/pyperformance/nbody.h2o"; }
+feed_raytrace() { cat "$here/pyperformance/raytrace.h2o"; }
 feed_float()    { cat "$here/pyperformance/float.h2o"; }
 feed_crypto()   { cat "$here/pyperformance/crypto-pyaes.h2o"; }
-feed_spectral() { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.h2o"; }
-feed_scimark_lu() { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.h2o"; }
-feed_scimark_sor() { echo "variable ITERATIONS $scimark_sor_loops to ITERATIONS"; cat "$here/pyperformance/scimark-sor.h2o"; }
-feed_scimark_sparse() { echo "variable CYCLES $scimark_sparse_cycles to CYCLES"; cat "$here/pyperformance/scimark-sparse.h2o"; }
-feed_scimark_fft() { echo "variable LOOPS $fft_loops to LOOPS"; echo "variable CYCLES $fft_cycles to CYCLES"; cat "$here/pyperformance/scimark-fft.h2o"; }
-feed_barnes()   { echo "variable ITERATIONS $barnes_iterations to ITERATIONS"; echo "variable LOOPS $barnes_loops to LOOPS"; cat "$here/pyperformance/barnes-hut.h2o"; }
-feed_scimark_mc() { echo "variable SAMPLES $montecarlo_samples to SAMPLES"; echo "variable LOOPS $montecarlo_loops to LOOPS"; cat "$here/pyperformance/scimark-montecarlo.h2o"; }
-feed_meteor()   { echo "variable LOOPS $meteor_loops to LOOPS"; cat "$here/pyperformance/meteor.h2o"; }
-feed_hexiom()   { echo "variable LOOPS $hexiom_loops to LOOPS"; cat "$here/pyperformance/hexiom.h2o"; }
+feed_spectral() { cat "$here/pyperformance/spectral-norm.h2o"; }
+feed_scimark_lu() { cat "$here/pyperformance/scimark-lu.h2o"; }
+feed_scimark_sor() { cat "$here/pyperformance/scimark-sor.h2o"; }
+feed_scimark_sparse() { cat "$here/pyperformance/scimark-sparse.h2o"; }
+feed_scimark_fft() { cat "$here/pyperformance/scimark-fft.h2o"; }
+feed_barnes()   { cat "$here/pyperformance/barnes-hut.h2o"; }
+feed_scimark_mc() { cat "$here/pyperformance/scimark-montecarlo.h2o"; }
+feed_meteor()   { cat "$here/pyperformance/meteor.h2o"; }
+feed_hexiom()   { cat "$here/pyperformance/hexiom.h2o"; }
 feed_regex_dna() { cat "$here/pyperformance/regex-dna.h2o"; }
 feed_regex_compile() { cat "$here/pyperformance/regex-compile.h2o"; }
 feed_regex_effbot() { cat "$here/pyperformance/regex-effbot.h2o"; }

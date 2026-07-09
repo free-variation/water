@@ -58,11 +58,16 @@ A variable's slot holds either "still unbound" or some value meaning "this
 variable stands for that." Because the bound value can itself be (or contain)
 another variable, resolving a variable to what it *ultimately* stands for means
 following the chain until it ends at a non-variable or an unbound variable — the
-walk called `deref`, exposed as `$`:
+walk called `deref`, aliased `?`:
 
 ```forth
-$           ( v -- val )  \ resolve a variable to its current binding (or itself)
+?           ( v -- val )  \ resolve a variable to its current binding (or itself)
 ```
+
+A variable is created explicitly: `lvar` pushes a fresh one, `lvar to x` names a
+persistent global, and a `?` prefix in a locals list (`| ?x |`) declares a fresh
+per-call local inside a definition or quotation. Capitalized names for logic
+vars are stylistic convention, not syntax.
 
 There's one more way to write an unknown: the wildcard `_`, an *anonymous*
 variable that allocates no slot, unifies with anything, and records nothing —
@@ -104,7 +109,8 @@ any row that has `:role :wizard` regardless of its other columns, which is
 precisely relational selection-and-projection falling out of the unification rule.
 
 Run as a *goal*, unification (`unify`, aliased `~`) either succeeds — leaving the
-now-unified term, so `V 42 ~` binds `V` and leaves `42` — or fails and backtracks.
+now-unified term, so `V 42 ~` binds `V` (declared beforehand with `lvar to V`) and
+leaves `42` — or fails and backtracks.
 A program describes a relation by sequencing unification goals: each `~` either
 narrows the unknowns or fails the branch.
 

@@ -11,7 +11,7 @@
 \   6 26 86 58 113 31 31 32 43               the nine variant counts
 \   1336326                                  final length
 
-100000 constant *n*
+100000 constant n
 
 \ a one-character newline string (string literals are raw; the newline is
 \ the literal character between the quotes)
@@ -99,11 +99,11 @@ variable rng-seed
   42.0 to rng-seed
 
   ">ONE Homo sapiens alu" header  to seq
-  seq  alu *n* 2 * tile  60 wrap  +  to seq
+  seq  alu n 2 * tile  60 wrap  +  to seq
   seq  ">TWO IUB ambiguity codes" header  +  to seq
-  seq  iub-cum iub-chars  *n* 3 *  random-content  60 wrap  +  to seq
+  seq  iub-cum iub-chars  n 3 *  random-content  60 wrap  +  to seq
   seq  ">THREE Homo sapiens frequency" header  +  to seq
-  seq  homo-cum homo-chars  *n* 5 *  random-content  60 wrap  +  to seq
+  seq  homo-cum homo-chars  n 5 *  random-content  60 wrap  +  to seq
   seq ;
 
 \ match-all returns 0 (not an array) on no match

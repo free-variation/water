@@ -5,23 +5,23 @@ symbol red
 + is a primitive
 [: ... :]  \ anonymous, no source
 : fused   \ 9 cells
- 0: (vvf-) A B
- 3: (vfsq) A
- 5: (vvf*) A B
+ 0: (vvf-) a b
+ 3: (vfsq) a
+ 5: (vvf*) a b
  8: exit
 ;
 : mixed   \ 7 cells
  0: (lit) 5
- 2: (vf-) A
- 4: (vfsqrt) B
+ 2: (vf-) a
+ 4: (vfsqrt) b
  6: exit
 ;
 : calls   \ 5 cells
- 0: (vfsq) A
+ 0: (vfsq) a
  2: fused
  4: exit
 ;
-A: not a colon definition
+a: not a colon definition
 : ll-arith   \ 14 cells
  0: (enter-locals) 2
  2: (ll+0) 0 1
@@ -97,4 +97,4 @@ A: not a colon definition
   7: (leave-locals) 1
   9: exit
 ;
-V: not a colon definition
+v: not a colon definition

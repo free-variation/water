@@ -286,7 +286,7 @@ An uncaught `throw` or interpreter error still surfaces at the REPL. The `shift-
 
 Unification and committed choice, on the trail and the continuation machinery:
 
-- **Logic variables** — `lvar` makes a fresh one; a **capitalized identifier** is a logic-var literal: a persistent global at the REPL, or a fresh per-call variable when declared in `| X |` inside a definition or quotation.
+- **Logic variables** — `lvar` makes a fresh one; `lvar to x` names a persistent global, and a `?` prefix in a locals list (`| ?x |`) declares a fresh per-call variable inside a definition or quotation. Capitalizing logic-var names is convention, not syntax.
 - **`unify`** (`~`) — unifies two terms, binding logic vars through a trail so they match: atoms by value, arrays element-wise, frames as open records (shared keys must unify, extras allowed); on a mismatch it fails. **`deref`** (`?`) follows a variable's binding chain.
 - **`amb`** / **`fail`** — committed choice: run the first branch; if it fails (a `unify` mismatch or an explicit `fail`), roll its bindings back through the trail and run the second, committing to whichever succeeds. **`choose`** generalizes it to a cons list, running a continuation with each element until one succeeds.
 - **`_`** — the anonymous wildcard: unifies with anything, binds nothing, and allocates nothing.

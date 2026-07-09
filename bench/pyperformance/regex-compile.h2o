@@ -243,8 +243,8 @@
   "fnsnev"
   "jva"
   "jvaqbjf"
-] constant *patterns*
+] constant patterns
 
-: compile-all  *patterns* size [: *patterns* swap @i  "" swap has? drop :] swap i-times ;
-*patterns* size "patterns: {0}" format . cr
+: compile-all  patterns size [: patterns swap @i  "" swap has? drop :] swap i-times ;
+patterns size "patterns: {0}" format . cr
 now compile-all now swap - "elapsed: {0} s" format . cr

@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.15.1"
+#define VERSION "0.16.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -903,7 +903,7 @@ void p_and(DISPATCH_ARGS);
 void p_or(DISPATCH_ARGS);
 void p_not(DISPATCH_ARGS);
 void p_null(DISPATCH_ARGS);
-void p_symbol_q(DISPATCH_ARGS);
+void p_type_of(DISPATCH_ARGS);
 void p_lvar(DISPATCH_ARGS);
 void p_wildcard(DISPATCH_ARGS);
 void p_unify(DISPATCH_ARGS);

@@ -8,10 +8,10 @@
 : cube dup square * ;
 variable counter   42 to counter
 symbol red
-variable LST   [( 1 2 3 null )] to LST
+variable lst   [( 1 2 3 null )] to lst
 variable V     lvar to V   V 42 ~ drop
-variable P     lvar to X   [( X X null )] to P   X 9 ~ drop
-variable SEG   3 double-segment to SEG   SEG 0 1.5 !i drop   SEG 1 2.5 !i drop   SEG 2 3.5 !i drop
+variable pr     lvar to X   [( X X null )] to pr   X 9 ~ drop
+variable seg   3 double-segment to seg   seg 0 1.5 !i drop   seg 1 2.5 !i drop   seg 2 3.5 !i drop
 
 \ stack state to round-trip
 < 1 2 3 >
@@ -35,11 +35,11 @@ clear
 \ scalar / symbol / pair / lvar variables restored
 counter . cr             \ 42
 red . cr                 \ red
-LST . cr                 \ [( 1 2 3 null )]
+lst . cr                 \ [( 1 2 3 null )]
 V . cr                   \ 42
-P . cr                   \ [( 9 9 null )]   shared lvar binding survived
-SEG size . cr            \ 3   segment length survived
-SEG 1 @i . cr            \ 2.5 segment contents survived
+pr . cr                   \ [( 9 9 null )]   shared lvar binding survived
+seg size . cr            \ 3   segment length survived
+seg 1 @i . cr            \ 2.5 segment contents survived
 \ stack restored (frame on top): nested frame + set fields
 dup /a @ . cr            \ 1
 dup /b/c @ . cr          \ 2   nested frame survived

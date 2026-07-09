@@ -5,85 +5,85 @@
 \ pyperformance's bench_SOR leaves G all-zero (a pure loop-throughput test);
 \ the original SciMark seeds it via Random.RandomMatrix, which we do here (the
 \ same RNG as scimark-lu) so the relaxation does real arithmetic and the
-\ checksum is verifiable. Outer repeat count comes from ITERATIONS; the inner
-\ relaxation runs CYCLES sweeps, as in the reference (cycles = 10).
+\ checksum is verifiable. Outer repeat count comes from iterations; the inner
+\ relaxation runs cycles sweeps, as in the reference (cycles = 10).
 
-100 to *iterations*
-variable *m*  variable *ri*  variable *rj*
-2147483647.0 constant *m1*
-1.0 2147483647.0 f/ constant *dm1*
+100 to iterations
+variable rand-m  variable ri  variable rj
+2147483647.0 constant m1
+1.0 2147483647.0 f/ constant dm1
 
-variable *g*
-100.0 constant *n*
-99.0 constant *nm1*
-10000.0 constant *nn*
-10.0 constant *cycles*
+variable g
+100.0 constant n
+99.0 constant nm1
+10000.0 constant nn
+10.0 constant cycles
 
 : rng-init ( seed -- )
   | >seed jseed k0 k1 j0 j1 |
   seed fabs to seed
-  seed *m1* lt 0= if *m1* to seed then
+  seed m1 lt 0= if m1 to seed then
   seed 2.0 mod 0.0 = if seed 1.0 f- to seed then
   9069.0 65536.0 mod to k0
   9069.0 65536.0 f/ to k1
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
-  17.0 double-segment to *m*
+  17.0 double-segment to rand-m
   [> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     *m* iloop  j0 65536.0 j1 f* f+  !i drop
+     rand-m iloop  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
-  4.0 to *ri*  16.0 to *rj* ;
+  4.0 to ri  16.0 to rj ;
 
 : next-double ( -- d )
   | k ii jj |
-  *ri* to ii  *rj* to jj
-  *m* ii @i  *m* jj @i f- to k
-  k 0.0 lt if k *m1* f+ to k then
-  *m* jj k !i drop
-  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to *ri*
-  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to *rj*
-  *dm1* k f* ;
+  ri to ii  rj to jj
+  rand-m ii @i  rand-m jj @i f- to k
+  k 0.0 lt if k m1 f+ to k then
+  rand-m jj k !i drop
+  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to ri
+  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to rj
+  dm1 k f* ;
 
-: build-*g*
-  *nn* double-segment to *g*
+: build-g
+  nn double-segment to g
   101.0 rng-init
-  [> idx | *g* idx next-double !i drop :] *nn* i-times ;
+  [> idx | g idx next-double !i drop :] nn i-times ;
 
 : sor-execute
   | y x idx nv |
   [:
      1.0 to y
-     begin y *nm1* lt while
+     begin y nm1 lt while
         1.0 to x
-        begin x *nm1* lt while
-           y *n* f* x f+ to idx
+        begin x nm1 lt while
+           y n f* x f+ to idx
            1.25 0.25 f*
-           *g* idx *n* f- @i
-           *g* idx *n* f+ @i f+
-           *g* idx 1.0 f- @i f+
-           *g* idx 1.0 f+ @i f+
+           g idx n f- @i
+           g idx n f+ @i f+
+           g idx 1.0 f- @i f+
+           g idx 1.0 f+ @i f+
            f*
-           1.0 1.25 f-  *g* idx @i f*  f+  to nv
-           *g* idx nv !i drop
+           1.0 1.25 f-  g idx @i f*  f+  to nv
+           g idx nv !i drop
            x 1.0 f+ to x
         repeat
         y 1.0 f+ to y
      repeat
-  :] *cycles* times ;
+  :] cycles times ;
 
 : sor-checksum ( -- s )
   | s |
   0.0 to s
-  [> idx | *g* idx @i s f+ to s :] *nn* i-times
+  [> idx | g idx @i s f+ to s :] nn i-times
   s ;
 
 : sor-bench
   | t0 |
   now to t0
-  [: build-*g* sor-execute :] *iterations* times
+  [: build-g sor-execute :] iterations times
   now t0 - to t0
   "elapsed: " . t0 . " s" . cr
   sor-checksum "checksum: {0}" format . cr ;

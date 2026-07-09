@@ -811,7 +811,7 @@ static void print_logic_var(FILE *out, Interpreter *interp, Val var,
 	if (VAL_TAG(resolved) == T_LOGIC_VAR) {
 		int id = (int)VAL_DATA(resolved);
 		const char *name = logic_var_name(id);
-		if (name) fputs(name, out); else fprintf(out, "_%d", id);
+		if (name) fprintf(out, "?%s", name); else fprintf(out, "_%d", id);
 		return;
 	}
 	const char *name = logic_var_name((int)VAL_DATA(var));
@@ -2675,22 +2675,6 @@ void run_outer(Interpreter *interp) {
 			continue;
 		}
 
-		if (tok[0] >= 'A' && tok[0] <= 'Z') {
-			if (compiler.compiling) {
-				fail(interp, "logic var %s is undeclared here; declare it in | | or create it at the top level first", tok);
-				return;
-			}
-			int var_cfa = create_variable(interp, tok);
-			if (interp->error_flag)
-				return;
-			int handle = object_new_logic_var(interp);
-			if (interp->error_flag)
-				return;
-			vocab.dict[var_cfa + 1] = (cell)make_logic_var(handle).bits;
-			execute_cfa(interp, var_cfa);
-			continue;
-		}
-
 		fail(interp, "unknown word: %s", tok);
 		return;
 	}
@@ -3815,7 +3799,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "or", p_or, 0);
 	define_primitive(interp, "not", p_not, 0);
 	define_primitive(interp, "null", p_null, 0);
-	define_primitive(interp, "symbol?", p_symbol_q, 0);
+	define_primitive(interp, "type-of", p_type_of, 0);
 	define_primitive(interp, "lvar", p_lvar, 0);
 	define_primitive(interp, "_", p_wildcard, 0);
 	define_primitive(interp, "unify", p_unify, 0);

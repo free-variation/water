@@ -6,53 +6,53 @@
 \ Python-3 float-division behaviour of the original), so the estimate matches the
 \ reference to the bit. The RNG is a strict lagged sequence, so this kernel is
 \ inherently serial; see variants/monte-carlo-parallel.h2o for a pmap version
-\ built on water's per-worker random stream. SAMPLES and LOOPS are injected.
+\ built on water's per-worker random stream. samples and loops are set below.
 
-1000000 to *samples*
-3 to *loops*
-variable *m*  variable *ri*  variable *rj*
-2147483647.0 constant *m1*
-1.0 2147483647.0 f/ constant *dm1*
+1000000 to samples
+3 to loops
+variable rand-m  variable ri  variable rj
+2147483647.0 constant m1
+1.0 2147483647.0 f/ constant dm1
 
 : rng-init ( seed -- )
   | >seed jseed k0 k1 j0 j1 |
   seed fabs to seed
-  seed *m1* lt 0= if *m1* to seed then
+  seed m1 lt 0= if m1 to seed then
   seed 2.0 mod 0.0 = if seed 1.0 f- to seed then
   9069.0 65536.0 mod to k0
   9069.0 65536.0 f/ to k1
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
-  17.0 double-segment to *m*
+  17.0 double-segment to rand-m
   [> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     *m* iloop  j0 65536.0 j1 f* f+  !i drop
+     rand-m iloop  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
-  4.0 to *ri*  16.0 to *rj* ;
+  4.0 to ri  16.0 to rj ;
 
 : next-double ( -- d )
   | k ii jj |
-  *ri* to ii  *rj* to jj
-  *m* ii @i  *m* jj @i f- to k
-  k 0.0 lt if k *m1* f+ to k then
-  *m* jj k !i drop
-  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to *ri*
-  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to *rj*
-  *dm1* k f* ;
+  ri to ii  rj to jj
+  rand-m ii @i  rand-m jj @i f- to k
+  k 0.0 lt if k m1 f+ to k then
+  rand-m jj k !i drop
+  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to ri
+  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to rj
+  dm1 k f* ;
 
 : monte-carlo ( -- est )
   | under |
   113.0 rng-init
   0.0 to under
-  [: next-double next-double  fsq swap fsq f+  1.0 gt 0= if f++ under then :] *samples* times
-  under *samples* f/ 4.0 f* ;
+  [: next-double next-double  fsq swap fsq f+  1.0 gt 0= if f++ under then :] samples times
+  under samples f/ 4.0 f* ;
 
 : mc-bench
   | t0 est |
   now to t0
-  [: monte-carlo to est :] *loops* times
+  [: monte-carlo to est :] loops times
   now t0 - to t0
   "estimate: " . est . cr
   "elapsed: " . t0 . " s" . cr ;

@@ -157,6 +157,25 @@ Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_c
 | `false` | `( -- bool )` | lib.h2o: pushes 0 (inline) | 1 | none | O(1) |
 | `gt` | `( a b -- bool )` or `( m x -- m )` | greater-than; element-wise 1/0 matrix on matrix operands (scalar broadcast) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
 | `0=` | `( a -- bool )` | `!truthy(a)`; any type | 2 | none | O(1) |
+| `type-of` | `( a -- sym )` | The value's type as a symbol: `:float` `:string` `:symbol` `:array` `:set` `:pair` `:frame` `:matrix` `:quantity` `:xt` `:continuation` `:stream` `:db` `:ptr` `:segment` `:none` `:wildcard` `:lvar`. A bound logic var reports its value's type; an unbound one is `:lvar` | 2 | none | O(1) |
+| `float?` | `( a -- bool )` | lib.h2o: `type-of :float =` (inlined) | 5 | none | O(1) |
+| `string?` | `( a -- bool )` | lib.h2o: `type-of :string =` (inlined) | 5 | none | O(1) |
+| `symbol?` | `( a -- bool )` | lib.h2o: `type-of :symbol =` (inlined) | 5 | none | O(1) |
+| `array?` | `( a -- bool )` | lib.h2o: `type-of :array =` (inlined) | 5 | none | O(1) |
+| `set?` | `( a -- bool )` | lib.h2o: `type-of :set =` (inlined) | 5 | none | O(1) |
+| `pair?` | `( a -- bool )` | lib.h2o: `type-of :pair =` (inlined) | 5 | none | O(1) |
+| `frame?` | `( a -- bool )` | lib.h2o: `type-of :frame =` (inlined) | 5 | none | O(1) |
+| `matrix?` | `( a -- bool )` | lib.h2o: `type-of :matrix =` (inlined) | 5 | none | O(1) |
+| `quantity?` | `( a -- bool )` | lib.h2o: `type-of :quantity =` (inlined) | 5 | none | O(1) |
+| `xt?` | `( a -- bool )` | lib.h2o: `type-of :xt =` (inlined) | 5 | none | O(1) |
+| `continuation?` | `( a -- bool )` | lib.h2o: `type-of :continuation =` (inlined) | 5 | none | O(1) |
+| `stream?` | `( a -- bool )` | lib.h2o: `type-of :stream =` (inlined) | 5 | none | O(1) |
+| `db?` | `( a -- bool )` | lib.h2o: `type-of :db =` (inlined) | 5 | none | O(1) |
+| `ptr?` | `( a -- bool )` | lib.h2o: `type-of :ptr =` (inlined) | 5 | none | O(1) |
+| `segment?` | `( a -- bool )` | lib.h2o: `type-of :segment =` (inlined) | 5 | none | O(1) |
+| `none?` | `( a -- bool )` | lib.h2o: `type-of :none =` (inlined) | 5 | none | O(1) |
+| `wildcard?` | `( a -- bool )` | lib.h2o: `type-of :wildcard =` (inlined) | 5 | none | O(1) |
+| `lvar?` | `( a -- bool )` | lib.h2o: `type-of :lvar =` (inlined) | 5 | none | O(1) |
 | `and` | `( a b -- bool )` | logical and of truthiness | 3 | none | O(1) |
 | `or` | `( a b -- bool )` | logical or of truthiness | 3 | none | O(1) |
 | `not` | `( a -- bool )` | logical not of truthiness | 2 | none | O(1) |
@@ -214,8 +233,7 @@ unnamed compound prints its dimensional form with the scale folded into the
 magnitude (`10 m 2 s / → 5 m.s^-1`), positive exponents first. Quantities,
 units, and unit words round-trip through `save-image`/`load-image`.
 
-`lib.h2o` predeclares a standard set (names spelled out and lowercase — a capital
-symbol like `N` or `A` would shadow the capital-letter logic-var convention):
+`lib.h2o` predeclares a standard set (names spelled out and lowercase):
 length `m` (`km`), time `s` (`minute`, `hour`), mass `kg`, current `ampere`,
 temperature `kelvin`, amount `mol`; derived `hertz` `newton` `pascal` `joule`
 `watt` `coulomb` `volt`; and three currencies, each its own dimension —
@@ -295,6 +313,7 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 | `\| x y z \|` | Declare x, y, z, **uninitialized** (slots keep stale return-stack contents — deliberately no per-call zeroing; assign with `to` before reading); read by bare name |
 | `\|> x y z \|` | Declare and receive from the stack: z ← top, y ← second, x ← third |
 | `\| x >y z \|` | Mixed: a `>` prefix marks an individual name as a receive slot; the rest are uninitialized |
+| `\| ?x \|` | A `?` prefix marks a slot initialized with a fresh logic variable per call; read by bare name. Cannot combine with `>`, and not allowed in the all-receive `\|>` / `[>` forms |
 | `[\| x y z \| … :]` | Lambda sugar: `[\|` fuses `[:` and `\|` into one token, opening an anonymous quotation whose body begins with a `\|` locals list (`>` prefixes receive selectively) |
 | `[> x y z \| … :]` | Lambda sugar for the receive-all case: `[>` fuses `[:` and `\|>`, so x, y, z are received from the stack |
 
@@ -658,7 +677,7 @@ Coroutines over the continuation substrate: a producer `yield`s values one at a 
 
 ## Logic
 
-Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. A capitalized identifier is a logic-var literal: at the REPL it names a persistent global logic var (created on first mention); inside a definition or quotation, declare it in `| X |` for a fresh per-call variable. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`. Lists are cons pairs (see Pairs): `[( H T )]` is the `[H|T]` head/tail pattern under `unify`. To keep a result past backtracking, snapshot it with `copy` (fresh vars) or `reify` (canonical `:_N`). A logic var prints by the name of a variable that holds it (`X`, and `X=value` when bound) or `_N` when anonymous; an anonymous bound var prints its value.
+Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. A logic var is always created explicitly: `lvar` pushes a fresh one, `lvar to x` names a persistent global (`to` auto-creates the global at the top level), and a `?` prefix in a locals list (`| ?x |`) declares a fresh per-call local. Capitalizing logic-var names (`X`, `Hs`) is stylistic convention, not syntax — case carries no meaning. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`. Lists are cons pairs (see Pairs): `[( H T )]` is the `[H|T]` head/tail pattern under `unify`. To keep a result past backtracking, snapshot it with `copy` (fresh vars) or `reify` (canonical `:_N`). A logic var prints by the name of a variable that holds it — `?x` while free (the `?` marks the hole, echoing the `| ?x |` declaration form), `x=value` once bound — or `_N` when anonymous; an anonymous bound var prints its value.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -672,7 +691,6 @@ Logic variables, unification, and committed choice, built on the trail and a `PR
 | `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
 | `choose` | `( list cont -- )` | lib.h2o: run cont with each element of a cons list in turn, committing to the first for which it succeeds; `fail` if none do (n-way `amb` over a list) | n·cont | none | O(n·cont) |
 | `matches?` | `( a b -- flag )` | Non-destructive unify test: mark the trail, unify a and b, roll the trail back, push whether they unified. Leaves no bindings and never backtracks (so it composes in straight-line code, unlike `unify`) | n | none | O(n) |
-| `symbol?` | `( v -- flag )` | True when v is a symbol | 2 | none | O(1) |
 
 ---
 
@@ -698,7 +716,7 @@ The relation/query machinery is built from lib.h2o helpers (`bucket-of`, `candid
 | `load-bag` | `( rel rows-array -- rel )` | Like `bulk-load`, but `:rows` stays a **bag** (the array, duplicates kept) rather than a deduped set; only `:index` is built | n | frame + sets | O(n) |
 | `create-index` | `( rel cols -- rel )` | Index a relation on the symbol columns `cols`: intern each indexed column's value to a symbol (so it keys the bucket and matches a `{ :col :val }` pattern), then `load-bag` into a `cols`-indexed relation. Other columns keep their type; `:rows` stays a bag. The explicit bridge from a `db-query` result to an indexed relation | n | frame + sets | O(n) |
 
-These are lib.h2o over the C primitives `matches?`, `symbol?`, `set-add!`, `set-remove!`, `array>set`, and `group-by`. Building a relation with one `assert` per row is super-linear (each insert shifts the sorted `:rows` set, and per-value frames grow the same way); `bulk-load` avoids that with `array>set` for `:rows` (one sort) and a one-pass `group-by` per indexed column (which buckets by the interned symbol value, then sorts each small bucket — no global sort). `load-bag` and `create-index` skip the `:rows` dedup entirely, keeping a bag; `create-index` also interns the indexed columns to symbols. Candidate narrowing drives from the smallest matching bucket.
+These are lib.h2o over the C primitives `matches?`, `set-add!`, `set-remove!`, `array>set`, and `group-by`, plus the `symbol?` type predicate. Building a relation with one `assert` per row is super-linear (each insert shifts the sorted `:rows` set, and per-value frames grow the same way); `bulk-load` avoids that with `array>set` for `:rows` (one sort) and a one-pass `group-by` per indexed column (which buckets by the interned symbol value, then sorts each small bucket — no global sort). `load-bag` and `create-index` skip the `:rows` dedup entirely, keeping a bag; `create-index` also interns the indexed columns to symbols. Candidate narrowing drives from the smallest matching bucket.
 
 ---
 

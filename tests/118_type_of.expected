@@ -1,0 +1,26 @@
+:float 
+:string 
+:symbol 
+:array 
+:set 
+:pair 
+:frame 
+:matrix 
+:quantity 
+:xt 
+:xt 
+:segment 
+:db 
+:none 
+:wildcard 
+:lvar 
+:float 
+:string 
+:continuation 
+1 
+1 
+1 1 1 1 1 1 
+1 1 1 1 
+1 1 1 1 
+0 0 0 
+1 

@@ -16,23 +16,23 @@ inline
 \ logic seam: a bound logic var, and a pair sharing a bound var (reify must
 \ preserve the sharing)
 variable V   lvar to V   V 99 ~ drop
-variable P   lvar to X   [( X X null )] to P   X 5 ~ drop
+variable pr   lvar to X   [( X X null )] to pr   X 5 ~ drop
 
 \ fact-database seam: an indexed relation with two rows
-variable REL
-[ :role ] relation to REL
-REL { :name :gandalf :role :wizard } assert drop
-REL { :name :frodo  :role :hobbit } assert drop
+variable rel
+[ :role ] relation to rel
+rel { :name :gandalf :role :wizard } assert drop
+rel { :name :frodo  :role :hobbit } assert drop
 
 \ continuation seam: capture a slice mid-computation and stash it
 : shifter shift ;
 : ex  reset 99 shifter 2 * ;
-variable K
-ex  to K  drop
+variable k
+ex  to k  drop
 
 \ a matrix held in a variable
-variable M
-[ 1 2 3 4 ] 2 2 matrix to M
+variable mat
+[ 1 2 3 4 ] 2 2 matrix to mat
 
 \ make some garbage, then force a collection with all of the above live
 [: [ 0 0 0 0 ] drop :] 2000 times

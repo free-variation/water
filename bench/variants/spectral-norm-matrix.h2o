@@ -2,13 +2,13 @@
 \ A is materialized as an NxN matrix at init; the inner mat-vec products
 \ run in compiled C code (dgemm_kernel) instead of through the interpreter.
 
-50 to *iterations*
-130 constant *n*
+50 to iterations
+130 constant n
 
-variable *a-mat*
-variable *u-mat*
-variable *v-mat*
-variable *zero-col*
+variable a-mat
+variable u-mat
+variable v-mat
+variable zero-col
 
 : eval-a ( i j -- a_ij )
   |> i j |
@@ -16,31 +16,31 @@ variable *zero-col*
 
 : build-a
   | flat |
-  0 *n* *n* * array-of to flat
+  0 n n * array-of to flat
   [> i |
      [> j |
-        flat  i *n* * j +  i j eval-a  !i drop
-     :] *n* i-times
-  :] *n* i-times
-  flat *n* *n* matrix to *a-mat* ;
+        flat  i n * j +  i j eval-a  !i drop
+     :] n i-times
+  :] n i-times
+  flat n n matrix to a-mat ;
 
 : build-u
-  1 *n* array-of  *n* 1 matrix to *u-mat* ;
+  1 n array-of  n 1 matrix to u-mat ;
 
 : prep
-  *n* 1 0-matrix to *zero-col*
+  n 1 0-matrix to zero-col
   build-a ;
 
 \ ata-times ( x -- AtA*x ): compute A*x with dgemm-nn, then At*(...) with dgemm-tn
 : ata-times
   |> x |
-  1 *a-mat* x  0 *zero-col*  dgemm-nn
-  1 *a-mat* rot 0 *zero-col* dgemm-tn ;
+  1 a-mat x  0 zero-col  dgemm-nn
+  1 a-mat rot 0 zero-col dgemm-tn ;
 
 : one-loop
   build-u
-  [: *u-mat* ata-times to *v-mat*
-     *v-mat* ata-times to *u-mat* :] 10 times ;
+  [: u-mat ata-times to v-mat
+     v-mat ata-times to u-mat :] 10 times ;
 
 : spectral-norm-run ( loops -- )
   | n_loops t0 vBv vv |
@@ -52,9 +52,9 @@ variable *zero-col*
 
   0 to vBv  0 to vv
   [> i |
-     *u-mat* i 0 @i,j  *v-mat* i 0 @i,j  *  vBv + to vBv
-     *v-mat* i 0 @i,j  dup *  vv + to vv :] *n* i-times
+     u-mat i 0 @i,j  v-mat i 0 @i,j  *  vBv + to vBv
+     v-mat i 0 @i,j  dup *  vv + to vv :] n i-times
   "spectral norm estimate: " . vBv vv / sqrt . cr ;
 
-*iterations* spectral-norm-run
+iterations spectral-norm-run
 bye

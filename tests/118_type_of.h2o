@@ -1,0 +1,41 @@
+\ type-of ( a -- sym ): the value's type as a symbol. A bound logic var
+\ reports the type of its binding; an unbound one is :lvar.
+
+1.5 type-of . cr                       \ :float
+"s" type-of . cr                       \ :string
+:k type-of . cr                        \ :symbol
+[ 1 ] type-of . cr                     \ :array
+< 1 > type-of . cr                     \ :set
+[( 1 2 )] type-of . cr                 \ :pair
+{ :a 1 } type-of . cr                  \ :frame
+[ 1 2 3 4 ] 2 2 matrix type-of . cr    \ :matrix
+10 m type-of . cr                      \ :quantity
+' dup type-of . cr                     \ :xt
+[: 1 :] type-of . cr                   \ :xt (a quotation is an xt)
+3 double-segment type-of . cr          \ :segment
+":memory:" db-open dup type-of . cr db-close   \ :db
+null type-of . cr                      \ :none
+_ type-of . cr                         \ :wildcard
+
+\ logic vars: unbound reports :lvar, bound reports the binding's type
+lvar type-of . cr                      \ :lvar
+lvar to x   x 5 ~ drop   x type-of . cr        \ :float
+lvar to y   y "hi" ~ drop  y type-of . cr      \ :string
+
+\ a continuation
+: sh shift ;
+: ex reset 9 sh ;
+ex nip type-of . cr                    \ :continuation
+
+\ the result is an ordinary symbol
+1 type-of :float = . cr                \ 1
+"s" type-of symbol? . cr               \ 1
+
+\ one lib predicate per type; each is type-of against the matching symbol
+1 float? . "s" string? . :k symbol? . [ ] array? . < > set? . [( 1 2 )] pair? . cr   \ 1 1 1 1 1 1
+{ } frame? . [ 1 ] 1 1 matrix matrix? . 10 m quantity? . ' dup xt? . cr             \ 1 1 1 1
+3 double-segment segment? . null none? . _ wildcard? . lvar lvar? . cr              \ 1 1 1 1
+1 string? . "s" float? . :k lvar? . cr                                              \ 0 0 0
+y string? . cr                         \ 1   bound var answers as its value
+
+bye

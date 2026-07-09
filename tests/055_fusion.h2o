@@ -1,125 +1,125 @@
 \ Superinstructions: vv = two variable operands, v = one, then f + op.
 \ All are compile-only immediate words that read variable names that follow.
 
-variable A  20.0 to A
-variable B  5.0 to B
-variable C  2.0 to C
+variable a  20.0 to a
+variable b  5.0 to b
+variable c  2.0 to c
 
 \ vvf+ vvf- vvf* vvf/ : ( -- A op B )
-: s+ vvf+ A B ;   s+ . cr            \ 25
-: s- vvf- A B ;   s- . cr            \ 15
-: s* vvf* A B ;   s* . cr            \ 100
-: s/ vvf/ A B ;   s/ . cr            \ 4
+: s+ vvf+ a b ;   s+ . cr            \ 25
+: s- vvf- a b ;   s- . cr            \ 15
+: s* vvf* a b ;   s* . cr            \ 100
+: s/ vvf/ a b ;   s/ . cr            \ 4
 
 \ vfsq : ( -- A*A )
-: ssq vfsq A ;   ssq . cr            \ 400
+: ssq vfsq a ;   ssq . cr            \ 400
 
 \ vvf*- : ( a -- C2 - a*A )  here a comes from the stack, A and C2 inline
 \   C vvf*- A B  ->  B - C*A  =  5 - 2*20  =  -35
-: sfms C vvf*- A B ;   sfms . cr     \ -35
+: sfms c vvf*- a b ;   sfms . cr     \ -35
 
 \ vvf*+ : ( a -- a*A + C2 )
 \   C vvf*+ A B  ->  C*A + B  =  2*20 + 5  =  45
-: sfma C vvf*+ A B ;   sfma . cr     \ 45
+: sfma c vvf*+ a b ;   sfma . cr     \ 45
 
 \ composition: (A-B) squared via a temp
-variable T1
+variable t1
 : combo
-  vvf- A B to T1       \ T1 = 20 - 5 = 15
-  vfsq T1 ;            \ 15*15 = 225
+  vvf- a b to t1       \ T1 = 20 - 5 = 15
+  vfsq t1 ;            \ 15*15 = 225
 combo . cr                           \ 225
 
 \ fractional values
-variable P  0.5 to P
-variable Q  0.25 to Q
-: sfrac vvf+ P Q ;   sfrac . cr      \ 0.75
-: sfracsq vfsq P ;   sfracsq . cr    \ 0.25
+variable p  0.5 to p
+variable q  0.25 to q
+: sfrac vvf+ p q ;   sfrac . cr      \ 0.75
+: sfracsq vfsq p ;   sfracsq . cr    \ 0.25
 
 \ unary ops: one inline variable applied to the stack value.
 \   vf+ X ( a -- a + X )   vf- X ( a -- a - X )
 \   vf* X ( a -- a * X )   vf/ X ( a -- a / X )
-: u+ vf+ B ;   100 u+ . cr           \ 105
-: u- vf- B ;   100 u- . cr           \ 95
-: u* vf* B ;   100 u* . cr           \ 500
-: u/ vf/ B ;   100 u/ . cr           \ 20
+: u+ vf+ b ;   100 u+ . cr           \ 105
+: u- vf- b ;   100 u- . cr           \ 95
+: u* vf* b ;   100 u* . cr           \ 500
+: u/ vf/ b ;   100 u/ . cr           \ 20
 
 \ unary order: subtract/divide use the stack value as the left operand
-: uorder 7 vf- C ;   uorder . cr     \ 7 - 2 = 5
+: uorder 7 vf- c ;   uorder . cr     \ 7 - 2 = 5
 
 \ chains with the binary forms
-: uchain vvf* A B  vf+ C ;   uchain . cr   \ 20*5 + 2 = 102
+: uchain vvf* a b  vf+ c ;   uchain . cr   \ 20*5 + 2 = 102
 
 clear
 \ Auto-fusion: idiomatic float ops over variables are fused to superwords
 \ at compile time. Results must equal the unfused forms, and fusion inside
 \ control flow must preserve branch offsets.
 
-variable A  3.0 to A
-variable B  4.0 to B
+variable a  3.0 to a
+variable b  4.0 to b
 
 \ two variables + binop -> vvf
-: t1 A B f- ;   t1 . cr          \ -1
-: t2 A B f* ;   t2 . cr          \ 12
+: t1 a b f- ;   t1 . cr          \ -1
+: t2 a b f* ;   t2 . cr          \ 12
 
 \ stack value + one variable -> vf
-: t3 10.0 A f- ;   t3 . cr       \ 7
-: t4 10.0 A f/ ;   t4 . cr       \ 3.33333
+: t3 10.0 a f- ;   t3 . cr       \ 7
+: t4 10.0 a f/ ;   t4 . cr       \ 3.33333
 
 \ unary function of one variable -> vfn
-: t5 A sq ;     t5 . cr          \ 9
-: t6 B sqrt ;   t6 . cr          \ 2
+: t5 a sq ;     t5 . cr          \ 9
+: t6 b sqrt ;   t6 . cr          \ 2
 
 \ stack value + two variables, fused multiply -> vvf*- / vvf*+
 \ f*- is ( a b c -- c - a*b ),  f*+ is ( a b c -- a*b + c )
-: t7 5.0 A B f*- ;   t7 . cr     \ 4 - 5*3 = -11
-: t8 5.0 A B f*+ ;   t8 . cr     \ 5*3 + 4 = 19
+: t7 5.0 a b f*- ;   t7 . cr     \ 4 - 5*3 = -11
+: t8 5.0 a b f*+ ;   t8 . cr     \ 5*3 + 4 = 19
 
 \ fusion inside both arms of if/else
-: branchy 0 gt if A B f* else A B f+ then ;
+: branchy 0 gt if a b f* else a b f+ then ;
 1 branchy . cr                   \ 12
 0 branchy . cr                   \ 7
 
 \ fusion inside a begin/until loop body
-variable ACC
-variable I
+variable acc
+variable i
 : loopy
-  0.0 to ACC  0.0 to I
-  begin  A B f* ACC f+ to ACC  I 1+ to I  I 3.0 = until
-  ACC ;
+  0.0 to acc  0.0 to i
+  begin  a b f* acc f+ to acc  i 1+ to i  i 3.0 = until
+  acc ;
 loopy . cr                       \ 36
 
 \ a non-fusing case for contrast: locals, not variables
-: withlocal | x y | A to x  B to y  x y f- ;   withlocal . cr   \ -1
+: withlocal | x y | a to x  b to y  x y f- ;   withlocal . cr   \ -1
 
 clear
 \ Store fusion: <superword> to <var> folds into one op that writes the
 \ variable directly (verified via see-compiled separately; here we check
 \ the results are correct).
 
-variable A  10.0 to A
-variable B  3.0 to B
-variable C
+variable a  10.0 to a
+variable b  3.0 to b
+variable c
 
 \ two-var binary -> vvf*!
-: s1 A B f- to C ;   s1 C . cr      \ 7
-: s2 A B f* to C ;   s2 C . cr      \ 30
-: s3 A B f+ to C ;   s3 C . cr      \ 13
-: s4 A B f/ to C ;   s4 C . cr      \ 3.33333
+: s1 a b f- to c ;   s1 c . cr      \ 7
+: s2 a b f* to c ;   s2 c . cr      \ 30
+: s3 a b f+ to c ;   s3 c . cr      \ 13
+: s4 a b f/ to c ;   s4 c . cr      \ 3.33333
 
 \ stack value + one var -> vf*!
-: s5 100.0 A f- to C ;   s5 C . cr  \ 100 - 10 = 90
+: s5 100.0 a f- to c ;   s5 c . cr  \ 100 - 10 = 90
 
 \ unary function -> vfn!
-: s6 A sq to C ;       s6 C . cr    \ 100
-: s7 A negate to C ;   s7 C . cr    \ -10
+: s6 a sq to c ;       s6 c . cr    \ 100
+: s7 a negate to c ;   s7 c . cr    \ -10
 
 \ fused multiply -> vvf*-! / vvf*+!  (f*- is c - a*b, f*+ is a*b + c)
-: s8 5.0 A B f*- to C ;   s8 C . cr  \ 3 - 5*10 = -47
-: s9 5.0 A B f*+ to C ;   s9 C . cr  \ 5*10 + 3 = 53
+: s8 5.0 a b f*- to c ;   s8 c . cr  \ 3 - 5*10 = -47
+: s9 5.0 a b f*+ to c ;   s9 c . cr  \ 5*10 + 3 = 53
 
 \ store target same as a source (the nbody writeback pattern): C = A * C
-2.0 to C
-: s10 A C f* to C ;   s10 C . cr     \ 10 * 2 = 20 (reads old C before writing)
+2.0 to c
+: s10 a c f* to c ;   s10 c . cr     \ 10 * 2 = 20 (reads old C before writing)
 
 clear
 \ Fusion floor: a local loaded before `begin` and one loaded after it must not

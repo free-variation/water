@@ -1,50 +1,50 @@
 \ scimark FFT — port of pyperformance bm_scimark's 1D complex FFT kernel
 \ (radix-2 Cooley-Tukey, in place). DATA holds N complex points as 2N interleaved
 \ doubles (real, imag, ...). Each outer loop copies the RNG-seeded input, then
-\ runs CYCLES forward+inverse round-trips. The reference's `<<1` / `>>1` are
+\ runs cycles forward+inverse round-trips. The reference's `<<1` / `>>1` are
 \ shifts by one — i.e. ·2 and //2 — so no bitwise operator is needed.
 \
 \ Input is scimark's Random(7) RandomVector (as in the reference). Checksum is the
 \ sum of DATA after the timed loop (a forward+inverse pair is the identity up to
 \ rounding, accumulated identically in both runtimes). Build is untimed.
 
-5 to *loops*
-50 to *cycles*
-variable *m*  variable *ri*  variable *rj*
-2147483647.0 constant *m1*
-1.0 2147483647.0 f/ constant *dm1*
+5 to loops
+50 to cycles
+variable rand-m  variable ri  variable rj
+2147483647.0 constant m1
+1.0 2147483647.0 f/ constant dm1
 
-variable *init*  variable *data*
-1024.0 constant *npts*          \ complex points
-2048.0 constant *nlen*          \ data length = 2·NPTS
+variable init  variable data
+1024.0 constant npts          \ complex points
+2048.0 constant nlen          \ data length = 2·NPTS
 
 : rng-init ( seed -- )
   | >seed jseed k0 k1 j0 j1 |
   seed fabs to seed
-  seed *m1* lt 0= if *m1* to seed then
+  seed m1 lt 0= if m1 to seed then
   seed 2.0 mod 0.0 = if seed 1.0 f- to seed then
   9069.0 65536.0 mod to k0
   9069.0 65536.0 f/ to k1
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
-  17.0 double-segment to *m*
+  17.0 double-segment to rand-m
   [> iloop |
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     *m* iloop  j0 65536.0 j1 f* f+  !i drop
+     rand-m iloop  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
-  4.0 to *ri*  16.0 to *rj* ;
+  4.0 to ri  16.0 to rj ;
 
 : next-double ( -- d )
   | k ii jj |
-  *ri* to ii  *rj* to jj
-  *m* ii @i  *m* jj @i f- to k
-  k 0.0 lt if k *m1* f+ to k then
-  *m* jj k !i drop
-  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to *ri*
-  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to *rj*
-  *dm1* k f* ;
+  ri to ii  rj to jj
+  rand-m ii @i  rand-m jj @i f- to k
+  k 0.0 lt if k m1 f+ to k then
+  rand-m jj k !i drop
+  ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to ri
+  jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to rj
+  dm1 k f* ;
 
 : int-log2 ( n -- log )
   | >n k log |
@@ -54,7 +54,7 @@ variable *init*  variable *data*
 
 : fft-bitreverse ( -- )            \ permute DATA into bit-reversed order
   | n nm1 j i ii jj k tr ti |
-  *nlen* 2.0 / to n
+  nlen 2.0 / to n
   n 1.0 f- to nm1
   0.0 to j  0.0 to i
   begin i nm1 lt while
@@ -62,12 +62,12 @@ variable *init*  variable *data*
      j 2.0 f* to jj
      n 2.0 / ftruncate to k
      i j lt if
-        *data* ii @i to tr
-        *data* ii 1.0 f+ @i to ti
-        *data* ii  *data* jj @i  !i drop
-        *data* ii 1.0 f+  *data* jj 1.0 f+ @i  !i drop
-        *data* jj tr !i drop
-        *data* jj 1.0 f+ ti !i drop
+        data ii @i to tr
+        data ii 1.0 f+ @i to ti
+        data ii  data jj @i  !i drop
+        data ii 1.0 f+  data jj 1.0 f+ @i  !i drop
+        data jj tr !i drop
+        data jj 1.0 f+ ti !i drop
      then
      begin j k lt 0= while  j k f- to j  k 2.0 / ftruncate to k  repeat
      j k f+ to j
@@ -76,7 +76,7 @@ variable *init*  variable *data*
 
 : fft-transform-internal ( direction -- )
   | >direction n logn bit dual wr wi theta s t s2 b a ii jj wdr wdi z1r z1i |
-  *nlen* 2.0 / to n
+  nlen 2.0 / to n
   n 1.0 = if exit then
   n int-log2 to logn
   fft-bitreverse
@@ -91,12 +91,12 @@ variable *init*  variable *data*
      begin b n lt while
         b 2.0 f* to ii
         b dual f+ 2.0 f* to jj
-        *data* jj @i to wdr
-        *data* jj 1.0 f+ @i to wdi
-        *data* jj  *data* ii @i wdr f-  !i drop
-        *data* jj 1.0 f+  *data* ii 1.0 f+ @i wdi f-  !i drop
-        *data* ii  *data* ii @i wdr f+  !i drop
-        *data* ii 1.0 f+  *data* ii 1.0 f+ @i wdi f+  !i drop
+        data jj @i to wdr
+        data jj 1.0 f+ @i to wdi
+        data jj  data ii @i wdr f-  !i drop
+        data jj 1.0 f+  data ii 1.0 f+ @i wdi f-  !i drop
+        data ii  data ii @i wdr f+  !i drop
+        data ii 1.0 f+  data ii 1.0 f+ @i wdi f+  !i drop
         b dual 2.0 f* f+ to b
      repeat
      1.0 to a
@@ -108,14 +108,14 @@ variable *init*  variable *data*
         begin b n lt while
            b a f+ 2.0 f* to ii
            b a f+ dual f+ 2.0 f* to jj
-           *data* jj @i to z1r
-           *data* jj 1.0 f+ @i to z1i
+           data jj @i to z1r
+           data jj 1.0 f+ @i to z1i
            wr z1r f* wi z1i f* f- to wdr
            wr z1i f* wi z1r f* f+ to wdi
-           *data* jj  *data* ii @i wdr f-  !i drop
-           *data* jj 1.0 f+  *data* ii 1.0 f+ @i wdi f-  !i drop
-           *data* ii  *data* ii @i wdr f+  !i drop
-           *data* ii 1.0 f+  *data* ii 1.0 f+ @i wdi f+  !i drop
+           data jj  data ii @i wdr f-  !i drop
+           data jj 1.0 f+  data ii 1.0 f+ @i wdi f-  !i drop
+           data ii  data ii @i wdr f+  !i drop
+           data ii 1.0 f+  data ii 1.0 f+ @i wdi f+  !i drop
            b dual 2.0 f* f+ to b
         repeat
         a 1.0 f+ to a
@@ -127,23 +127,23 @@ variable *init*  variable *data*
 : fft-inverse ( -- )
   | norm |
   1.0 fft-transform-internal
-  1.0  *nlen* 2.0 f/  f/ to norm
-  [> i | *data* i  *data* i @i norm f*  !i drop :] *nlen* i-times ;
+  1.0  nlen 2.0 f/  f/ to norm
+  [> i | data i  data i @i norm f*  !i drop :] nlen i-times ;
 
 : fft-bench
   | t0 s |
-  *nlen* double-segment to *init*
-  *nlen* double-segment to *data*
+  nlen double-segment to init
+  nlen double-segment to data
   7.0 rng-init
-  [> i | *init* i next-double !i drop :] *nlen* i-times
+  [> i | init i next-double !i drop :] nlen i-times
   now to t0
   [> lp |
-     [> i | *data* i *init* i @i !i drop :] *nlen* i-times
-     [: -1.0 fft-transform-internal fft-inverse :] *cycles* times
-  :] *loops* i-times
+     [> i | data i init i @i !i drop :] nlen i-times
+     [: -1.0 fft-transform-internal fft-inverse :] cycles times
+  :] loops i-times
   now t0 - to t0
   0.0 to s
-  [> i | *data* i @i s f+ to s :] *nlen* i-times
+  [> i | data i @i s f+ to s :] nlen i-times
   "elapsed: " . t0 . " s" . cr
   s "checksum: {0}" format . cr ;
 

@@ -4,10 +4,10 @@
 \ range check on resume_ip cannot detect the staleness. A forget-generation
 \ stamp on the continuation, compared at resume, rejects it cleanly instead
 \ of jumping into overwritten code (which SIGSEGVs without the guard).
-variable K
+variable k
 : shifter shift ;
 : ex1 reset 99 shifter 2 * ;
-ex1 swap drop to K
+ex1 swap drop to k
 forget shifter
 : a 1 + ; : b a a a ; : c b b b ; : d c c c ;
-5 K resume . cr
+5 k resume . cr

@@ -356,6 +356,8 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 	int scope_start = compiler.local_scope_starts[scope_idx];
 	int receive_slots[MAX_LOCAL_NAMES];
 	int n_received = 0;
+	int lvar_slots[MAX_LOCAL_NAMES];
+	int n_lvars = 0;
 
 	while (1) {
 		skip_whitespace_and_comments();
@@ -373,6 +375,15 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 		if (token[0] == '>' && token[1] != 0) {
 			has_receive_marker = 1;
 			token++;
+		}
+		int has_lvar_marker = 0;
+		if (token[0] == '?' && token[1] != 0) {
+			has_lvar_marker = 1;
+			token++;
+		}
+		if (has_lvar_marker && (has_receive_marker || (token[0] == '>' && token[1] != 0))) {
+			fail(interp, "%s: '?' cannot combine with '>' (a received slot is not a fresh logic var)", opener);
+			return;
 		}
 
 		for (int i = scope_start; i < compiler.n_local_names; i++) {
@@ -402,6 +413,8 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 
 		if (has_receive_marker)
 			receive_slots[n_received++] = slot;
+		if (has_lvar_marker)
+			lvar_slots[n_lvars++] = slot;
 	}
 
 	int n_declared = compiler.n_local_names - scope_start;
@@ -410,6 +423,10 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 
 	if (force_all_receive && n_received > 0) {
 		fail(interp, "%s: do not use > markers; %s already implies all-receive", opener, opener);
+		return;
+	}
+	if (force_all_receive && n_lvars > 0) {
+		fail(interp, "%s: no '?' markers; %s receives every slot, so none can hold a fresh logic var", opener, opener);
 		return;
 	}
 
@@ -427,23 +444,13 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 			emit(interp, (cell)receive_slots[i]);
 	}
 
-	int lvar_cfa = find("lvar");
-	for (int i = scope_start; i < compiler.n_local_names; i++) {
-		const char *name = &compiler.local_names_pool[compiler.local_name_offsets[i]];
-		if (name[0] < 'A' || name[0] > 'Z')
-			continue;
-		int slot = i - scope_start;
-		int received = 0;
-		for (int r = 0; r < n_received; r++)
-			if (receive_slots[r] == slot) {
-				received = 1;
-				break;
-			}
-		if (received)
-			continue;
-		emit_call(interp, lvar_cfa);
-		emit_call(interp, vocab.local_store_0depth_cfa);
-		emit(interp, (cell)slot);
+	if (n_lvars > 0) {
+		int lvar_cfa = find("lvar");
+		for (int i = 0; i < n_lvars; i++) {
+			emit_call(interp, lvar_cfa);
+			emit_call(interp, vocab.local_store_0depth_cfa);
+			emit(interp, (cell)lvar_slots[i]);
+		}
 	}
 }
 

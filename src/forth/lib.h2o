@@ -7,6 +7,26 @@ variable pi
 : print . ; inline
 : print-stack .s ; inline
 
+\ type predicates, one per type-of symbol; a bound logic var reports as its value
+: float? type-of :float = ; inline
+: string? type-of :string = ; inline
+: symbol? type-of :symbol = ; inline
+: array? type-of :array = ; inline
+: set? type-of :set = ; inline
+: pair? type-of :pair = ; inline
+: frame? type-of :frame = ; inline
+: matrix? type-of :matrix = ; inline
+: quantity? type-of :quantity = ; inline
+: xt? type-of :xt = ; inline
+: continuation? type-of :continuation = ; inline
+: stream? type-of :stream = ; inline
+: db? type-of :db = ; inline
+: ptr? type-of :ptr = ; inline
+: segment? type-of :segment = ; inline
+: none? type-of :none = ; inline
+: wildcard? type-of :wildcard = ; inline
+: lvar? type-of :lvar = ; inline
+
 ( a b -- a b a b )
 : 2dup over over ;
 inline

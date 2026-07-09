@@ -1,69 +1,69 @@
 \ SQLite: db-open / db-exec / db-query / db-close with bound parameters, plus
 \ the create-index lib word. In-memory database, so the test leaves no files.
 
-variable D
-":memory:" db-open to D
+variable db
+":memory:" db-open to db
 
 \ === db-exec: DDL returns 0; bound DML returns the affected-row count ===
-D "CREATE TABLE t (id INTEGER, name TEXT, score REAL, note TEXT)" [ ] db-exec . cr
-D "INSERT INTO t VALUES (?,?,?,?)" [ 1 "alice" 9.5 "hi" ] db-exec . cr
-D "INSERT INTO t VALUES (?,?,?,?)" [ 2 "o'brien" 8.0 null ] db-exec . cr
-D "INSERT INTO t VALUES (?,?,?,?)" [ 3 "alice" 7.0 "yo" ] db-exec . cr
-D "UPDATE t SET score = score + 1 WHERE name = ?" [ "alice" ] db-exec . cr
-D "DELETE FROM t WHERE id = ?" [ 3 ] db-exec . cr
+db "CREATE TABLE t (id INTEGER, name TEXT, score REAL, note TEXT)" [ ] db-exec . cr
+db "INSERT INTO t VALUES (?,?,?,?)" [ 1 "alice" 9.5 "hi" ] db-exec . cr
+db "INSERT INTO t VALUES (?,?,?,?)" [ 2 "o'brien" 8.0 null ] db-exec . cr
+db "INSERT INTO t VALUES (?,?,?,?)" [ 3 "alice" 7.0 "yo" ] db-exec . cr
+db "UPDATE t SET score = score + 1 WHERE name = ?" [ "alice" ] db-exec . cr
+db "DELETE FROM t WHERE id = ?" [ 3 ] db-exec . cr
 \ table is now: (1,alice,10.5,hi) (2,o'brien,8.0,NULL)
 
 \ === db-query: index-less relation, row count, type mapping, NULL ===
-variable R
-D "SELECT id,name,score,note FROM t ORDER BY id" [ ] db-query to R
-R :index @ keys size . cr
-R :rows @ size . cr
-R :rows @ 0 @i :id @ . cr
-R :rows @ 0 @i :score @ . cr
-R :rows @ 0 @i :note @ . cr
-R :rows @ 1 @i :note @ . cr
+variable rel
+db "SELECT id,name,score,note FROM t ORDER BY id" [ ] db-query to rel
+rel :index @ keys size . cr
+rel :rows @ size . cr
+rel :rows @ 0 @i :id @ . cr
+rel :rows @ 0 @i :score @ . cr
+rel :rows @ 0 @i :note @ . cr
+rel :rows @ 1 @i :note @ . cr
 
 \ === bound parameter: an apostrophe survives with no escaping ===
-R :rows @ 1 @i :name @ . cr
-D "SELECT name FROM t WHERE id = ?" [ 2 ] db-query :rows @ 0 @i :name @ . cr
+rel :rows @ 1 @i :name @ . cr
+db "SELECT name FROM t WHERE id = ?" [ 2 ] db-query :rows @ 0 @i :name @ . cr
 
 \ === a symbol binds as its text ===
-D "SELECT count(*) AS n FROM t WHERE name = ?" [ :alice ] db-query :rows @ 0 @i :n @ . cr
+db "SELECT count(*) AS n FROM t WHERE name = ?" [ :alice ] db-query :rows @ 0 @i :n @ . cr
 
 \ === scan-query the bag by a string column ===
-R { :name "alice" } query size . cr
+rel { :name "alice" } query size . cr
 
 \ === empty result set ===
-D "SELECT * FROM t WHERE id = ?" [ 99 ] db-query :rows @ size . cr
+db "SELECT * FROM t WHERE id = ?" [ 99 ] db-query :rows @ size . cr
 
 \ === duplicates preserved (a bag, not a set) ===
-D "SELECT name FROM t UNION ALL SELECT name FROM t" [ ] db-query :rows @ size . cr
+db "SELECT name FROM t UNION ALL SELECT name FROM t" [ ] db-query :rows @ size . cr
 
 \ === create-index: categorical column becomes symbols; the index is built ===
-D "INSERT INTO t VALUES (?,?,?,?)" [ 3 "alice" 1.0 "z" ] db-exec drop
-D "INSERT INTO t VALUES (?,?,?,?)" [ 4 "carol" 2.0 "w" ] db-exec drop
+db "INSERT INTO t VALUES (?,?,?,?)" [ 3 "alice" 1.0 "z" ] db-exec drop
+db "INSERT INTO t VALUES (?,?,?,?)" [ 4 "carol" 2.0 "w" ] db-exec drop
 \ names now (id order): alice, o'brien, alice, carol
-D "SELECT id,name FROM t ORDER BY id" [ ] db-query [ :name ] create-index to R
-R :index @ :name @ keys . cr
-R :index @ :name @ :alice @ size . cr
-R { :name :alice } query size . cr
-R { :name :carol } query size . cr
-R { :name :alice } query 0 @i :name @ . cr
+db "SELECT id,name FROM t ORDER BY id" [ ] db-query [ :name ] create-index to rel
+rel :index @ :name @ keys . cr
+rel :index @ :name @ :alice @ size . cr
+rel { :name :alice } query size . cr
+rel { :name :carol } query size . cr
+rel { :name :alice } query 0 @i :name @ . cr
 
 \ === corner cases: each error recovers and the run continues ===
-D "SELECT * FROM t WHERE id = ?" [ ] db-query drop
-D "SELECT * FROM t" [ 1 ] db-query drop
-D "SELECT ?" [ < 1 2 > ] db-query drop
+db "SELECT * FROM t WHERE id = ?" [ ] db-query drop
+db "SELECT * FROM t" [ 1 ] db-query drop
+db "SELECT ?" [ < 1 2 > ] db-query drop
 42 db-close
-D "SELCT oops" [ ] db-query drop
-D "INSERT INTO nope VALUES (1)" [ ] db-exec drop
+db "SELCT oops" [ ] db-query drop
+db "INSERT INTO nope VALUES (1)" [ ] db-exec drop
 
 \ === closed database: query errors, re-close is a silent no-op ===
-variable E
-":memory:" db-open to E
-E db-close
-E "SELECT 1" [ ] db-query drop
-E db-close
+variable db2
+":memory:" db-open to db2
+db2 db-close
+db2 "SELECT 1" [ ] db-query drop
+db2 db-close
 
-D db-close
+db db-close
 bye

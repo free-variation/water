@@ -186,12 +186,12 @@
 { :a 1 } 42 [: drop 0 :] update-at . cr
 
 \ update-at : callback mutates the same frame — write-back re-resolves the key
-:aaa drop variable F { :zzz 10 } to F
-F :zzz [: F :aaa 99 ! drop 1000 + :] update-at drop F :zzz @ . F :aaa @ . cr
+:aaa drop variable fr { :zzz 10 } to fr
+fr :zzz [: fr :aaa 99 ! drop 1000 + :] update-at drop fr :zzz @ . fr :aaa @ . cr
 
 \ update-at : callback inserts two keys that both sort before the target
-:b1 drop :b2 drop variable G { :zz 7 } to G
-G :zz [: G :b1 1 ! drop G :b2 2 ! drop 700 + :] update-at drop G :zz @ . G :b1 @ . G :b2 @ . cr
+:b1 drop :b2 drop variable fr2 { :zz 7 } to fr2
+fr2 :zz [: fr2 :b1 1 ! drop fr2 :b2 2 ! drop 700 + :] update-at drop fr2 :zz @ . fr2 :b1 @ . fr2 :b2 @ . cr
 
 \ merge : combine two frames, right wins on conflicts
 { :a 1 :b 2 } { :b 3 :c 4 } merge . cr

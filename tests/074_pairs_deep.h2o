@@ -23,12 +23,12 @@ lvar to A
 \ deep recursion: naive reverse of a 15-element list
 : lappend  | >A >B >R |
   [: A null ~ drop   R B ~ drop :]
-  [: | H T R1 | A  H T cons ~ drop   R  H R1 cons ~ drop   T B R1 lappend :]  amb ;
+  [: | ?H ?T ?R1 | A  H T cons ~ drop   R  H R1 cons ~ drop   T B R1 lappend :]  amb ;
 : nrev  | >L >R |
   [: L null ~ drop   R null ~ drop :]
-  [: | H T RT | L  H T cons ~ drop   T RT nrev   RT  H null cons  R lappend :]  amb ;
+  [: | ?H ?T ?RT | L  H T cons ~ drop   T RT nrev   RT  H null cons  R lappend :]  amb ;
 : iota  | >n |  null  [: |> i | i 1+ swap cons :] n i-times ;
-variable L15   15 iota to L15
-lvar to R15   L15 R15 nrev   R15 . cr
+variable l15   15 iota to l15
+lvar to R15   l15 R15 nrev   R15 . cr
 
 bye

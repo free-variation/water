@@ -5,38 +5,33 @@
 \ scimark's own RNG is a strict serial sequence (see pyperformance/scimark-
 \ montecarlo.h2o), so it can't be parallelised. This variant instead draws from
 \ water's native random stream, which gives each worker its own
-\ deterministic sub-stream from the shared base seed. WORKERS chunks are run one
-\ per worker (CHUNKS = WORKERS, claim 1), so every worker samples exactly one
+\ deterministic sub-stream from the shared base seed. One chunk runs per worker
+\ (claim 1), so every worker samples exactly one
 \ chunk from its own stream and the total is independent of scheduling order —
 \ the estimate is reproducible run to run.
 
-\ SAMPLES (total) and WORKERS are supplied by the caller (the runner injects
-\ them; for a standalone run prepend e.g. `variable SAMPLES 20000000 to SAMPLES`
-\ and `variable WORKERS 10 to WORKERS`). CHUNKS = WORKERS, claim 1, so each
-\ worker samples exactly one chunk from its own stream and the estimate is
-\ reproducible.
-3000000 to *samples*
-10 to *workers*
-variable *chunk*
-variable *est*
-variable *t0*
+3000000 to samples
+10 to workers
+variable chunk
+variable est
+variable t0
 
 : partial ( j -- hits )
   | >j hits |
   0.0 to hits
-  [: random random fsq swap fsq f+ 1.0 gt 0= if f++ hits then :] *chunk* times
+  [: random random fsq swap fsq f+ 1.0 gt 0= if f++ hits then :] chunk times
   hits ;
 
 : pmonte
-  *samples* *workers* / to *chunk*
+  samples workers / to chunk
   12345 seed
-  now to *t0*
-  0 *workers* 1- range
-  *workers* 1 ' partial pmap-ext
+  now to t0
+  0 workers 1- range
+  workers 1 ' partial pmap-ext
   0.0 [: f+ :] reduce
-  *samples* f/ 4.0 f* to *est*
-  now *t0* - "elapsed: {0} s" format . cr
-  *est* "estimate: {0}" format . cr ;
+  samples f/ 4.0 f* to est
+  now t0 - "elapsed: {0} s" format . cr
+  est "estimate: {0}" format . cr ;
 
 pmonte
 bye

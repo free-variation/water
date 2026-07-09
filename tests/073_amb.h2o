@@ -16,11 +16,11 @@
 [: 1 2 ~ :] [: 8 :] amb . cr                      \ 8
 
 \ === trail rollback: branch 1 binds then fails, undone, branch 2 binds ===
-: t  | X |  [: X 1 ~ drop fail :] [: X 2 ~ drop :] amb  X ? . ;
+: t  | ?X |  [: X 1 ~ drop fail :] [: X 2 ~ drop :] amb  X ? . ;
 t cr                                              \ 2
 
 \ === branch 1 succeeds with a binding: it persists ===
-: u  | X |  [: X 5 ~ drop :] [: X 9 ~ drop :] amb  X ? . ;
+: u  | ?X |  [: X 5 ~ drop :] [: X 9 ~ drop :] amb  X ? . ;
 u cr                                              \ 5
 
 \ === nested amb in branch 2 (after branch 1 fails) ===
@@ -30,7 +30,7 @@ u cr                                              \ 5
 [: [: 5 :] [: 6 :] amb :] [: 9 :] amb . cr        \ 5
 
 \ === a def's local amb is fresh per call ===
-: pick  | X >n |  [: X n ~ drop :] [: X 0 ~ drop :] amb  X ? ;
+: pick  | ?X >n |  [: X n ~ drop :] [: X 0 ~ drop :] amb  X ? ;
 3 pick . cr                                       \ 3
 7 pick . cr                                       \ 7
 
@@ -41,7 +41,7 @@ u cr                                              \ 5
 [: fail :] [: fail :] amb                         \ error
 
 \ === commitment boundary: a downstream mismatch does NOT reopen a committed amb ===
-: c  | X |  [: X 1 ~ drop :] [: X 2 ~ drop :] amb  X 5 ~ ;
+: c  | ?X |  [: X 1 ~ drop :] [: X 2 ~ drop :] amb  X 5 ~ ;
 c                                                 \ error: X committed to 1, no live amb
 
 bye

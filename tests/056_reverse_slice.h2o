@@ -4,14 +4,14 @@
 : rev! | >arr >off >n |
   arr off  arr off n f+ f1-  -1 n slice! ;
 
-variable A
+variable nums
 
-[ 1 2 3 4 5 ] to A   A 0 5 rev! drop   A . cr   \ [ 5 4 3 2 1 ]
-[ 1 2 3 4 5 ] to A   A 0 3 rev! drop   A . cr   \ [ 3 2 1 4 5 ]
-[ 1 2 3 4 5 ] to A   A 1 3 rev! drop   A . cr   \ [ 1 4 3 2 5 ]
-[ 1 2 3 4 5 ] to A   A 2 1 rev! drop   A . cr   \ single element, unchanged
-[ 1 2 3 4 5 ] to A   A 2 0 rev! drop   A . cr   \ empty slice, unchanged
-[ 9 ] to A   A 0 1 rev! drop   A . cr           \ [ 9 ]
+[ 1 2 3 4 5 ] to nums   nums 0 5 rev! drop   nums . cr   \ [ 5 4 3 2 1 ]
+[ 1 2 3 4 5 ] to nums   nums 0 3 rev! drop   nums . cr   \ [ 3 2 1 4 5 ]
+[ 1 2 3 4 5 ] to nums   nums 1 3 rev! drop   nums . cr   \ [ 1 4 3 2 5 ]
+[ 1 2 3 4 5 ] to nums   nums 2 1 rev! drop   nums . cr   \ single element, unchanged
+[ 1 2 3 4 5 ] to nums   nums 2 0 rev! drop   nums . cr   \ empty slice, unchanged
+[ 9 ] to nums   nums 0 1 rev! drop   nums . cr           \ [ 9 ]
 
 \ it leaves the array, so it chains
 [ 1 2 3 4 5 ] 0 5 rev! . cr                     \ [ 5 4 3 2 1 ]

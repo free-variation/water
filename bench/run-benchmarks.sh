@@ -112,21 +112,22 @@ h2o_leibniz_parallel() { "$bin" < "$here/variants/leibniz-parallel.h2o"; }
 h2o_nqueens()  { "$bin" < "$here/pyperformance/nqueens.h2o"; }
 h2o_nqueens_iter() { "$bin" < "$here/variants/nqueens-iter.h2o"; }
 h2o_fannkuch() { "$bin" < "$here/pyperformance/fannkuch.h2o"; }
-h2o_nbody()    { { echo "variable ITERATIONS $nbody_steps to ITERATIONS"; cat "$here/pyperformance/nbody.h2o"; } | "$bin"; }
-h2o_raytrace() { { echo "variable LOOPS $raytrace_loops to LOOPS"; cat "$here/pyperformance/raytrace.h2o"; } | "$bin"; }
+h2o_nbody()    { "$bin" < "$here/pyperformance/nbody.h2o"; }
+h2o_raytrace() { "$bin" < "$here/pyperformance/raytrace.h2o"; }
+h2o_raytrace_par() { "$bin" < "$here/variants/raytrace-parallel.h2o"; }
 h2o_float()    { "$bin" < "$here/pyperformance/float.h2o"; }
 h2o_crypto()   { "$bin" < "$here/pyperformance/crypto-pyaes.h2o"; }
-h2o_spectral() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/pyperformance/spectral-norm.h2o"; } | "$bin"; }
-h2o_spectral_matrix() { { echo "variable ITERATIONS $spectral_loops to ITERATIONS"; cat "$here/variants/spectral-norm-matrix.h2o"; } | "$bin"; }
-h2o_scimark_lu() { { echo "variable ITERATIONS $scimark_lu_cycles to ITERATIONS"; cat "$here/pyperformance/scimark-lu.h2o"; } | "$bin"; }
-h2o_scimark_sor() { { echo "variable ITERATIONS $scimark_sor_loops to ITERATIONS"; cat "$here/pyperformance/scimark-sor.h2o"; } | "$bin"; }
-h2o_scimark_sparse() { { echo "variable CYCLES $scimark_sparse_cycles to CYCLES"; cat "$here/pyperformance/scimark-sparse.h2o"; } | "$bin"; }
-h2o_scimark_fft() { { echo "variable LOOPS $fft_loops to LOOPS"; echo "variable CYCLES $fft_cycles to CYCLES"; cat "$here/pyperformance/scimark-fft.h2o"; } | "$bin"; }
-h2o_barnes()   { { echo "variable ITERATIONS $barnes_iterations to ITERATIONS"; echo "variable LOOPS $barnes_loops to LOOPS"; cat "$here/pyperformance/barnes-hut.h2o"; } | "$bin"; }
-h2o_scimark_mc() { { echo "variable SAMPLES $montecarlo_samples to SAMPLES"; echo "variable LOOPS $montecarlo_loops to LOOPS"; cat "$here/pyperformance/scimark-montecarlo.h2o"; } | "$bin"; }
-h2o_montecarlo_par() { { echo "variable SAMPLES $((montecarlo_samples * montecarlo_loops)) to SAMPLES"; echo "variable WORKERS 10 to WORKERS"; cat "$here/variants/monte-carlo-parallel.h2o"; } | "$bin"; }
-h2o_meteor()   { { echo "variable LOOPS $meteor_loops to LOOPS"; cat "$here/pyperformance/meteor.h2o"; } | "$bin"; }
-h2o_hexiom()   { { echo "variable LOOPS $hexiom_loops to LOOPS"; cat "$here/pyperformance/hexiom.h2o"; } | "$bin"; }
+h2o_spectral() { "$bin" < "$here/pyperformance/spectral-norm.h2o"; }
+h2o_spectral_matrix() { "$bin" < "$here/variants/spectral-norm-matrix.h2o"; }
+h2o_scimark_lu() { "$bin" < "$here/pyperformance/scimark-lu.h2o"; }
+h2o_scimark_sor() { "$bin" < "$here/pyperformance/scimark-sor.h2o"; }
+h2o_scimark_sparse() { "$bin" < "$here/pyperformance/scimark-sparse.h2o"; }
+h2o_scimark_fft() { "$bin" < "$here/pyperformance/scimark-fft.h2o"; }
+h2o_barnes()   { "$bin" < "$here/pyperformance/barnes-hut.h2o"; }
+h2o_scimark_mc() { "$bin" < "$here/pyperformance/scimark-montecarlo.h2o"; }
+h2o_montecarlo_par() { "$bin" < "$here/variants/monte-carlo-parallel.h2o"; }
+h2o_meteor()   { "$bin" < "$here/pyperformance/meteor.h2o"; }
+h2o_hexiom()   { "$bin" < "$here/pyperformance/hexiom.h2o"; }
 h2o_regex_dna() { "$bin" < "$here/pyperformance/regex-dna.h2o"; }
 h2o_regex_compile() { "$bin" < "$here/pyperformance/regex-compile.h2o"; }
 h2o_regex_effbot() { "$bin" < "$here/pyperformance/regex-effbot.h2o"; }
@@ -209,6 +210,7 @@ run_reps nbody_py py_nbody "$reps_py"
 
 log "== raytrace =="
 run_reps raytrace_h2o h2o_raytrace "$reps"
+run_reps raytrace_par_h2o h2o_raytrace_par "$reps"
 run_reps raytrace_py py_raytrace "$reps_py"
 
 log "== float =="
@@ -345,6 +347,7 @@ row "nqueens" "N = $nqueens_n" nqueens_h2o "$(median_elapsed nqueens_py)"
 row "nqueens-iter" "N = $nqueens_n" nqueens_iter_h2o "$(median_elapsed nqueens_py)"
 row "nbody" "${nbody_steps} steps" nbody_h2o "$(median_elapsed nbody_py)"
 row "raytrace" "${raytrace_loops}× 100×100" raytrace_h2o "$(median_elapsed raytrace_py)"
+row "raytrace-parallel" "${raytrace_loops}× 100×100, pmap" raytrace_par_h2o "$(median_elapsed raytrace_py)"
 row "float" "${float_points} pts × ${float_repeat}" float_h2o "$(median_elapsed float_py)"
 row "crypto-pyaes" "8192 B, ${crypto_loops}× enc+dec" crypto_h2o "$(median_elapsed crypto_py)"
 row "fannkuch" "N = $fannkuch_n" fannkuch_h2o "$(median_elapsed fannkuch_py)"
@@ -386,6 +389,7 @@ emit "|:----------|:-----------|:-------|"
 emit "| nqueens | $(result_line nqueens_h2o 'solutions') | $(result_line nqueens_py 'solutions') |"
 emit "| nbody | $(result_line nbody_h2o 'final energy') | $(result_line nbody_py 'final energy') |"
 emit "| raytrace | $(result_line raytrace_h2o 'checksum') | $(result_line raytrace_py 'checksum') |"
+emit "| raytrace-parallel | $(result_line raytrace_par_h2o 'checksum') | $(result_line raytrace_py 'checksum') |"
 emit "| float | $(result_line float_h2o 'result:') | $(result_line float_py 'result:') |"
 emit "| crypto-pyaes | $(result_line crypto_h2o 'checksum:') | $(result_line crypto_py 'checksum:') |"
 emit "| fannkuch | $(result_line fannkuch_h2o 'max flips') | $(result_line fannkuch_py 'max flips') |"
