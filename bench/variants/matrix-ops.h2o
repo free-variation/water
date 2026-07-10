@@ -1,0 +1,79 @@
+\ matrix-ops — timed sweep over the matrix kernels: construction, element-wise
+\ and broadcast arithmetic, in-place ops, all four dgemm variants, reductions,
+\ unary math, and shape operations. Water-only (no CPython counterpart); each
+\ section prints its time and a checksum, so kernel and compiler changes show
+\ up as speed or value drift. Inputs are matrix-range ramps — deterministic.
+
+variable a  variable b  variable c  variable t0
+
+0 39999 1 matrix-range 40000 / 200 200 reshape to a
+1 40000 1 matrix-range 40000 / 200 200 reshape to b
+200 200 0-matrix to c
+
+now to t0
+[: a b * drop  a b + drop  a b - drop :] 200 times
+now t0 - "elementwise   {0}s" format . cr
+a b * a b + - sum "  checksum: {0}" format . cr
+
+now to t0
+[: a 1.5 * 2.5 + 0.5 - 3.0 / drop :] 200 times
+now t0 - "broadcast     {0}s" format . cr
+a 1.5 * 2.5 + sum "  checksum: {0}" format . cr
+
+now to t0
+[: 200 200 0-matrix a +! b *! drop :] 200 times
+now t0 - "in-place      {0}s" format . cr
+200 200 0-matrix a +! b *! sum "  checksum: {0}" format . cr
+
+now to t0
+[: 1.0 a b 0.0 c dgemm-nn drop :] 20 times
+now t0 - "dgemm-nn      {0}s" format . cr
+1.0 a b 0.0 c dgemm-nn sum "  checksum: {0}" format . cr
+
+now to t0
+[: 1.0 a b 0.0 c dgemm-tn drop :] 20 times
+now t0 - "dgemm-tn      {0}s" format . cr
+1.0 a b 0.0 c dgemm-tn sum "  checksum: {0}" format . cr
+
+now to t0
+[: 1.0 a b 0.0 c dgemm-nt drop :] 20 times
+now t0 - "dgemm-nt      {0}s" format . cr
+1.0 a b 0.0 c dgemm-nt sum "  checksum: {0}" format . cr
+
+now to t0
+[: 1.0 a b 0.0 c dgemm-tt drop :] 20 times
+now t0 - "dgemm-tt      {0}s" format . cr
+1.0 a b 0.0 c dgemm-tt sum "  checksum: {0}" format . cr
+
+now to t0
+[: a sum drop  a max drop  a min drop  a var drop  a norm drop
+   a row-sums drop  a column-sums drop  a argmax drop :] 200 times
+now t0 - "reductions    {0}s" format . cr
+a sum a var + a norm + a row-sums sum + a column-sums sum +
+"  checksum: {0}" format . cr
+
+now to t0
+[: a sqrt drop  a abs drop  a round drop :] 100 times
+now t0 - "unary         {0}s" format . cr
+a sqrt sum a round sum + "  checksum: {0}" format . cr
+
+now to t0
+[: a exp drop  a sin drop  a log drop :] 50 times
+now t0 - "transcendental {0}s" format . cr
+a sin sum a exp sum + "  checksum: {0}" format . cr
+
+now to t0
+[: a transpose drop  a 1 40000 reshape drop  a b augment drop
+   a 0 100 0 100 submatrix drop :] 100 times
+now t0 - "shape         {0}s" format . cr
+a transpose 0 @i sum  a 0 100 0 100 submatrix sum +
+"  checksum: {0}" format . cr
+
+now to t0
+[: [ 1 2 3 4 5 6 7 8 9 ] 3 3 matrix drop  200 200 0-matrix drop
+   2.5 100 diagonal-matrix drop  0 999 1 matrix-range drop :] 200 times
+now t0 - "construction  {0}s" format . cr
+2.5 100 diagonal-matrix sum 0 999 1 matrix-range sum +
+"  checksum: {0}" format . cr
+
+bye

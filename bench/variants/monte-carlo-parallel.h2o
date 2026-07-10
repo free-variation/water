@@ -10,7 +10,7 @@
 \ chunk from its own stream and the total is independent of scheduling order —
 \ the estimate is reproducible run to run.
 
-3000000 to samples
+20000000 to samples
 10 to workers
 variable chunk
 variable est

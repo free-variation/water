@@ -2,7 +2,7 @@
 \ A is materialized as an NxN matrix at init; the inner mat-vec products
 \ run in compiled C code (dgemm_kernel) instead of through the interpreter.
 
-50 to iterations
+150 to iterations
 130 constant n
 
 variable a-mat

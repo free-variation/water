@@ -21,8 +21,9 @@ variable b  4.0 to b
 : fused  a b f-  a fsq  a b f* ;
 ' fused see-compiled
 
-\ a literal, a stack+var fusion, and a unary function
-: mixed  5.0 a f-  b sqrt ;
+\ a literal, a stack+var fusion, and a unary function (f-words fuse; the
+\ polymorphic names never do)
+: mixed  5.0 a f-  b fsqrt ;
 ' mixed see-compiled
 
 \ a call to another colon word shows that word's name

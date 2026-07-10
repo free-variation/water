@@ -25,7 +25,7 @@ variable t0
   1.0 to x
   now to t0
   [: ( idx -- )
-     x negate to x
+     x fnegate to x
      2.0 3.0 f*+        \ idx*2 + 3 = divisor
      x swap f/          \ X / divisor
      pi-est f+ to pi-est

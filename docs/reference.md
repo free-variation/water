@@ -791,7 +791,7 @@ Immediate compiler words usable only inside a definition. They detect a precedin
 | `vvf*+` | `vvf*+ b c` | `( t -- t*b+c )`, reading variables b and c |
 | `vvf*-` | `vvf*- b c` | `( t -- c-t*b )`, reading variables b and c |
 
-These are normally produced by the compiler's auto-fuser rather than typed by hand; `see-compiled` reveals them.
+These are normally produced by the compiler's auto-fuser rather than typed by hand; `see-compiled` reveals them. The fuser triggers only on the unsafe f-words (`f+`, `fsqrt`, `fexp`, …) — the polymorphic names (`+`, `sqrt`, `exp`) never fuse, so their tag dispatch (matrix, quantity) is never bypassed.
 
 The auto-fuser also collapses a comparison immediately before a branch — `= if`, `gt while`, `0= until` — into a single compare-and-branch instruction (shown by `see-compiled` as `(=0branch)`, `(gt0branch)`, and the like). These are internal and never typed; the source stays the plain comparison followed by the control word.
 

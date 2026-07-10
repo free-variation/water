@@ -6,17 +6,17 @@
 	X(mul, *, p_mul_f) \
 	X(div, /, p_div_f)
 
-#define FLOAT_UNARY_FNS(X) \
+#define FLOAT_UNARY_FUNCTIONS(X) \
 	X(sq,   v * v,   p_sq) \
-	X(neg,  -v,      p_neg) \
-	X(abs,  fabs(v), p_abs) \
-	X(sqrt, sqrt(v), p_sqrt) \
-	X(exp,  exp(v),  p_exp) \
-	X(log,  log10(v),  p_log) \
-	X(sin,  sin(v),  p_sin) \
-	X(cos,  cos(v),  p_cos) \
-	X(tan,  tan(v),  p_tan) \
-	X(tanh, tanh(v), p_tanh)
+	X(neg,  -v,      p_fnegate) \
+	X(abs,  fabs(v), p_fabs) \
+	X(sqrt, sqrt(v), p_fsqrt) \
+	X(exp,  exp(v),  p_fexp) \
+	X(log,  log10(v),  p_flog) \
+	X(sin,  sin(v),  p_fsin) \
+	X(cos,  cos(v),  p_fcos) \
+	X(tan,  tan(v),  p_ftan) \
+	X(tanh, tanh(v), p_ftanh)
 
 #define FLOAT_FUSED(X) \
 	X(fma, a->number * b.number + c.number, p_fmul_add, "vvf*+") \
@@ -143,7 +143,7 @@ FLOAT_BINOPS(GEN_LF)
 	static void p_compile_vfn_##suffix(DISPATCH_ARGS) { \
 		compile_one_var_op(interp, vfn_##suffix##_cfa, "vf" #suffix); \
 	}
-FLOAT_UNARY_FNS(GEN_VFN)
+FLOAT_UNARY_FUNCTIONS(GEN_VFN)
 
 #define GEN_FUSED(suffix, expr, base, name) \
 	static int vv_##suffix##_cfa; \
@@ -195,7 +195,7 @@ FLOAT_BINOPS(GEN_VF_STORE)
 		vocab.dict[chain_ip[1]] = (cell)make_float(expr).bits; \
 		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp); \
 	}
-FLOAT_UNARY_FNS(GEN_VFN_STORE)
+FLOAT_UNARY_FUNCTIONS(GEN_VFN_STORE)
 
 static int emit_fused_two_var(Interpreter *interp, int runtime_cfa, int slot_a, int slot_b) {
 	vocab.here -= 4;
@@ -227,13 +227,13 @@ int superword_cell_count(cell handler) {
 #define CC_VF_STORE(suffix, op, base) if (h == p_vf_##suffix##_store) return 3;
 	FLOAT_BINOPS(CC_VF_STORE)
 #define CC_VFN_STORE(suffix, expr, base) if (h == p_vfn_##suffix##_store) return 3;
-	FLOAT_UNARY_FNS(CC_VFN_STORE)
+	FLOAT_UNARY_FUNCTIONS(CC_VFN_STORE)
 #define CC_VF(suffix, op, base) if (h == p_vf_##suffix) return 2;
 	FLOAT_BINOPS(CC_VF)
 #define CC_LF(suffix, op, base) if (h == p_lf_##suffix) return 2;
 	FLOAT_BINOPS(CC_LF)
 #define CC_VFN(suffix, expr, base) if (h == p_vfn_##suffix) return 2;
-	FLOAT_UNARY_FNS(CC_VFN)
+	FLOAT_UNARY_FUNCTIONS(CC_VFN)
 #define CC_FUSED(suffix, expr, base, name) if (h == p_vv_##suffix) return 3;
 	FLOAT_FUSED(CC_FUSED)
 	return 0;
@@ -421,7 +421,7 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 		if (prev1) return emit_fused_one_var(interp, vfn_##suffix##_cfa, prev1 + 1); \
 		return 0; \
 	}
-	FLOAT_UNARY_FNS(FUSE_FN)
+	FLOAT_UNARY_FUNCTIONS(FUSE_FN)
 
 #define FUSE_FUSED(suffix, expr, base, name) \
 	if (op_handler == base) { \
@@ -464,7 +464,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 #define MATCH2_VF(suffix, op, base) if (tail == p_vf_##suffix) store_cfa = vf_##suffix##_store_cfa;
 		FLOAT_BINOPS(MATCH2_VF)
 #define MATCH2_VFN(suffix, expr, base) if (tail == p_vfn_##suffix) store_cfa = vfn_##suffix##_store_cfa;
-		FLOAT_UNARY_FNS(MATCH2_VFN)
+		FLOAT_UNARY_FUNCTIONS(MATCH2_VFN)
 		if (store_cfa >= 0) {
 			cell s = dict[here - 1];
 			vocab.here -= 2;
@@ -513,7 +513,7 @@ void define_superwords(Interpreter *interp) {
 
 #define REG_VFN_STORE(suffix, expr, base) \
 	vfn_##suffix##_store_cfa = define_primitive(interp, "(vf" #suffix "!)", p_vfn_##suffix##_store, 4);
-	FLOAT_UNARY_FNS(REG_VFN_STORE)
+	FLOAT_UNARY_FUNCTIONS(REG_VFN_STORE)
 
 #define REG_VF(suffix, op, base) \
 	vf_##suffix##_cfa = define_primitive(interp, "(vf" #op ")", p_vf_##suffix, 4); \
@@ -523,7 +523,7 @@ void define_superwords(Interpreter *interp) {
 #define REG_VFN(suffix, expr, base) \
 	vfn_##suffix##_cfa = define_primitive(interp, "(vf" #suffix ")", p_vfn_##suffix, 4); \
 	define_primitive(interp, "vf" #suffix, p_compile_vfn_##suffix, 1);
-	FLOAT_UNARY_FNS(REG_VFN)
+	FLOAT_UNARY_FUNCTIONS(REG_VFN)
 
 #define REG_FUSED(suffix, expr, base, name) \
 	vv_##suffix##_cfa = define_primitive(interp, "(" name ")", p_vv_##suffix, 4); \

@@ -1,0 +1,35 @@
+\ Polymorphic unary math on a variable read inside a definition must match the
+\ top-level result. The compile-time fuser sees `var op` and may emit a fused
+\ superword; that must never change what the tag-checked words compute for
+\ matrix or quantity operands.
+
+variable mat   [ 1 4 9 16 ] 2 2 matrix to mat
+variable dur   3 s to dur
+variable x     2.25 to x
+
+: mat-sqrt   mat sqrt ;
+: mat-exp    mat exp ;
+: mat-sin    mat sin ;
+: mat-round  mat round ;
+: dur-neg    dur negate ;
+: dur-abs    dur negate abs ;
+: x-sqrt     x sqrt ;
+
+mat-sqrt . cr
+mat-sqrt  mat sqrt  = . cr                 \ 1
+mat-exp   mat exp   = . cr                 \ 1
+mat-sin   mat sin   = . cr                 \ 1
+mat-round mat round = . cr                 \ 1
+dur-neg . cr                               \ -3 s
+dur-neg   dur negate = . cr                \ 1
+dur-abs . cr                               \ 3 s
+x-sqrt . cr                                \ 1.5
+
+\ the store-fused shape ( var op to var ) must agree too
+variable out
+: mat-sqrt!  mat sqrt to out ;
+mat-sqrt!  out  mat sqrt  = . cr           \ 1
+: dur-neg!  dur negate to out ;
+dur-neg!  out  dur negate  = . cr          \ 1
+
+bye

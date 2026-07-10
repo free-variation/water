@@ -540,18 +540,73 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 					out_row[j] += a_val * b_row[j];
 			}
 		}
-	} else {
+	} else if (!transpose_a && transpose_b) {
+#pragma clang fp reassociate(on)
+		const double * restrict a_elements = A->matrix.elements;
+		const double * restrict b_elements = B->matrix.elements;
 		for (i = 0; i < m; i++) {
 			for (j = 0; j < n; j++) {
+				const double * restrict a_row = &a_elements[i * k];
+				const double * restrict b_row = &b_elements[j * k];
 				double sum = 0.0;
-				for (p = 0; p < k; p++) {
-					double a_val = transpose_a ? MAT(A, p, i) : MAT(A, i, p);
-					double b_val = transpose_b ? MAT(B, j, p) : MAT(B, p, j);
-					sum += a_val * b_val;
-				}
+				for (p = 0; p < k; p++)
+					sum += a_row[p] * b_row[p];
 				MAT(matmult, i, j) = alpha * sum + beta * MAT(C, i, j);
 			}
 		}
+	} else if (transpose_a && !transpose_b) {
+		double * restrict out_elements = matmult->matrix.elements;
+		const double * restrict a_elements = A->matrix.elements;
+		const double * restrict b_elements = B->matrix.elements;
+		const double * restrict c_elements = C->matrix.elements;
+
+		if (n < 8) {
+			for (i = 0; i < m; i++) {
+				for (j = 0; j < n; j++) {
+					double sum = 0.0;
+					for (p = 0; p < k; p++)
+						sum += a_elements[p * m + i] * b_elements[p * n + j];
+					out_elements[i * n + j] = alpha * sum + beta * c_elements[i * n + j];
+				}
+			}
+		} else {
+			for (i = 0; i < m; i++)
+				for (j = 0; j < n; j++)
+					out_elements[i * n + j] = beta * c_elements[i * n + j];
+
+			for (i = 0; i < m; i++) {
+				for (p = 0; p < k; p++) {
+					double a_val = alpha * a_elements[p * m + i];
+					const double *b_row = &b_elements[p * n];
+					double *out_row = &out_elements[i * n];
+					for (j = 0; j < n; j++)
+						out_row[j] += a_val * b_row[j];
+				}
+			}
+		}
+	} else {
+#pragma clang fp reassociate(on)
+		const double * restrict a_elements = A->matrix.elements;
+		const double * restrict b_elements = B->matrix.elements;
+		double *a_column = malloc(sizeof(double) * (size_t)k);
+		if (!a_column) {
+			fail(interp, "dgemm: out of memory for a %d-element column buffer", k);
+			return -1;
+		}
+
+		for (i = 0; i < m; i++) {
+			for (p = 0; p < k; p++)
+				a_column[p] = a_elements[p * m + i];
+			for (j = 0; j < n; j++) {
+				const double * restrict b_row = &b_elements[j * k];
+				double sum = 0.0;
+				for (p = 0; p < k; p++)
+					sum += a_column[p] * b_row[p];
+				MAT(matmult, i, j) = alpha * sum + beta * MAT(C, i, j);
+			}
+		}
+
+		free(a_column);
 	}
 
 	return matmult_handle;

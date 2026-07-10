@@ -116,7 +116,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Integer division** — `%` ( a b -- rem quot ) truncating divmod on floats (errors on a zero divisor); `mod` (remainder, sign follows the dividend) and `quotient` (toward zero) build on it.
 - **In-place matrix ops** — `+!`/`-!`/`*!`/`/!` mutate the left matrix in place (explicit; the programmer decides). Float-only fast paths (`f+`, `f-`, `f*`, `f/`, `f^`, …) skip the type dispatch when both operands are known floats.
 - **Matrix construction** — `R C 0-matrix` (zeros), `[ ... ] R C matrix`, `V N diagonal-matrix` (N×N with V on the diagonal), `N identity-matrix`, `start end step matrix-range` (a 1×N row over a stepped range).
-- **DGEMM** — `dgemm-nn`/`tn`/`nt`/`tt` (`αAB + βC`) for all four transpose variants. The non-transposed `nn` path is ikj-ordered with `restrict` pointers for cache-friendly access; the transposed variants use a straightforward triple loop.
+- **DGEMM** — `dgemm-nn`/`tn`/`nt`/`tt` (`αAB + βC`) for all four transpose variants, each with its own loop order chosen so the inner loop runs unit-stride with `restrict` pointers: `nn` and `tn` are ikj axpy kernels, `nt` and `tt` are vectorized dot products (`tt` staging Aᵀ's column through a scratch buffer).
 - **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells.
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
 - **Selection** — `augment` (concatenate two matrices column-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array).

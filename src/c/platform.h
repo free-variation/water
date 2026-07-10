@@ -5,13 +5,15 @@
 
 struct Interpreter;
 
+#define unlikely(condition) __builtin_expect(!!(condition), 0)
+
 #define SYNC_REGISTERS(interp, reg_ip, reg_sp) do { \
 	(interp)->ip = (int)((reg_ip) - vocab.dict); \
 	(interp)->dsp = (int)((reg_sp) - (interp)->data_stack); \
 } while (0)
 
 #define REQUIRE_STACK_DEPTH_MSG(interp, reg_ip, reg_sp, popped, ...) do { \
-	if ((reg_sp) - (popped) < (interp)->data_stack) { \
+	if (unlikely((reg_sp) - (popped) < (interp)->data_stack)) { \
 		SYNC_REGISTERS(interp, reg_ip, reg_sp); \
 		fail(interp, __VA_ARGS__); \
 		return; \
@@ -22,7 +24,7 @@ struct Interpreter;
 	REQUIRE_STACK_DEPTH_MSG(interp, reg_ip, reg_sp, popped, "data stack underflow")
 
 #define REQUIRE_STACK_ROOM(interp, reg_ip, reg_sp, pushed) do { \
-	if ((reg_sp) + (pushed) > (interp)->data_stack + DATA_STACK_DEPTH) { \
+	if (unlikely((reg_sp) + (pushed) > (interp)->data_stack + DATA_STACK_DEPTH)) { \
 		SYNC_REGISTERS(interp, reg_ip, reg_sp); \
 		fail(interp, "data stack overflow"); \
 		return; \
@@ -48,7 +50,7 @@ struct Interpreter;
 
 #define MUSTTAIL __attribute__((musttail))
 #define DISPATCH(interp) do { \
-	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
+	if (unlikely((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending)) \
 		return; \
 	cfa_handler next_op = (cfa_handler)vocab.dict[(interp)->ip++]; \
 	MUSTTAIL \
@@ -59,7 +61,7 @@ struct Interpreter;
 	int next_handler_index = (int)((reg_ip) - vocab.dict); \
 	(interp)->ip = next_handler_index; \
 	(interp)->dsp = (int)((reg_sp) - (interp)->data_stack); \
-	if ((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending) \
+	if (unlikely((interp)->unwinding || (interp)->error_flag || (interp)->gc_pending)) \
 		return; \
 	(interp)->ip = next_handler_index + 1; \
 	cfa_handler next_op = (cfa_handler)*(reg_ip); \
