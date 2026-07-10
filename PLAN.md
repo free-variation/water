@@ -4,6 +4,151 @@ A TODO list of pending work, highest priority first.
 
 ---
 
+## Statistics: a minimal spanning set
+
+Build applied statistics from a few kernels, each reused across many methods,
+with inference resampling-first (index loops over asymptotic tables). The
+kernels: SVD (present), weighted least squares (present as `fit-linear` plus
+the sqrt-w idiom), the resampling loop (present as `bootstrap`), one tree
+grower (the one substantial new C), and a pairwise-distance primitive (small).
+Everything else is library code composing them.
+
+### 1. SVD exploitation (library code on `svd` / `dgemm`)
+
+- **PCA** — center columns, SVD: loadings V, scores U·S, component variances
+  S²/(n−1). Whitening, low-rank approximation (Eckart–Young), and
+  principal-component regression on top.
+- **k-means** — Lloyd iterations over dgemm distances; needed by spectral
+  clustering, useful alone. k-means++ initialization draws on the RNG.
+- **Spectral clustering** — affinity → normalized Laplacian → top-k embedding
+  (PSD, so dgesvd *is* its eigendecomposition) → k-means on the embedded rows.
+- **Classical MDS / kernel PCA** — double-centered squared distances /
+  centered Gram matrix, decompose. dgesvd loses eigenvalue signs on
+  indefinite matrices; Euclidean distances and PSD kernels are safe.
+  Indefinite inputs need a dsyevr binding (re-vendor lapacke with one more
+  exported symbol) — defer until wanted.
+- **Correspondence analysis / MCA** — SVD of the standardized residuals of a
+  contingency (or indicator) table; the categorical companion to PCA and the
+  descriptive cousin of LCA, sharing its one-hot plumbing.
+- **Spectral LCA** — the method-of-moments estimator (Anandkumar et al.,
+  JMLR 2014), built as spectral initialization + EM polish, not
+  spectral-only:
+  - Partition items into three groups; build cross-moment matrices between
+    groups from one-hot indicator matrices (dgemm); symmetrize the views.
+  - Whiten with the top-k SVD of M₂ (W = UₖΣₖ^(−1/2)); k read from the
+    singular-value gap, which is also the exposed diagnostic.
+  - Accumulate the whitened k×k×k third moment directly from whitened rows —
+    never materialize the p³ tensor.
+  - Tensor power iteration with deflation and random restarts (the
+    positive-random-slice PD shortcut as the cheap first cut) for the
+    orthogonal factors.
+  - Reconstruct wᵢ = 1/λᵢ² and aᵢ = λᵢ(Wᵀ)⁺ãᵢ; project onto the simplex.
+  - Finish with a few EM iterations (elementwise ops only): the spectral
+    step removes local optima and label switching, EM restores efficiency.
+    Small-n accuracy degrades with conditioning (1/w_min, σₖ(M₂)); the M₂
+    spectrum diagnostic says when to distrust the seed.
+- **Total least squares / orthogonal regression** — smallest right singular
+  vector of [X | y].
+
+To settle: whether spectral clustering's affinity construction (RBF
+bandwidth, kNN graph) waits on the distance primitive (§5); how much of
+CA/MCA folds into the LCA indicator plumbing; where the library splits
+(statistics.h2o is already the stats home — clustering and LCA may warrant
+their own files).
+
+### 2. Weighted least squares and the GLM family
+
+- **fit-weighted** — name the sqrt-w row-scaling idiom `fit-logistic`
+  already uses ( X y w -- beta ).
+- **Generalized IRLS** — parameterize link and variance in one loop:
+  Poisson (log link), probit, negative binomial, multinomial/ordinal
+  logistic. One reweighting loop, one linear solver.
+- **Ridge** — singular-value filtering σ/(σ²+λ) on the design; λ chosen by
+  cross-validation (§3).
+- **LDA** — within-class whitening + SVD of the class means.
+- **Random Fourier features** — approximate kernel classification and
+  regression through the same linear fits; RNG + dgemm, no QP solver, which
+  is why a separate SVM earns no spot.
+- **Local regression and KDE** — kernel weights by distance to each
+  evaluation point: LOESS is fit-weighted in a loop, KDE is the weights
+  alone.
+
+To settle: bandwidth selection (CV vs plug-in rules); whether multinomial
+logistic reuses the Firth machinery or defers it to the binary case.
+
+### 3. The resampling loop as the inference engine
+
+Generalize bootstrap's shape — index sets → refit → collect — into the
+library's whole inference story; parametric standard errors and asymptotic
+tables stay out.
+
+- **permutation-test** — shuffle one column's indices for the null;
+  replaces the t-test, ANOVA, and correlation tests. Needs `shuffle` (see
+  Sort and shuffle below).
+- **jackknife**, **cross-validate** — leave-one-out and k-fold index
+  partitions; CV is the model-selection tool the rest of this plan cites.
+- **Rank transform** — sort + inverse permutation; Spearman, Wilcoxon /
+  Mann–Whitney, Kruskal–Wallis become rank statistics with permutation
+  nulls.
+- Parallel variants ride pmap as pbootstrap does.
+
+To settle: one generic word ( data index-gen-xt statistic-xt n -- dist )
+with bootstrap/permutation/jackknife as instances, or a word per method;
+seeding discipline so parallel resampling stays reproducible per worker.
+
+### 4. One tree grower, three predictors
+
+The recursive partitioner is the one substantial new C kernel: split search
+over presorted columns on gradient/hessian statistics, with depth and
+min-leaf limits. Growing on grad/hess pairs serves all three products;
+squared error and Gini/entropy are special cases of the statistics fed in.
+
+- **Single tree** — readable rules; cost-complexity pruning by CV. Represent
+  the tree as a frame tree so it prints, stores, and save-images like any
+  value; prediction is a C traversal.
+- **Random forest** — bootstrap rows + per-split feature subsampling around
+  the grower; out-of-bag error and permutation importance fall out of §3.
+  The resampling-native ensemble.
+- **Gradient boosting** — fit-to-gradients with shrinkage and early stopping
+  (CV); any loss with grad/hess: logistic, multiclass, quantile, survival.
+  The tabular-accuracy workhorse.
+
+To settle: exact split search only, or histogram binning from the start
+(histograms are what make boosting fast at scale); categorical features —
+one-hot at the library level vs native category splits in the grower;
+missing values (surrogate splits vs a learned default direction); how much
+of the ensemble loop is C vs library code over a
+( X y grad hess params -- tree ) word.
+
+### 5. Pairwise distances (small, last)
+
+( X Y -- D ) via the dgemm identity ‖x‖² + ‖y‖² − 2XYᵀ, plus a direct kernel
+for other metrics. Unlocks kNN classification/regression, MDS input, RBF
+affinities for spectral clustering, and the distance-based tests — distance
+correlation, PERMANOVA, MMD — whose nulls come from the permutation loop.
+
+To settle: C word vs dgemm composition in library code (the identity is
+three ops but loses precision on near-duplicate rows).
+
+---
+
+## Error backtraces
+
+An error surfaces as a one-line message with no indication of where in the
+program it happened. The return stack holds the colon-word call chain at the
+moment `fail` runs, and each saved address maps back through the dictionary to
+the word containing it — so a word-level trace is a return-stack walk:
+
+- On error, print the chain innermost first — `in lappend, called from nrev,
+  called from the top level` — skipping locals frames and marks.
+
+To settle: whether the trace prints on every error or only when nothing
+catches it; how deep to print before eliding the middle; how a quotation
+names itself (by its enclosing definition, or anonymously with a source
+position).
+
+---
+
 ## Symbol collection
 
 Interned symbols are never reclaimed: `:foo` literals, `string>symbol`, and
@@ -40,23 +185,6 @@ interned pool) and therefore how a slot is retired and reused; how `save-image`
 serializes a collectible symbol (by name, re-interned on load, since its index
 is not stable); whether pinned-vs-collectible is decided at the intern call site
 or inferred from whether interning happens during compilation.
-
----
-
-## Error backtraces
-
-An error surfaces as a one-line message with no indication of where in the
-program it happened. The return stack holds the colon-word call chain at the
-moment `fail` runs, and each saved address maps back through the dictionary to
-the word containing it — so a word-level trace is a return-stack walk:
-
-- On error, print the chain innermost first — `in lappend, called from nrev,
-  called from the top level` — skipping locals frames and marks.
-
-To settle: whether the trace prints on every error or only when nothing
-catches it; how deep to print before eliding the middle; how a quotation
-names itself (by its enclosing definition, or anonymously with a source
-position).
 
 ---
 
