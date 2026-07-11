@@ -6,6 +6,8 @@ manipulation, string/regex processing, logic programming, and multi-core data
 parallelism — with embedded SQLite and a runtime C FFI. A compact,
 self-contained C interpreter.
 
+Dedicated to Chuck Peddle and Tony Wilkinson.
+
 ## Building and running
 
 ```
