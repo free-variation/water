@@ -8,6 +8,8 @@ self-contained C interpreter.
 
 The doc system is designed to fit into a single LLM prompt, making the language LLM-friendly from the start.
 
+Dedicated to Chuck Peddle and Tony Wilkinson.
+
 ## Building and running
 
 ```
