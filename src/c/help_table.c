@@ -200,6 +200,7 @@ const HelpEntry help_entries[] = {
 	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)" },
 	{ "head-tail", "( pair -- head tail )", "Split a pair — head under, tail on top; no auto-deref; errors on a non-pair", "1", "none", "O(1)" },
 	{ "help", "( \"name\" -- )", "lib.h2o: parse the next word and print its man frame (lookup man .)", "dict scan + log n", "1o + strings + print", "O(|dict|)" },
+	{ "hstack", "( a b -- m )", "lib.h2o: augment under its numpy name (inlined)", "2 + r·c", "1m(r×c)", "O(r·c)" },
 	{ "i-times", "( xt n -- )", "Run xt n times, pushing index 0..n-1 first", "2 + n·(1+xt)", "none", "O(n·xt)" },
 	{ "identity-matrix", "( n -- m )", "lib.h2o: 1 swap diagonal-matrix", "n", "1m(n×n)", "O(n)" },
 	{ "if", "( flag -- )", "Branch past the then/else if flag is falsy", NULL, NULL, NULL },
@@ -420,4 +421,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 414;
+const int help_entry_count = 415;

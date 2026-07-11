@@ -22,8 +22,6 @@ below close the gap; existing names go polymorphic in the house style
 - `argsort` — ( m -- m ) the sorting permutation as a matrix; ranks are
   argsort applied twice, making the statistics plan's rank transform pure
   C passes.
-- `stack` — ( a b -- m ) row-wise concatenation, the missing twin of
-  `augment`; joins vectors and samples.
 - `where` — ( mask -- indices ) indices of the nonzero elements of a 0/1
   matrix (what `lt`/`gt` return) as an index vector; `select-rows` learns
   to accept an index matrix alongside its index array, closing the

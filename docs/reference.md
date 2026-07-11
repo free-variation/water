@@ -578,6 +578,7 @@ Row-major `double` storage. `r` rows, `c` columns.
 |------|-------------|----------|-----|-------|---|
 | `augment` | `( a b -- m )` | Concatenate two matrices column-wise; errors unless row counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `vstack` | `( a b -- m )` | Stack two matrices row-wise (a on top of b); errors unless column counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
+| `hstack` | `( a b -- m )` | lib.h2o: `augment` under its numpy name (inlined) | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `submatrix` | `( m rs re cs ce -- m )` | Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end | 5 + r·c | `1m(r×c)` | O(r·c) |
 | `select-rows` | `( m idx -- m )` | New matrix of the rows named by the float index array `idx`; errors on a non-float or out-of-range index | 2 + k·c | `1m(k×c)` | O(k·c) |
 | `var` | `( m -- f )` | Sample variance (÷ n−1) over all elements; errors with fewer than 2 | 1 + n | none | O(n) |

@@ -177,6 +177,9 @@ inline
 ( m -- column-means )  \ each column's sum divided by the number of rows
 : column-means dup dim drop swap column-sums swap / ;
 
+( a b -- m )  \ column-wise concatenation: vstack's twin, augment's numpy name
+: hstack augment ; inline
+
 \ subprocess convenience
 
 ( string proc -- )  \ write the string to the child's stdin

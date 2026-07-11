@@ -194,6 +194,7 @@ gt
 has?
 head-tail
 help
+hstack
 i-times
 identity-matrix
 if
