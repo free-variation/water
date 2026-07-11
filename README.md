@@ -301,6 +301,15 @@ Built in `lib.h2o` on top of the continuation primitives:
 
 An uncaught `throw` or interpreter error still surfaces at the REPL. The `shift-with` handler can also resume the captured continuation, giving the Common Lisp restart pattern — exceptions can recover.
 
+An uncaught error also prints a backtrace under the message: the call chain read
+off the return stack, innermost first — `in inner ← mid ← outer`. A quotation
+frame prints as its source snippet (`in [: 1 0 % :]`, long ones truncated),
+same-site recursion collapses to one frame (`in spin ×65536`), and deep chains
+elide the middle (`… ← …+3 ← …`). A caught error prints none. The trace costs
+nothing until an error happens — capture is a return-stack walk at failure
+time — and quotation spans ride along in `save-image`, so frames resolve across
+a `load-image`.
+
 ### Logic
 
 Unification and committed choice, on the trail and the continuation machinery:

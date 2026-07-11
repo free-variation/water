@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.18.1"
+#define VERSION "0.18.2"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -63,6 +63,12 @@ typedef int64_t cell;
 #define PRINT_FIRST 10
 #define PRINT_LAST 3
 #define LIST_PRINT_MAX 100000
+#define MAX_QUOTATION_SPANS (1 << 14)
+#define ERROR_TRACE_SIZE 1024
+#define TRACE_SNIPPET_MAX 48
+#define TRACE_FRAMES_FIRST 10
+#define TRACE_FRAMES_LAST 3
+#define TRACE_FRAMES_MAX 512
 
 typedef enum {
 	T_NONE = 0,
@@ -372,6 +378,12 @@ typedef enum {
 
 #define OBJECT_AT(handle) (arena.objects[handle])
 
+typedef struct {
+	int start_cfa;
+	int end_cfa;
+	int source_offset;
+} QuotationSpan;
+
 typedef struct Vocabulary {
 	cell dict[VOCABULARY_INIT_SIZE];
 	int here;
@@ -403,6 +415,9 @@ typedef struct Vocabulary {
 	int init_here, init_latest_cfa, init_names_here;
 	int init_source_here, init_symbol_pool_here;
 	int lib_end_latest_cfa;
+
+	QuotationSpan quotation_spans[MAX_QUOTATION_SPANS];
+	int n_quotation_spans;
 } Vocabulary;
 extern Vocabulary vocab;
 
@@ -455,6 +470,7 @@ typedef struct Interpreter {
 	int call_depth;
 
 	char error_message[256];
+	char error_trace[ERROR_TRACE_SIZE];
 } Interpreter;
 
 typedef struct {
@@ -1104,6 +1120,8 @@ int r_val(FILE *f, Val *v);
 void p_save_image(DISPATCH_ARGS);
 void free_one_object(Object *obj);
 void forget_user(Interpreter *interp);
+void truncate_quotation_spans(void);
+void rollback_partial_definition(void);
 void p_load_image(DISPATCH_ARGS);
 int create_matrix(Interpreter *interp);
 void p_0_matrix(DISPATCH_ARGS);

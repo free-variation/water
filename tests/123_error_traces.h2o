@@ -1,0 +1,52 @@
+\ chain of named calls, innermost first
+: inner 1 0 % ;
+: mid inner ;
+: outer mid ;
+outer
+
+\ single-site recursion collapses to one frame
+: spin spin ;
+spin
+
+\ top-level quotation names its snippet
+[: 1 0 % :] execute
+
+\ long snippet truncates with a guard
+[: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 0 % :] execute
+
+\ locals regions are skipped, not misread as frames
+: haslocals | a b | 3 to a 4 to b a b + 0 % ;
+: top haslocals ;
+top
+
+\ deep non-recursive chain elides the middle
+: w1 1 0 % ;
+: w2 w1 ;
+: w3 w2 ;
+: w4 w3 ;
+: w5 w4 ;
+: w6 w5 ;
+: w7 w6 ;
+: w8 w7 ;
+: w9 w8 ;
+: w10 w9 ;
+: w11 w10 ;
+: w12 w11 ;
+: w13 w12 ;
+: w14 w13 ;
+: w15 w14 ;
+: w16 w15 ;
+w16
+
+\ quotation inside a definition names its own snippet
+: usemap [ 1 2 3 ] [: 0 % :] map ;
+usemap
+
+\ spans survive forget; a fresh quotation resolves correctly
+: f1 [: 1 0 % :] execute ;
+f1
+forget f1
+[: 2 0 % :] execute
+
+\ a caught error prints no trace
+[: 1 0 % :] catch . drop cr

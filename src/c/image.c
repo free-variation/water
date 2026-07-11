@@ -5,7 +5,7 @@
 #include "water.h"
 
 #define IMAGE_MAGIC "LF4I"
-#define IMAGE_VERSION ((uint32_t)5)
+#define IMAGE_VERSION ((uint32_t)6)
 
 #define HANDLER_DOCOL 1
 #define HANDLER_DOVAR 2
@@ -181,6 +181,20 @@ void p_save_image(DISPATCH_ARGS) {
 	fwrite(&vocab.name_pool[vocab.init_names_here], 1, (size_t)user_namepool_bytes, file);
 	fwrite(&vocab.source_pool[vocab.init_source_here], 1, (size_t)user_sourcepool_bytes, file);
 	fwrite(&vocab.symbol_pool[vocab.init_symbol_pool_here], 1, (size_t)user_symbolpool_bytes, file);
+
+	int32_t user_span_count = 0;
+	for (int i = 0; i < vocab.n_quotation_spans; i++)
+		if (vocab.quotation_spans[i].start_cfa >= vocab.init_here)
+			user_span_count++;
+	w_i32(file, user_span_count);
+	for (int i = 0; i < vocab.n_quotation_spans; i++) {
+		QuotationSpan *span = &vocab.quotation_spans[i];
+		if (span->start_cfa < vocab.init_here)
+			continue;
+		w_i32(file, span->start_cfa);
+		w_i32(file, span->end_cfa);
+		w_i32(file, span->source_offset);
+	}
 
 	dimension_save(file);
 
@@ -455,6 +469,32 @@ void p_load_image(DISPATCH_ARGS) {
 	vocab.source_here = vocab.init_source_here + user_sourcepool_bytes;
 	vocab.symbol_pool_here = vocab.init_symbol_pool_here + user_symbolpool_bytes;
 	rebuild_symbol_hash();
+
+	int32_t user_span_count;
+	if (!r_i32(file, &user_span_count)) {
+		fail(interp, "%s: truncated quotation spans", filename);
+		goto done;
+	}
+	if (user_span_count < 0 || vocab.n_quotation_spans + user_span_count > MAX_QUOTATION_SPANS) {
+		fail(interp, "%s: bad quotation span count", filename);
+		goto done;
+	}
+	for (int i = 0; i < user_span_count; i++) {
+		int32_t span_start, span_end, span_source;
+		if (!r_i32(file, &span_start) || !r_i32(file, &span_end) || !r_i32(file, &span_source)) {
+			fail(interp, "%s: truncated quotation spans", filename);
+			goto done;
+		}
+		if (span_start < vocab.init_here || span_end <= span_start || span_end > vocab.here
+				|| span_source < 0 || span_source >= vocab.source_here) {
+			fail(interp, "%s: quotation span out of range", filename);
+			goto done;
+		}
+		QuotationSpan *span = &vocab.quotation_spans[vocab.n_quotation_spans++];
+		span->start_cfa = span_start;
+		span->end_cfa = span_end;
+		span->source_offset = span_source;
+	}
 
 	if (!dimension_load(file)) {
 		fail(interp, "%s: truncated unit tables", filename);

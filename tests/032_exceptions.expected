@@ -19,3 +19,4 @@ caught: / : division by zero
 after 
 inner caught 
 error: shift/shift-with: no enclosing reset on the return stack
+in throw

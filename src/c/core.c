@@ -1635,12 +1635,157 @@ void emit_val_literal(Interpreter *interp, Val value) {
 	emit(interp, (cell)value.bits);
 }
 
+static const QuotationSpan *quotation_span_containing(int addr) {
+	const QuotationSpan *innermost = NULL;
+	for (int i = 0; i < vocab.n_quotation_spans; i++) {
+		const QuotationSpan *span = &vocab.quotation_spans[i];
+		if (addr >= span->start_cfa && addr < span->end_cfa
+				&& (!innermost || span->start_cfa > innermost->start_cfa))
+			innermost = span;
+	}
+	return innermost;
+}
+
+static int word_containing(int addr) {
+	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa))
+		if (cfa <= addr)
+			return cfa;
+	return 0;
+}
+
+static void trace_write(Interpreter *interp, int *len, const char *text) {
+	while (*text && *len < ERROR_TRACE_SIZE - 1)
+		interp->error_trace[(*len)++] = *text++;
+	interp->error_trace[*len] = 0;
+}
+
+static void trace_write_snippet(Interpreter *interp, int *len, int source_offset) {
+	if (source_offset == 0) {
+		trace_write(interp, len, "[:?]");
+		return;
+	}
+	char cleaned[TRACE_SNIPPET_MAX + 8];
+	int n = 0;
+	int pending_space = 0;
+	const char *c = &vocab.source_pool[source_offset];
+	for (; *c && n < TRACE_SNIPPET_MAX - 1; c++) {
+		if (isspace((unsigned char)*c)) {
+			pending_space = 1;
+			continue;
+		}
+		if (pending_space && n > 0)
+			cleaned[n++] = ' ';
+		pending_space = 0;
+		cleaned[n++] = *c;
+	}
+	if (*c) {
+		while (n > 0 && ((unsigned char)cleaned[n - 1] & 0xC0) == 0x80)
+			n--;
+		if (n > 0 && (unsigned char)cleaned[n - 1] >= 0xC0)
+			n--;
+		memcpy(&cleaned[n], "… :]", 6);
+		n += 6;
+	}
+	cleaned[n] = 0;
+	trace_write(interp, len, cleaned);
+}
+
+typedef struct {
+	int addr;
+	int repeats;
+	const QuotationSpan *span;
+	int cfa;
+} TraceFrame;
+
+static void capture_error_trace(Interpreter *interp) {
+	interp->error_trace[0] = 0;
+
+	TraceFrame frames[TRACE_FRAMES_MAX];
+	int n_frames = 0;
+	int dropped = 0;
+	int scope_base = interp->local_base;
+	int scope_top = scope_base > 0
+		? scope_base + saved_n_locals(interp->return_stack[scope_base - 1]) : -1;
+
+	if (interp->running && interp->ip >= DICT_RESERVED) {
+		frames[n_frames].addr = interp->ip;
+		frames[n_frames++].repeats = 1;
+	}
+	for (int i = interp->rsp - 1; i >= 0; i--) {
+		if (scope_base > 0 && i >= scope_base && i < scope_top)
+			continue;
+		if (scope_base > 0 && i == scope_base - 1) {
+			scope_base = saved_local_base(interp->return_stack[i]);
+			scope_top = scope_base > 0
+				? scope_base + saved_n_locals(interp->return_stack[scope_base - 1]) : -1;
+			continue;
+		}
+		Val entry = interp->return_stack[i];
+		if (VAL_TAG(entry) != T_ADDR)
+			continue;
+		int addr = (int)VAL_DATA(entry);
+		if (addr < DICT_RESERVED || addr == vocab.stop_cfa)
+			continue;
+		if (n_frames > 0 && frames[n_frames - 1].addr == addr) {
+			frames[n_frames - 1].repeats++;
+			continue;
+		}
+		if (n_frames >= TRACE_FRAMES_MAX) {
+			dropped++;
+			continue;
+		}
+		frames[n_frames].addr = addr;
+		frames[n_frames++].repeats = 1;
+	}
+
+	int n_merged = 0;
+	for (int i = 0; i < n_frames; i++) {
+		const QuotationSpan *span = quotation_span_containing(frames[i].addr);
+		int cfa = span ? 0 : word_containing(frames[i].addr);
+		if (!span && !cfa)
+			continue;
+		if (n_merged > 0 && frames[n_merged - 1].span == span
+				&& frames[n_merged - 1].cfa == cfa) {
+			frames[n_merged - 1].repeats += frames[i].repeats;
+			continue;
+		}
+		frames[n_merged].addr = frames[i].addr;
+		frames[n_merged].repeats = frames[i].repeats;
+		frames[n_merged].span = span;
+		frames[n_merged++].cfa = cfa;
+	}
+
+	int len = 0;
+	for (int i = 0; i < n_merged; i++) {
+		if (n_merged > TRACE_FRAMES_FIRST + TRACE_FRAMES_LAST + 1
+				&& i == TRACE_FRAMES_FIRST) {
+			char skipped[32];
+			snprintf(skipped, sizeof(skipped), " ← …+%d",
+					n_merged - TRACE_FRAMES_FIRST - TRACE_FRAMES_LAST + dropped);
+			trace_write(interp, &len, skipped);
+			i = n_merged - TRACE_FRAMES_LAST - 1;
+			continue;
+		}
+		trace_write(interp, &len, i == 0 ? "in " : " ← ");
+		if (frames[i].span)
+			trace_write_snippet(interp, &len, frames[i].span->source_offset);
+		else
+			trace_write(interp, &len, &vocab.name_pool[WORD_NAME(frames[i].cfa)]);
+		if (frames[i].repeats > 1) {
+			char multiple[16];
+			snprintf(multiple, sizeof(multiple), " ×%d", frames[i].repeats);
+			trace_write(interp, &len, multiple);
+		}
+	}
+}
+
 void fail(Interpreter *interp, const char *fmt, ...) {
 	va_list args;
 	va_start(args, fmt);
 	vsnprintf(interp->error_message, sizeof(interp->error_message), fmt, args);
 	va_end(args);
 	interp->error_flag = 1;
+	capture_error_trace(interp);
 }
 
 const char *tag_name(Tag t) {
@@ -2734,6 +2879,8 @@ void load_file(Interpreter *interp, const char *filename) {
 		fail(interp, "%s: unterminated definition", filename);
 		compiler.compiling = 0;
 	}
+	if (interp->error_flag)
+		rollback_partial_definition();
 
 	memcpy(compiler.input_buffer, saved_inbuf_contents, (size_t)saved_inbuf_len);
 	compiler.input_buffer[saved_inbuf_len] = 0;
@@ -3676,6 +3823,7 @@ void forget_user(Interpreter *interp) {
 	vocab.names_here = vocab.init_names_here;
 	vocab.source_here = vocab.init_source_here;
 	vocab.symbol_pool_here = vocab.init_symbol_pool_here;
+	truncate_quotation_spans();
 	rebuild_symbol_hash();
 }
 
@@ -4217,6 +4365,8 @@ int main(int argc, char **argv) {
 		load_file(interp, program_files[i]);
 		if (interp->error_flag) {
 			fprintf(stderr, "error: %s\n", interp->error_message);
+			if (interp->error_trace[0])
+				fprintf(stderr, "%s\n", interp->error_trace);
 			return 1;
 		}
 		record_loaded_file(interp, program_files[i]);
@@ -4247,6 +4397,7 @@ int main(int argc, char **argv) {
 			continue;
 
 		if (interp->error_flag) {
+			rollback_partial_definition();
 			compiler.compiling = 0;
 			interp->dsp = 0;
 			interp->rsp = 0;
@@ -4266,14 +4417,20 @@ int main(int argc, char **argv) {
 
 		if (interactive) {
 			print_prompt_state(interp);
-			if (interp->error_flag)
+			if (interp->error_flag) {
 				fputs(interp->error_message, stdout);
-			else
+				if (interp->error_trace[0]) {
+					putchar('\n');
+					fputs(interp->error_trace, stdout);
+				}
+			} else
 				fputs("ok", stdout);
 			putchar('\n');
 			fflush(stdout);
 		} else if (interp->error_flag) {
 			fprintf(stdout, "error: %s\n", interp->error_message);
+			if (interp->error_trace[0])
+				fprintf(stdout, "%s\n", interp->error_trace);
 			fflush(stdout);
 		}
 

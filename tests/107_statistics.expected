@@ -31,6 +31,7 @@ error: quantile: empty matrix
 9.1 
 1 
 error: quantile: probability must be in [0,1]; got 1.5
+in percentile
 4.5 
 4 
 0 

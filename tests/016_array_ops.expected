@@ -6,9 +6,13 @@ error: take: expected array or set; got a float
 error: reverse: expected array or set; got a string
 error: reverse: stack too shallow
 [ 3 4 5 ] [ 1 2 3 4 5 ] [ ] [ ] [ 1 2 3 4 5 ] [ ] [ 3 4 5 ] 4 [ 5 4 3 2 ] [ 4 5 ] [ ] [ 1 2 3 4 5 ] [ 1 2 3 ] [ ] [ 3 4 5 ] error: - : expected two floats, two sets, two matrices, or scalar/matrix; got a float and a string
+in skip
 error: reverse: expected array or set; got a string
+in skip
 error: take: expected a float length; got a string
+in last
 error: reverse: expected array or set; got a string
+in last
 [ 1 2 3 4 5 6 ] [ 1 2 3 ] [ 1 2 3 ] [ ] [ 1 2 3 1 2 3 ] [ 1 3 5 7 8 ] [ 0 1 3 5 ] [ 1 2 3 4 ] [ 1 2 3 4 ] 9 4 [ 4 3 2 1 ] [ 1 2 ] [ 3 4 ] [ 1 2 3 4 5 6 ] [ 1 2 3 4 5 6 ] error: concat: expected array or set; got a float
 error: concat: expected array or set; got a float
 error: concat: stack too shallow

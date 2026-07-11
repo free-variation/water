@@ -132,23 +132,6 @@ three ops but loses precision on near-duplicate rows).
 
 ---
 
-## Error backtraces
-
-An error surfaces as a one-line message with no indication of where in the
-program it happened. The return stack holds the colon-word call chain at the
-moment `fail` runs, and each saved address maps back through the dictionary to
-the word containing it — so a word-level trace is a return-stack walk:
-
-- On error, print the chain innermost first — `in lappend, called from nrev,
-  called from the top level` — skipping locals frames and marks.
-
-To settle: whether the trace prints on every error or only when nothing
-catches it; how deep to print before eliding the middle; how a quotation
-names itself (by its enclosing definition, or anonymously with a source
-position).
-
----
-
 ## Symbol collection
 
 Interned symbols are never reclaimed: `:foo` literals, `string>symbol`, and

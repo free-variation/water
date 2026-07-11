@@ -6,17 +6,24 @@
 static void enter_compile_scope(Interpreter *interp);
 static void leave_compile_scope(Interpreter *interp);
 
+void rollback_partial_definition(void) {
+	if (compiler.compiling_src_start <= 0 || vocab.latest_cfa == 0)
+		return;
+	int partial_cfa = vocab.latest_cfa;
+	vocab.here = partial_cfa - 4;
+	vocab.names_here = (int)WORD_NAME(partial_cfa);
+	vocab.latest_cfa = (int)WORD_LINK(partial_cfa);
+	truncate_quotation_spans();
+	compiler.compiling = 0;
+	compiler.compiling_src_start = 0;
+	compiler.n_local_scopes = 0;
+	compiler.n_local_names = 0;
+	compiler.local_names_pool_here = 0;
+}
+
 void p_semicolon(DISPATCH_ARGS) {
 	if (compiler.compiling_src_start > 0 && compiler.n_local_scopes > 1) {
-		int partial_cfa = vocab.latest_cfa;
-		vocab.here = partial_cfa - 4;
-		vocab.names_here = (int)WORD_NAME(partial_cfa);
-		vocab.latest_cfa = (int)WORD_LINK(partial_cfa);
-		compiler.n_local_scopes = 0;
-		compiler.n_local_names = 0;
-		compiler.local_names_pool_here = 0;
-		compiler.compiling = 0;
-		compiler.compiling_src_start = 0;
+		rollback_partial_definition();
 		fail(interp, "; : unterminated quotation (a [: , [> , or [| has no matching :])");
 		return;
 	}
@@ -173,6 +180,7 @@ void p_repeat(DISPATCH_ARGS) {
 }
 
 static void open_quotation(Interpreter *interp) {
+	int opener_start = compiler.input_buffer_pos - 2;
 	int branch_slot = -1;
 	if (compiler.compiling) {
 		emit_call(interp, vocab.branch_cfa);
@@ -187,6 +195,7 @@ static void open_quotation(Interpreter *interp) {
 	compiler.compiling = 1;
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
+	push(interp, make_float((double)opener_start));
 }
 
 void p_qcolon(DISPATCH_ARGS) {
@@ -195,13 +204,43 @@ void p_qcolon(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
+static void record_quotation_span(int anon_cfa, int opener_start) {
+	if (vocab.n_quotation_spans >= MAX_QUOTATION_SPANS)
+		return;
+	int snippet_len = compiler.input_buffer_pos - opener_start;
+	int source_offset = 0;
+	if (snippet_len > 0 && vocab.source_here + snippet_len + 1 <= SOURCE_POOL) {
+		source_offset = vocab.source_here;
+		memcpy(&vocab.source_pool[vocab.source_here],
+				&compiler.input_buffer[opener_start], (size_t)snippet_len);
+		vocab.source_pool[vocab.source_here + snippet_len] = 0;
+		vocab.source_here += snippet_len + 1;
+	}
+	QuotationSpan *span = &vocab.quotation_spans[vocab.n_quotation_spans++];
+	span->start_cfa = anon_cfa;
+	span->end_cfa = vocab.here;
+	span->source_offset = source_offset;
+}
+
+void truncate_quotation_spans(void) {
+	while (vocab.n_quotation_spans > 0
+			&& vocab.quotation_spans[vocab.n_quotation_spans - 1].end_cfa > vocab.here)
+		vocab.n_quotation_spans--;
+	for (int i = 0; i < vocab.n_quotation_spans; i++)
+		if (vocab.quotation_spans[i].source_offset >= vocab.source_here)
+			vocab.quotation_spans[i].source_offset = 0;
+}
+
 void p_qsemi(DISPATCH_ARGS) {
 	leave_compile_scope(interp);
 	emit_call(interp, vocab.exit_cfa);
+	POP(opener_start_val);
 	POP(branch_slot_val);
 	POP(anon_cfa_val);
+	int opener_start = (int)VAL_NUMBER(opener_start_val);
 	int branch_slot = (int)VAL_NUMBER(branch_slot_val);
 	int anon_cfa = (int)VAL_NUMBER(anon_cfa_val);
+	record_quotation_span(anon_cfa, opener_start);
 	if (branch_slot < 0) {
 		compiler.compiling = 0;
 		push(interp, make_xt(anon_cfa));
@@ -663,6 +702,7 @@ void p_forget(DISPATCH_ARGS) {
 		}
 	}
 	vocab.source_here = max_src_end;
+	truncate_quotation_spans();
 
 	DISPATCH(interp);
 }
