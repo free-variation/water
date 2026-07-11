@@ -2454,13 +2454,47 @@ char *next_token(void) {
 		return NULL;
 
 	int start = compiler.input_buffer_pos;
-	if (compiler.input_buffer[compiler.input_buffer_pos] == ';')
+	const char *buffer = compiler.input_buffer;
+	char lead = buffer[start];
+	char after_lead = start + 1 < compiler.input_buffer_len ? buffer[start + 1] : 0;
+
+	if (lead == ';' || lead == ']' || lead == '}') {
 		compiler.input_buffer_pos++;
-	else
-		while (compiler.input_buffer_pos < compiler.input_buffer_len
-		       && !isspace((unsigned char)compiler.input_buffer[compiler.input_buffer_pos])
-		       && compiler.input_buffer[compiler.input_buffer_pos] != ';')
+	} else if ((lead == ':' || lead == ')') && after_lead == ']') {
+		compiler.input_buffer_pos += 2;
+	} else if (lead == '[') {
+		int two_char_opener = after_lead == ':' || after_lead == '('
+			|| after_lead == '|' || after_lead == '>';
+		compiler.input_buffer_pos += two_char_opener ? 2 : 1;
+	} else if (lead == '{') {
+		compiler.input_buffer_pos++;
+	} else {
+		int bracket_depth = 0;
+		int brace_depth = 0;
+		while (compiler.input_buffer_pos < compiler.input_buffer_len) {
+			char c = buffer[compiler.input_buffer_pos];
+			if (isspace((unsigned char)c) || c == ';')
+				break;
+			if (c == ']' && bracket_depth == 0) {
+				char preceding = buffer[compiler.input_buffer_pos - 1];
+				if ((preceding == ':' || preceding == ')')
+						&& compiler.input_buffer_pos - 1 > start)
+					compiler.input_buffer_pos--;
+				break;
+			}
+			if (c == '}' && brace_depth == 0)
+				break;
+			if (c == '[')
+				bracket_depth++;
+			if (c == ']')
+				bracket_depth--;
+			if (c == '{')
+				brace_depth++;
+			if (c == '}')
+				brace_depth--;
 			compiler.input_buffer_pos++;
+		}
+	}
 
 	int length = compiler.input_buffer_pos - start;
 	if (length >= (int)sizeof(compiler.token_buffer))

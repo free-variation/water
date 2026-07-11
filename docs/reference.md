@@ -23,6 +23,13 @@ time.
 slot with no tag check; a non-float operand yields a garbage float silently.
 All `f`-prefixed words and all superwords are unsafe.
 
+Tokens are whitespace-delimited, with self-delimiting punctuation: `;`, `]`,
+and `}` always end a token and `[` and `{` always start one (the two-char
+openers `[:` `[(` `[|` `[>` and closers `:]` `)]` stay whole), so `[1 2 3]`,
+`{:a 1}`, and `dup *;` parse without inner spaces. A path literal's predicate
+brackets (`/a[x>3]`) are kept whole by bracket balance. `<` and `>` are
+ordinary word characters — set literals still need their spaces.
+
 Allocation note: an object slot is a pointer bump into the object table, which
 grows on demand (doubling) up to a 64M-entry ceiling; when the ceiling is
 reached, a mark-sweep GC runs and the allocation retries. There is no
@@ -298,7 +305,7 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 | Word | Stack effect | Behavior |
 |------|-------------|----------|
 | `:` | — | Begin a colon definition; read the following name; enter compile mode |
-| `;` | — | End a colon definition; emit `exit`; store the source text for `see` |
+| `;` | — | End a colon definition; emit `exit`; store the source text for `see`. Self-delimiting: `dup *;` parses |
 | `variable` | — | Read the following name; declare a global variable initialized to `0.0` |
 | `constant` | `( val -- )` | Pop a value and read the following name; define an inline word that pushes it as a literal, so call sites fold to the literal with no run-time fetch. Fixed at definition — `to` cannot reassign it |
 | `to` | `( val -- )` | Assign to the named local (in a definition) or global. At the REPL, auto-creates the global if absent. In a definition, the variable must already exist. May trigger superword store-fusion while compiling. |

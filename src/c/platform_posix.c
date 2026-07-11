@@ -90,6 +90,49 @@ static int lf_is_ws(char c) {
 	return c == ' ' || c == '\t' || c == '\r' || c == '\n';
 }
 
+static long lf_token_end(const char *input, long n, long start) {
+	char lead = input[start];
+	char after_lead = start + 1 < n ? input[start + 1] : 0;
+	if (lead == ';' || lead == ']' || lead == '}')
+		return start + 1;
+	if ((lead == ':' || lead == ')') && after_lead == ']')
+		return start + 2;
+	if (lead == '[') {
+		int two_char_opener = after_lead == ':' || after_lead == '('
+			|| after_lead == '|' || after_lead == '>';
+		return start + (two_char_opener ? 2 : 1);
+	}
+	if (lead == '{')
+		return start + 1;
+
+	long i = start;
+	int bracket_depth = 0;
+	int brace_depth = 0;
+	while (i < n) {
+		char c = input[i];
+		if (lf_is_ws(c) || c == ';')
+			break;
+		if (c == ']' && bracket_depth == 0) {
+			char preceding = input[i - 1];
+			if ((preceding == ':' || preceding == ')') && i - 1 > start)
+				i--;
+			break;
+		}
+		if (c == '}' && brace_depth == 0)
+			break;
+		if (c == '[')
+			bracket_depth++;
+		if (c == ']')
+			bracket_depth--;
+		if (c == '{')
+			brace_depth++;
+		if (c == '}')
+			brace_depth--;
+		i++;
+	}
+	return i;
+}
+
 static void repl_highlighter(ic_highlight_env_t *henv, const char *input, void *arg) {
 	(void)arg;
 	long n = (long)strlen(input);
@@ -121,10 +164,7 @@ static void repl_highlighter(ic_highlight_env_t *henv, const char *input, void *
 			ic_highlight(henv, start, i - start, "ansi-green");
 			continue;
 		}
-		if (input[i] == ';')
-			i++;
-		else
-			while (i < n && !lf_is_ws(input[i]) && input[i] != ';') i++;
+		i = lf_token_end(input, n, i);
 		const char *style = lf_token_style(input + start, i - start);
 		if (style)
 			ic_highlight(henv, start, i - start, style);

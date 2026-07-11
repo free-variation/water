@@ -108,7 +108,7 @@ def emit_vim(auto):
     L.append("endif")
     L.append("")
     L.append("syn case match")
-    L.append("syn iskeyword @,48-57,_,192-255,33,35-39,42-47,58-64,94,126")
+    L.append("syn iskeyword @,48-57,_,192-255,33,35-39,42-47,58,60-64,94,126")
     L.append("")
     L.append("syn match   waterComment \"\\%(^\\|\\s\\)\\zs\\\\\\%(\\s.*\\)\\=$\" contains=@Spell")
     L.append('syn region  waterComment start="\\[\\@<!(\\s" end=")" contains=@Spell')
@@ -123,7 +123,8 @@ def emit_vim(auto):
     def kw(group, items):
         return "syn keyword %s %s" % (group, " ".join(items))
 
-    L.append(kw("waterDefine", DEFINING))
+    L.append(kw("waterDefine", [w for w in DEFINING if w != ";"]))
+    L.append('syn match   waterDefine ";"')
     L.append('syn match   waterDefine "\\[:"')
     L.append('syn match   waterDefine "\\[|"')
     L.append('syn match   waterDefine "\\[>"')
@@ -175,10 +176,17 @@ def esc(word):
     return "".join("\\" + c if c in _META else c for c in word)
 
 
+# Self-delimiting punctuation: ; ] } always end a token, [ { always start one,
+# and :] / )] are two-char closers — so token boundaries are whitespace OR
+# these characters, mirroring next_token in core.c.
+BOUNDARY_BEHIND = r"(?<=^|\s|[\[\]{};])"
+BOUNDARY_AHEAD = r"(?=$|\s|[\[\]{};]|:\]|\)\])"
+
+
 def alt(words):
     # Whole-token anchored alternation; order-independent thanks to the anchors.
     body = "|".join(esc(w) for w in words)
-    return r"(?<=^|\s)(?:%s)(?=\s|$)" % body
+    return r"%s(?:%s)%s" % (BOUNDARY_BEHIND, body, BOUNDARY_AHEAD)
 
 
 def emit_vscode(auto):
@@ -205,19 +213,21 @@ def emit_vscode(auto):
                 ],
             },
             "numbers": {"name": "constant.numeric.water",
-                        "match": r"(?<=^|\s)-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?(?=\s|$)"},
+                        "match": BOUNDARY_BEHIND + r"-?\d+(?:\.\d+)?(?:[eE][-+]?\d+)?" + BOUNDARY_AHEAD},
             "quotation": {"name": "keyword.declaration.water",
-                          "match": r"(?<=^|\s)(?:\[:|\[\||\[>|:\])(?=\s|$)"},
+                          "match": r"\[:|\[\||\[>|:\]"},
             "control": {"name": "keyword.control.water", "match": alt(CONDITIONAL + REPEAT + KEYWORD)},
             "defining": {"name": "keyword.declaration.water", "match": alt(DEFINING)},
             "logic": {"name": "keyword.other.logic.water", "match": alt(LOGIC)},
             "constants": {"name": "constant.language.water", "match": alt(BOOLEAN)},
             "operators": {"name": "keyword.operator.water", "match": alt(OPERATORS)},
             "builtins": {"name": "support.function.water", "match": alt(auto)},
-            "symbol": {"name": "constant.other.symbol.water", "match": r"(?<=^|\s):\S+"},
-            "path": {"name": "constant.other.path.water", "match": r"(?<=^|\s)/[A-Za-z]\S*"},
+            "symbol": {"name": "constant.other.symbol.water",
+                       "match": BOUNDARY_BEHIND + r":[^\s\[\]{};]+"},
+            "path": {"name": "constant.other.path.water",
+                     "match": BOUNDARY_BEHIND + r"/[A-Za-z][^\s{};]*"},
             "logicvar": {"name": "variable.other.logicvar.water",
-                         "match": r"(?<=^|\s)[A-Z]\S*(?=\s|$)"},
+                         "match": BOUNDARY_BEHIND + r"[A-Z][^\s\[\]{};]*" + BOUNDARY_AHEAD},
             "delimiters": {"name": "punctuation.section.water", "match": r"\[\(|\)\]|[\[\]{}<>]"},
         },
     }

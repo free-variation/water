@@ -8,7 +8,7 @@ if exists("b:current_syntax")
 endif
 
 syn case match
-syn iskeyword @,48-57,_,192-255,33,35-39,42-47,58-64,94,126
+syn iskeyword @,48-57,_,192-255,33,35-39,42-47,58,60-64,94,126
 
 syn match   waterComment "\%(^\|\s\)\zs\\\%(\s.*\)\=$" contains=@Spell
 syn region  waterComment start="\[\@<!(\s" end=")" contains=@Spell
@@ -19,7 +19,8 @@ syn match   waterSymbol  ":\k\+"
 syn match   waterPath    "/\a\k*"
 syn match   waterLogicVar "\<\u\k*\>"
 
-syn keyword waterDefine : ; variable constant symbol to forget inline ' lookup immediate
+syn keyword waterDefine : variable constant symbol to forget inline ' lookup immediate
+syn match   waterDefine ";"
 syn match   waterDefine "\[:"
 syn match   waterDefine "\[|"
 syn match   waterDefine "\[>"

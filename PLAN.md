@@ -8,8 +8,8 @@ A TODO list of pending work, highest priority first.
 
 Vectors are n×1 matrices — the unboxed representation the C kernels are
 typed to — but the generic container vocabulary is array-only, so numeric
-pipelines that lead with a sort detour through boxed arrays. Five words
-close the gap; the existing names go polymorphic in the house style
+pipelines that lead with a sort detour through boxed arrays. The words
+below close the gap; existing names go polymorphic in the house style
 (`+`/`=`/`has?` already dispatch on tags):
 
 - `sort` — on a matrix: sorted copy, elements in row-major order, shape
@@ -28,6 +28,16 @@ close the gap; the existing names go polymorphic in the house style
   matrix (what `lt`/`gt` return) as an index vector; `select-rows` learns
   to accept an index matrix alongside its index array, closing the
   mask → select loop.
+- `@e` / `!e` — ( m i -- f ) / ( m i v -- m ) flat row-major element read
+  and store. Orientation-agnostic on vectors (the same access on n×1 and
+  1×n, no `@i,j` noise-zero), and the consumer that `argmin`/`argmax`'s
+  flat indices never had. `@i` stays shape-stable: a 1×1 matrix on a
+  vector, never a float.
+- `vector` — ( arr -- m ) lib one-liner (`dup size 1 matrix`): n×1 with
+  the length inferred; `[ 2 4 4 5 ] vector` is the vector literal in
+  practice.
+- `dot` — ( v w -- f ) lib one-liner (`* sum`); reads better in stats
+  code than the expansion.
 
 To settle: NaN ordering (a total order needs them placed deliberately —
 last, matching `val_cmp`'s spirit; note the radix bit-transform scatters

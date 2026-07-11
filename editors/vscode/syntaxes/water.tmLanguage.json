@@ -78,47 +78,47 @@
     },
     "numbers": {
       "name": "constant.numeric.water",
-      "match": "(?<=^|\\s)-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])-?\\d+(?:\\.\\d+)?(?:[eE][-+]?\\d+)?(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "quotation": {
       "name": "keyword.declaration.water",
-      "match": "(?<=^|\\s)(?:\\[:|\\[\\||\\[>|:\\])(?=\\s|$)"
+      "match": "\\[:|\\[\\||\\[>|:\\]"
     },
     "control": {
       "name": "keyword.control.water",
-      "match": "(?<=^|\\s)(?:if|\\?if|else|then|begin|until|again|while|repeat|leave|continue|times|i-times|exit|execute)(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])(?:if|\\?if|else|then|begin|until|again|while|repeat|leave|continue|times|i-times|exit|execute)(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "defining": {
       "name": "keyword.declaration.water",
-      "match": "(?<=^|\\s)(?::|;|variable|constant|symbol|to|forget|inline|'|lookup|immediate)(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])(?::|;|variable|constant|symbol|to|forget|inline|'|lookup|immediate)(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "logic": {
       "name": "keyword.other.logic.water",
-      "match": "(?<=^|\\s)(?:lvar|unify|~|deref|\\$|amb|fail|_)(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])(?:lvar|unify|~|deref|\\$|amb|fail|_)(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "constants": {
       "name": "constant.language.water",
-      "match": "(?<=^|\\s)(?:null)(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])(?:null)(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "operators": {
       "name": "keyword.operator.water",
-      "match": "(?<=^|\\s)(?:\\|>|\\+!|-!|\\*!|/!|\\+\\+|--|f\\+\\+|f--|f1\\+|f1-|f\\+|f-|f\\*|f/|f\\^|1\\+|1-|0=|\\+|-|\\*|/|%|\\^|=|!i|!|@i,j|@i|@j|@|>r|>side|side>|2dup|\\.s|\\.a|\\.)(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])(?:\\|>|\\+!|-!|\\*!|/!|\\+\\+|--|f\\+\\+|f--|f1\\+|f1-|f\\+|f-|f\\*|f/|f\\^|1\\+|1-|0=|\\+|-|\\*|/|%|\\^|=|!i|!|@i,j|@i|@j|@|>r|>side|side>|2dup|\\.s|\\.a|\\.)(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "builtins": {
       "name": "support.function.water",
-      "match": "(?<=^|\\s)(?:0-matrix|2drop|\\?|abs|acos|add-last!|all\\?|alloc-stats|and|any\\?|append-file|argmax|argmin|array|array-of|array>cons|array>frame|array>set|array\\?|asin|assert|atan|augment|base|bit-and|bit-not|bit-or|bit-xor|bulk-load|bye|byte-size|byte-substring|catch|cd|char-at|choose|clear|close|codepoint-at|codepoint>char|codepoints>string|column-maxes|column-means|column-mins|column-sums|concat|cons|cons>array|continuation\\?|copy|cos|count-matches|cr|create-index|cwd|dataset>matrix|date-shift|date>epoch|date>epoch-local|days-in-month|db-close|db-exec|db-open|db-query|db\\?|delete-at|depth|destruct|destruct-to|dgemm-nn|dgemm-nt|dgemm-tn|dgemm-tt|diagonal|diagonal-matrix|difference|dim|double-segment|drop|dup|each|emit|end-process|ensure|env|env!|epoch>date|epoch>date-local|exp|f\\*\\+|f\\*-|fabs|facos|false|fasin|fatan|fcos|feq|fexp|ffi-free|ffi-function|ffi-open|ffi-variadic|fgt|filter|find|flat-map|flatten|flatten-array|fln|float\\?|flog|flt|fmod|fnegate|format|format-time|format-time-local|frame|frame>array|frame>json|frame\\?|frobenius-norm|fround|fround-down|fround-up|fsin|fsq|fsqrt|ftan|ftanh|ftruncate|gc|gen-each|gen-take|group-by|group-with|gt|has\\?|head-tail|help|identity-matrix|index-of|inner-join|int-segment|intersection|iota|iso>time|join|json>frame|keys|last|ln|load|load-bag|load-image|log|lowest-bit|lshift|lt|lvar\\?|man|map|mapn|match|match-all|matches\\?|matrix|matrix-range|matrix>pointer|matrix\\?|max|mean|member\\?|merge|min|mod|negate|nip|none\\?|norm|not|now|num-cores|num-elements|or|over|pair\\?|parallel-run|parse-time|partition|pfilter|pfilter-ext|pi|pmap|pmap-ext|pmap-reduce|pmap-reduce-ext|print|print-stack|ptr\\?|quantile|quantity\\?|query|quotient|r>|r@|random|random-int|range|read|read-err|read-file|read-out|read-tsv|reduce|reify|relation|reload|remove-last!|render|replace|resample-indices|reset|reshape|resume|retract|reverse|roll|rot|round|round-down|round-up|row-maxes|row-means|row-mins|row-sums|rows>dataset|rows>relation|rshift|run|run-result|running\\?|sample|save|save-image|see|see-compiled|see-compiled>string|see-tree|see-tree>string|see>string|seed|segment>pointer|segment\\?|select-keys|select-rows|select-values|set|set-add!|set-remove!|set\\?|shift|shift-with|shuffle|side-depth|side-drop|sin|size|skip|sleep|slice!|sort|sort-by|split|sq|sqrt|start-generator|start-process|stop|stream\\?|string>chars|string>codepoints|string>number|string>symbol|string\\?|submatrix|substring|sum|swap|symbol\\?|take|tan|tanh|throw|time>iso|to-slice!|transpose|trim|true|truncate|try-catch|type-of|union|unit|update-at|values|var|vf\\*|vf\\+|vf-|vf/|vfabs|vfcos|vfexp|vflog|vfneg|vfsin|vfsq|vfsqrt|vftan|vftanh|vstack|vvf\\*|vvf\\*\\+|vvf\\*-|vvf\\+|vvf-|vvf/|wait|wall-now|wildcard\\?|with-db|with-stream|words|write|write-file|write-in|write-tsv|xt\\?|yield)(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])(?:0-matrix|2drop|\\?|abs|acos|add-last!|all\\?|alloc-stats|and|any\\?|append-file|argmax|argmin|array|array-of|array>cons|array>frame|array>set|array\\?|asin|assert|atan|augment|base|bit-and|bit-not|bit-or|bit-xor|bulk-load|bye|byte-size|byte-substring|catch|cd|char-at|choose|clear|close|codepoint-at|codepoint>char|codepoints>string|column-maxes|column-means|column-mins|column-sums|concat|cons|cons>array|continuation\\?|copy|cos|count-matches|cr|create-index|cwd|dataset>matrix|date-shift|date>epoch|date>epoch-local|days-in-month|db-close|db-exec|db-open|db-query|db\\?|delete-at|depth|destruct|destruct-to|dgemm-nn|dgemm-nt|dgemm-tn|dgemm-tt|diagonal|diagonal-matrix|difference|dim|double-segment|drop|dup|each|emit|end-process|ensure|env|env!|epoch>date|epoch>date-local|exp|f\\*\\+|f\\*-|fabs|facos|false|fasin|fatan|fcos|feq|fexp|ffi-free|ffi-function|ffi-open|ffi-variadic|fgt|filter|find|flat-map|flatten|flatten-array|fln|float\\?|flog|flt|fmod|fnegate|format|format-time|format-time-local|frame|frame>array|frame>json|frame\\?|frobenius-norm|fround|fround-down|fround-up|fsin|fsq|fsqrt|ftan|ftanh|ftruncate|gc|gen-each|gen-take|group-by|group-with|gt|has\\?|head-tail|help|identity-matrix|index-of|inner-join|int-segment|intersection|iota|iso>time|join|json>frame|keys|last|ln|load|load-bag|load-image|log|lowest-bit|lshift|lt|lvar\\?|man|map|mapn|match|match-all|matches\\?|matrix|matrix-range|matrix>pointer|matrix\\?|max|mean|member\\?|merge|min|mod|negate|nip|none\\?|norm|not|now|num-cores|num-elements|or|over|pair\\?|parallel-run|parse-time|partition|pfilter|pfilter-ext|pi|pmap|pmap-ext|pmap-reduce|pmap-reduce-ext|print|print-stack|ptr\\?|quantile|quantity\\?|query|quotient|r>|r@|random|random-int|range|read|read-err|read-file|read-out|read-tsv|reduce|reify|relation|reload|remove-last!|render|replace|resample-indices|reset|reshape|resume|retract|reverse|roll|rot|round|round-down|round-up|row-maxes|row-means|row-mins|row-sums|rows>dataset|rows>relation|rshift|run|run-result|running\\?|sample|save|save-image|see|see-compiled|see-compiled>string|see-tree|see-tree>string|see>string|seed|segment>pointer|segment\\?|select-keys|select-rows|select-values|set|set-add!|set-remove!|set\\?|shift|shift-with|shuffle|side-depth|side-drop|sin|size|skip|sleep|slice!|sort|sort-by|split|sq|sqrt|start-generator|start-process|stop|stream\\?|string>chars|string>codepoints|string>number|string>symbol|string\\?|submatrix|substring|sum|swap|symbol\\?|take|tan|tanh|throw|time>iso|to-slice!|transpose|trim|true|truncate|try-catch|type-of|union|unit|update-at|values|var|vf\\*|vf\\+|vf-|vf/|vfabs|vfcos|vfexp|vflog|vfneg|vfsin|vfsq|vfsqrt|vftan|vftanh|vstack|vvf\\*|vvf\\*\\+|vvf\\*-|vvf\\+|vvf-|vvf/|wait|wall-now|wildcard\\?|with-db|with-stream|words|write|write-file|write-in|write-tsv|xt\\?|yield)(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "symbol": {
       "name": "constant.other.symbol.water",
-      "match": "(?<=^|\\s):\\S+"
+      "match": "(?<=^|\\s|[\\[\\]{};]):[^\\s\\[\\]{};]+"
     },
     "path": {
       "name": "constant.other.path.water",
-      "match": "(?<=^|\\s)/[A-Za-z]\\S*"
+      "match": "(?<=^|\\s|[\\[\\]{};])/[A-Za-z][^\\s{};]*"
     },
     "logicvar": {
       "name": "variable.other.logicvar.water",
-      "match": "(?<=^|\\s)[A-Z]\\S*(?=\\s|$)"
+      "match": "(?<=^|\\s|[\\[\\]{};])[A-Z][^\\s\\[\\]{};]*(?=$|\\s|[\\[\\]{};]|:\\]|\\)\\])"
     },
     "delimiters": {
       "name": "punctuation.section.water",

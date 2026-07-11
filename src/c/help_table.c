@@ -29,7 +29,7 @@ const HelpEntry help_entries[] = {
 	{ "2dup", "( a b -- a b a b )", "lib.h2o: over over (inlined)", "10", "none", "O(1)" },
 	{ ":", "—", "Begin a colon definition; read the following name; enter compile mode", NULL, NULL, NULL },
 	{ ":name", "( -- sym )", "Symbol literal; interns the name at read time", NULL, NULL, NULL },
-	{ ";", "—", "End a colon definition; emit exit; store the source text for see", NULL, NULL, NULL },
+	{ ";", "—", "End a colon definition; emit exit; store the source text for see. Self-delimiting: dup *; parses", NULL, NULL, NULL },
 	{ "=", "( a b -- bool )", "structural equality", "3 (float)", "none", "float O(1); string O(|s|); array/set O(n); frame O(n); matrix O(r×c)" },
 	{ ">r", "( a -- ) → return stack", "Move top to return stack", "2", "none", "O(1)" },
 	{ ">side", "( a -- )", "Push to side stack", "2", "none", "O(1)" },
