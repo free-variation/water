@@ -331,6 +331,7 @@ const HelpEntry help_entries[] = {
 	{ "set?", "( a -- bool )", "lib.h2o: type-of :set = (inlined)", "5", "none", "O(1)" },
 	{ "shift", "( -- k )", "Capture the return-stack slice up to the nearest reset, remove the mark and that slice, push k", "L", "1o (cont)", "O(L)" },
 	{ "shift-with", "( xt -- )", "Capture as shift, then run xt in the outer context with k on the stack and begin unwinding", "L + xt", "1o (cont)", "O(L + xt)" },
+	{ "shuffle", "( arr -- arr )", "lib.h2o: new array, elements uniformly permuted (a full sample without replacement); input untouched", "3 + n", "as sample", "O(n)" },
 	{ "side-depth", "( -- n )", "Push side-stack depth", "1", "none", "O(1)" },
 	{ "side-drop", "( -- )", "Discard side-stack top", "1", "none", "O(1)" },
 	{ "side>", "( -- a )", "Pop from side stack", "2", "none", "O(1)" },
@@ -419,4 +420,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 413;
+const int help_entry_count = 414;

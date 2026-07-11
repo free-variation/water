@@ -492,6 +492,9 @@ inline
 	| >n |
 	n iota n true sample ;
 
+( arr -- arr ) \ new array, elements uniformly permuted; input untouched
+: shuffle  dup size false sample ;
+
 \ ---- SI units and basic currencies ----
 \ Dimensioned quantities (see the reference). Names are spelled out and
 \ lowercase: a capital symbol like N or A would shadow the capital-letter

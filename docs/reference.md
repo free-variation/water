@@ -438,6 +438,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `sort` | `( arr -- arr )` | Sorted copy in `val_cmp` order; array only | 1 + n log n | `1a(n)` | O(n log n) |
 | `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
 | `sample` | `( arr/set count repl -- arr )` | Draw `count` elements; `repl` truthy = with replacement, else without (count ≤ len) | 3 + n | `1a(count)` (+ `malloc(n)` without replacement) | O(n) |
+| `shuffle` | `( arr -- arr )` | lib.h2o: new array, elements uniformly permuted (a full `sample` without replacement); input untouched | 3 + n | as `sample` | O(n) |
 | `iota` | `( n -- arr )` | lib.h2o: `[0…n−1]`, empty when n ≤ 0 | 3 + n | `1a(n)` | O(n) |
 
 ---

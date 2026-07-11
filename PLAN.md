@@ -4,22 +4,79 @@ A TODO list of pending work, highest priority first.
 
 ---
 
+## Matrix vector vocabulary
+
+Vectors are n×1 matrices — the unboxed representation the C kernels are
+typed to — but the generic container vocabulary is array-only, so numeric
+pipelines that lead with a sort detour through boxed arrays. Five words
+close the gap; the existing names go polymorphic in the house style
+(`+`/`=`/`has?` already dispatch on tags):
+
+- `sort` — on a matrix: sorted copy, elements in row-major order, shape
+  preserved; a specialized double sort (inlined-comparison introsort, or
+  bit-pattern radix at large n — not libc `qsort`, whose per-comparison
+  function call costs 2–5×), no `val_cmp`, no boxing. Front of the ecdf
+  and rank-transform pipelines below.
+- `reverse` — on a matrix: element order reversed, shape preserved;
+  descending views after `sort`.
+- `argsort` — ( m -- m ) the sorting permutation as a matrix; ranks are
+  argsort applied twice, making the statistics plan's rank transform pure
+  C passes.
+- `stack` — ( a b -- m ) row-wise concatenation, the missing twin of
+  `augment`; joins vectors and samples.
+- `where` — ( mask -- indices ) indices of the nonzero elements of a 0/1
+  matrix (what `lt`/`gt` return) as an index vector; `select-rows` learns
+  to accept an index matrix alongside its index array, closing the
+  mask → select loop.
+
+To settle: NaN ordering (a total order needs them placed deliberately —
+last, matching `val_cmp`'s spirit; note the radix bit-transform scatters
+NaNs to both ends, so "last" costs a separate pass there, vs a comparator
+tweak under introsort); argsort tie handling (compare indices on equal
+values for deterministic, effectively stable ranks); whether `sort` on a
+non-vector shape is worth defining at all or should error until a
+per-axis story exists.
+
+---
+
 ## Statistics: a minimal spanning set
 
 Build applied statistics from a few kernels, each reused across many methods,
 with inference resampling-first (index loops over asymptotic tables). The
 kernels: SVD (present), weighted least squares (present as `fit-linear` plus
 the sqrt-w idiom), the resampling loop (present as `bootstrap`), one tree
-grower (the one substantial new C), and a pairwise-distance primitive (small).
-Everything else is library code composing them.
+grower (§4 — the one substantial new C), and a pairwise-distance primitive
+(§5 — small C, unless the dgemm identity suffices). Everything else is library
+code composing them.
+
+Where C work is and is not needed: IRLS needs none — each iteration is dgemm +
+element-wise link/variance words + a LAPACK solve, all C already; `fit-logistic`
+runs the full Firth loop as library code today, and generalized IRLS (§2) only
+swaps the element-wise words in the loop. The small C beyond the kernels:
+`erf`/normal-CDF and its inverse Φ⁻¹ (§2 probit, BCa intervals, QQ plots — a
+few lines alongside `exp`/`tanh`), the empirical-distribution statistics
+(§6 — `ks`, `cvm`, `ad`, `wasserstein`: used constantly, each a small
+one-pass kernel), and `row-argmins` / its argmax and column twins
+(index-returning kin of `row-mins`, one pass — k-means' assignment step
+needs the per-row index, and only the flat `argmin` exists). Gaussian
+mixtures (§1) add no C, only a `dpotrf`/`dpotrs` export to the lapacke
+vendoring. Rank transforms (§3) compose `iota` + `sort-by`; k-means,
+spectral methods, and the tensor step of LCA (§1) otherwise ride
+`dgemm`/`svd` at library level.
 
 ### 1. SVD exploitation (library code on `svd` / `dgemm`)
 
 - **PCA** — center columns, SVD: loadings V, scores U·S, component variances
   S²/(n−1). Whitening, low-rank approximation (Eckart–Young), and
   principal-component regression on top.
-- **k-means** — Lloyd iterations over dgemm distances; needed by spectral
+- **k-means** — Lloyd iterations over dgemm distances, each row assigned
+  by `row-argmins` (the new small C word above); needed by spectral
   clustering, useful alone. k-means++ initialization draws on the RNG.
+- **Gaussian mixtures** — EM: per-cluster Mahalanobis distances and
+  log-determinants from Cholesky (`dpotrf`/`dpotrs` — one more exported
+  symbol pair in the lapacke vendoring), responsibilities and the M-step
+  as dgemm + element-wise ops. k-means seeds it; LCA's
+  spectral-init-then-EM pattern applies.
 - **Spectral clustering** — affinity → normalized Laplacian → top-k embedding
   (PSD, so dgesvd *is* its eigendecomposition) → k-means on the embedded rows.
 - **Classical MDS / kernel PCA** — double-centered squared distances /
@@ -62,7 +119,10 @@ their own files).
   already uses ( X y w -- beta ).
 - **Generalized IRLS** — parameterize link and variance in one loop:
   Poisson (log link), probit, negative binomial, multinomial/ordinal
-  logistic. One reweighting loop, one linear solver.
+  logistic. One reweighting loop, one linear solver. Library code
+  throughout; probit is the one link needing a new C word (element-wise
+  `erf`/normal-CDF, with its inverse Φ⁻¹ alongside — BCa bootstrap
+  intervals and QQ plots want the normal quantile function).
 - **Ridge** — singular-value filtering σ/(σ²+λ) on the design; λ chosen by
   cross-validation (§3).
 - **LDA** — within-class whitening + SVD of the class means.
@@ -83,10 +143,14 @@ library's whole inference story; parametric standard errors and asymptotic
 tables stay out.
 
 - **permutation-test** — shuffle one column's indices for the null;
-  replaces the t-test, ANOVA, and correlation tests. Needs `shuffle` (see
-  Sort and shuffle below).
+  replaces the t-test, ANOVA, and correlation tests.
 - **jackknife**, **cross-validate** — leave-one-out and k-fold index
   partitions; CV is the model-selection tool the rest of this plan cites.
+- **Model metrics** — the losses CV selects on: squared/absolute error,
+  accuracy, and confusion counts as element-wise ops; AUC as a rank
+  statistic (argsort — Mann–Whitney's twin); ROC and calibration curves
+  as cumulative counts over the argsort order; isotonic calibration
+  (PAVA) as a library pass.
 - **Rank transform** — sort + inverse permutation; Spearman, Wilcoxon /
   Mann–Whitney, Kruskal–Wallis become rank statistics with permutation
   nulls.
@@ -124,11 +188,66 @@ of the ensemble loop is C vs library code over a
 
 ( X Y -- D ) via the dgemm identity ‖x‖² + ‖y‖² − 2XYᵀ, plus a direct kernel
 for other metrics. Unlocks kNN classification/regression, MDS input, RBF
-affinities for spectral clustering, and the distance-based tests — distance
-correlation, PERMANOVA, MMD — whose nulls come from the permutation loop.
+affinities for spectral clustering, hierarchical/agglomerative clustering
+(linkage passes over the distance matrix), DBSCAN (neighborhood sets via
+`where`), and the distance-based tests — distance correlation, PERMANOVA,
+MMD — whose nulls come from the permutation loop.
 
 To settle: C word vs dgemm composition in library code (the identity is
 three ops but loses precision on near-duplicate rows).
+
+### 6. Empirical distributions
+
+The ecdf and distances between empirical distributions. These will be used
+constantly, so the statistics are small C kernels, not library algebra:
+each is one allocation-free pass over the once-sorted pooled sample plus a
+0/1 label vector, so a permutation replicate is shuffle + one C word.
+Library code owns the ecdf representation and the §3 permutation plumbing;
+nulls come from §3, not asymptotic tables.
+
+- **ecdf** — ( sample -- ecdf ) library: a sorted copy as the
+  representation; **ecdf-at** ( ecdf x -- p ) evaluates by binary search;
+  mapping it over a grid gives the step function.
+- **ks** — C: two-sample Kolmogorov–Smirnov, sup |F₁ − F₂| in one pass.
+  The one-sample form takes a reference CDF as a quotation ( x -- p ); a
+  normal reference is another consumer of the §2 `erf` word.
+- **cvm / ad** — C: Cramér–von Mises and Anderson–Darling, the same pass
+  with accumulation; AD is CvM with 1/(F(1−F)) tail weights.
+- **wasserstein** — C: 1-D W₁; equal-n samples pair sorted elements
+  directly (mean |gap|), unequal n integrates the quantile difference over
+  the merged grid.
+- Significance by permutation of pooled labels (§3); energy distance joins
+  once §5's pairwise distances land.
+
+To settle: the ecdf representation (bare sorted matrix vs a frame carrying
+n and the sort); tie handling in ks (step both functions at a shared point
+before comparing); whether the replicate loop eventually wants a C null
+driver (in-place byte-label shuffle + statistic in one loop) once profiling
+shows the shuffle dominating — the statistics words stay useful either way.
+
+---
+
+## Basic graphing
+
+Charts rendered to an SVG file; a browser tab does the display (an
+auto-refresh wrapper page or extension re-reads it). Water writes, the
+browser refreshes — no windowing, no display dependency, no rasterizer.
+
+- **SVG output** — text generation over `format` + `write-file`; no
+  rasterizer, no new C. Each plot word draws the whole chart and
+  overwrites the target file, so the viewer always shows the latest state.
+- **Chart set** — scatter, line, step (the ecdf as drawn), histogram
+  (binning in library code), bar; axes, ticks, and labels computed in
+  library code from the data range.
+- **Stats consumers** — QQ plots (sort + Φ⁻¹), ROC and calibration curves
+  (the model-metrics bullet), residual and fit plots for the regressions,
+  ecdf step functions.
+
+To settle: nice-number tick heuristics; overlaying several series in one
+chart (an array of series per plot word, probably); torn frames on
+overwrite (`write-file` truncates in place — either a `rename-file` word
+for temp-and-rename atomicity, or accept that viewers re-read fast);
+whether one fixed, readable style is enough (it should be).
 
 ---
 
@@ -219,14 +338,12 @@ builders are `lib.h2o`.
 
 ---
 
-## Sort and shuffle with a rule
+## Sort with a rule
 
 - `array [ x y -- cmp ] sort-with` — sorted copy under a user comparator
   quotation that pops two Vals and pushes `-1` / `0` / `1`; input untouched.
   Algorithm: introsort or libc `qsort` with a comparator thunk. With `sort-by`
   covering key extraction, this is for orderings that aren't key extractions.
-- `array shuffle` — new array, elements randomly permuted (Fisher-Yates over
-  the PRNG stream); input untouched.
 
 ---
 

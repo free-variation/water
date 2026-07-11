@@ -325,6 +325,7 @@ set-remove!
 set?
 shift
 shift-with
+shuffle
 side-depth
 side-drop
 side>

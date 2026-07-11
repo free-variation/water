@@ -63,13 +63,13 @@ syn keyword waterBuiltin read-tsv reduce reify relation reload remove-last! rend
 syn keyword waterBuiltin retract reverse roll rot round round-down round-up row-maxes row-means row-mins row-sums rows>dataset
 syn keyword waterBuiltin rows>relation rshift run run-result running? sample save save-image see see-compiled see-compiled>string see-tree
 syn keyword waterBuiltin see-tree>string see>string seed segment>pointer segment? select-keys select-rows select-values set set-add! set-remove! set?
-syn keyword waterBuiltin shift shift-with side-depth side-drop sin size skip sleep slice! sort sort-by split
-syn keyword waterBuiltin sq sqrt start-generator start-process stop stream? string>chars string>codepoints string>number string>symbol string? submatrix
-syn keyword waterBuiltin substring sum swap symbol? take tan tanh throw time>iso to-slice! transpose trim
-syn keyword waterBuiltin true truncate try-catch type-of union unit update-at values var vf* vf+ vf-
-syn keyword waterBuiltin vf/ vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh vstack
-syn keyword waterBuiltin vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait wall-now wildcard? with-db with-stream words
-syn keyword waterBuiltin write write-file write-in write-tsv xt? yield
+syn keyword waterBuiltin shift shift-with shuffle side-depth side-drop sin size skip sleep slice! sort sort-by
+syn keyword waterBuiltin split sq sqrt start-generator start-process stop stream? string>chars string>codepoints string>number string>symbol string?
+syn keyword waterBuiltin submatrix substring sum swap symbol? take tan tanh throw time>iso to-slice! transpose
+syn keyword waterBuiltin trim true truncate try-catch type-of union unit update-at values var vf* vf+
+syn keyword waterBuiltin vf- vf/ vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh
+syn keyword waterBuiltin vstack vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait wall-now wildcard? with-db with-stream
+syn keyword waterBuiltin words write write-file write-in write-tsv xt? yield
 syn match   waterBuiltin "|>"
 
 hi def link waterComment      Comment

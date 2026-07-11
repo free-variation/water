@@ -10,6 +10,10 @@
 [ "a" "b" "c" ] 4 true sample . cr       \ non-numeric elements, with replacement
 [ ] 5 true sample . cr                   \ empty collection -> empty array
 
+\ shuffle (lib): a full no-replacement draw; input untouched
+[ 1 2 3 4 5 ] dup shuffle . cr
+. cr                                     \ the source array is unchanged
+
 \ error cases
 [ 1 2 ] 5 false sample                   \ more than available, without replacement
 [ 1 2 3 ] -1 true sample                 \ negative count
