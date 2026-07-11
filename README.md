@@ -3,8 +3,8 @@
 A Forth-flavored language for numeric and matrix work, statistics and
 regression, dimensioned quantities and calendar arithmetic, set/array/frame
 manipulation, string/regex processing, logic programming, and multi-core data
-parallelism — with embedded SQLite and a runtime C FFI. A compact C
-interpreter built with `clang -O3`.
+parallelism — with embedded SQLite and a runtime C FFI. A compact,
+self-contained C interpreter.
 
 ## Building and running
 
@@ -76,6 +76,7 @@ wall-now 2 week + time>iso .            \ the ISO timestamp two weeks from now
 reset producer                          \ leaves (1, k) — next value via resume
 
 \ Logic: unify binds variables; amb is a committed choice
+lvar to X  lvar to Y  lvar to Z
 [ 1 2 3 ] [ X Y Z ] ~ drop  X ? . Y ? . Z ? . cr   \ 1 2 3
 [: fail :] [: "fallback" :] amb .                  \ fallback
 
@@ -96,7 +97,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 
 ### Core language
 
-- **Tagged Vals** — floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, execution tokens, dictionary addresses, continuations, logic variables, process streams, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
+- **Tagged Vals** — floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, quantities, segments, execution tokens, dictionary addresses, continuations, logic variables, process streams, database handles, C pointers, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
 - **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code.
 - **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `gt while`, `0= until`) fuses into a single compare-and-branch op, and an array read-modify-write (`arr i arr i @i f1- !i` or a `… delta f+ !i` step) collapses to one in-place element update. Variable-fused float words (`vf+`/`vf*`/… on one named variable, `vvf+`/`vvf*`/… on two) collapse the variable load into the float op.
 - **Program and execution state separated** — the dictionary, symbol pool, and object heap live in global structures (`Vocabulary`, `Compiler`, `Arena`) that are read-only during a run; the per-run mutable state — the three stacks, instruction pointer, locals, and GC roots — lives in an `Interpreter`, so one program can be shared across multiple execution contexts.
@@ -348,6 +349,7 @@ src/c/io.c             — file, TSV, stream, and environment I/O
 src/c/image.c          — binary save-image / load-image serialization
 src/c/collections.c    — sets, arrays, and frames
 src/c/matrix.c         — matrix words and numeric kernels
+src/c/dimension.c      — dimensioned quantities: base dimensions, units, quantity arithmetic
 src/c/functional.c     — higher-order operations (map, mapn, …) and multi-core parallelism
 src/c/superwords.c     — compile-time instruction fusion (superwords)
 src/c/strings.c        — string and PCRE2 regex operations
