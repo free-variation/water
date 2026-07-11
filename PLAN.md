@@ -275,6 +275,57 @@ whether one fixed, readable style is enough (it should be).
 
 ---
 
+## Executable documentation
+
+Every example in the docs runs, and is machine-verified to run. The
+motivation is genAI as much as readers: a new language lives in no model's
+weights, so its documentation *is* its corpus — read in-context today,
+fine-tuning material tomorrow — and one broken example poisons generation
+the way a wrong golden would poison the suite. (The README's logic example
+was broken for an unknown span until a session happened to run it; a
+harness would have caught it at `make test`.)
+
+- **README taste block as a golden** — extract the `## A taste` fence,
+  run it, pin the output. The block is the single most-read (by humans
+  and models) Water program in existence; it must never regress.
+- **reference.md snippets** — the extractable inline examples join the
+  same harness; a marker separates runnable from illustrative-only.
+- **One extraction harness** — a tools/ script in the gen-help/gen-editors
+  family renders marked snippets into generated .h2o/.expected pairs that
+  tests/run.sh picks up like any other test.
+
+To settle: the runnable-vs-illustrative marker; pin outputs verbatim or
+only assert error-free execution; nondeterministic examples (`wall-now`,
+unseeded draws) — skip-mark them or normalize their output.
+
+---
+
+## Language pack
+
+One concatenated file sized for a model's context window: the whole
+language, learnable in a single read. Water cannot be in the weights; it
+can be in every prompt. The measure of success is direct — how good is
+Water code written by a strong model given only this file?
+
+- **Contents** — the reference (word tables are the core), the README
+  taste block, the tokenizer's self-delimiting rules, the idiom notes a
+  generator can't derive (locals are uninitialized by design; matrices
+  for numbers, arrays for structure; resampling patterns), and a few
+  verified programs from examples/.
+- **Generated, never written** — tools/gen-pack.py beside gen-help and
+  gen-editors, so the pack cannot drift from its sources; `make pack`,
+  output `water-pack.md` (or `llms.txt`, per the emerging convention).
+- **Budgeted** — the generator counts tokens (chars/4 is close enough)
+  against a target (~50k) and names what to trim when it overflows.
+- Complements lib/claude.h2o, which is the other direction: that file is
+  Water calling a model; the pack is a model writing Water.
+
+To settle: one pack or two tiers (lean core + full); whole example
+programs or excerpts; whether the pack embeds the executable-docs goldens
+as input/output pairs (few-shot format) once that section lands.
+
+---
+
 ## Symbol collection
 
 Interned symbols are never reclaimed: `:foo` literals, `string>symbol`, and

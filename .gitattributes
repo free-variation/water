@@ -1,0 +1,4 @@
+# GitHub (Linguist) has no Water grammar yet; Forth's is the closest fit,
+# so .h2o files render with Forth highlighting on github.com. Replace with
+# a proper Linguist submission once usage clears their bar (see PLAN).
+*.h2o linguist-language=Forth
