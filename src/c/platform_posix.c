@@ -121,7 +121,10 @@ static void repl_highlighter(ic_highlight_env_t *henv, const char *input, void *
 			ic_highlight(henv, start, i - start, "ansi-green");
 			continue;
 		}
-		while (i < n && !lf_is_ws(input[i])) i++;
+		if (input[i] == ';')
+			i++;
+		else
+			while (i < n && !lf_is_ws(input[i]) && input[i] != ';') i++;
 		const char *style = lf_token_style(input + start, i - start);
 		if (style)
 			ic_highlight(henv, start, i - start, style);

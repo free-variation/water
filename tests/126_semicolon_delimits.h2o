@@ -1,0 +1,13 @@
+\ ; is self-delimiting: no space needed before it
+: sq dup *;
+3 sq . cr
+
+\ glued after a word call
+: nine 3 sq;
+nine . cr
+
+\ ; inside a string literal stays literal
+"a;b" . cr
+
+\ see round-trips a glued definition
+' sq see

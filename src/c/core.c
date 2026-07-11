@@ -2454,9 +2454,13 @@ char *next_token(void) {
 		return NULL;
 
 	int start = compiler.input_buffer_pos;
-	while (compiler.input_buffer_pos < compiler.input_buffer_len
-	       && !isspace((unsigned char)compiler.input_buffer[compiler.input_buffer_pos]))
+	if (compiler.input_buffer[compiler.input_buffer_pos] == ';')
 		compiler.input_buffer_pos++;
+	else
+		while (compiler.input_buffer_pos < compiler.input_buffer_len
+		       && !isspace((unsigned char)compiler.input_buffer[compiler.input_buffer_pos])
+		       && compiler.input_buffer[compiler.input_buffer_pos] != ';')
+			compiler.input_buffer_pos++;
 
 	int length = compiler.input_buffer_pos - start;
 	if (length >= (int)sizeof(compiler.token_buffer))
