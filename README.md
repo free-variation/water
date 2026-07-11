@@ -103,8 +103,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
 - **Colon definitions** — `: name body ;`. The body is captured as source text for `see` and the text-form `save`.
 - **Anonymous quotations** — `[: ... :]` pushes a fresh xt. Works at top level and inside colon defs.
-- **Control flow** — `if`/`else`/`then`, the `begin`/`until`/`again` and `begin`/`while`/`repeat` loops, counted `times` / `i-times`, `exit`, and `>r`/`r>`/`r@` for return-stack access.
-- **Early exit from loops** — `leave` jumps past the innermost `begin`-loop's closing word, `continue` jumps back to its `begin` (in a `while` loop that re-runs the test; in an `until` loop it skips the trailing test). Compile-time branches, zero runtime cost; conditional forms are `if leave then` / `if continue then`. Both are compile errors outside a loop or inside a quotation's own frame, and an unclosed `begin` is now a compile error at `;` / `:]`. In `times` / `i-times` quotations, `exit` already ends the current iteration.
+- **Control flow** — `if`/`else`/`then`, the `begin`/`until`/`again` and `begin`/`while`/`repeat` loops with `leave` / `continue` for early exit, counted `times` / `i-times`, `exit`, and `>r`/`r>`/`r@` for return-stack access.
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
 - **Variables and symbols** — `variable foo` declares a global; read it by bare name, assign with `42 to foo` (`to` also auto-creates a global on first assignment at the REPL). `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
