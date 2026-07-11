@@ -1,0 +1,35 @@
+\ leave exits a begin/again loop
+: countup 0 begin 1 + dup 5 = if leave then again ;
+countup . cr
+
+\ leave exits a begin/until loop before its test would
+: early 0 begin 1 + dup 3 = if leave then dup 100 = until ;
+early . cr
+
+\ continue in a while loop re-runs the test; even values skip the print
+: odds 0 begin dup 10 lt while 1 + dup 2 mod 0= if continue then dup . repeat drop cr ;
+odds
+
+\ continue in an until loop jumps to begin, skipping the trailing test:
+\ the `1 until` exits on the first iteration that does not continue
+: skiptest 0 begin 1 + dup 3 lt if continue then 1 until ;
+skiptest . cr
+
+\ nested loops: each leave exits its own loop
+: nested 0 begin 1 + begin 10 + dup 40 gt if leave then again dup 63 gt if leave then again ;
+nested . cr
+
+\ several leaves in one loop all patch to the loop end; each start exercises one
+: exits begin 1 + dup 7 = if leave then dup 3 = if leave then again ;
+0 exits . cr
+5 exits . cr
+
+\ leave outside any loop is a compile error
+leave
+
+\ a quotation boundary hides the enclosing loop
+: hidden begin [: leave :] drop again ;
+
+\ an unterminated begin fails at ; and the definition rolls back
+: unclosed begin 1 + ;
+unclosed

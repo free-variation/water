@@ -86,7 +86,7 @@
     },
     "control": {
       "name": "keyword.control.water",
-      "match": "(?<=^|\\s)(?:if|\\?if|else|then|begin|until|again|while|repeat|times|i-times|exit|execute)(?=\\s|$)"
+      "match": "(?<=^|\\s)(?:if|\\?if|else|then|begin|until|again|while|repeat|leave|continue|times|i-times|exit|execute)(?=\\s|$)"
     },
     "defining": {
       "name": "keyword.declaration.water",

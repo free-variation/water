@@ -278,7 +278,16 @@ Immediate words that emit branch instructions into the current definition. They 
 | `again` | — | Unconditional branch back to `begin` |
 | `while` | `( flag -- )` | Exit the loop forward if flag is falsy (`begin … while … repeat`) |
 | `repeat` | — | Branch back to `begin`; patches the `while` exit |
+| `leave` | — | Branch past the innermost loop's closing word; conditional form is `if leave then` |
+| `continue` | — | Branch back to the innermost loop's `begin`: a `while` loop re-runs its test; an `until` loop skips its trailing test and repeats unconditionally |
 | `exit` | `( -- )` | Return early from the current definition (this one runs at run time) |
+
+`leave` and `continue` are plain compiled branches — zero runtime cost. Both
+are compile errors outside a loop, and a quotation opens its own frame, so a
+`[: leave :]` inside a loop body does not see that loop. A `begin` with no
+`until`/`again`/`repeat` is a compile error at `;` or `:]` (an unpatched
+`leave` would otherwise be a wild branch); the partial definition rolls back.
+In `times` / `i-times` quotations, `exit` already ends the current iteration.
 
 ---
 

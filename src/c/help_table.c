@@ -92,6 +92,7 @@ const HelpEntry help_entries[] = {
 	{ "cons>array", "( list -- arr )", "Walk a cons chain into an array, **dereferencing** the spine and each element and including the terminal (works on relational results)", "n", "1a(n)", "O(n)" },
 	{ "constant", "( val -- )", "Pop a value and read the following name; define an inline word that pushes it as a literal, so call sites fold to the literal with no run-time fetch. Fixed at definition — to cannot reassign it", NULL, NULL, NULL },
 	{ "continuation?", "( a -- bool )", "lib.h2o: type-of :continuation = (inlined)", "5", "none", "O(1)" },
+	{ "continue", "—", "Branch back to the innermost loop's begin: a while loop re-runs its test; an until loop skips its trailing test and repeats unconditionally", NULL, NULL, NULL },
 	{ "copy", "( a -- a' )", "Deep copy of any value, copy_term-style: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations, pairs; identity for scalars. Defined generally, not frame-specific.", "tree size", "one object per node", "O(tree size)" },
 	{ "cos", "( a -- cos a )", "cosine (radians)", "2", "matrix 1m(r×c)", "same" },
 	{ "count-matches", "( rel pattern -- n )", "How many rows match; for a covering query this is the bucket's size with no scan, otherwise query size", "—", "(covering: none)", "O(candidates)" },
@@ -213,6 +214,7 @@ const HelpEntry help_entries[] = {
 	{ "json>frame", "( s -- val )", "Parse a JSON string. Escapes and \\uXXXX (with surrogate pairs) decode to UTF-8; recursive-descent, depth-guarded; rejects trailing non-whitespace. Each object's keys are sorted after collection", "scan + build", "one object per node", "O(|s| log |s|)" },
 	{ "keys", "( fr -- arr )", "Keys (symbols) in sorted order", "1 + n", "1a(n)", "O(n)" },
 	{ "last", "( arr n -- arr )", "lib.h2o: swap reverse swap take reverse", "3n", "3×1a(n)", "O(n)" },
+	{ "leave", "—", "Branch past the innermost loop's closing word; conditional form is if leave then", NULL, NULL, NULL },
 	{ "ln", "( a -- ln a )", "log — natural log", "2", "matrix 1m(r×c)", "same" },
 	{ "load", "( s -- )", "Run a source file as if typed; record it for reload", "file read + run", "input buffer", "O(file)" },
 	{ "load-bag", "( rel rows-array -- rel )", "Like bulk-load, but :rows stays a **bag** (the array, duplicates kept) rather than a deduped set; only :index is built", "n", "frame + sets", "O(n)" },
@@ -417,4 +419,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)" },
 };
 
-const int help_entry_count = 411;
+const int help_entry_count = 413;

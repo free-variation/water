@@ -4163,6 +4163,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "again", p_again, 1);
 	define_primitive(interp, "while", p_while, 1);
 	define_primitive(interp, "repeat", p_repeat, 1);
+	define_primitive(interp, "leave", p_leave, 1);
+	define_primitive(interp, "continue", p_continue, 1);
 	define_primitive(interp, "[:", p_qcolon, 1);
 	define_primitive(interp, ":]", p_qsemi, 1);
 	define_primitive(interp, "|", p_bar, 1);
@@ -4398,6 +4400,8 @@ int main(int argc, char **argv) {
 
 		if (interp->error_flag) {
 			rollback_partial_definition();
+			compiler.loop_begin = 0;
+			compiler.leave_chain = 0;
 			compiler.compiling = 0;
 			interp->dsp = 0;
 			interp->rsp = 0;

@@ -27,7 +27,7 @@ syn match   waterDefine ":\]"
 syn match   waterDefName "\%(^\|\s\):\s\+\zs\k\+"
 
 syn keyword waterConditional if ?if else then
-syn keyword waterRepeat begin until again while repeat times i-times
+syn keyword waterRepeat begin until again while repeat leave continue times i-times
 syn keyword waterKeyword exit execute
 
 syn keyword waterLogic lvar unify ~ deref $ amb fail _

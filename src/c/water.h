@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.18.2"
+#define VERSION "0.19.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -493,6 +493,8 @@ typedef struct {
 	int fuse_prev_cmp;
 	int fuse_floor;
 	int loadn_at;
+	int loop_begin;
+	int leave_chain;
 	
 	char local_names_pool[LOCAL_NAMES_POOL_SIZE];
 	
@@ -1070,6 +1072,8 @@ void p_then(DISPATCH_ARGS);
 void p_else(DISPATCH_ARGS);
 void p_begin(DISPATCH_ARGS);
 void p_until(DISPATCH_ARGS);
+void p_leave(DISPATCH_ARGS);
+void p_continue(DISPATCH_ARGS);
 void p_again(DISPATCH_ARGS);
 void p_while(DISPATCH_ARGS);
 void p_repeat(DISPATCH_ARGS);

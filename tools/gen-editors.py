@@ -35,7 +35,7 @@ WORD_CELL = re.compile(r"^`([^`\s]+)`$")
 # --- Curated structural groups (stable; everything else is a builtin) --------
 DEFINING = [":", ";", "variable", "constant", "symbol", "to", "forget", "inline", "'", "lookup", "immediate"]
 CONDITIONAL = ["if", "?if", "else", "then"]
-REPEAT = ["begin", "until", "again", "while", "repeat", "times", "i-times"]
+REPEAT = ["begin", "until", "again", "while", "repeat", "leave", "continue", "times", "i-times"]
 KEYWORD = ["exit", "execute"]
 LOGIC = ["lvar", "unify", "~", "deref", "$", "amb", "fail", "_"]
 BOOLEAN = ["null"]

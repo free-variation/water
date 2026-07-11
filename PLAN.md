@@ -171,19 +171,6 @@ or inferred from whether interning happens during compilation.
 
 ---
 
-## Loop ergonomics
-
-Structured early exit from a loop — today it's hand-rolled by threading a flag
-through the condition.
-
-- `leave` — exit the innermost loop immediately; `?leave` ( flag -- ) the
-  conditional form; `continue` — skip to the next iteration.
-
-To settle: how `leave` / `continue` compile (forward/back branch patching) and
-unwind cleanly past loop-local frames.
-
----
-
 ## FastCGI service
 
 Run Water as a long-lived FastCGI application behind an off-the-shelf web

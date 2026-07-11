@@ -19,12 +19,19 @@ void rollback_partial_definition(void) {
 	compiler.n_local_scopes = 0;
 	compiler.n_local_names = 0;
 	compiler.local_names_pool_here = 0;
+	compiler.loop_begin = 0;
+	compiler.leave_chain = 0;
 }
 
 void p_semicolon(DISPATCH_ARGS) {
 	if (compiler.compiling_src_start > 0 && compiler.n_local_scopes > 1) {
 		rollback_partial_definition();
 		fail(interp, "; : unterminated quotation (a [: , [> , or [| has no matching :])");
+		return;
+	}
+	if (compiler.loop_begin != 0) {
+		rollback_partial_definition();
+		fail(interp, "; : unterminated loop (a begin has no until/again/repeat)");
 		return;
 	}
 	leave_compile_scope(interp);
@@ -127,8 +134,47 @@ void p_else(DISPATCH_ARGS) {
 }
 
 void p_begin(DISPATCH_ARGS) {
+	push(interp, make_float((double)compiler.loop_begin));
+	push(interp, make_float((double)compiler.leave_chain));
 	push(interp, make_float((double)vocab.here));
+	compiler.loop_begin = vocab.here;
+	compiler.leave_chain = 0;
 	compiler.fuse_floor = vocab.here;
+
+	DISPATCH(interp);
+}
+
+static void close_loop(Interpreter *interp) {
+	for (int slot = compiler.leave_chain; slot != 0; ) {
+		int prior_slot = (int)vocab.dict[slot];
+		vocab.dict[slot] = vocab.here - slot;
+		slot = prior_slot;
+	}
+	POP(leave_chain_val);
+	POP(loop_begin_val);
+	compiler.leave_chain = (int)VAL_NUMBER(leave_chain_val);
+	compiler.loop_begin = (int)VAL_NUMBER(loop_begin_val);
+}
+
+void p_leave(DISPATCH_ARGS) {
+	if (compiler.loop_begin == 0) {
+		fail(interp, "leave: not inside a loop");
+		return;
+	}
+	emit_call(interp, vocab.branch_cfa);
+	emit(interp, (cell)compiler.leave_chain);
+	compiler.leave_chain = vocab.here - 1;
+
+	DISPATCH(interp);
+}
+
+void p_continue(DISPATCH_ARGS) {
+	if (compiler.loop_begin == 0) {
+		fail(interp, "continue: not inside a loop");
+		return;
+	}
+	emit_call(interp, vocab.branch_cfa);
+	emit(interp, compiler.loop_begin - vocab.here);
 
 	DISPATCH(interp);
 }
@@ -141,6 +187,7 @@ void p_until(DISPATCH_ARGS) {
 	if (!try_fuse_cmp_branch(interp))
 		emit_call(interp, vocab.zbranch_cfa);
 	emit(interp, back - vocab.here);
+	close_loop(interp);
 
 	DISPATCH(interp);
 }
@@ -152,6 +199,7 @@ void p_again(DISPATCH_ARGS) {
 		return;
 	emit_call(interp, vocab.branch_cfa);
 	emit(interp, back - vocab.here);
+	close_loop(interp);
 
 	DISPATCH(interp);
 }
@@ -175,6 +223,7 @@ void p_repeat(DISPATCH_ARGS) {
 	emit_call(interp, vocab.branch_cfa);
 	emit(interp, back - vocab.here);
 	vocab.dict[exit_slot] = (vocab.here - exit_slot);
+	close_loop(interp);
 
 	DISPATCH(interp);
 }
@@ -196,6 +245,10 @@ static void open_quotation(Interpreter *interp) {
 	push(interp, make_float((double)anon_cfa));
 	push(interp, make_float((double)branch_slot));
 	push(interp, make_float((double)opener_start));
+	push(interp, make_float((double)compiler.loop_begin));
+	push(interp, make_float((double)compiler.leave_chain));
+	compiler.loop_begin = 0;
+	compiler.leave_chain = 0;
 }
 
 void p_qcolon(DISPATCH_ARGS) {
@@ -232,11 +285,19 @@ void truncate_quotation_spans(void) {
 }
 
 void p_qsemi(DISPATCH_ARGS) {
+	if (compiler.loop_begin != 0) {
+		fail(interp, ":] : unterminated loop (a begin has no until/again/repeat)");
+		return;
+	}
 	leave_compile_scope(interp);
 	emit_call(interp, vocab.exit_cfa);
+	POP(leave_chain_val);
+	POP(loop_begin_val);
 	POP(opener_start_val);
 	POP(branch_slot_val);
 	POP(anon_cfa_val);
+	compiler.leave_chain = (int)VAL_NUMBER(leave_chain_val);
+	compiler.loop_begin = (int)VAL_NUMBER(loop_begin_val);
 	int opener_start = (int)VAL_NUMBER(opener_start_val);
 	int branch_slot = (int)VAL_NUMBER(branch_slot_val);
 	int anon_cfa = (int)VAL_NUMBER(anon_cfa_val);
@@ -339,6 +400,8 @@ void p_colon(DISPATCH_ARGS) {
 	compiler.loadn_at = -1;
 	enter_compile_scope(interp);
 	compiler.compiling = 1;
+	compiler.loop_begin = 0;
+	compiler.leave_chain = 0;
 
 	compiler.compiling_src_start = compiler.input_buffer_pos;
 
