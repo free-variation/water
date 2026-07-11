@@ -476,12 +476,7 @@ int unit_pow(Interpreter *interp, int unit, int numerator, int denominator) {
 	return raised_unit;
 }
 
-void render_unit(FILE *out, int unit) {
-	if (units[unit].name != UNIT_UNNAMED) {
-		fputs(&vocab.name_pool[units[unit].name], out);
-		return;
-	}
-
+static void render_unit_terms(FILE *out, int unit) {
 	int printed = 0;
 	for (int pass = 0; pass < 2; pass++) {
 		for (int i = 0; i < units[unit].n_terms; i++) {
@@ -505,6 +500,37 @@ void render_unit(FILE *out, int unit) {
 				fprintf(out, "^%d/%d", term.power.numerator, term.power.denominator);
 		}
 	}
+}
+
+void render_unit(FILE *out, int unit) {
+	if (units[unit].name != UNIT_UNNAMED) {
+		fputs(&vocab.name_pool[units[unit].name], out);
+		return;
+	}
+	render_unit_terms(out, unit);
+}
+
+void render_unit_description(FILE *out, Interpreter *interp, int word_cfa) {
+	(void)interp;
+	int unit = (int)vocab.dict[word_cfa + 1];
+	Unit *described = &units[unit];
+
+	int base = described->n_terms == 1
+		&& described->terms[0].power.numerator == 1
+		&& described->terms[0].power.denominator == 1
+		&& described->scale.numerator == 1
+		&& described->scale.denominator == 1
+		&& dimension_names[described->terms[0].dimension] == described->name;
+	if (base) {
+		fputs("base unit of its own dimension", out);
+		return;
+	}
+
+	render_unit_terms(out, unit);
+	if (described->scale.numerator != 1)
+		fprintf(out, " × %d", described->scale.numerator);
+	if (described->scale.denominator != 1)
+		fprintf(out, "/%d", described->scale.denominator);
 }
 
 void push_quantity(Interpreter *interp, Val magnitude, int unit) {

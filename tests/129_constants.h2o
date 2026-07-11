@@ -1,0 +1,19 @@
+\ mathematical constants: computed, not typed
+PI . E . TAU . PHI . cr
+PI 2 * TAU = . cr
+PHI 1 - 1 PHI / = . cr
+
+\ physical constants are dimensioned quantities
+C . cr
+G . cr
+H . cr
+HBAR . cr
+KB . NA . QE . cr
+
+\ unit algebra composes them
+KB 300 kelvin * . cr
+C 2 ^ 1 kg * . cr
+H TAU / HBAR = . cr
+
+\ constants cannot be reassigned
+9 to PI

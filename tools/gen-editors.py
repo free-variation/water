@@ -33,7 +33,7 @@ ROW_SPLIT = re.compile(r"(?<!\\)\|")
 WORD_CELL = re.compile(r"^`([^`\s]+)`$")
 
 # --- Curated structural groups (stable; everything else is a builtin) --------
-DEFINING = [":", ";", "variable", "constant", "symbol", "to", "forget", "inline", "'", "lookup", "immediate"]
+DEFINING = [":", ";", "variable", "constant", "symbol", "to", "forget", "inline", "internal", "'", "lookup"]
 CONDITIONAL = ["if", "?if", "else", "then"]
 REPEAT = ["begin", "until", "again", "while", "repeat", "leave", "continue", "times", "i-times"]
 KEYWORD = ["exit", "execute"]
@@ -80,7 +80,7 @@ def reference_words():
             m = WORD_CELL.match(cells[0].strip())
             if not m:
                 continue
-            name = m.group(1)
+            name = m.group(1).replace("\\|", "|")
             if name not in seen:
                 seen.add(name)
                 words.append(name)

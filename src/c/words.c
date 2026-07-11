@@ -1083,18 +1083,133 @@ void p_resume(DISPATCH_ARGS) {
 }
 
 
+static const HelpEntry *help_lookup(const char *name) {
+	LOWER_BOUND(help_entry_count, mid, strcmp(help_entries[mid].name, name) < 0, at);
+	if (at < help_entry_count && strcmp(help_entries[at].name, name) == 0)
+		return &help_entries[at];
+	return NULL;
+}
+
+static int name_cmp(const void *left, const void *right) {
+	return strcmp(*(const char *const *)left, *(const char *const *)right);
+}
+
+static void print_word_columns(const char **names, int n_names) {
+	size_t widest = 0;
+	for (int i = 0; i < n_names; i++) {
+		size_t length = strlen(names[i]);
+		widest = length > widest ? length : widest;
+	}
+	int columns = (int)(78 / (widest + 2));
+	if (columns < 1)
+		columns = 1;
+	for (int i = 0; i < n_names; i++) {
+		if ((i + 1) % columns == 0 || i + 1 == n_names)
+			printf("  %s\n", names[i]);
+		else
+			printf("  %-*s", (int)widest, names[i]);
+	}
+}
+
+static void print_word_group(const char **names, const int *groups, int n_collected,
+		int group, const char *label, const char **scratch) {
+	int n_in_group = 0;
+	for (int i = 0; i < n_collected; i++)
+		if (groups[i] == group)
+			scratch[n_in_group++] = names[i];
+	if (n_in_group == 0)
+		return;
+	qsort(scratch, (size_t)n_in_group, sizeof(char *), name_cmp);
+	if (stdout_is_tty())
+		printf("\033[1m%s:\033[0m\n", label);
+	else
+		printf("%s:\n", label);
+	print_word_columns(scratch, n_in_group);
+}
+
+#include "logo_embed.h"
+
+void p_water(DISPATCH_ARGS) {
+	fwrite(water_logo_txt, 1, water_logo_txt_len, stdout);
+	printf("\n%*swater %s\n", 42, "", VERSION);
+	fflush(stdout);
+
+	DISPATCH(interp);
+}
+
 void p_words(DISPATCH_ARGS) {
-	int printed_count = 0;
+	int word_count = 0;
+	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa))
+		if (!WORD_IS_INTERNAL(cfa))
+			word_count++;
+
+	const char **names = malloc(sizeof(char *) * (size_t)word_count);
+	int *groups = malloc(sizeof(int) * (size_t)word_count);
+	int session_group = help_section_count;
+	int undocumented_group = help_section_count + 1;
+	int units_group = help_section_count + 2;
+	int n_collected = 0;
 	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
 		if (WORD_IS_INTERNAL(cfa))
 			continue;
-		fputs(&vocab.name_pool[WORD_NAME(cfa)], stdout);
-		putchar(' ');
-		if (++printed_count % 8 == 0)
-			putchar('\n');
+		const char *name = &vocab.name_pool[WORD_NAME(cfa)];
+		const HelpEntry *entry = help_lookup(name);
+		names[n_collected] = name;
+		if ((cfa_handler)vocab.dict[cfa] == dounit)
+			groups[n_collected] = units_group;
+		else if (cfa > vocab.lib_end_latest_cfa)
+			groups[n_collected] = session_group;
+		else
+			groups[n_collected] = entry && entry->section >= 0
+				? entry->section : undocumented_group;
+		n_collected++;
 	}
-	if (printed_count % 8)
-		putchar('\n');
+
+	const char **group_names = malloc(sizeof(char *) * (size_t)word_count);
+	print_word_group(names, groups, n_collected, session_group, "this session", group_names);
+	for (int s = 0; s < help_section_count; s++)
+		print_word_group(names, groups, n_collected, s, help_section_names[s], group_names);
+	print_word_group(names, groups, n_collected, units_group, "units", group_names);
+	print_word_group(names, groups, n_collected, undocumented_group, "undocumented", group_names);
+
+	free(group_names);
+	free(groups);
+	free(names);
+	fflush(stdout);
+
+	DISPATCH(interp);
+}
+
+static int contains_case_insensitive(const char *haystack, const char *needle) {
+	size_t needle_length = strlen(needle);
+	for (const char *cursor = haystack; *cursor; cursor++)
+		if (strncasecmp(cursor, needle, needle_length) == 0)
+			return 1;
+	return 0;
+}
+
+void p_apropos(DISPATCH_ARGS) {
+	POP_STRING(query_obj, "apropos");
+	const char *query = query_obj->bytes;
+
+	for (int i = 0; i < help_entry_count; i++) {
+		const HelpEntry *entry = &help_entries[i];
+		if (!contains_case_insensitive(entry->name, query)
+				&& !contains_case_insensitive(entry->summary, query))
+			continue;
+		if (!find(entry->name))
+			continue;
+		printf("%-16s %-24s %s\n", entry->name,
+				entry->effect ? entry->effect : "", entry->summary);
+	}
+	for (int cfa = vocab.latest_cfa; cfa != 0 && cfa > vocab.lib_end_latest_cfa;
+			cfa = (int)WORD_LINK(cfa)) {
+		if (WORD_IS_INTERNAL(cfa))
+			continue;
+		const char *name = &vocab.name_pool[WORD_NAME(cfa)];
+		if (contains_case_insensitive(name, query) && !help_lookup(name))
+			printf("%-16s %-24s defined this session\n", name, "");
+	}
 	fflush(stdout);
 
 	DISPATCH(interp);
@@ -1119,6 +1234,10 @@ static void see_source_render(FILE *out, Interpreter *interp, int target_cfa) {
 		value.bits = (uint64_t)vocab.dict[target_cfa + 1];
 		fprintf(out, "variable %s  \\ current value: ", name ? name : "?");
 		print_val(out, interp, value);
+		putc('\n', out);
+	} else if (handler == dounit) {
+		fprintf(out, "unit %s  \\ ", name ? name : "?");
+		render_unit_description(out, interp, target_cfa);
 		putc('\n', out);
 	} else if (handler == dosym) {
 		fprintf(out, "symbol %s\n", name ? name : "?");
@@ -1163,6 +1282,28 @@ void p_man(DISPATCH_ARGS) {
 		if (at < help_entry_count && strcmp(help_entries[at].name, name) == 0) {
 			entry = &help_entries[at];
 		}
+	}
+
+	if (!entry && name && (cfa_handler)vocab.dict[target_cfa] == dounit) {
+		int description_handle = capture_render(interp, render_unit_description, target_cfa);
+		if (interp->error_flag)
+			return;
+		gc_root_push(interp, make_string(description_handle));
+
+		NEW_FRAME(unit_frame_handle, unit_frame);
+		(void)unit_frame;
+		gc_root_push(interp, make_frame(unit_frame_handle));
+		help_put(interp, unit_frame_handle, "word", name);
+		help_put(interp, unit_frame_handle, "effect", "( n -- q )");
+		char unit_summary[512];
+		snprintf(unit_summary, sizeof(unit_summary), "unit: %s",
+				OBJECT_AT(description_handle)->bytes);
+		help_put(interp, unit_frame_handle, "summary", unit_summary);
+		gc_root_pop(interp);
+		gc_root_pop(interp);
+
+		push(interp, make_frame(unit_frame_handle));
+		DISPATCH(interp);
 	}
 
 	if (!entry) {

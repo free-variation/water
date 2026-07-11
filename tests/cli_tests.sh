@@ -84,5 +84,10 @@ case "$out" in
 esac
 rm -f "$img" "$trunc"
 
+# `water` prints the logo and the version from water.h
+ver=$(sed -n 's/#define VERSION "\(.*\)".*/\1/p' "$here/../src/c/water.h")
+has "water prints the logo"    'water' "++++++"       0 -b
+has "water prints the version" 'water' "water $ver"   0 -b
+
 printf "%d passed, %d failed\n" "$pass" "$fail"
 [ "$fail" -eq 0 ]

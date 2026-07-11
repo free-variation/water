@@ -50,8 +50,8 @@ r { :parent :john :child :bob } query size . cr        \ 1
 r { :parent :john :child :sue } query size . cr        \ 0
 
 \ === query: an unbound var in the pattern matches anything ===
-lvar to C   r { :child :django :parent C } query size . cr   \ 2
-C 5 ~ drop  C ? 5 = . cr                               \ 1   C was free: query left no binding
+lvar to Par   r { :child :django :parent Par } query size . cr   \ 2
+Par 5 ~ drop  Par ? 5 = . cr                           \ 1   Par was free: query left no binding
 
 \ === query: a repeated var requires consistency ===
 lvar to S   r { :parent S :child S } query size . cr   \ 0   no row has parent = child

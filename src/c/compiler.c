@@ -740,6 +740,16 @@ void p_string_to_symbol(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
+void p_internal(DISPATCH_ARGS) {
+	if (vocab.latest_cfa == 0) {
+		fail(interp, "internal: no definition to mark");
+		return;
+	}
+	WORD_FLAGS(vocab.latest_cfa) |= 4;
+
+	DISPATCH(interp);
+}
+
 void p_forget(DISPATCH_ARGS) {
 	char *token = next_token();
 	if (!token) {

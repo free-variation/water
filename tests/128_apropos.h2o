@@ -1,0 +1,9 @@
+\ apropos matches word names and reference summaries, case-insensitively
+"frobenius" apropos
+
+\ session-defined words match by name
+: zork-test 1 ;
+"ZORK" apropos
+
+\ no match prints nothing
+"qqqqxyzzy" apropos

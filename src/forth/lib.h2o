@@ -285,21 +285,21 @@ inline
 	column-index indexed-value has? not if 
 		column-index indexed-value < > ! drop
 	then
-	column-index indexed-value @ row set-add! drop ;
+	column-index indexed-value @ row set-add! drop ; internal
 
 ( column-index indexed-value row -- ) \ remove row from the value's bucket in one column's index
 : bucket-remove!
 	|> column-index indexed-value row |
 	column-index indexed-value has? if
 		column-index indexed-value @ row set-remove! drop
-	then ;
+	then ; internal
 
 ( rel row set-op bucket-op -- rel ) \ apply set-op to :rows and bucket-op to each indexed bucket for row
 : update-row!
 	|> row set-op bucket-op |
 	dup :rows @ row set-op execute drop
 	dup :index @ keys swap
-	[: |> rel col | rel :index @ col @ row col @ row bucket-op execute rel :] reduce ;
+	[: |> rel col | rel :index @ col @ row col @ row bucket-op execute rel :] reduce ; internal
 
 ( rel row -- rel ) \ add row to :rows and to each indexed column's bucket
 : assert ' set-add! ' bucket-add! update-row! ;
@@ -307,18 +307,18 @@ inline
 
 ( rel row -- rel ) \ remove this exact row from :rows and every indexed bucket
 : retract-row ' set-remove! ' bucket-remove! update-row! ;
-inline
+inline internal
 
 ( rel pattern col -- bucket ) \ rows bucket for pattern's value in column col, empty if that value was never asserted
 : bucket-of
 	|> rel pattern col |
 	rel :index @ col @  pattern col @ ?
-	2dup has? if @ else 2drop < > then ;
+	2dup has? if @ else 2drop < > then ; internal
 
 ( [sets] -- set ) \ the smallest set in a non-empty array
 : smallest-set
 	dup 0 @i
-	[: |> smallest candidate | smallest size candidate size lt if smallest else candidate then :] reduce ;
+	[: |> smallest candidate | smallest size candidate size lt if smallest else candidate then :] reduce ; internal
 
 ( rel pattern -- candidate-rows ) \ :rows narrowed by the grounded indexed columns, intersected smallest-first
 : candidates
@@ -330,13 +330,13 @@ inline
 		drop rel :rows @
 	else
 		dup smallest-set [: |> narrowed bucket | narrowed bucket intersection :] reduce
-	then ;
+	then ; internal
 
 ( rel pattern -- flag) \ true when every pattern column is a ground-symbol indexed column -- so the index alone answers the query
 : covering?
 	|> rel pattern |
 	pattern keys 1
-	[: |> covered? col | covered? rel :index @ col has? and pattern col @ ? symbol? and :] reduce ;
+	[: |> covered? col | covered? rel :index @ col has? and pattern col @ ? symbol? and :] reduce ; internal
 
 ( rel pattern -- [rows] ) \ rows matching pattern; scans :rows
 : query
@@ -441,7 +441,7 @@ inline
 	else
 		table 0 @i size 1 swap range [: "col{0}" format string>symbol :] map to keys
 		keys 0
-	then ;
+	then ; internal
 
 ( table header? -- dataset) \ column frame: each key maps to that column's array
 : rows>dataset
@@ -601,4 +601,23 @@ inline
 base unit $   1 $ 100 / unit ¢
 base unit £   1 £ 100 / unit penny
 base unit €   1 € 100 / unit eurocent
+
+\ ---- mathematical and physical constants ----
+\ Capitalized by convention. Mathematical values are computed, not typed.
+\ Physical values are the exact SI-2019 definitions (G is CODATA 2018, the
+\ one measured value); the dimensioned ones are quantities, so unit algebra
+\ applies — KB 300 kelvin * is an energy.
+
+pi constant PI
+1 exp constant E
+pi 2 * constant TAU
+5 sqrt 1 + 2 / constant PHI
+
+299792458 m 1 s / constant C
+6.67430e-11 m 1 m * 1 m * 1 kg / 1 s / 1 s / constant G
+6.62607015e-34 joule 1 s * constant H
+H TAU / constant HBAR
+1.380649e-23 joule 1 kelvin / constant KB
+6.02214076e23 1 mol / constant NA
+1.602176634e-19 coulomb constant QE
 

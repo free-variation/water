@@ -56,12 +56,19 @@ def c_string(value):
 
 def parse():
     entries = {}
+    sections = []
     with open(REFERENCE, encoding="utf-8") as handle:
         lines = handle.read().splitlines()
 
     i = 0
+    section_index = -1
     while i < len(lines):
         line = lines[i]
+        if line.startswith("## "):
+            sections.append(line[3:].strip())
+            section_index = len(sections) - 1
+            i += 1
+            continue
         if not line.lstrip().startswith("|"):
             i += 1
             continue
@@ -85,7 +92,7 @@ def parse():
             match = WORD_CELL.match(row[0].strip())
             if not match:
                 continue  # syntax/construct row, not a word
-            name = match.group(1)
+            name = match.group(1).replace("\\|", "|")
             effect = clean(row[1])
             summary = clean(row[2])
             if cost_columns and len(row) >= 6:
@@ -97,22 +104,29 @@ def parse():
             if name in entries:
                 sys.stderr.write("note: %r cross-listed; keeping first occurrence\n" % name)
                 continue
-            entries[name] = (name, effect, summary, ops, alloc, order)
+            entries[name] = (name, effect, summary, ops, alloc, order, section_index)
 
-    return sorted(entries.values(), key=lambda entry: entry[0])
+    return sorted(entries.values(), key=lambda entry: entry[0]), sections
 
 
-def emit(entries):
+def emit(entries, sections):
     out = []
     out.append("/* Generated from docs/reference.md by tools/gen-help.py.")
     out.append("   Do not edit by hand; rerun the generator instead. */")
     out.append("")
     out.append('#include "water.h"')
     out.append("")
+    out.append("const char *const help_section_names[] = {")
+    for section in sections:
+        out.append("\t%s," % c_string(section))
+    out.append("};")
+    out.append("")
+    out.append("const int help_section_count = %d;" % len(sections))
+    out.append("")
     out.append("const HelpEntry help_entries[] = {")
-    for name, effect, summary, ops, alloc, order in entries:
+    for name, effect, summary, ops, alloc, order, section_index in entries:
         fields = ", ".join(c_string(value) for value in (name, effect, summary, ops, alloc, order))
-        out.append("\t{ %s }," % fields)
+        out.append("\t{ %s, %d }," % (fields, section_index))
     out.append("};")
     out.append("")
     out.append("const int help_entry_count = %d;" % len(entries))
@@ -126,12 +140,13 @@ def emit_wordlist(entries):
 
 
 def main():
-    entries = parse()
+    entries, sections = parse()
     with open(OUTPUT, "w", encoding="utf-8") as handle:
-        handle.write(emit(entries))
+        handle.write(emit(entries, sections))
     with open(WORDLIST, "w", encoding="utf-8") as handle:
         handle.write(emit_wordlist(entries))
-    sys.stderr.write("wrote %d entries to %s and %s\n" % (len(entries), OUTPUT, WORDLIST))
+    sys.stderr.write("wrote %d entries (%d sections) to %s and %s\n"
+                     % (len(entries), len(sections), OUTPUT, WORDLIST))
 
 
 if __name__ == "__main__":

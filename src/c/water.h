@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.19.4"
+#define VERSION "0.19.5"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -533,6 +533,7 @@ static inline int dict_op_is(int pos, cfa_handler h) {
 #define WORD_IS_INTERNAL(cfa) (WORD_FLAGS(cfa) & 4)
 
 extern int print_truncate;
+int stdout_is_tty(void);
 void fail(Interpreter *interp, const char *fmt, ...);
 
 void p_sum(DISPATCH_ARGS);
@@ -753,6 +754,7 @@ void push_quantity(Interpreter *interp, Val magnitude, int unit);
 void p_base(DISPATCH_ARGS);
 void p_unit(DISPATCH_ARGS);
 void dounit(DISPATCH_ARGS);
+void render_unit_description(FILE *out, Interpreter *interp, int word_cfa);
 void apply_unit(Interpreter *interp, int cfa);
 
 int val_cmp(Interpreter *interp, Val left, Val right);
@@ -809,10 +811,13 @@ typedef struct {
 	const char *ops;
 	const char *alloc;
 	const char *order;
+	int section;
 } HelpEntry;
 
 extern const HelpEntry help_entries[];
 extern const int help_entry_count;
+extern const char *const help_section_names[];
+extern const int help_section_count;
 
 static inline void call_step(Interpreter *interp, CallContext *context, int cfa) {
 	if (context->fast) {
@@ -866,6 +871,7 @@ void p_decrement(DISPATCH_ARGS);
 void p_f_increment(DISPATCH_ARGS);
 void p_f_decrement(DISPATCH_ARGS);
 void p_inline(DISPATCH_ARGS);
+void p_internal(DISPATCH_ARGS);
 void inline_word_body(Interpreter *interp, int target_cfa);
 int find_local(const char *token, int *depth_out, int *slot_out);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
@@ -1059,6 +1065,8 @@ void p_reduce(DISPATCH_ARGS);
 void p_times(DISPATCH_ARGS);
 void p_i_times(DISPATCH_ARGS);
 void p_words(DISPATCH_ARGS);
+void p_apropos(DISPATCH_ARGS);
+void p_water(DISPATCH_ARGS);
 void p_see(DISPATCH_ARGS);
 int capture_render(Interpreter *interp, void (*render)(FILE *, Interpreter *, int), int target_cfa);
 void p_see_to_string(DISPATCH_ARGS);

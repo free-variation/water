@@ -2,6 +2,7 @@
 !i
 %
 '
+)]
 *
 *!
 +
@@ -22,9 +23,12 @@
 2drop
 2dup
 :
+:]
 :name
 ;
+<
 =
+>
 >r
 >side
 ?
@@ -33,7 +37,23 @@
 @i
 @i,j
 @j
+C
+E
+G
+H
+HBAR
+KB
+NA
+PHI
+PI
+QE
+TAU
+[
+[(
 [:
+[>
+[|
+]
 ^
 _
 abs
@@ -46,6 +66,7 @@ amb
 and
 any?
 append-file
+apropos
 argmax
 argmin
 array
@@ -202,6 +223,7 @@ index-of
 inline
 inner-join
 int-segment
+internal
 intersection
 iota
 iso>time
@@ -342,6 +364,9 @@ sq
 sqrt
 start-generator
 start-process
+stderr
+stdin
+stdout
 stop
 stream?
 string>chars
@@ -401,6 +426,7 @@ vvf-
 vvf/
 wait
 wall-now
+water
 while
 wildcard?
 with-db
@@ -412,4 +438,8 @@ write-in
 write-tsv
 xt?
 yield
+{
+|
+|>
+}
 ~

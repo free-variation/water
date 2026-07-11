@@ -693,7 +693,7 @@ void print_double(FILE *out, double number) {
 
 int print_truncate = 1;
 
-static int stdout_is_tty(void) {
+int stdout_is_tty(void) {
 	static int cached = -1;
 	if (cached < 0)
 		cached = isatty(fileno(stdout));
@@ -4113,6 +4113,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "num-cores", p_num_cores, 0);
 
 	define_primitive(interp, "words", p_words, 0);
+	define_primitive(interp, "apropos", p_apropos, 0);
+	define_primitive(interp, "water", p_water, 0);
 	define_primitive(interp, "see", p_see, 0);
 	define_primitive(interp, "see>string", p_see_to_string, 0);
 	define_primitive(interp, "man", p_man, 0);
@@ -4192,6 +4194,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "to", p_to, 1);
 	define_primitive(interp, ";", p_semicolon, 1);
 	define_primitive(interp, "inline", p_inline, 0);
+	define_primitive(interp, "internal", p_internal, 0);
 	define_primitive(interp, "if", p_if, 1);
 	define_primitive(interp, "?if", p_qif, 1);
 	define_primitive(interp, "then", p_then, 1);

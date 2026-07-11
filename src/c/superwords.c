@@ -481,7 +481,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 void define_superwords(Interpreter *interp) {
 	define_primitive(interp, "f*+", p_fmul_add, 0);
 	define_primitive(interp, "f*-", p_fmul_sub, 0);
-	store_i_drop_cfa = define_primitive(interp, "(!i-drop)", p_store_i_drop, 0);
+	store_i_drop_cfa = define_primitive(interp, "(!i-drop)", p_store_i_drop, 4);
 	unify_cons_cfa = define_primitive(interp, "(cons~)", p_unify_cons, 4);
 	inc_store_i_cfa = define_primitive(interp, "(inc!i)", p_inc_store_i, 4);
 	dec_store_i_cfa = define_primitive(interp, "(dec!i)", p_dec_store_i, 4);

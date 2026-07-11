@@ -27,8 +27,20 @@
 \ man resolves its own entry
 ' man man :word @ "man" = . cr                    \ 1
 
-\ an undocumented word (the array-literal delimiter) returns null
-' [ man null = . cr                               \ 1
+\ a word with no reference entry returns null
+: fresh-this-session 1 ;
+' fresh-this-session man null = . cr              \ 1
+
+\ a unit word synthesizes its entry from the unit's definition
+' kg man :summary @ "unit: base unit of its own dimension" = . cr   \ 1
+' newton man :summary @ . cr                      \ unit: m.kg.s^-2
+' km man :summary @ . cr                          \ unit: m × 1000
+' ¢ man :effect @ "( n -- q )" = . cr             \ 1
+base unit furlong
+' furlong man null = . cr                         \ 0
+
+\ see reconstructs a unit as a description line
+' newton see
 
 \ lookup parses the next word and pushes its xt
 lookup sin man :word @ "sin" = . cr               \ 1

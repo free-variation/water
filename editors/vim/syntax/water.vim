@@ -19,7 +19,7 @@ syn match   waterSymbol  ":\k\+"
 syn match   waterPath    "/\a\k*"
 syn match   waterLogicVar "\<\u\k*\>"
 
-syn keyword waterDefine : variable constant symbol to forget inline ' lookup immediate
+syn keyword waterDefine : variable constant symbol to forget inline internal ' lookup
 syn match   waterDefine ";"
 syn match   waterDefine "\[:"
 syn match   waterDefine "\[|"
@@ -42,8 +42,9 @@ syn match   waterDelimiter "\s\zs|\ze\s"
 syn keyword waterBuiltin +! -! *! /! ++ -- f++ f-- f1+ f1- f+ f-
 syn keyword waterBuiltin f* f/ f^ 1+ 1- 0= + - * / % ^
 syn keyword waterBuiltin = !i ! @i,j @i @j @ >r >side side> 2dup .s
-syn keyword waterBuiltin .a . 0-matrix 2drop ? abs acos add-last! all? alloc-stats and any?
-syn keyword waterBuiltin append-file argmax argmin array array-of array>cons array>frame array>set array? asin assert atan
+syn keyword waterBuiltin .a . 0-matrix 2drop ? C E G H HBAR KB NA
+syn keyword waterBuiltin PHI PI QE TAU abs acos add-last! all? alloc-stats and any? append-file
+syn keyword waterBuiltin apropos argmax argmin array array-of array>cons array>frame array>set array? asin assert atan
 syn keyword waterBuiltin augment base bit-and bit-not bit-or bit-xor bulk-load bye byte-size byte-substring catch cd
 syn keyword waterBuiltin char-at choose clear close codepoint-at codepoint>char codepoints>string column-maxes column-means column-mins column-sums concat
 syn keyword waterBuiltin cons cons>array continuation? copy cos count-matches cr create-index cwd dataset>matrix date-shift date>epoch
@@ -65,12 +66,12 @@ syn keyword waterBuiltin resume retract reverse roll rot round round-down round-
 syn keyword waterBuiltin rows>dataset rows>relation rshift run run-result running? sample save save-image see see-compiled see-compiled>string
 syn keyword waterBuiltin see-tree see-tree>string see>string seed segment>pointer segment? select-keys select-rows select-values set set-add! set-remove!
 syn keyword waterBuiltin set? shift shift-with shuffle side-depth side-drop sin size skip sleep slice! sort
-syn keyword waterBuiltin sort-by split sq sqrt start-generator start-process stop stream? string>chars string>codepoints string>number string>symbol
-syn keyword waterBuiltin string? submatrix substring sum swap symbol? take tan tanh throw time>iso to-slice!
-syn keyword waterBuiltin transpose trim true truncate try-catch type-of union unit update-at values var vf*
-syn keyword waterBuiltin vf+ vf- vf/ vfabs vfcos vfexp vflog vfneg vfsin vfsq vfsqrt vftan
-syn keyword waterBuiltin vftanh vstack vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait wall-now wildcard? with-db
-syn keyword waterBuiltin with-stream words write write-file write-in write-tsv xt? yield
+syn keyword waterBuiltin sort-by split sq sqrt start-generator start-process stderr stdin stdout stop stream? string>chars
+syn keyword waterBuiltin string>codepoints string>number string>symbol string? submatrix substring sum swap symbol? take tan tanh
+syn keyword waterBuiltin throw time>iso to-slice! transpose trim true truncate try-catch type-of union unit update-at
+syn keyword waterBuiltin values var vf* vf+ vf- vf/ vfabs vfcos vfexp vflog vfneg vfsin
+syn keyword waterBuiltin vfsq vfsqrt vftan vftanh vstack vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait
+syn keyword waterBuiltin wall-now water wildcard? with-db with-stream words write write-file write-in write-tsv xt? yield
 syn match   waterBuiltin "|>"
 
 hi def link waterComment      Comment
