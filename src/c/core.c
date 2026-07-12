@@ -123,7 +123,7 @@ void arena_free(void *payload) {
 }
 
 void *arena_realloc(void *payload, size_t bytes) {
-	if (!payload) 
+	if (!payload)
 		return arena_malloc(bytes);
 
 	void *block = (char *)payload - ARENA_ALIGNMENT;
@@ -138,9 +138,9 @@ void *arena_realloc(void *payload, size_t bytes) {
 	void *grown = arena_malloc(bytes);
 	size_t old_payload_bytes = old_total - ARENA_ALIGNMENT;
 	memcpy(grown, payload, old_payload_bytes < bytes ? old_payload_bytes : bytes);
-	
+
 	arena_free(payload);
-	
+
 	return grown;
 }
 
@@ -196,7 +196,7 @@ int object_alloc_slot(Interpreter *interp) {
 
 	if (arena.object_space.n < arena.object_space.max) {
 		int claim = arena.object_space.max - arena.object_space.n;
-		if (claim > SLOTS_PER_CLAIM) 
+		if (claim > SLOTS_PER_CLAIM)
 			claim = SLOTS_PER_CLAIM;
 		if (arena.object_space.n + claim > arena.object_space.cap) {
 			int new_cap = arena.object_space.cap * 2;
@@ -206,7 +206,7 @@ int object_alloc_slot(Interpreter *interp) {
 				new_cap = arena.object_space.max;
 			GROW_OBJECT_TABLE(new_cap);
 		}
-		
+
 		main_alloc.objects.next = arena.object_space.n;
 		arena.object_space.n += claim;
 		main_alloc.objects.end = arena.object_space.n;
@@ -429,7 +429,7 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 	obj->matrix.rows = num_rows;
 	obj->matrix.columns = num_columns;
 	size_t num_elements = (size_t)num_rows * (size_t)num_columns;
-	
+
 	obj->matrix.elements = calloc(num_elements ? num_elements : 1, sizeof(double));
 	if (!obj->matrix.elements) {
 		arena_free_object(obj);
@@ -450,7 +450,7 @@ int object_new_segment(Interpreter *interp, int length, SegmentType element_type
 	} else if (!interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold) {
 		interp->gc_pending = 1;
 	}
-	
+
 	NEW_OBJECT(obj, OBJECT_SEGMENT);
 
 	obj->segment.element_type = element_type;
@@ -489,9 +489,9 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->continuation.capture_generation = vocab.forget_generation;
 	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
-	
+
 	heap_bytes_add((size_t)return_len * sizeof(Val));
-	
+
 	return slot;
 }
 
@@ -500,7 +500,7 @@ static void *worker_entry(void *parallel_task) {
 
 	for (;;) {
 			int start_index = atomic_fetch_add(&task->next_index, task->items_per_claim);
-			if (start_index >= task->n_items) 
+			if (start_index >= task->n_items)
 				break;
 			int end_index = MIN(start_index + task->items_per_claim, task->n_items);
 			task->kernel(start_index, end_index, task->context);
@@ -631,7 +631,7 @@ int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 							Object *left_segment = OBJECT_AT(VAL_DATA(left));
 							Object *right_segment = OBJECT_AT(VAL_DATA(right));
 
-							
+
 							if (left_segment->segment.element_type != right_segment->segment.element_type)
 								return left_segment->segment.element_type - right_segment->segment.element_type;
 							if (left_segment->segment.length != right_segment->segment.length)
@@ -682,7 +682,7 @@ int double_cmp(const void *left, const void *right) {
 	if (a > b) return 1;
 	return 0;
 }
-	
+
 
 void print_double(FILE *out, double number) {
 	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
@@ -1197,7 +1197,7 @@ void docol(DISPATCH_ARGS) {
 	}
 
 	interp->return_stack[interp->rsp++] = make_addr((int)(chain_ip + 1 - vocab.dict));
-	
+
 	DISPATCH_REGISTERS(interp, vocab.dict + (int)*chain_ip + 1, chain_sp);
 }
 
@@ -1216,7 +1216,7 @@ void dovar(DISPATCH_ARGS) {
 }
 
 static void unwind_locals_scopes(Interpreter *interp) {
-	while (interp->local_base > interp->run_floor 
+	while (interp->local_base > interp->run_floor
 			&& interp->rsp - 1 >= interp->local_base
 			&& interp->rsp - 1 < interp->local_base + saved_n_locals(interp->return_stack[interp->local_base - 1])) {
 		int enclosing_base = saved_local_base(interp->return_stack[interp->local_base - 1]);
@@ -1348,7 +1348,7 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 		int n_locals = 0, n_received = 0, slots_ip = -1, body_start = 0;
 		cfa_handler enter = (cfa_handler)vocab.dict[cfa + 1];
 		n_locals = (int)vocab.dict[cfa + 2];
-		
+
 		if (enter == p_enter_locals_to) {
 			n_received = n_locals;
 			body_start = cfa + 3;
@@ -1425,9 +1425,7 @@ void execute_xt(Interpreter *interp, int cfa) {
 	int saved_floor = interp->run_floor;
 	interp->run_floor = interp->rsp;
 
-	/* The frame the trampoline's docol would push, but aimed at the immortal
-	   stop cell — continuations captured inside the body must see the same
-	   return-stack shape either way. */
+
 	rpush(interp, make_addr(vocab.stop_cfa));
 	if (interp->error_flag) {
 		interp->run_floor = saved_floor;
@@ -1535,7 +1533,7 @@ void rebuild_symbol_hash(void) {
 
 static int probe_symbol(const char *name, unsigned int *empty_slot) {
 	unsigned int index = symbol_hash_index(name);
-	
+
 	for (int probe = 0; probe < SYMBOL_HASH_SIZE; probe++) {
 		int slot = atomic_load_explicit(&vocab.symbol_hash[index], memory_order_acquire);
 		if (slot == 0) {
@@ -1814,7 +1812,7 @@ const char *tag_name(Tag t) {
 }
 
 void p_exit(DISPATCH_ARGS) {
-	while (interp->rsp > 0 && VAL_TAG(interp->return_stack[interp->rsp - 1]) == T_MARK) 
+	while (interp->rsp > 0 && VAL_TAG(interp->return_stack[interp->rsp - 1]) == T_MARK)
 		interp->rsp--;
 
 
@@ -2029,7 +2027,7 @@ void p_local_fetch_0depth(DISPATCH_ARGS) {
 
 void p_load2(DISPATCH_ARGS) {
 	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 2);
-	
+
 	Val *locals = interp->return_stack + interp->local_base;
 	chain_sp[0] = locals[(int)chain_ip[0]];
 	chain_sp[1] = locals[(int)chain_ip[1]];
@@ -2370,7 +2368,6 @@ int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
 }
 
 
-
 int try_fuse_at_i_lit(Interpreter *interp) {
 	if (!compiler.compiling)
 		return 0;
@@ -2667,7 +2664,7 @@ int find_local(const char *token, int *depth_out, int *slot_out) {
 				int inner_end = (inner + 1 < compiler.n_local_scopes)
 					? compiler.local_scope_starts[inner + 1]
 					: compiler.n_local_names;
-				if (inner_end > inner_start) 
+				if (inner_end > inner_start)
 					depth++;
 			}
 
@@ -3066,7 +3063,6 @@ static Val varmap_lookup(Interpreter *interp, VarMap *map, int slot) {
 }
 
 
-
 static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, Val *copy_val, int depth) {
 	int i, copy_handle;
 
@@ -3111,7 +3107,7 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 
 						Object *copy = OBJECT_AT(copy_handle);
 						if (source->len > copy->capacity) {
-							while (copy->capacity < source->len) 
+							while (copy->capacity < source->len)
 								copy->capacity *= 2;
 							copy->items = arena_realloc(copy->items, sizeof(Val) * (size_t)copy->capacity);
 						}
@@ -3399,7 +3395,7 @@ void gc(Interpreter *interp) {
 		int cfa = sorted_cfas[i];
 		int body_start = cfa + 1;
 		int body_end = (i + 1 < num_cfas) ? sorted_cfas[i + 1] - 4 : vocab.here;
-		
+
 		cfa_handler handler = (cfa_handler)vocab.dict[cfa];
 
 		if (handler == docol) {
@@ -3455,8 +3451,7 @@ static const char *var_name_from_slot(cell slot) {
 
 #define SEE_TREE_MAX_DEPTH 32
 
-/* Print one non-control op (name + operands) at cursor; shared by see-compiled
- * and see-tree. cell_count is op_cell_count(cursor). */
+
 static void see_print_op(FILE *out, Interpreter *interp, int cursor, int cell_count) {
 	cell handler = vocab.dict[cursor];
 	if (superword_is_lit_fold(handler)) {
@@ -3545,10 +3540,7 @@ static void see_compiled_body(FILE *out, Interpreter *interp, int body_start, in
 	}
 }
 
-/* Like see_compiled_body, but a call to a colon word is expanded inline:
- * its name, then its body indented two more spaces, recursively, down to
- * primitives. `stack` holds the cfas on the current expansion path so direct
- * or mutual recursion prints as a leaf instead of looping forever. */
+
 static void see_tree_body(FILE *out, Interpreter *interp, int body_start, int indent, int *stack, int sp) {
 	cell exit_handler = vocab.dict[vocab.exit_cfa];
 	int cursor = body_start;
@@ -3574,9 +3566,7 @@ static void see_tree_body(FILE *out, Interpreter *interp, int body_start, int in
 		if (handler_fn == docol) {
 			int target = (int)vocab.dict[cursor + 1];
 			if (target < 4 || target >= vocab.here) {
-				/* the cell after docol is an inline op, not a word cfa, so this
-				 * docol opens a quotation ([branch][off][docol][body][exit])
-				 * rather than calling a colon word */
+
 				fputs("[:\n", out);
 				cursor++;
 				depth++;
@@ -3771,12 +3761,12 @@ void free_one_object(Object *obj) {
 							}
 		case OBJECT_CONTINUATION: {
 								heap_bytes_sub((size_t)obj->continuation.return_len * sizeof(Val));
-									  free(obj->continuation.return_slice); 
+									  free(obj->continuation.return_slice);
 									  break;
 								  }
 		case OBJECT_SEGMENT: {
 								heap_bytes_sub((size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
-								 free(obj->segment.data); 
+								 free(obj->segment.data);
 								 break;
 							 }
 	}
@@ -3836,8 +3826,7 @@ void worker_local_gc(Interpreter *interp) {
 }
 
 void forget_user(Interpreter *interp) {
-	/* Free only user objects; objects below init_n_objects are literals baked
-	   into the compiled-in vocabulary (e.g. run's " +") and must survive. */
+
 	for (int i = arena.object_space.init; i < arena.object_space.n; i++) {
 		if (arena.objects[i]) {
 			free_one_object(arena.objects[i]);
@@ -3864,7 +3853,6 @@ void forget_user(Interpreter *interp) {
 	truncate_quotation_spans();
 	rebuild_symbol_hash();
 }
-
 
 
 void interp_init(Interpreter *interp) {
@@ -3988,7 +3976,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "type-of", p_type_of, 0);
 
 	type_of_intern_names(interp);
-	
+
 	define_primitive(interp, "lvar", p_lvar, 0);
 	define_primitive(interp, "_", p_wildcard, 0);
 	define_primitive(interp, "unify", p_unify, 0);
@@ -4158,6 +4146,11 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "(@i.segment)", p_at_i_segment, 4);
 	define_primitive(interp, "(!i.array)", p_store_i_array, 4);
 	define_primitive(interp, "(!i-drop.array)", p_store_i_drop_array, 4);
+	define_primitive(interp, "(size.len)", p_size_len, 4);
+	define_primitive(interp, "(=.symbol)", p_eq_symbol, 4);
+	define_primitive(interp, "(=.string)", p_eq_string, 4);
+	define_primitive(interp, "(@.symbol)", p_frame_get_symbol, 4);
+	define_primitive(interp, "(!.symbol)", p_frame_set_symbol, 4);
 	ll_add_0_cfa = define_primitive(interp, "(ll+0)", p_ll_add_0, 4);
 	ll_sub_0_cfa = define_primitive(interp, "(ll-0)", p_ll_sub_0, 4);
 	ll_mul_0_cfa = define_primitive(interp, "(ll*0)", p_ll_mul_0, 4);
@@ -4330,9 +4323,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 		}
 	}
 
-	/* lib.h2o is part of the rebuilt-each-process base, not user state: the
-	   init_* watermarks (the boundary an image saves above) sit after it, so
-	   images carry only words defined after bootstrap. */
+
 	vocab.init_here = vocab.here;
 	vocab.init_latest_cfa = vocab.latest_cfa;
 	vocab.init_names_here = vocab.names_here;
@@ -4351,7 +4342,7 @@ int main(int argc, char **argv) {
 	int interactive_set = 0;
 	int load_lib = 1;
 	long max_objects_arg = 0;
-	const char *program_files[64];
+	const char *program_files[argc];
 	int n_program_files = 0;
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
@@ -4361,17 +4352,6 @@ int main(int argc, char **argv) {
 		else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batch") == 0) {
 			interactive = 0;
 			interactive_set = 1;
-		}
-		else if (strcmp(argv[i], "-f") == 0 || strcmp(argv[i], "--file") == 0) {
-			if (i + 1 >= argc) {
-				fprintf(stderr, "water: %s needs a file\n", argv[i]);
-				return 2;
-			}
-			if (n_program_files >= 64) {
-				fprintf(stderr, "water: too many -f files (max 64)\n");
-				return 2;
-			}
-			program_files[n_program_files++] = argv[++i];
 		}
 		else if (strcmp(argv[i], "--no-lib") == 0)
 			load_lib = 0;
@@ -4386,9 +4366,12 @@ int main(int argc, char **argv) {
 				return 2;
 			}
 		}
-		else {
+		else if (argv[i][0] == '-') {
 			fprintf(stderr, "water: unknown option '%s'\n", argv[i]);
 			return 2;
+		}
+		else {
+			program_files[n_program_files++] = argv[i];
 		}
 	}
 

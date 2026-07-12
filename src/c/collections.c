@@ -269,7 +269,7 @@ void p_head_tail(DISPATCH_ARGS) {
 	Val pair_val = chain_sp[-1];
 	if (VAL_TAG(pair_val) != T_PAIR) {
 		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "head-tail: expected %s; got %s", tag_name(T_PAIR), tag_name(VAL_TAG(pair_val)));
+		fail(interp, "head-tail: expected a pair; got %s", tag_name(VAL_TAG(pair_val)));
 		return;
 	}
 	Pair *pair = &pairs.table[VAL_DATA(pair_val)];
@@ -292,9 +292,7 @@ void p_array_to_cons(DISPATCH_ARGS) {
 	if (n == 0)
 		result = make_tagged(T_NONE, 0);
 	else {
-		/* acc lives in a gc root so the in-progress chain survives a collection
-		   triggered while allocating later pairs; the source stays rooted on the
-		   stack via PEEK, so array->items reads stay valid too. */
+
 		gc_root_push(interp, array->items[n - 1]);
 		for (int i = n - 2; i >= 0; i--) {
 			int slot = object_new_pair(interp);
@@ -404,33 +402,6 @@ void p_sort(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
-void p_size(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val collection = chain_sp[-1];
-	double elements;
-
-	if (VAL_TAG(collection) == T_STRING) {
-		Object *string = OBJECT_AT(VAL_DATA(collection));
-		elements = (double)string_codepoint_count(string);
-	} else if (VAL_TAG(collection) == T_SEGMENT) {
-		elements = (double)OBJECT_AT(VAL_DATA(collection))->segment.length;
-	} else if (VAL_TAG(collection) == T_MATRIX) {
-		Object *matrix = OBJECT_AT(VAL_DATA(collection));
-		elements = (double)(matrix->matrix.rows * matrix->matrix.columns);
-	} else if (VAL_TAG(collection) == T_SET ||
-			VAL_TAG(collection) == T_ARRAY ||
-			VAL_TAG(collection) == T_FRAME) {
-		elements = (double)OBJECT_AT(VAL_DATA(collection))->len;
-	} else {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "size: expected a set, array, matrix, string, segment, or frame; got %s", tag_name(VAL_TAG(collection)));
-		return;
-	}
-	chain_sp[-1] = make_float(elements);
-
-	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
-}
-
 void p_byte_size(DISPATCH_ARGS) {
 	POP_STRING(string, "byte-size");
 	push(interp, make_float((double)string->len));
@@ -443,7 +414,7 @@ void p_member(DISPATCH_ARGS) {
 	Val set_val = chain_sp[-2];
 	if (VAL_TAG(set_val) != T_SET) {
 		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "member?: expected %s; got %s", tag_name(T_SET), tag_name(VAL_TAG(set_val)));
+		fail(interp, "member?: expected a set; got %s", tag_name(VAL_TAG(set_val)));
 		return;
 	}
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
@@ -507,7 +478,7 @@ void p_add_last(DISPATCH_ARGS) {
 	Val array_val = chain_sp[-2];
 	if (VAL_TAG(array_val) != T_ARRAY) {
 		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "add-last!: expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(array_val)));
+		fail(interp, "add-last!: expected an array; got %s", tag_name(VAL_TAG(array_val)));
 		return;
 	}
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
@@ -523,7 +494,7 @@ void p_remove_last(DISPATCH_ARGS) {
 	Val array_val = chain_sp[-1];
 	if (VAL_TAG(array_val) != T_ARRAY) {
 		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "remove-last!: expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(array_val)));
+		fail(interp, "remove-last!: expected an array; got %s", tag_name(VAL_TAG(array_val)));
 		return;
 	}
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
@@ -647,13 +618,13 @@ static int flatten_count(Interpreter *interp, Object *source, int depth) {
 }
 
 static void flatten_fill(Object *source, Object *target, int *offset) {
-   for (int i = 0; i < source->len; i++) {
-	   Val item = source->items[i];
-	   if (VAL_TAG(item) == T_ARRAY)
-		   flatten_fill(OBJECT_AT(VAL_DATA(item)), target, offset);
-	   else
-		   target->items[(*offset)++] = item;
-   }
+for (int i = 0; i < source->len; i++) {
+	Val item = source->items[i];
+	if (VAL_TAG(item) == T_ARRAY)
+		flatten_fill(OBJECT_AT(VAL_DATA(item)), target, offset);
+	else
+		target->items[(*offset)++] = item;
+}
 }
 
 void p_flatten_array(DISPATCH_ARGS) {
@@ -731,8 +702,6 @@ void p_sample(DISPATCH_ARGS) {
 
 	DISPATCH(interp);
 }
-
-
 
 
 void p_range(DISPATCH_ARGS) {
@@ -969,7 +938,7 @@ static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val v
 
 	if (VAL_TAG(key) == T_ARRAY) {
 		Object *path = frame_path(interp, key, op);
-		if (!path) 
+		if (!path)
 			return;
 
 		if (path->len == 0) {
@@ -1019,12 +988,49 @@ static void frame_set_pair(Interpreter *interp, int frame_handle, Val key, Val v
 		} \
 	} while (0)
 
+void p_frame_get_symbol(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val frame_val = chain_sp[-2];
+	Val key = chain_sp[-1];
+	if (VAL_TAG(frame_val) != T_FRAME || VAL_TAG(key) != T_SYMBOL) {
+		RETARGET_OP(p_frame_get);
+		MUSTTAIL return p_frame_get(interp, chain_ip, chain_sp);
+	}
+
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
+	FRAME_LOOKUP(frame, VAL_DATA(key), at, present);
+	if (!present) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "@: no key :%s", &vocab.symbol_pool[VAL_DATA(key)]);
+		return;
+	}
+
+	chain_sp[-2] = frame->frame.values[at];
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
+void p_frame_set_symbol(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val frame_val = chain_sp[-3];
+	Val key = chain_sp[-2];
+	Val value = chain_sp[-1];
+	if (VAL_TAG(frame_val) != T_FRAME || VAL_TAG(key) != T_SYMBOL) {
+		RETARGET_OP(p_frame_set);
+		MUSTTAIL return p_frame_set(interp, chain_ip, chain_sp);
+	}
+
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
+	frame_put(OBJECT_AT(VAL_DATA(frame_val)), VAL_DATA(key), value);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
+}
+
 void p_frame_get(DISPATCH_ARGS) {
 	PEEK_TYPE_AT(frame_val, 1, "@", T_FRAME);
 	PEEK_AT(key_or_path, 0, "@");
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "@", {
+			RETARGET_OP(p_frame_get_symbol);
 			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
 			if (!present) {
 			fail(interp, "@: no key :%s", &vocab.symbol_pool[VAL_DATA(key_or_path)]);
@@ -1050,6 +1056,7 @@ void p_frame_set(DISPATCH_ARGS) {
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	DISPATCH_SYMBOL_OR_PATH(key_or_path, "!", {
+			RETARGET_OP(p_frame_set_symbol);
 			frame_put(frame, VAL_DATA(key_or_path), value);
 			interp->dsp -= 2;
 			}, {
@@ -1141,7 +1148,7 @@ static int predicate_holds(Interpreter *interp, Val tree_node, Object *pred) {
 	Val key = pred->items[1];
 	Val subject = make_tagged(T_NONE, 0);
 	int present = 0;
-	
+
 	if (VAL_TAG(key) == T_ARRAY) {
 		Object *subpath = OBJECT_AT(VAL_DATA(key));
 		subject = frame_walk(interp, tree_node, subpath, subpath->len, WALK_PROBE, &present, "select-values");
@@ -1295,7 +1302,6 @@ static void select_descendants(Interpreter *interp, Val tree_node, Object *path,
 			return;
 	}
 }
-
 
 
 void p_merge(DISPATCH_ARGS) {
@@ -1506,7 +1512,7 @@ void p_group_by(DISPATCH_ARGS) {
 	if (interp->error_flag)
 		return;
 
-	/* One pass: drop each row into a growable bag keyed by its column value. */
+
 	for (int i = 0; i < row_count; i++) {
 		Val row = OBJECT_AT(VAL_DATA(rows_val))->items[i];
 		cell key = VAL_DATA(frame_field(row, col));
@@ -1530,7 +1536,7 @@ void p_group_by(DISPATCH_ARGS) {
 		bag_obj->items[bag_obj->len++] = row;
 	}
 
-	/* Sort+dedup each bag in place, then turn it into a set (storage reused). */
+
 	Object *result = OBJECT_AT(frame_handle);
 	for (int i = 0; i < result->len; i++) {
 		int bag = (int)VAL_DATA(result->frame.values[i]);
@@ -1574,8 +1580,8 @@ void p_destruct_to(DISPATCH_ARGS) {
 	POP(source_val);
 
 	if (VAL_TAG(source_val) != T_ARRAY) {
-                fail(interp, "destruct-to: source must be an array; got %s", tag_name(VAL_TAG(source_val)));
-                return;
+			fail(interp, "destruct-to: source must be an array; got %s", tag_name(VAL_TAG(source_val)));
+			return;
 	}
 	if (VAL_TAG(target_val) != T_ARRAY) {
 		fail(interp, "destruct-to: target must be an array; got %s", tag_name(VAL_TAG(target_val)));
@@ -1643,7 +1649,7 @@ void p_slice_store(DISPATCH_ARGS) {
 
 	if (tstart < 0 || tstart + slen > target->len) {
 		fail(interp, "slice!: target [%d, %d) out of bounds for length %d",
-		     tstart, tstart + slen, target->len);
+			tstart, tstart + slen, target->len);
 		return;
 	}
 
@@ -1653,7 +1659,7 @@ void p_slice_store(DISPATCH_ARGS) {
 	int s_max = MAX(s_first, s_last);
 	if (s_min < 0 || s_max >= src->len) {
 		fail(interp, "slice!: source indices [%d..%d] out of bounds for length %d",
-		     s_min, s_max, src->len);
+			s_min, s_max, src->len);
 		return;
 	}
 
@@ -1698,7 +1704,7 @@ void p_to_slice(DISPATCH_ARGS) {
 	}
 	if (offset < 0 || offset + n > target->len) {
 		fail(interp, "to-slice!: slice [%d, %d) out of bounds for length %d",
-		     offset, offset + n, target->len);
+			offset, offset + n, target->len);
 		return;
 	}
 	if (interp->dsp < 1 + n) {
@@ -1714,7 +1720,7 @@ void p_to_slice(DISPATCH_ARGS) {
 
 	DISPATCH(interp);
 }
-		
+
 typedef struct {
 	const char *cursor;
 	const char *end;
@@ -1729,7 +1735,7 @@ static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *desti
 static void json_skip_whitespace(JSONParser *parser) {
 	while (parser->cursor < parser->end) {
 		char lookahead = *parser->cursor;
-		if (lookahead != ' ' && lookahead != '\t' && lookahead != '\n' && lookahead != '\r') 
+		if (lookahead != ' ' && lookahead != '\t' && lookahead != '\n' && lookahead != '\r')
 			break;
 		parser->cursor++;
 	}
@@ -1842,9 +1848,9 @@ static void json_parse_string(Interpreter *interp, JSONParser *parser, Val *dest
 	if (length < 0) return;
 	string->len = length;
 	string->bytes[length] = 0;
-	
+
 	*destination = make_string(handle);
-	
+
 	parser->cursor = closing + 1;
 }
 
@@ -1876,7 +1882,7 @@ static void json_parse_array(Interpreter *interp, JSONParser *parser, Val *desti
 
 		array->items[array->len] = make_tagged(T_NONE, 0);
 		array->len++;
-		
+
 		json_parse_value(interp, parser, &OBJECT_AT(handle)->items[array->len - 1]);
 		if (interp->error_flag) return;
 
@@ -1945,7 +1951,7 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 		parser->scratch[key_length] = 0;
 		cell key_symbol = intern_symbol(interp, parser->scratch);
 		if (interp->error_flag) return;
-		
+
 		parser->cursor = key_closing + 1;
 
 		json_skip_whitespace(parser);
@@ -1961,7 +1967,7 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 		frame->frame.keys[frame->len] = key_symbol;
 		frame->frame.values[frame->len] = make_tagged(T_NONE, 0);
 		frame->len++;
-		
+
 		json_parse_value(interp, parser, &OBJECT_AT(handle)->frame.values[frame->len - 1]);
 		if (interp->error_flag) return;
 
@@ -2102,7 +2108,7 @@ static void json_write_byte(JSONWriter *writer, char byte) {
 static void json_write_number(JSONWriter *writer, double number) {
 	char text[32];
 	int n;
-	
+
 	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15) {
 		n = snprintf(text, sizeof text, "%lld", (long long)number);
 	} else {
@@ -2112,13 +2118,13 @@ static void json_write_number(JSONWriter *writer, double number) {
 				break;
 		}
 	}
-	
+
 	json_write_bytes(writer, text, n);
 }
 
 static void json_write_string(JSONWriter *writer, const char *bytes, int len) {
 	json_write_byte(writer, '"');
-	
+
 	for (int i = 0; i < len; i++) {
 		unsigned char byte = (unsigned char)bytes[i];
 		switch (byte) {
@@ -2139,7 +2145,7 @@ static void json_write_string(JSONWriter *writer, const char *bytes, int len) {
 				}
 		}
 	}
-	
+
 	json_write_byte(writer, '"');
 }
 
@@ -2221,4 +2227,4 @@ void p_frame_to_json(DISPATCH_ARGS) {
 
 	DISPATCH(interp);
 }
-			
+

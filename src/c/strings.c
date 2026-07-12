@@ -80,7 +80,7 @@ static int utf8_decode(const char *bytes, int length, int *codepoint) {
 	for (int i = 1; i <= extra && i < length; i++)
 		value = (value << 6) | (bytes[i] & 0x3F);
 	*codepoint = value;
-	
+
 	return extra + 1;
 }
 
@@ -441,20 +441,20 @@ void p_substring(DISPATCH_ARGS) {
 }
 
 void p_byte_substring(DISPATCH_ARGS) {
-      POP_INT(end, "byte-substring", "end");
-      POP_INT(start, "byte-substring", "start");
-      PEEK_STRING_AT(source, 0, "byte-substring");
+	POP_INT(end, "byte-substring", "end");
+	POP_INT(start, "byte-substring", "start");
+	PEEK_STRING_AT(source, 0, "byte-substring");
 
-      if (start < 0 || end > source->len || start > end) {
-              fail(interp, "byte-substring: range [%d, %d) out of bounds for length %d", start, end, source->len);
-              return;
-      }
+	if (start < 0 || end > source->len || start > end) {
+		fail(interp, "byte-substring: range [%d, %d) out of bounds for length %d", start, end, source->len);
+		return;
+	}
 
-      int handle = object_new_string(interp, source->bytes + start, end - start);
-      interp->data_stack[interp->dsp - 1] = make_string(handle);
+	int handle = object_new_string(interp, source->bytes + start, end - start);
+	interp->data_stack[interp->dsp - 1] = make_string(handle);
 
-      DISPATCH(interp);
-}	
+	DISPATCH(interp);
+}
 
 static Val produce_char_string(Interpreter *interp, Object *source, int start_byte, int end_byte) {
 	return make_string(object_new_string(interp, source->bytes + start_byte, end_byte - start_byte));

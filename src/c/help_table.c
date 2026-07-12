@@ -1,6 +1,3 @@
-/* Generated from docs/reference.md by tools/gen-help.py.
-   Do not edit by hand; rerun the generator instead. */
-
 #include "water.h"
 
 const char *const help_section_names[] = {

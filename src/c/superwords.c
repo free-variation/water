@@ -247,17 +247,7 @@ static int sub_store_i_cfa;
 static int mul_store_i_cfa;
 static int div_store_i_cfa;
 
-/* Fuse the array read-modify-write idiom
- *   <arr> <idx> <arr> <idx> @i [<delta>] <op> !i drop
- * into  <arr> <idx> [<delta>] (<op>!i)  — dropping the redundant re-fetch.
- * Called when compiling the trailing `drop` (with `!i` already at here-1). The
- * index is always a depth-0 local; the array push and fetch form must agree:
- *   @i.l0   -> array is a (dovar) var pushed separately
- *   @i.ll0  -> array is a depth-0 local (folded into the fetch op)
- *   @i.l1l0 -> array is a depth-1 local (folded into the fetch op)
- * <op> is unary f1+ or f1- (delta = +-1, no delta cells) or a binary
- * f-add/f-sub/f-mul/f-div with a single 2-cell delta push (literal, local,
- * or var). */
+
 static int try_fuse_array_step(Interpreter *interp) {
 	cell *dict = vocab.dict;
 	int here = vocab.here;

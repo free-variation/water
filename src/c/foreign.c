@@ -202,7 +202,7 @@ void p_ffi_variadic(DISPATCH_ARGS) {
 void p_ffi_call(DISPATCH_ARGS) {
 	POP_INT(index, "ffi-call", "binding");
 	FFIBinding *binding = ffi_bindings[index];
-	
+
 	int argc = binding->argc;
 	if (interp->dsp < argc) {
 		fail(interp, "ffi-call: stack too shallow; need %d arguments", argc);

@@ -9,14 +9,14 @@ void p_db_open(DISPATCH_ARGS) {
 	POP_STRING(path, "db-open");
 
 	int slot = -1;
-	for (int i = 0; i < MAX_DATABASES; i++) 
+	for (int i = 0; i < MAX_DATABASES; i++)
 		if (!interp->databases[i]) {
 			slot = i;
 			break;
 		}
 
 	if (slot < 0) {
-		fail(interp, "db-open too many open databases (max %d)", MAX_DATABASES);
+		fail(interp, "db-open: too many open databases (max %d)", MAX_DATABASES);
 		return;
 	}
 
@@ -28,10 +28,10 @@ void p_db_open(DISPATCH_ARGS) {
 	}
 
 	interp->databases[slot] = db;
-	if (slot >= interp->n_databases) 
+	if (slot >= interp->n_databases)
 		interp->n_databases = slot + 1;
 
-	push (interp, make_db(slot));
+	push(interp, make_db(slot));
 
 	DISPATCH(interp);
 }
@@ -184,7 +184,7 @@ void p_db_query(DISPATCH_ARGS) {
 		int row_handle = db_build_row(interp, statement, keys, n_columns);
 		if (interp->error_flag)
 			break;
-		
+
 		GROW_IF_FULL(rows->len, rows->capacity, rows->items);
 		rows->items[rows->len++] = make_frame(row_handle);
 	}
@@ -221,8 +221,4 @@ void p_db_query(DISPATCH_ARGS) {
 
 	DISPATCH(interp);
 }
-
-	
-
-
 

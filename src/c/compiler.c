@@ -1,6 +1,4 @@
-/* Compile-time words: colon/quotation definition, control flow (if/begin/
-   while/repeat), locals declaration, to/constant/variable/symbol, tick,
-   inline, forget. Split out of words.c; all dependencies are in water.h. */
+
 #include "water.h"
 
 static void enter_compile_scope(Interpreter *interp);
@@ -315,7 +313,7 @@ void p_qsemi(DISPATCH_ARGS) {
 
 static int parse_word_cfa(Interpreter *interp, const char *op) {
 	char *token = next_token();
-	
+
 	if (!token) {
 		fail(interp, "%s : expected a word name", op);
 		return 0;
@@ -328,7 +326,7 @@ static int parse_word_cfa(Interpreter *interp, const char *op) {
 
 	return target_cfa;
 }
-	
+
 
 void p_tick(DISPATCH_ARGS) {
 	int target_cfa = parse_word_cfa(interp, "'");
@@ -593,7 +591,7 @@ void p_to_var(DISPATCH_ARGS) {
 void p_to(DISPATCH_ARGS) {
 	char *token = next_token();
 	if (!token) {
-		fail(interp, "to: expected a name"); 
+		fail(interp, "to: expected a name");
 		return;
 	}
 
@@ -617,16 +615,16 @@ void p_to(DISPATCH_ARGS) {
 	int target_cfa = find(token);
 	if (!target_cfa) {
 		if (compiler.compiling) {
-			fail(interp, "to: unknown variable: %s; declare it with variable", token); 
-		return; 
+			fail(interp, "to: unknown variable: %s; declare it with variable", token);
+		return;
 		}
 		target_cfa = create_variable(interp, token);
 	}
 
 	cfa_handler h = (cfa_handler)vocab.dict[target_cfa];
 	if (h != dovar) {
-		fail(interp, "to: %s is not a variable", token); 
-		return; 
+		fail(interp, "to: %s is not a variable", token);
+		return;
 	}
 
 	if (compiler.compiling) {

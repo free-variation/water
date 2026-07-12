@@ -111,9 +111,6 @@ def parse():
 
 def emit(entries, sections):
     out = []
-    out.append("/* Generated from docs/reference.md by tools/gen-help.py.")
-    out.append("   Do not edit by hand; rerun the generator instead. */")
-    out.append("")
     out.append('#include "water.h"')
     out.append("")
     out.append("const char *const help_section_names[] = {")

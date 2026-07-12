@@ -552,3 +552,46 @@ Building on the generator primitives:
   are the substrate; the interleaving combinators are the work.
 
 All `lib.h2o` on the existing primitives — no new C.
+
+---
+
+## Source invariants
+
+The C sources carry no comments; constraints a future change must honor
+live here instead. File and function name each invariant's home.
+
+- `execute_xt` pushes a return frame aimed at the immortal stop cell
+  before running a body, so continuations captured inside see the same
+  return-stack shape as a trampoline call. Changing either call path
+  changes captured-continuation layout (core.c, `execute_xt`).
+- `forget_user` frees only objects above `object_space.init`; below it
+  sit literals baked into the compiled-in vocabulary (e.g. `run`'s
+  `" +"`), which must survive every reset (core.c, `forget_user`).
+- Images save only above the `init_*` watermarks: lib.h2o is rebuilt
+  every process and is not user state. Anything that grows the watermark
+  set must grow all of it — here, latest_cfa, names, sources, symbols,
+  objects, pairs, dimensions, quotation spans (core.c,
+  `construct_vocabulary`; image.c).
+- Image op translation: dovar/dosym call cells carry a trailing
+  target-cfa operand that `op_cell_count` does not include;
+  `image_op_cells` accounts for it (image.c).
+- `save-image`'s per-word cfa array is `static` to keep ~4MB off the
+  call stack (image.c, `p_save_image`).
+- The overall matrix reductions unroll into four accumulators so
+  non-associative float addition still vectorizes; associative ops
+  tolerate it. Collapsing to one accumulator kills the vectorization
+  (matrix.c, `MATRIX_REDUCE_OVERALL_OP`).
+- The superword fuser rewrites `<arr> <idx> <arr> <idx> @i [<delta>]
+  <op> !i drop` into the single `(<op>!i)` ops by matching the compiled
+  dict shape; changes to how those idioms compile must update the
+  matcher (superwords.c).
+- A pmap worker that finds its result chain too deep (possible cycle)
+  conservatively keeps the whole region rather than rewinding it
+  (functional.c).
+- In-progress cons chains are gc-rooted during multi-pair allocation so
+  a collection triggered mid-build cannot reap the spine (collections.c,
+  `array>cons`).
+- Element-wise matrix ops broadcast any dimension of size 1 (n×1 and
+  1×k against n×k), not only scalars; the reference documents only the
+  scalar case — a doc gap to close (matrix.c,
+  `MATRIX_ELEMENTWISE_OP`).

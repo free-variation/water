@@ -17,7 +17,7 @@ make           # builds ./water
 make test      # runs the golden-output test suite
 make bench     # runs the benchmark suite (Water vs CPython)
 ./water              # REPL
-./water -f prog.h2o  # run a program file and exit (repeatable; -i also to drop into the REPL after)
+./water prog.h2o     # run program files and exit (repeatable, in order; -i to drop into the REPL after)
 ```
 
 Self-contained: its vendored dependencies — PCRE2 (regex), isocline (REPL line
@@ -354,6 +354,7 @@ src/c/compiler.c       — compile-time words: colon/quotation definition, contr
 src/c/io.c             — file, TSV, stream, and environment I/O
 src/c/image.c          — binary save-image / load-image serialization
 src/c/collections.c    — sets, arrays, and frames
+src/c/indexing.c       — polymorphic element access: @i/!i and their fused forms, over arrays/segments/matrices
 src/c/matrix.c         — matrix words and numeric kernels
 src/c/dimension.c      — dimensioned quantities: base dimensions, units, quantity arithmetic
 src/c/functional.c     — higher-order operations (map, mapn, …) and multi-core parallelism

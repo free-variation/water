@@ -1,5 +1,4 @@
-/* OS / I/O primitives: files, TSV, stream fds, environment, working
-   directory. Split out of words.c; all dependencies are declared in water.h. */
+
 #include "water.h"
 
 void p_env(DISPATCH_ARGS) {
@@ -376,9 +375,7 @@ void p_close(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
-/* The three standard streams as T_STREAM values over fds 0/1/2, so they compose
-   with read/write/close. stdin conflicts with the REPL's own stdin reading;
-   it's for programs loaded from a file, not piped in. */
+
 void p_stdin(DISPATCH_ARGS)  { push(interp, make_stream(0)); DISPATCH(interp); }
 void p_stdout(DISPATCH_ARGS) { push(interp, make_stream(1)); DISPATCH(interp); }
 void p_stderr(DISPATCH_ARGS) { push(interp, make_stream(2)); DISPATCH(interp); }

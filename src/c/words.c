@@ -469,30 +469,61 @@ void p_div_f(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-#define COMPARISON_OP(name, op) \
-	void name(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
-		Val right = chain_sp[-1]; \
-		Val left = chain_sp[-2]; \
-		int is_true; \
-		if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) { \
-			is_true = VAL_NUMBER(left) op VAL_NUMBER(right); \
-		} else { \
-			SYNC_REGISTERS(interp, chain_ip, chain_sp - 2); \
-			is_true = val_cmp(interp, left, right) op 0; \
-			if (interp->error_flag) \
-				return; \
-		} \
-		chain_sp[-2] = make_bool(is_true); \
-		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1); \
+void p_eq(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val right = chain_sp[-1];
+	Val left = chain_sp[-2];
+	int is_true;
+
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		is_true = VAL_NUMBER(left) == VAL_NUMBER(right);
+	} else {
+		if (VAL_TAG(left) == T_SYMBOL && VAL_TAG(right) == T_SYMBOL)
+			RETARGET_OP(p_eq_symbol);
+		else if (VAL_TAG(left) == T_STRING && VAL_TAG(right) == T_STRING)
+			RETARGET_OP(p_eq_string);
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
+		is_true = val_cmp(interp, left, right) == 0;
+		if (interp->error_flag)
+			return;
 	}
 
-COMPARISON_OP(p_eq, ==)
+	chain_sp[-2] = make_bool(is_true);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
 
-/* lt/gt are element-wise on matrices (a 1.0/0.0 matrix, same shape or scalar
-   broadcast, via binary_op) after the float fast path; other types keep the
-   structural val_cmp bool. `=` stays structural so matrices order for set
-   membership. */
+void p_eq_symbol(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val right = chain_sp[-1];
+	Val left = chain_sp[-2];
+	if (VAL_TAG(left) != T_SYMBOL || VAL_TAG(right) != T_SYMBOL) {
+		RETARGET_OP(p_eq);
+		MUSTTAIL return p_eq(interp, chain_ip, chain_sp);
+	}
+
+	chain_sp[-2] = make_bool(VAL_DATA(left) == VAL_DATA(right));
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
+void p_eq_string(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val right = chain_sp[-1];
+	Val left = chain_sp[-2];
+	if (VAL_TAG(left) != T_STRING || VAL_TAG(right) != T_STRING) {
+		RETARGET_OP(p_eq);
+		MUSTTAIL return p_eq(interp, chain_ip, chain_sp);
+	}
+
+	Object *left_string = OBJECT_AT(VAL_DATA(left));
+	Object *right_string = OBJECT_AT(VAL_DATA(right));
+	int is_true = left_string->len == right_string->len
+		&& memcmp(left_string->bytes, right_string->bytes, (size_t)left_string->len) == 0;
+
+	chain_sp[-2] = make_bool(is_true);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
+
 #define MATRIX_COMPARISON_OP(name, op, sfn, word) \
 	void name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
@@ -555,8 +586,7 @@ COMPARISON_ZBRANCH(p_eq_zbranch, ==);
 COMPARISON_ZBRANCH(p_lt_zbranch, <);
 COMPARISON_ZBRANCH(p_gt_zbranch, >);
 
-/* Pure-float counterparts: feq/flt/fgt assert float operands, so these skip the
-   tag check and val_cmp fallback entirely — the speed feq is chosen for. */
+
 #define FLOAT_COMPARISON_ZBRANCH(name, op) \
 	void name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 2); \
@@ -930,8 +960,8 @@ void p_reset(DISPATCH_ARGS) {
 
 static int find_prompt(Interpreter *interp, int kind) {
 	int mark_index = interp->rsp - 1;
-	
-	while (mark_index >= 0 && 
+
+	while (mark_index >= 0 &&
 			!(VAL_TAG(interp->return_stack[mark_index]) == T_MARK
 				&& (VAL_DATA(interp->return_stack[mark_index]) & 1) == kind)) {
 		mark_index--;
@@ -983,7 +1013,7 @@ void backtrack(Interpreter *interp) {
 	int mark_index = find_prompt(interp, PROMPT_CHOICE);
 	if (mark_index < 0)
 		return;
-	
+
 	unwind_to(interp, mark_index);
 	interp->unwinding = 1;
 }
@@ -1135,6 +1165,47 @@ void p_water(DISPATCH_ARGS) {
 	fflush(stdout);
 
 	DISPATCH(interp);
+}
+
+void p_size(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val collection = chain_sp[-1];
+	double elements;
+
+	if (VAL_TAG(collection) == T_STRING) {
+		Object *string = OBJECT_AT(VAL_DATA(collection));
+		elements = (double)string_codepoint_count(string);
+	} else if (VAL_TAG(collection) == T_SEGMENT) {
+		elements = (double)OBJECT_AT(VAL_DATA(collection))->segment.length;
+	} else if (VAL_TAG(collection) == T_MATRIX) {
+		Object *matrix = OBJECT_AT(VAL_DATA(collection));
+		elements = (double)(matrix->matrix.rows * matrix->matrix.columns);
+	} else if (VAL_TAG(collection) == T_SET ||
+			VAL_TAG(collection) == T_ARRAY ||
+			VAL_TAG(collection) == T_FRAME) {
+		RETARGET_OP(p_size_len);
+		elements = (double)OBJECT_AT(VAL_DATA(collection))->len;
+	} else {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "size: expected a set, array, matrix, string, segment, or frame; got %s", tag_name(VAL_TAG(collection)));
+		return;
+	}
+	chain_sp[-1] = make_float(elements);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
+void p_size_len(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val collection = chain_sp[-1];
+	Tag tag = VAL_TAG(collection);
+	if (tag != T_ARRAY && tag != T_SET && tag != T_FRAME) {
+		RETARGET_OP(p_size);
+		MUSTTAIL return p_size(interp, chain_ip, chain_sp);
+	}
+
+	chain_sp[-1] = make_float((double)OBJECT_AT(VAL_DATA(collection))->len);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_words(DISPATCH_ARGS) {

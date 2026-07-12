@@ -1,7 +1,4 @@
-/* Binary image serialization: save-image / load-image and the value
-   readers/writers. Split out of core.c; shares the VM globals and a few
-   allocator primitives (arena_alloc_object, heap_bytes_add, main_alloc,
-   op_cell_count, rebuild_symbol_hash) declared in water.h. */
+
 #include "water.h"
 
 #define IMAGE_MAGIC "LF4I"
@@ -19,12 +16,7 @@ int handler_to_id(cell value) {
 	return -1;
 }
 
-/* Width of the op at `cursor`, for image translation. dovar/dosym always
-   carry a trailing target-cfa operand (op_cell_count returns 1 for them, since
-   mark_body absorbs that cell harmlessly; here it must be skipped explicitly).
-   docol is variable width and is handled by the callers' peek logic, not here.
-   The dispatch cell at `cursor` must hold a handler pointer (on load, translate
-   id->pointer before calling this). */
+
 static int image_op_cells(int cursor) {
 	cell handler = vocab.dict[cursor];
 	if (handler == (cell)dovar || handler == (cell)dosym || handler == (cell)dounit)
@@ -89,8 +81,7 @@ void p_save_image(DISPATCH_ARGS) {
 	}
 
 	int user_word_count = 0;
-	/* One entry per word; each header is >=4 cells, so /4 bounds the count.
-	   static keeps ~4MB off the call stack. */
+
 	static int collected[VOCABULARY_INIT_SIZE / 4];
 	for (int c = vocab.latest_cfa; c >= vocab.init_here; c = (int)WORD_LINK(c)) {
 		if (user_word_count >= (int)(sizeof collected / sizeof collected[0])) {
@@ -526,7 +517,7 @@ void p_load_image(DISPATCH_ARGS) {
 			fail(interp, "%s: truncated object header", filename);
 			goto done;
 		}
-		
+
 		if (len < 0 || cap < 0 || len > cap) {
 			fail(interp, "%s: object %d: invalid len/cap %d/%d", filename, slot, len, cap);
 			goto done;

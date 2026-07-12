@@ -32,7 +32,7 @@ int init_n_units;
 void dimension_init() {
 	unit_cap = 8;
 	units = malloc(sizeof(Unit) * (size_t)unit_cap);
-	
+
 	units[0].terms = NULL;
 	units[0].n_terms = 0;
 	units[0].scale.numerator = 1;
@@ -87,7 +87,7 @@ static int exact_root(int radicand, int degree, int *root) {
 			return 1;
 		}
 
-		if (power > radicand) 
+		if (power > radicand)
 			return 0;
 	}
 }
@@ -208,7 +208,7 @@ static int unit_eq(Unit *left, Unit *right) {
 	if (left->n_terms != right->n_terms)
 		return 0;
 
-	if (left->scale.numerator != right->scale.numerator 
+	if (left->scale.numerator != right->scale.numerator
 			|| left->scale.denominator != right->scale.denominator)
 		return 0;
 
@@ -253,7 +253,7 @@ static int unit_of_dimension(int dimension) {
 
 static int unit_canonicalize(DimTerm *terms, int n_terms) {
 	int n_kept_terms = 0;
-	for (int i = 0; i < n_terms; i++) 
+	for (int i = 0; i < n_terms; i++)
 		if (terms[i].power.numerator != 0)
 			terms[n_kept_terms++] = terms[i];
 

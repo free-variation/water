@@ -61,12 +61,11 @@ has   "--max-objects rejects non-number" '' "positive integer"   2 --max-objects
 # unknown flag is rejected
 has   "unknown flag rejected"           ''  "unknown option"     2 --bogus
 
-# -f runs a program from a file and exits (awk-style); stdin is not read
+# a positional argument runs a program file and exits; stdin is not read
 prog=$(mktemp "${TMPDIR:-/tmp}/lf_prog.XXXXXX")
 printf '2 3 + . cr\n' > "$prog"
-exact "-f runs a program file"          ''  "5 "             0  -f "$prog"
-has   "-f needs a file argument"        ''  "needs a file"   2  -f
-has   "-f reports a missing file"       ''  "cannot open"    1  -f /no/such/file.h2o
+exact "positional arg runs a program file"  ''  "5 "           0  "$prog"
+has   "missing program file reported"       ''  "cannot open"  1  /no/such/file.h2o
 rm -f "$prog"
 
 # a truncated image must fail cleanly (no crash) and leave the interpreter

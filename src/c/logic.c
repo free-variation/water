@@ -98,9 +98,9 @@ static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int dep
 					return 0;
 				i++;
 				j++;
-			} else if (left_key < right_key) 
+			} else if (left_key < right_key)
 				i++;
-			else 
+			else
 				j++;
 		}
 		return 1;
@@ -172,7 +172,7 @@ void p_unify_cons(DISPATCH_ARGS) {
 
 		pairs.table[slot].head = head;
 		pairs.table[slot].tail = tail;
-		
+
 		counterpart = make_pair(slot);
 		if (VAL_TAG(target) == T_LOGIC_VAR) {
 			bind_var(interp, (int)VAL_DATA(target), counterpart);
@@ -219,7 +219,7 @@ void p_amb(DISPATCH_ARGS) {
 	int mark_index = interp->rsp;
 	int mark_id = push_prompt(interp, PROMPT_CHOICE);
 
-	execute_xt(interp, branch1);		
+	execute_xt(interp, branch1);
 
 	if (interp->unwinding && interp->unwind_target == mark_id) {
 		interp->unwinding = 0;

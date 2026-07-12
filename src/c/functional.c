@@ -249,9 +249,9 @@ void p_num_cores(DISPATCH_ARGS) {
 static void pmap_kernel(int start_index, int end_index, void *context) {
 	PmapContext *mapping = context;
 
-	if (!worker_interp) 
+	if (!worker_interp)
 		worker_interp = claim_worker();
-	
+
 	for (int i = start_index; i < end_index; i++) {
 		push(worker_interp, mapping->domain->items[i]);
 		execute_cfa(worker_interp, mapping->function);
@@ -265,7 +265,7 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
 
 static int references_region_depth(Val value, ParallelRegion *snapshot, int depth) {
 	if (depth > MAX_NESTING_DEPTH)
-		return 1;   /* too deep / possible cycle: conservatively keep the region */
+		return 1;
 	switch (VAL_TAG(value)) {
 		case T_STRING:
 		case T_MATRIX:
@@ -538,7 +538,7 @@ void p_pmap_reduce(DISPATCH_ARGS) {
 	gc_root_push(interp, identity);
 
 	NEW_ARRAY(partials_handle, partials, worker_count);
-	for (int i = 0; i < worker_count; i++) 
+	for (int i = 0; i < worker_count; i++)
 		partials->items[i] = identity;
 	gc_root_push(interp, make_array(partials_handle));
 

@@ -1,0 +1,25 @@
+\ quickening: a polymorphic call site rewrites itself to the observed type's
+\ handler after first execution; a type change demotes it back to the generic.
+\ see-compiled names the current state of each cell.
+
+\ === = on symbols quickens to (=.symbol) ===
+: sym-eq :x :x = ;
+sym-eq . cr
+' sym-eq see-compiled
+
+\ === @ on a symbol key quickens to (@.symbol) ===
+: frame-read { :a 1 } :a @ ;
+frame-read . cr
+' frame-read see-compiled
+
+\ === size on a len-carrying collection quickens to (size.len) ===
+: len-of [ 1 2 3 ] size ;
+len-of . cr
+' len-of see-compiled
+
+\ === a site whose types alternate demotes and stays correct ===
+: alt = ;
+:a :a alt . cr                \ 1
+1 2 alt . cr                  \ 0
+"x" "y" alt . cr              \ 0
+:b :b alt . cr                \ 1

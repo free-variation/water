@@ -162,7 +162,7 @@ void p_date_to_epoch(DISPATCH_ARGS) {
 
 	long long month_index = (long long)month - 1;
 	long long year_carry = month_index >= 0 ? month_index / 12 : (month_index - 11) / 12;
-	long long days = days_from_civil((long long)year + year_carry, 
+	long long days = days_from_civil((long long)year + year_carry,
 			(int)(month_index - year_carry * 12) + 1, (int)day);
 
 	chain_sp[-1] = make_float((double)days * 86400.0 +  hour * 3600.0 + minute * 60.0 + second);
