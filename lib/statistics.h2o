@@ -34,7 +34,53 @@
 : bootstrap ' map bootstrap-with ;
 : pbootstrap ' pmap bootstrap-with ;
 
+\ ---- Accelerate BLAS: shadow the built-in dgemm words ----
+\ Same ( alpha A B beta C -- R ) contract, fresh R; words compiled after this
+\ load bind to these, earlier compilations keep the built-in kernels.
+\ The vendored dylib re-exports Accelerate, so BLAS and LAPACKE share one
+\ handle — the dylib is the platform seam.
+
 "external/lapacke/liblapacke_accel.dylib" ffi-open
+dup "cblas_dgemm" [
+					   :int :int :int \ order transa transb
+					   :int :int :int \ m n k
+					   :double :ptr :int \ alpha a lda
+					   :ptr :int \ b ldb
+					   :double :ptr :int \ beta c ldc
+				   ] :void ffi-function (cblas-dgemm)
+>side
+
+( m -- columns ) \ the row-major leading dimension
+: (leading-dim) dim swap drop ; internal
+
+( alpha A B beta C ta tb -- R ) \ R = alpha op(A) op(B) + beta C via cblas
+: (accel-dgemm)
+	| >alpha >a >b >beta >c >ta >tb m n k r |
+	ta if a dim swap drop else a dim drop then to m
+	ta if a dim drop else a dim swap drop then to k
+	tb if b dim drop else b dim swap drop then to n
+	tb if b dim swap drop else b dim drop then k = not if
+		"dgemm: inner dimensions must match" throw
+	then
+	c dim swap drop n =  c dim drop m =  and not if
+		"dgemm: C must match the product shape" throw
+	then
+
+	c copy to r
+	101  111 ta +  111 tb +  m n k  alpha
+	a matrix>pointer  a (leading-dim)
+	b matrix>pointer  b (leading-dim)
+	beta
+	r matrix>pointer  n
+	(cblas-dgemm)
+	r ; internal
+
+: dgemm-nn 0 0 (accel-dgemm) ;
+: dgemm-tn 1 0 (accel-dgemm) ;
+: dgemm-nt 0 1 (accel-dgemm) ;
+: dgemm-tt 1 1 (accel-dgemm) ;
+
+side>
 
 dup "LAPACKE_dgesvd" [
 						 :int :int :int \ matrix_layout jobu jobvt

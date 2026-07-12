@@ -4,12 +4,13 @@
 #include <sys/wait.h>
 #include <sys/mman.h>
 
-void *platform_reserve(size_t *reserved_out) {
-	void *base = mmap(NULL, ARENA_RESERVE, PROT_READ | PROT_WRITE,
+void *platform_reserve(size_t requested, size_t *reserved_out) {
+	size_t reservation = requested ? requested : ARENA_RESERVE;
+	void *base = mmap(NULL, reservation, PROT_READ | PROT_WRITE,
 			MAP_PRIVATE | MAP_ANON, -1, 0);
 	if (base == MAP_FAILED)
 		return NULL;
-	*reserved_out = ARENA_RESERVE;
+	*reserved_out = reservation;
 	return base;
 }
 

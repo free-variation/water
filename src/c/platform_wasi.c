@@ -4,11 +4,12 @@
 #define WASM_ARENA_RESERVE ((size_t)1 << 30)
 #endif
 
-void *platform_reserve(size_t *reserved_out) {
-	void *base = malloc(WASM_ARENA_RESERVE);
+void *platform_reserve(size_t requested, size_t *reserved_out) {
+	size_t reservation = requested ? requested : WASM_ARENA_RESERVE;
+	void *base = malloc(reservation);
 	if (!base)
 		return NULL;
-	*reserved_out = WASM_ARENA_RESERVE;
+	*reserved_out = reservation;
 	return base;
 }
 

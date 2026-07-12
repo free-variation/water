@@ -371,8 +371,63 @@ static void quicksort_doubles(double *elements, size_t n_elements) {
 	insertion_sort_doubles(elements, n_elements);
 }
 
+#define RADIX_SORT_CUTOFF 65536
+#define RADIX_DIGITS 65536
+
+typedef uint64_t __attribute__((may_alias)) sort_key;
+
+static void radix_sort_doubles(double *elements, size_t n_elements,
+		sort_key *scratch, size_t *digit_counts) {
+	sort_key *keys = (sort_key *)elements;
+
+	for (size_t i = 0; i < n_elements; i++)
+		keys[i] ^= -(keys[i] >> 63) | 0x8000000000000000ULL;
+
+	sort_key *from = keys;
+	sort_key *to = scratch;
+	for (int pass = 0; pass < 4; pass++) {
+		int shift = pass * 16;
+
+		memset(digit_counts, 0, RADIX_DIGITS * sizeof(size_t));
+		for (size_t i = 0; i < n_elements; i++)
+			digit_counts[(from[i] >> shift) & 0xFFFF]++;
+		if (digit_counts[(from[0] >> shift) & 0xFFFF] == n_elements)
+			continue;
+
+		size_t running = 0;
+		for (int digit = 0; digit < RADIX_DIGITS; digit++) {
+			size_t digit_count = digit_counts[digit];
+			digit_counts[digit] = running;
+			running += digit_count;
+		}
+
+		for (size_t i = 0; i < n_elements; i++)
+			to[digit_counts[(from[i] >> shift) & 0xFFFF]++] = from[i];
+
+		sort_key *filled = to;
+		to = from;
+		from = filled;
+	}
+	if (from != keys)
+		memcpy(keys, from, n_elements * sizeof(sort_key));
+
+	for (size_t i = 0; i < n_elements; i++)
+		keys[i] ^= ((keys[i] >> 63) - 1) | 0x8000000000000000ULL;
+}
+
 static void sort_doubles(double *elements, size_t n_elements) {
 	size_t sortable = sort_partition_nans(elements, n_elements);
+
+	if (sortable > RADIX_SORT_CUTOFF) {
+		sort_key *scratch = malloc(sortable * sizeof(sort_key)
+				+ RADIX_DIGITS * sizeof(size_t));
+		if (scratch) {
+			radix_sort_doubles(elements, sortable, scratch,
+					(size_t *)(scratch + sortable));
+			free(scratch);
+			return;
+		}
+	}
 
 	quicksort_doubles(elements, sortable);
 }

@@ -212,9 +212,18 @@ clear
 \ interned offset) — included to document that, not as alphabetical sorting
 [ :gamma :alpha :beta ] sort . cr
 
-\ only arrays sort
-5 sort . cr                         \ error: not an array
-< 3 1 2 > sort . cr                 \ error: a set is not an array
+\ a set yields its elements as an array
+< 3 1 2 > sort . cr                 \ [ 1 2 3 ]  already ordered, projected to an array
+
+\ a vector sorts ascending, shape preserved, source untouched; NaNs go last
+[ 2 1 ] vector sort .
+[ 3 1 2 ] 3 1 matrix dup sort . .
+[ 5 4 ] 1 2 matrix sort .
+[ 3 -1 1 ] 3 1 matrix ln sort .
+
+\ === errors ===
+5 sort . cr                         \ error: not sortable
+[ 1 2 3 4 ] 2 2 matrix sort . cr    \ error: only vector-shaped matrices sort
 
 clear
 \ array>set ( array -- set ): one sorted pass (val_cmp) + dedup, O(n log n).

@@ -134,5 +134,7 @@ error: row-maxes: expected a matrix; got an array
 5.47723 
 1 
 1.73205 
+32 
+4 
 error: norm: expected a matrix; got an array
 error: frobenius-norm: expected a matrix; got a string

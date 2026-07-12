@@ -103,11 +103,22 @@ new inline that calls functions → the tail.
 - C escape hatches are parenthesized primitives wrapped by the public
   word: `: wall-now (wall-now) s ;`. Fully-parameterized primitives carry
   -ext, wrapped by a defaulting word.
+- Lib overrides a C word by redefinition (statistics.h2o's dgemm-*).
+  Binding is early: earlier compilations keep the old target; a
+  self-reference recurses, so capture the old xt with `'` first if
+  needed.
 - Locals: `>name` receives from the stack at entry, bare names are
   uninitialized scratch; quotations receive with `|> a b |`. Counter
   loops: `0 to i begin i n lt while ... f++ i repeat`.
 
 ## Docs and generated files
+- PLAN.md is a focused list of FUTURE WORK, written imperatively: no
+  completed work, no status narration, no discussion of present or past
+  state. When a feature lands, its entry shrinks to the residuals or
+  vanishes.
+- README describes the language as it is: terse present-tense capability
+  statements, one line per feature. No past narratives, no measurements,
+  no reflections or design history — detail belongs in docs/reference.md.
 - docs/reference.md is the source of truth: gen-help.py (help table,
   automatic in make) and gen-editors.py (make editors) consume it. Never
   hand-edit help_table.c, repl_highlight_groups.h, editors/.

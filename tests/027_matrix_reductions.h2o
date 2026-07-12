@@ -126,6 +126,11 @@
 [ 1 2 3 4 5 6 ] 2 3 matrix dup norm swap frobenius-norm = . cr   \ 1
 \ identity: sqrt(3)
 3 identity-matrix frobenius-norm . cr
+
+\ dot: the inner product, * sum over matched vectors
+[ 1 2 3 ] vector [ 4 5 6 ] vector dot . cr            \ 32
+[ 2 0 ] vector dup dot . cr                           \ 4  self-dot = norm squared
+
 \ errors on a non-matrix
 [ 1 2 ] norm .                                        \ error: not a matrix
 "x" frobenius-norm .                                  \ error: not a matrix

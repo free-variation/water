@@ -33,8 +33,26 @@ error: concat: stack too shallow
   [ 1 0 ]
   [ 2 ] ] 
 [ :gamma :alpha :beta ] 
-error: sort: expected an array; got a float
-error: sort: expected an array; got a set
+[ 1 2 3 ] 
+<matrix 2x1>
+          1
+          2
+<matrix 3x1>
+          1
+          2
+          3
+<matrix 3x1>
+          3
+          1
+          2
+<matrix 1x2>
+          4          5
+<matrix 3x1>
+          0
+      1.099
+        nan
+error: sort: expected an array, set, or vector; got a float
+error: sort: expected a vector (nx1 or 1xn); got 2x2
 < 1 2 3 > 
 < 1 2 3 > 
 < 1 2 3 > 

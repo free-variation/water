@@ -86,4 +86,8 @@ error: exp: expected a float or a matrix; got a set
 error: round: expected a float or a matrix; got a string
 0 1.5708 -1.5708 0 1.5708 3.14159 0 0.785398 -0.785398 1 <matrix 1x2>
           0     0.7854
+null 
+1 
+0 
+1 
 error: asin: expected a float or a matrix; got a string

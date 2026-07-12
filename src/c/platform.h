@@ -94,7 +94,7 @@ static inline void platform_mutex_lock(platform_mutex_t *mutex) { pthread_mutex_
 static inline void platform_mutex_unlock(platform_mutex_t *mutex) { pthread_mutex_unlock(mutex); }
 #endif
 
-void *platform_reserve(size_t *reserved_out);
+void *platform_reserve(size_t requested, size_t *reserved_out);
 void platform_init(void);
 int platform_repl_begin(struct Interpreter *interp, int want_interactive);
 int platform_read_chunk(char *dst, int dst_avail, int interactive);

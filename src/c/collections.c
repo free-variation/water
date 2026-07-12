@@ -387,20 +387,32 @@ void p_array_to_set(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
-void p_sort(DISPATCH_ARGS) {
-	PEEK_TYPE_AT(source_val, 0, "sort", T_ARRAY);
-	Object *source = OBJECT_AT(VAL_DATA(source_val));
+int set_elements_copy(Interpreter *interp, Object *source) {
+	int n_items = source->len;
+	int elements_handle = object_new_array(interp, n_items);
+	if (interp->error_flag)
+		return -1;
 
-	NEW_ARRAY(sorted_handle, sorted, source->len);
-	memcpy(sorted->items, source->items, sizeof(Val) * (size_t)source->len);
-	if (source->len > 0)
-		platform_qsort_r(sorted->items, (size_t)source->len, sizeof(Val), interp, val_cmp_qsort);
-	if (interp->error_flag) return;
+	Object *elements = OBJECT_AT(elements_handle);
+	memcpy(elements->items, source->items, sizeof(Val) * (size_t)n_items);
 
-	interp->data_stack[interp->dsp - 1] = make_array(sorted_handle);
-
-	DISPATCH(interp);
+	return elements_handle;
 }
+
+int array_sorted_copy(Interpreter *interp, Object *source) {
+	int n_items = source->len;
+	int sorted_array_handle = object_new_array(interp, n_items);
+	if (interp->error_flag)
+		return -1;
+
+	Object *sorted_array = OBJECT_AT(sorted_array_handle);
+	memcpy(sorted_array->items, source->items, sizeof(Val) * (size_t)n_items);
+	if (n_items > 0)
+		platform_qsort_r(sorted_array->items, (size_t)n_items, sizeof(Val), interp, val_cmp_qsort);
+
+	return sorted_array_handle;
+}
+
 
 void p_byte_size(DISPATCH_ARGS) {
 	POP_STRING(string, "byte-size");

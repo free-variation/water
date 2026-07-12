@@ -182,6 +182,7 @@ const HelpEntry help_entries[] = {
 	{ "diagonal-matrix", "( fill n -- m )", "n×n matrix with fill on the diagonal", "2 + n", "1m(n×n)", "O(n)", 18 },
 	{ "difference", "( s₁ s₂ -- s₃ )", "s₁ − s₂ into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)", 13 },
 	{ "dim", "( m -- r c )", "Push rows then columns", "3", "none", "O(1)", 18 },
+	{ "dot", "( v w -- f )", "lib.h2o: inner product (* sum, inlined); shapes must broadcast, so match the vectors", "2 + 2n", "1m(n)", "O(n)", 18 },
 	{ "double-segment", "( n -- seg )", "n-element double segment, zero-filled; errors if n < 0", "1", "1seg(n)", "O(n)", 19 },
 	{ "drop", "( a -- )", "Discard top", "1", "none", "O(1)", 0 },
 	{ "dup", "( a -- a a )", "Duplicate top", "3", "none", "O(1)", 0 },
@@ -402,7 +403,7 @@ const HelpEntry help_entries[] = {
 	{ "skip", "( arr n -- arr )", "lib.h2o: over size swap - swap reverse swap take reverse", "3n", "3×1a(n)", "O(n)", 14 },
 	{ "sleep", "( seconds -- )", "Block for the given float seconds (sub-second supported); nanosleep", "blocks", "none", "O(1)", 29 },
 	{ "slice!", "( arr tstart src sstart sstep slen -- arr )", "Copy slen elements src[sstart], src[sstart+sstep], … into arr[tstart…] in place", "6 + slen", "self-overlap may malloc slen", "O(slen)", 14 },
-	{ "sort", "( arr -- arr )", "Sorted copy in val_cmp order; array only", "1 + n log n", "1a(n)", "O(n log n)", 14 },
+	{ "sort", "( arr/set/v -- arr/v )", "Sorted copy: an array orders by val_cmp; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error)", "1 + n log n", "1a(n) / 1m(n)", "O(n log n); vectors above 64k elements O(n) radix", 14 },
 	{ "sort-by", "( items xt -- arr )", "lib.h2o: sorted by the key xt ( element -- key ) extracts — decorate-sort-undecorate over [ key element ] pairs, so n key evaluations", "n·xt + n log n", "3×1a(n) + n×1a(2)", "O(n·xt + n log n)", 23 },
 	{ "split", "( s pat -- [ piece… ] )", "Split s at each non-overlapping match of pat; the pieces are the gaps between matches, empty fields kept; no match → [ s ]", "n", "1a + pieces", "O(n)", 12 },
 	{ "sq", "( a -- a² )", "float or matrix", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)", 1 },
@@ -448,6 +449,7 @@ const HelpEntry help_entries[] = {
 	{ "values", "( fr -- arr )", "Values in key order", "1 + n", "1a(n)", "O(n)", 16 },
 	{ "var", "( m -- f )", "Sample variance (÷ n−1) over all elements; errors with fewer than 2", "1 + n", "none", "O(n)", 18 },
 	{ "variable", "—", "Read the following name; declare a global variable initialized to 0.0", NULL, NULL, NULL, 10 },
+	{ "vector", "( arr -- v )", "lib.h2o: the array as an nx1 matrix, length inferred (dup size 1 matrix, inlined)", "3 + n", "1m(n)", "O(n)", 18 },
 	{ "vf*", "vf* a", "Multiply the stack top by variable a, in place", NULL, NULL, NULL, 28 },
 	{ "vf+", "vf+ a", "Add variable a to the stack top, in place", NULL, NULL, NULL, 28 },
 	{ "vf-", "vf- a", "Subtract variable a from the stack top, in place", NULL, NULL, NULL, 28 },
@@ -490,4 +492,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "lib.h2o: unify (inlined)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 445;
+const int help_entry_count = 447;

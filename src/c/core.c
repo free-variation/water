@@ -7,6 +7,7 @@ unsigned char dict_is_handler[VOCABULARY_INIT_SIZE];
 Compiler compiler;
 Arena arena;
 PairPool pairs;
+static size_t arena_reserve_request;
 
 int in_parallel;
 int parallel_region_collected;
@@ -36,7 +37,7 @@ static void *xcalloc(size_t count, size_t size) {
 }
 
 static void arena_init(void) {
-	arena.base = platform_reserve(&arena.reserved);
+	arena.base = platform_reserve(arena_reserve_request, &arena.reserved);
 	if (!arena.base) {
 		fprintf(stderr, "water: arena reserve failed\n");
 		exit(1);
@@ -4355,6 +4356,20 @@ int main(int argc, char **argv) {
 		}
 		else if (strcmp(argv[i], "--no-lib") == 0)
 			load_lib = 0;
+		else if (strcmp(argv[i], "--arena") == 0) {
+			if (i + 1 >= argc) {
+				fprintf(stderr, "water: --arena needs a size in gigabytes (e.g. 32g)\n");
+				return 2;
+			}
+			char *suffix;
+			double gigabytes = strtod(argv[++i], &suffix);
+			int suffix_ok = *suffix == 0 || ((*suffix == 'g' || *suffix == 'G') && suffix[1] == 0);
+			if (!suffix_ok || !(gigabytes >= 1) || gigabytes > 8e9) {
+				fprintf(stderr, "water: --arena takes gigabytes from 1g up (e.g. 32g)\n");
+				return 2;
+			}
+			arena_reserve_request = (size_t)(gigabytes * (double)((size_t)1 << 30));
+		}
 		else if (strcmp(argv[i], "--max-objects") == 0) {
 			if (i + 1 >= argc) {
 				fprintf(stderr, "water: --max-objects needs a value\n");

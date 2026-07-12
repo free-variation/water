@@ -137,6 +137,7 @@ diagonal
 diagonal-matrix
 difference
 dim
+dot
 double-segment
 drop
 dup
@@ -403,6 +404,7 @@ update-at
 values
 var
 variable
+vector
 vf*
 vf+
 vf-

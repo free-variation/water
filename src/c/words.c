@@ -1195,6 +1195,29 @@ void p_size(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
+void p_sort(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val collection = chain_sp[-1];
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
+
+	int sorted_handle;
+	if (VAL_TAG(collection) == T_ARRAY)
+		sorted_handle = array_sorted_copy(interp, OBJECT_AT(VAL_DATA(collection)));
+	else if (VAL_TAG(collection) == T_SET)
+		sorted_handle = set_elements_copy(interp, OBJECT_AT(VAL_DATA(collection)));
+	else if (VAL_TAG(collection) == T_MATRIX)
+		sorted_handle = vector_sorted_copy(interp, OBJECT_AT(VAL_DATA(collection)));
+	else {
+		fail(interp, "sort: expected an array, set, or vector; got %s", tag_name(VAL_TAG(collection)));
+		return;
+	}
+	if (interp->error_flag) return;
+
+	chain_sp[-1] = VAL_TAG(collection) == T_MATRIX ? make_matrix(sorted_handle) : make_array(sorted_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
 void p_size_len(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val collection = chain_sp[-1];

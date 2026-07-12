@@ -83,6 +83,12 @@ case "$out" in
 esac
 rm -f "$img" "$trunc"
 
+# --arena overrides the reservation (gigabytes, optional g suffix)
+exact "--arena accepts a size"      '2 3 + . cr'  "5 "  0 -b --arena 2g
+has   "--arena needs a value"       ''  "needs a size"   2 --arena
+has   "--arena rejects junk"        ''  "takes gigabytes" 2 --arena xyz
+has   "--arena rejects sub-1g"      ''  "takes gigabytes" 2 --arena 0.5g
+
 # `water` prints the logo and the version from water.h
 ver=$(sed -n 's/#define VERSION "\(.*\)".*/\1/p' "$here/../src/c/water.h")
 has "water prints the logo"    'water' "++++++"       0 -b

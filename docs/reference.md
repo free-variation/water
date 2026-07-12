@@ -149,6 +149,11 @@ applies: `KB 300 kelvin *` is an energy, `C 2 ^ 1 kg *` is E=mc².
 ## Unary math (polymorphic: float or matrix)
 
 Tag-checked; safe. Float input → float; matrix input → new matrix, element-wise.
+A float result that would be NaN (`-1 sqrt`, `-1 ln`) is `null` — NaN-boxing
+reserves NaN bit patterns for tags, so `null` is Water's NaN, and it is falsy,
+`none?`, and `= null`. Matrix buffers hold raw NaN elements untouched
+(element-wise math writes them, `sort` places them last); a NaN read out of a
+matrix (`@i,j`, `@e`) surfaces as `null` the same way.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -485,7 +490,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `to-slice!` | `( v₀ … vₙ₋₁ arr offset n -- arr )` | Store the n values just below `arr` into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
 | `last` | `( arr n -- arr )` | lib.h2o: `swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
 | `skip` | `( arr n -- arr )` | lib.h2o: `over size swap - swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
-| `sort` | `( arr -- arr )` | Sorted copy in `val_cmp` order; array only | 1 + n log n | `1a(n)` | O(n log n) |
+| `sort` | `( arr/set/v -- arr/v )` | Sorted copy: an array orders by `val_cmp`; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error) | 1 + n log n | `1a(n)` / `1m(n)` | O(n log n); vectors above 64k elements O(n) radix |
 | `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
 | `sample` | `( arr/set count repl -- arr )` | Draw `count` elements; `repl` truthy = with replacement, else without (count ≤ len) | 3 + n | `1a(count)` (+ `malloc(n)` without replacement) | O(n) |
 | `shuffle` | `( arr -- arr )` | lib.h2o: new array, elements uniformly permuted (a full `sample` without replacement); input untouched | 3 + n | as `sample` | O(n) |
@@ -571,6 +576,7 @@ Row-major `double` storage. `r` rows, `c` columns.
 |------|-------------|----------|-----|-------|---|
 | `0-matrix` | `( r c -- m )` | r×c zero matrix (calloc) | 3 | `1m(r×c)` | O(1)+ |
 | `matrix` | `( arr r c -- m )` or `( arr r -- m )` | Build from a float array; two-arg form takes r = rows and infers columns | 3 + r×c | `1m(r×c)` | O(r×c) |
+| `vector` | `( arr -- v )` | lib.h2o: the array as an nx1 matrix, length inferred (`dup size 1 matrix`, inlined) | 3 + n | `1m(n)` | O(n) |
 | `diagonal-matrix` | `( fill n -- m )` | n×n matrix with `fill` on the diagonal | 2 + n | `1m(n×n)` | O(n) |
 | `identity-matrix` | `( n -- m )` | lib.h2o: `1 swap diagonal-matrix` | n | `1m(n×n)` | O(n) |
 | `matrix-range` | `( start end step -- m )` | 1×N row of evenly spaced values | 3 + N | `1m(1×N)` | O(N) |
@@ -627,6 +633,7 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `var` | `( m -- f )` | Sample variance (÷ n−1) over all elements; errors with fewer than 2 | 1 + n | none | O(n) |
 | `quantile` | `( m p -- f )` | Linearly-interpolated quantile at p ∈ [0,1] over all elements (sorts a copy); errors if p out of range or empty | 2 + n log n | `malloc(n)` | O(n log n) |
 | `norm` | `( m -- f )` | Euclidean (L2) norm: √(Σ aᵢⱼ²) over all elements — a vector's length; for a matrix the Frobenius (entrywise 2-)norm, not the spectral norm | 1 + n | none | O(n) |
+| `dot` | `( v w -- f )` | lib.h2o: inner product (`* sum`, inlined); shapes must broadcast, so match the vectors | 2 + 2n | `1m(n)` | O(n) |
 | `frobenius-norm` | `( m -- f )` | √(Σ aᵢⱼ²) over all elements (same value as `norm`) | 1 + n | none | O(n) |
 
 ---

@@ -621,3 +621,9 @@ H TAU / constant HBAR
 6.02214076e23 1 mol / constant NA
 1.602176634e-19 coulomb constant QE
 
+( arr -- matrix ) \ constructs a nx1 matrix from an array
+: vector dup size 1 matrix ; inline
+
+( v1 v2 -- float) \ dot product of two vectors 
+: dot * sum ; inline
+

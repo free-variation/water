@@ -137,7 +137,7 @@ static inline Val make_float(double number) {
 	Val value;
 	value.number = number;
 	if ((value.bits & NAN_BOX_MASK) == NAN_BOX_PREFIX) {
-		value.bits = NAN_BOX_PREFIX | VAL_DATA_MASK;
+		value.bits = NAN_BOX_PREFIX;
 	}
 	return value;
 }
@@ -793,12 +793,14 @@ void w_i32(FILE *f, int32_t v);
 void w_i64(FILE *f, int64_t v);
 void w_val(FILE *f, Val value);
 
+int array_sorted_copy(Interpreter *interp, Object *source);
 int build_set_from_values(Interpreter *interp, const Val *values, int count);
 int frame_delete(Object *frame, cell key);
 void frame_put(Object *frame, cell key, Val value);
 void frame_reserve(Object *frame, int needed);
 void set_add(Interpreter *interp, int set_handle, Val value);
 int set_difference(Interpreter *interp, int handle_a, int handle_b);
+int set_elements_copy(Interpreter *interp, Object *source);
 int set_intersect(Interpreter *interp, int handle_a, int handle_b);
 int set_member(Interpreter *interp, int set_handle, Val value);
 void set_remove(Interpreter *interp, int set_handle, Val value);
@@ -819,6 +821,7 @@ int matrix_sum_columns(Interpreter *interp, Object *source);
 double matrix_sum_overall(Object *source);
 int matrix_sum_rows(Interpreter *interp, Object *source);
 double matrix_variance_overall(Object *source);
+int vector_sorted_copy(Interpreter *interp, Object *source);
 
 void define_superwords(Interpreter *interp);
 int superword_cell_count(cell handler);

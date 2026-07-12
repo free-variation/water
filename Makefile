@@ -97,7 +97,7 @@ lapacke: $(LAPACKE_DYLIB)
 # from the archive) and limits the dylib's exports to them; -dead_strip drops
 # anything unreachable. -framework Accelerate resolves the Fortran dgesvd_/etc.
 $(LAPACKE_DYLIB): $(LAPACKE_LIB)
-	$(CC) -dynamiclib -o $@ $(LAPACKE_EXPORTS) -Wl,-dead_strip $(LAPACKE_LIB) -framework Accelerate
+	$(CC) -dynamiclib -o $@ $(LAPACKE_EXPORTS) -Wl,-dead_strip -Wl,-reexport_framework,Accelerate $(LAPACKE_LIB) -framework Accelerate
 
 $(LAPACKE_LIB): $(LAPACKE_OBJS)
 	ar rcs $@ $(LAPACKE_OBJS)

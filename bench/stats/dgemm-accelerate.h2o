@@ -1,0 +1,47 @@
+\ dgemm: built-in loop kernels vs the Accelerate BLAS override that loading
+\ lib/statistics.h2o installs. Same words, same ( alpha A B beta C -- R )
+\ contract. Binding is early: each bench word carries its own dgemm-nn call,
+\ compiled on its side of the load, so each times the binding of its era.
+
+42 seed
+
+( n -- m ) \ n x n uniform random matrix
+: rand-matrix | >n | n n * iota [: drop random :] map n n matrix ;
+
+( n -- seconds )
+: bench-builtin
+	| >n a b elapsed |
+	n rand-matrix to a
+	n rand-matrix to b
+	now
+	1 a b 0 n n 0-matrix dgemm-nn drop
+	now swap - to elapsed
+	elapsed ;
+
+( n-rows n-cols -- m ) \ exact small-integer matrix, for bit-exact comparison
+: int-matrix | >n-rows >n-cols | n-rows n-cols * iota [: 97 mod 3 - :] map n-rows n-cols matrix ;
+
+4 3 int-matrix to check-a
+3 5 int-matrix to check-b
+4 5 int-matrix to check-c
+2 check-a check-b 3 check-c dgemm-nn to builtin-product
+
+"lib/statistics.h2o" load
+
+( n -- seconds )
+: bench-accel
+	| >n a b elapsed |
+	n rand-matrix to a
+	n rand-matrix to b
+	now
+	1 a b 0 n n 0-matrix dgemm-nn drop
+	now swap - to elapsed
+	elapsed ;
+
+"builtin and accel agree: " .
+2 check-a check-b 3 check-c dgemm-nn builtin-product = . cr
+
+"n seconds-builtin seconds-accel" . cr
+[ 256 1024 4096 ] [: |> n |
+	n . n bench-builtin . n bench-accel . cr
+:] each
