@@ -1,6 +1,12 @@
 \ FFI through libffi (libcurl): fixed-arity calls and a variadic call.
+\ Library paths try the Darwin name first, then the Linux soname.
+
+( darwin linux -- handle ) \ open whichever library name this OS resolves
+: ffi-open-either | >darwin >linux |
+	[: darwin ffi-open :] catch if drop linux ffi-open then ;
+
 "hello from ffi variadic" "/tmp/lf_ffi_test.txt" write-file
-"/usr/lib/libcurl.4.dylib" ffi-open to curl
+"/usr/lib/libcurl.4.dylib" "libcurl.so.4" ffi-open-either to curl
 
 \ fixed: curl_easy_strerror ( int -- string )
 curl "curl_easy_strerror" [ :int ] :string ffi-function curl-strerror
@@ -22,8 +28,8 @@ h curl-cleanup
 
 \ segment>pointer: hand a C function a writable buffer and read the result back.
 \ modf(x, *iptr) returns the fractional part and writes the integer part to *iptr.
-"/usr/lib/libSystem.B.dylib" ffi-open to libc
-libc "modf" [ :double :ptr ] :double ffi-function modf
+"/usr/lib/libSystem.B.dylib" "libm.so.6" ffi-open-either to libm
+libm "modf" [ :double :ptr ] :double ffi-function modf
 1 double-segment to part
 3.75 part segment>pointer modf . cr   \ 0.75  (fractional part, returned)
 part 0 @i . cr                        \ 3     (integer part, written into the segment)
