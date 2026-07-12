@@ -15,8 +15,6 @@ below close the gap; existing names go polymorphic in the house style
 - `sort` residuals: fuse the radix bit transforms into the first and
   last scatter passes (~25% of traffic), and measure the
   quicksort/radix cutoff rather than inherit 64k.
-- `reverse` — on a matrix: element order reversed, shape preserved;
-  descending views after `sort`.
 - `argsort` — ( m -- m ) the sorting permutation as a matrix; ranks are
   argsort applied twice, making the statistics plan's rank transform pure
   C passes.

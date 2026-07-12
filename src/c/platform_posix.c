@@ -18,10 +18,28 @@ void platform_init(void) {
 	signal(SIGPIPE, SIG_IGN);
 }
 
+#ifdef __GLIBC__
+typedef struct {
+	void *thunk;
+	int (*cmp)(void *, const void *, const void *);
+} QsortContext;
+
+static int qsort_context_cmp(const void *left, const void *right, void *context) {
+	QsortContext *adapter = context;
+	return adapter->cmp(adapter->thunk, left, right);
+}
+
+void platform_qsort_r(void *base, size_t n, size_t size, void *thunk,
+		int (*cmp)(void *, const void *, const void *)) {
+	QsortContext adapter = { .thunk = thunk, .cmp = cmp };
+	qsort_r(base, n, size, qsort_context_cmp, &adapter);
+}
+#else
 void platform_qsort_r(void *base, size_t n, size_t size, void *thunk,
 		int (*cmp)(void *, const void *, const void *)) {
 	qsort_r(base, n, size, thunk, cmp);
 }
+#endif
 
 static Interpreter *repl_interp;
 

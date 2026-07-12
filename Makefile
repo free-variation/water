@@ -1,5 +1,5 @@
 CC     = clang
-CFLAGS = -O3 -march=native -Wall -Wextra -pthread
+CFLAGS = -O3 -march=native -Wall -Wextra -pthread -D_GNU_SOURCE
 LDLIBS = -lm -lffi
 
 SRCS = src/c/core.c src/c/words.c src/c/compiler.c src/c/io.c src/c/image.c src/c/collections.c src/c/matrix.c src/c/indexing.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/foreign.c src/c/platform_posix.c src/c/dimension.c src/c/time.c
