@@ -26,11 +26,11 @@ source into the binary, so `make` needs only a C compiler and the system
 `libffi`. Refresh them with `make vendor-pcre2`, `sh tools/vendor-isocline.sh`,
 and `sh tools/vendor-sqlite.sh` (see each directory's `PROVENANCE`).
 
-On macOS, `make` also builds `liblapacke_accel.dylib`, a thin shared library
-that wraps Accelerate's LAPACK behind the LAPACKE C interface and re-exports
-Accelerate's BLAS. The statistics library `dlopen`s it through the FFI and
-requires it — the stats module is native-only; the wasm build excludes the
-FFI. Re-vendor with `make vendor-lapacke`.
+`make` also builds `liblapacke_water.so`, a thin shared library that wraps
+the platform BLAS/LAPACK (Accelerate on macOS, OpenBLAS on Linux) behind
+the LAPACKE C interface. The statistics library `dlopen`s it through the
+FFI and requires it — the stats module is native-only; the wasm build
+excludes the FFI. Re-vendor with `make vendor-lapacke`.
 
 ## A taste
 

@@ -239,12 +239,9 @@ Three layers, adopted in this order:
 
 ## Linux build
 
-Make the Makefile OS-conditional: Darwin links the dylib against
-Accelerate as now; Linux compiles the same vendored LAPACKE sources
-against OpenBLAS (ELF `dlsym` searches a handle's dependency graph — no
-re-export flag). Give the artifact a platform-neutral name and teach
-statistics.h2o the per-OS path (or a `catch` chain over candidates).
-Enumerate whatever else a first Linux `make` breaks.
+Take a first Linux `make` end to end — the binary, the shared library
+against an OpenBLAS carrying LAPACK, both test suites — and fix whatever
+breaks next.
 
 ---
 
@@ -597,9 +594,10 @@ live here instead. File and function name each invariant's home.
 - In-progress cons chains are gc-rooted during multi-pair allocation so
   a collection triggered mid-build cannot reap the spine (collections.c,
   `array>cons`).
-- Bind BLAS and LAPACKE from the statistics dylib's single handle; never
-  add a second `ffi-open`. Ports of the dylib keep its export set
-  (lib/statistics.h2o; Makefile `-reexport_framework`).
+- Bind BLAS and LAPACKE from the statistics shared library's single
+  handle; never add a second `ffi-open`. Ports keep BLAS reachable from
+  that handle (lib/statistics.h2o; Makefile `-reexport_framework` on
+  Darwin, the DT_NEEDED OpenBLAS dependency on Linux).
 - Keep statistics.h2o native-only; wasm excludes the FFI and skips its
   tests (wasm-skip.txt).
 - Element-wise matrix ops broadcast any dimension of size 1 (n×1 and

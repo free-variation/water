@@ -1,4 +1,5 @@
 CC     = clang
+UNAME  = $(shell uname -s)
 CFLAGS = -O3 -march=native -Wall -Wextra -pthread -D_GNU_SOURCE
 LDLIBS = -lm -lffi
 
@@ -31,20 +32,23 @@ ISOCLINE_CFLAGS = -O2 -I$(ISOCLINE_DIR)/include
 ISOCLINE_OBJ    = $(ISOCLINE_DIR)/isocline.o
 
 # Vendored LAPACKE closure (see external/lapacke/PROVENANCE; refresh with
-# tools/vendor-lapacke.sh). C wrappers over Accelerate's Fortran LAPACK, built
-# into a dylib that water dlopens via FFI. macOS/Accelerate-only, so this
-# is the explicit `make lapacke` target, not part of the default build.
-# Add a routine: re-vendor with it, then add a -exported_symbol below.
-LAPACKE_DIR     = external/lapacke
-LAPACKE_SRCS    = $(wildcard $(LAPACKE_DIR)/src/*.c) $(wildcard $(LAPACKE_DIR)/utils/*.c)
-LAPACKE_OBJS    = $(patsubst %.c,%.o,$(LAPACKE_SRCS))
-LAPACKE_LIB     = $(LAPACKE_DIR)/liblapacke.a
-LAPACKE_DYLIB   = $(LAPACKE_DIR)/liblapacke_accel.dylib
-LAPACKE_CFLAGS  = -O2 -DNDEBUG -DADD_ -I$(LAPACKE_DIR)/include
-LAPACKE_EXPORTS = -Wl,-exported_symbol,_LAPACKE_dgesvd \
-                  -Wl,-exported_symbol,_LAPACKE_dgelsd
+# tools/vendor-lapacke.sh). C wrappers over the platform's Fortran LAPACK,
+# built into a shared library that water dlopens via FFI: Accelerate on
+# Darwin (re-exported, so BLAS rides the same handle), OpenBLAS on Linux
+# (an ELF dependency, which dlsym searches through the same handle).
+# Add a routine: re-vendor with it, then add it to LAPACKE_ROUTINES.
+LAPACKE_DIR      = external/lapacke
+LAPACKE_SRCS     = $(wildcard $(LAPACKE_DIR)/src/*.c) $(wildcard $(LAPACKE_DIR)/utils/*.c)
+LAPACKE_OBJS     = $(patsubst %.c,%.o,$(LAPACKE_SRCS))
+LAPACKE_LIB      = $(LAPACKE_DIR)/liblapacke.a
+LAPACKE_SHARED   = $(LAPACKE_DIR)/liblapacke_water.so
+LAPACKE_ROUTINES = LAPACKE_dgesvd LAPACKE_dgelsd
+LAPACKE_CFLAGS   = -O2 -DNDEBUG -DADD_ -I$(LAPACKE_DIR)/include
+ifneq ($(UNAME),Darwin)
+LAPACKE_CFLAGS  += -fPIC -ffunction-sections -fdata-sections
+endif
 
-all: water $(LAPACKE_DYLIB)
+all: water $(LAPACKE_SHARED)
 
 water: $(SRCS) $(HDRS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ)
 	$(CC) $(CFLAGS) -I$(PCRE2_SRC) -I$(SQLITE_DIR) -I$(ISOCLINE_DIR)/include -o water $(SRCS) $(PCRE2_LIB) $(SQLITE_OBJ) $(ISOCLINE_OBJ) $(LDLIBS)
@@ -90,14 +94,29 @@ $(PCRE2_SRC)/%.wasm.o: $(PCRE2_SRC)/%.c
 $(WASM_SQLITE_OBJ): $(SQLITE_DIR)/sqlite3.c $(SQLITE_DIR)/sqlite3.h
 	$(WASI_CC) --sysroot $(WASI_SYSROOT) -O2 -DSQLITE_THREADSAFE=0 $(SQLITE_DEFS) -c $< -o $@
 
-# Build the LAPACKE-over-Accelerate dylib that FFI dlopens.
-lapacke: $(LAPACKE_DYLIB)
+# Build the LAPACKE shared library that FFI dlopens.
+lapacke: $(LAPACKE_SHARED)
 
+ifeq ($(UNAME),Darwin)
 # -exported_symbol roots the routines we expose (the linker pulls their closure
-# from the archive) and limits the dylib's exports to them; -dead_strip drops
-# anything unreachable. -framework Accelerate resolves the Fortran dgesvd_/etc.
-$(LAPACKE_DYLIB): $(LAPACKE_LIB)
-	$(CC) -dynamiclib -o $@ $(LAPACKE_EXPORTS) -Wl,-dead_strip -Wl,-reexport_framework,Accelerate $(LAPACKE_LIB) -framework Accelerate
+# from the archive) and limits the exports to them; -dead_strip drops anything
+# unreachable. -framework Accelerate resolves the Fortran dgesvd_/etc.
+$(LAPACKE_SHARED): $(LAPACKE_LIB)
+	$(CC) -dynamiclib -o $@ $(foreach routine,$(LAPACKE_ROUTINES),-Wl,-exported_symbol,_$(routine)) -Wl,-dead_strip -Wl,-reexport_framework,Accelerate $(LAPACKE_LIB) -framework Accelerate
+else
+# The version script is the ELF twin of -exported_symbol: the named routines
+# stay global, everything else goes local, and --gc-sections drops what they
+# don't reach. --whole-archive pulls every member in first, since nothing
+# references the routines yet. cblas_dgemm etc. resolve at run time through
+# the DT_NEEDED openblas entry, which dlsym searches from the same handle.
+LAPACKE_MAP = $(LAPACKE_DIR)/exports.map
+
+$(LAPACKE_MAP): Makefile
+	printf '{ global: %s local: *; };\n' '$(foreach routine,$(LAPACKE_ROUTINES),$(routine);)' > $@
+
+$(LAPACKE_SHARED): $(LAPACKE_LIB) $(LAPACKE_MAP)
+	$(CC) -shared -o $@ -Wl,--version-script,$(LAPACKE_MAP) -Wl,--gc-sections -Wl,--whole-archive $(LAPACKE_LIB) -Wl,--no-whole-archive -lopenblas
+endif
 
 $(LAPACKE_LIB): $(LAPACKE_OBJS)
 	ar rcs $@ $(LAPACKE_OBJS)
@@ -137,6 +156,6 @@ bench:
 	@sh bench/run-benchmarks.sh
 
 clean:
-	rm -f water water.wasm $(PCRE2_OBJS) $(PCRE2_LIB) $(WASM_PCRE2_OBJS) $(WASM_PCRE2_LIB) $(SQLITE_OBJ) $(WASM_SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_DYLIB)
+	rm -f water water.wasm $(PCRE2_OBJS) $(PCRE2_LIB) $(WASM_PCRE2_OBJS) $(WASM_PCRE2_LIB) $(SQLITE_OBJ) $(WASM_SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_SHARED) $(LAPACKE_DIR)/exports.map
 
 .PHONY: all clean test test-wasm bench wasm vendor-pcre2 vendor-lapacke lapacke editors

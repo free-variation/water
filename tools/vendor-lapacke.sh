@@ -74,9 +74,9 @@ Contents:  the exact object closure of those LAPACKE_<routine> wrappers
 License:   modified BSD (BSD-3-Clause). See LICENSE.
 
 Build:     the top-level Makefile compiles src/ + utils/ into liblapacke.a, then
-           links liblapacke_accel.dylib with -framework Accelerate, so the
-           Fortran routines (dgesvd_, dggglm_, ...) resolve from Accelerate. The
-           dylib's -exported_symbol list is exactly the routines above.
+           links liblapacke_water.so against the platform BLAS/LAPACK (Accelerate
+           on macOS, OpenBLAS on Linux), so the Fortran routines (dgesvd_, ...)
+           resolve there. The exported-symbol set is exactly LAPACKE_ROUTINES.
 
 Refresh:   tools/vendor-lapacke.sh [routine ...]   (needs network + Accelerate)
 EOF

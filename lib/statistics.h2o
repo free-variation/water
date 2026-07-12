@@ -37,10 +37,11 @@
 \ ---- Accelerate BLAS: shadow the built-in dgemm words ----
 \ Same ( alpha A B beta C -- R ) contract, fresh R; words compiled after this
 \ load bind to these, earlier compilations keep the built-in kernels.
-\ The vendored dylib re-exports Accelerate, so BLAS and LAPACKE share one
-\ handle — the dylib is the platform seam.
+\ The vendored shared library is the platform seam: BLAS and LAPACKE share
+\ its one handle (Accelerate re-exported on macOS, OpenBLAS as an ELF
+\ dependency on Linux).
 
-"external/lapacke/liblapacke_accel.dylib" ffi-open
+"external/lapacke/liblapacke_water.so" ffi-open
 dup "cblas_dgemm" [
 					   :int :int :int \ order transa transb
 					   :int :int :int \ m n k
