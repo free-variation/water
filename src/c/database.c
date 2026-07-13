@@ -6,7 +6,13 @@
       sqlite3 *name = interp->databases[VAL_DATA(name##_val)]
 
 void p_db_open(DISPATCH_ARGS) {
-	POP_STRING(path, "db-open");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val path_val = chain_sp[-1];
+	if (VAL_TAG(path_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
+		return;
+	}
+	Object *path = OBJECT_AT(VAL_DATA(path_val));
 
 	int slot = -1;
 	for (int i = 0; i < MAX_DATABASES; i++)
@@ -16,13 +22,13 @@ void p_db_open(DISPATCH_ARGS) {
 		}
 
 	if (slot < 0) {
-		fail(interp, "db-open: too many open databases (max %d)", MAX_DATABASES);
+		fail(interp, "too many open databases (max %d)", MAX_DATABASES);
 		return;
 	}
 
 	sqlite3 *db;
 	if (sqlite3_open(path->bytes, &db) != SQLITE_OK) {
-		fail(interp, "db-open: %s", sqlite3_errmsg(db));
+		fail(interp, "%s", sqlite3_errmsg(db));
 		sqlite3_close(db);
 		return;
 	}
@@ -31,26 +37,32 @@ void p_db_open(DISPATCH_ARGS) {
 	if (slot >= interp->n_databases)
 		interp->n_databases = slot + 1;
 
-	push(interp, make_db(slot));
+	chain_sp[-1] = make_db(slot);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_db_close(DISPATCH_ARGS) {
-	POP_DB(db, "db-close");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val db_val = chain_sp[-1];
+	if (VAL_TAG(db_val) != T_DB) {
+		fail(interp, "expected %s; got %s", tag_name(T_DB), tag_name(VAL_TAG(db_val)));
+		return;
+	}
+	sqlite3 *db = interp->databases[VAL_DATA(db_val)];
 
 	if (db) {
 		sqlite3_close(db);
 		interp->databases[(int)VAL_DATA(db_val)] = NULL;
 	}
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-static int db_bind(Interpreter *interp, sqlite3_stmt *statement, Object *params, const char *op) {
+static int db_bind(Interpreter *interp, sqlite3_stmt *statement, Object *params) {
 	int expected = sqlite3_bind_parameter_count(statement);
 	if (params->len != expected) {
-		fail(interp, "%s: query takes %d parameter(s) %d given", op, expected, params->len);
+		fail(interp, "query takes %d parameter(s) %d given", expected, params->len);
 		return -1;
 	}
 
@@ -73,7 +85,7 @@ static int db_bind(Interpreter *interp, sqlite3_stmt *statement, Object *params,
 						   sqlite3_bind_text(statement, i + 1, &vocab.symbol_pool[VAL_DATA(value)], -1, SQLITE_TRANSIENT);
 						   break;
 			default:
-						   fail(interp, "%s: cannot bind %s as a parameter", op, tag_name(VAL_TAG(value)));
+						   fail(interp, "cannot bind %s as a parameter", tag_name(VAL_TAG(value)));
 						   return -1;
 		}
 	}
@@ -81,24 +93,49 @@ static int db_bind(Interpreter *interp, sqlite3_stmt *statement, Object *params,
 	return 0;
 }
 
-void p_db_exec(DISPATCH_ARGS) {
-	POP_ARRAY(params, "db-exec");
-	POP_STRING(statement, "db-exec");
-	POP_DB(db, "db-exec");
+static sqlite3_stmt *db_prepare_bound(Interpreter *interp, sqlite3 *db, Object *sql, Object *params) {
 	if (!db) {
-		fail(interp, "db-exec: database is closed");
-		return;
+		fail(interp, "database is closed");
+		return NULL;
 	}
 
 	sqlite3_stmt *prepared;
-	if (sqlite3_prepare_v2(db, statement->bytes, statement->len, &prepared, NULL) != SQLITE_OK) {
-		fail(interp, "db-exec: %s", sqlite3_errmsg(db));
-		return;
+	if (sqlite3_prepare_v2(db, sql->bytes, sql->len, &prepared, NULL) != SQLITE_OK) {
+		fail(interp, "%s", sqlite3_errmsg(db));
+		return NULL;
 	}
-	if (db_bind(interp, prepared, params, "db-exec") != 0) {
+	if (db_bind(interp, prepared, params) != 0) {
 		sqlite3_finalize(prepared);
+		return NULL;
+	}
+
+	return prepared;
+}
+
+void p_db_exec(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val params_val = chain_sp[-1];
+	if (VAL_TAG(params_val) != T_ARRAY) {
+		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(params_val)));
 		return;
 	}
+	Object *params = OBJECT_AT(VAL_DATA(params_val));
+	Val statement_val = chain_sp[-2];
+	if (VAL_TAG(statement_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(statement_val)));
+		return;
+	}
+	Object *statement = OBJECT_AT(VAL_DATA(statement_val));
+	Val db_val = chain_sp[-3];
+	if (VAL_TAG(db_val) != T_DB) {
+		fail(interp, "expected %s; got %s", tag_name(T_DB), tag_name(VAL_TAG(db_val)));
+		return;
+	}
+	sqlite3 *db = interp->databases[VAL_DATA(db_val)];
+
+	sqlite3_stmt *prepared = db_prepare_bound(interp, db, statement, params);
+	if (!prepared)
+		return;
 
 	int status;
 	while ((status = sqlite3_step(prepared)) == SQLITE_ROW)
@@ -106,13 +143,13 @@ void p_db_exec(DISPATCH_ARGS) {
 	int affected = sqlite3_changes(db);
 	sqlite3_finalize(prepared);
 	if (status != SQLITE_DONE) {
-		fail(interp, "db-exec: %s", sqlite3_errmsg(db));
+		fail(interp, "%s", sqlite3_errmsg(db));
 		return;
 	}
 
-	push(interp, make_float((double)affected));
+	chain_sp[-3] = make_float((double)affected);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 static Val db_column_value(Interpreter *interp, sqlite3_stmt *statement, int column) {
@@ -147,24 +184,29 @@ static int db_build_row(Interpreter *interp, sqlite3_stmt *statement, const cell
 }
 
 void p_db_query(DISPATCH_ARGS) {
-	POP_ARRAY(params, "db-query");
-	POP_STRING(query, "db-query");
-	POP_DB(db, "db-query");
-	if (!db) {
-		fail(interp, "db-query: database is closed");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val params_val = chain_sp[-1];
+	if (VAL_TAG(params_val) != T_ARRAY) {
+		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(params_val)));
 		return;
 	}
+	Object *params = OBJECT_AT(VAL_DATA(params_val));
+	Val query_val = chain_sp[-2];
+	if (VAL_TAG(query_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(query_val)));
+		return;
+	}
+	Object *query = OBJECT_AT(VAL_DATA(query_val));
+	Val db_val = chain_sp[-3];
+	if (VAL_TAG(db_val) != T_DB) {
+		fail(interp, "expected %s; got %s", tag_name(T_DB), tag_name(VAL_TAG(db_val)));
+		return;
+	}
+	sqlite3 *db = interp->databases[VAL_DATA(db_val)];
 
-	sqlite3_stmt *statement;
-	if (sqlite3_prepare_v2(db, query->bytes, query->len, &statement, NULL) != SQLITE_OK) {
-		fail(interp, "db-query: %s", sqlite3_errmsg(db));
+	sqlite3_stmt *statement = db_prepare_bound(interp, db, query, params);
+	if (!statement)
 		return;
-	}
-
-	if (db_bind(interp, statement, params, "db-query") != 0) {
-		sqlite3_finalize(statement);
-		return;
-	}
 
 	int n_columns = sqlite3_column_count(statement);
 	cell keys[n_columns];
@@ -191,7 +233,7 @@ void p_db_query(DISPATCH_ARGS) {
 	sqlite3_finalize(statement);
 
 	if (!interp->error_flag && status != SQLITE_DONE)
-		fail(interp, "db-query: %s", sqlite3_errmsg(db));
+		fail(interp, "%s", sqlite3_errmsg(db));
 	if (interp->error_flag) {
 		gc_root_pop(interp);
 		return;
@@ -217,8 +259,8 @@ void p_db_query(DISPATCH_ARGS) {
 
 	gc_root_pop(interp);
 	gc_root_pop(interp);
-	push(interp, make_frame(relation_handle));
+	chain_sp[-3] = make_frame(relation_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 

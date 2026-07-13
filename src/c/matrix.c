@@ -11,7 +11,7 @@
 		int cols = left_cols > right_cols ? left_cols : right_cols; \
 		if ((left_rows != rows && left_rows != 1) || (right_rows != rows && right_rows != 1) || \
 			(left_cols != cols && left_cols != 1) || (right_cols != cols && right_cols != 1)) { \
-			fail(interp, opname ": shapes not broadcast-compatible (%dx%d vs %dx%d)", \
+			fail(interp, "shapes not broadcast-compatible (%dx%d vs %dx%d)", \
 					left_rows, left_cols, right_rows, right_cols); \
 			return -1; \
 		} \
@@ -40,28 +40,33 @@ MATRIX_ELEMENTWISE_OP(matrix_sub, "-", -)
 MATRIX_ELEMENTWISE_OP(matrix_mul, "*", *)
 MATRIX_ELEMENTWISE_OP(matrix_div, "/", /)
 
+#define REQUIRE_CHAIN_TAG(value, tag, op, expected_phrase) \
+	do { \
+		if (VAL_TAG(value) != (tag)) { \
+			fail(interp, "expected " expected_phrase "; got %s", tag_name(VAL_TAG(value))); \
+			return; \
+		} \
+	} while (0)
+
+#define REQUIRE_CHAIN_INDEX(index, limit, op, axis_phrase, limit_phrase) \
+	do { \
+		if ((index) < 0 || (index) >= (limit)) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
+			fail(interp, "" axis_phrase " %d out of bounds (%d " limit_phrase ")", (index), (limit)); \
+			return; \
+		} \
+	} while (0)
+
 void p_at_j(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val index_val = chain_sp[-1];
 	Val source_val = chain_sp[-2];
-	if (VAL_TAG(index_val) != T_FLOAT) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@j: expected a float index; got %s", tag_name(VAL_TAG(index_val)));
-		return;
-	}
-	if (VAL_TAG(source_val) != T_MATRIX) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@j: expected a matrix; got %s", tag_name(VAL_TAG(source_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(index_val, T_FLOAT, "@j", "a float index");
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "@j", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	int index = (int)VAL_NUMBER(index_val);
 
-	if (index < 0 || index >= source->matrix.columns) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@j: column index %d out of bounds (%d columns)", index, source->matrix.columns);
-		return;
-	}
+	REQUIRE_CHAIN_INDEX(index, source->matrix.columns, "@j", "column index", "columns");
 
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
 	int num_rows = source->matrix.rows;
@@ -82,40 +87,174 @@ void p_at_ij(DISPATCH_ARGS) {
 	Val j_val = chain_sp[-1];
 	Val i_val = chain_sp[-2];
 	Val source_val = chain_sp[-3];
-	if (VAL_TAG(j_val) != T_FLOAT) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@i,j: expected a float column index; got %s", tag_name(VAL_TAG(j_val)));
-		return;
-	}
-	if (VAL_TAG(i_val) != T_FLOAT) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@i,j: expected a float row index; got %s", tag_name(VAL_TAG(i_val)));
-		return;
-	}
-	if (VAL_TAG(source_val) != T_MATRIX) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@i,j: expected a matrix; got %s", tag_name(VAL_TAG(source_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(j_val, T_FLOAT, "@i,j", "a float column index");
+	REQUIRE_CHAIN_TAG(i_val, T_FLOAT, "@i,j", "a float row index");
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "@i,j", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	int i = (int)VAL_NUMBER(i_val);
 	int j = (int)VAL_NUMBER(j_val);
 
-	if (i < 0 || i >= source->matrix.rows) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@i,j: row index %d out of bounds (%d rows)", i, source->matrix.rows);
-		return;
-	}
-	if (j < 0 || j >= source->matrix.columns) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "@i,j: column index %d out of bounds (%d columns)", j, source->matrix.columns);
-		return;
-	}
+	REQUIRE_CHAIN_INDEX(i, source->matrix.rows, "@i,j", "row index", "rows");
+	REQUIRE_CHAIN_INDEX(j, source->matrix.columns, "@i,j", "column index", "columns");
 
 	chain_sp[-3] = make_float(MAT(source, i, j));
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
+
+void p_at_e(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val index_val = chain_sp[-1];
+	Val source_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(index_val, T_FLOAT, "@e", "a float index");
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "@e", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+	int index = (int)VAL_NUMBER(index_val);
+
+	int n_elements = source->matrix.rows * source->matrix.columns;
+	REQUIRE_CHAIN_INDEX(index, n_elements, "@e", "element index", "elements");
+
+	chain_sp[-2] = make_float(source->matrix.elements[index]);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
+static Val *matrix_element_read(Interpreter *interp, cell *resume_ip, Val *slot_sp, Val source_val, int index) {
+	if (VAL_TAG(source_val) != T_MATRIX) {
+		SYNC_REGISTERS(interp, resume_ip, slot_sp);
+		fail(interp, "expected a matrix; got %s", tag_name(VAL_TAG(source_val)));
+		return NULL;
+	}
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+
+	int n_elements = source->matrix.rows * source->matrix.columns;
+	if (index < 0 || index >= n_elements) {
+		SYNC_REGISTERS(interp, resume_ip, slot_sp);
+		fail(interp, "element index %d out of bounds (%d elements)", index, n_elements);
+		return NULL;
+	}
+
+	*slot_sp = make_float(source->matrix.elements[index]);
+	return slot_sp + 1;
+}
+
+void p_at_e_lit(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 1, chain_sp - 1, chain_sp[-1], (int)chain_ip[0]);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
+}
+
+void p_at_e_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	int index = (int)interp->return_stack[interp->local_base + (int)chain_ip[0]].number;
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 1, chain_sp - 1, chain_sp[-1], index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
+}
+
+void p_at_e_ll0(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
+	Val *locals = interp->return_stack + interp->local_base;
+	Val source_val = locals[(int)chain_ip[0]];
+	int index = (int)locals[(int)chain_ip[1]].number;
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 2, chain_sp, source_val, index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
+}
+
+void p_at_e_l1l0(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
+	int enclosing = saved_local_base(interp->return_stack[interp->local_base - 1]);
+	Val source_val = interp->return_stack[enclosing + (int)chain_ip[0]];
+	int index = (int)interp->return_stack[interp->local_base + (int)chain_ip[1]].number;
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 2, chain_sp, source_val, index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
+}
+
+static int matrix_element_write(Interpreter *interp, cell *resume_ip, Val *fail_sp, Val target_val, int index, Val element_val) {
+	if (VAL_TAG(element_val) != T_FLOAT && VAL_TAG(element_val) != T_NONE) {
+		SYNC_REGISTERS(interp, resume_ip, fail_sp);
+		fail(interp, "expected a float or null value; got %s", tag_name(VAL_TAG(element_val)));
+		return 0;
+	}
+	if (VAL_TAG(target_val) != T_MATRIX) {
+		SYNC_REGISTERS(interp, resume_ip, fail_sp);
+		fail(interp, "expected a matrix; got %s", tag_name(VAL_TAG(target_val)));
+		return 0;
+	}
+	Object *target = OBJECT_AT(VAL_DATA(target_val));
+
+	int n_elements = target->matrix.rows * target->matrix.columns;
+	if (index < 0 || index >= n_elements) {
+		SYNC_REGISTERS(interp, resume_ip, fail_sp);
+		fail(interp, "element index %d out of bounds (%d elements)", index, n_elements);
+		return 0;
+	}
+
+	target->matrix.elements[index] = VAL_NUMBER(element_val);
+	return 1;
+}
+
+#define STORE_E_OP(c_name, n_consumed) \
+	void c_name(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3); \
+		Val element_val = chain_sp[-1]; \
+		Val index_val = chain_sp[-2]; \
+		Val target_val = chain_sp[-3]; \
+		REQUIRE_CHAIN_TAG(index_val, T_FLOAT, "!e", "a float index"); \
+		if (!matrix_element_write(interp, chain_ip, chain_sp, target_val, (int)VAL_NUMBER(index_val), element_val)) \
+			return; \
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - (n_consumed)); \
+	}
+
+STORE_E_OP(p_store_e, 2)
+STORE_E_OP(p_store_e_drop, 3)
+
+void p_store_e_lll0(DISPATCH_ARGS) {
+	Val *locals = interp->return_stack + interp->local_base;
+	Val target_val = locals[(int)chain_ip[0]];
+	int index = (int)locals[(int)chain_ip[1]].number;
+	Val element_val = locals[(int)chain_ip[2]];
+	if (!matrix_element_write(interp, chain_ip + 3, chain_sp, target_val, index, element_val))
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 3, chain_sp);
+}
+
+#define STORE_IJ_OP(c_name, n_consumed) \
+	void c_name(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 4); \
+		Val element_val = chain_sp[-1]; \
+		Val j_val = chain_sp[-2]; \
+		Val i_val = chain_sp[-3]; \
+		Val target_val = chain_sp[-4]; \
+		if (VAL_TAG(element_val) != T_FLOAT && VAL_TAG(element_val) != T_NONE) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
+			fail(interp, "expected a float or null value; got %s", tag_name(VAL_TAG(element_val))); \
+			return; \
+		} \
+		REQUIRE_CHAIN_TAG(j_val, T_FLOAT, "!i,j", "a float column index"); \
+		REQUIRE_CHAIN_TAG(i_val, T_FLOAT, "!i,j", "a float row index"); \
+		REQUIRE_CHAIN_TAG(target_val, T_MATRIX, "!i,j", "a matrix"); \
+		Object *target = OBJECT_AT(VAL_DATA(target_val)); \
+		int i = (int)VAL_NUMBER(i_val); \
+		int j = (int)VAL_NUMBER(j_val); \
+		\
+		REQUIRE_CHAIN_INDEX(i, target->matrix.rows, "!i,j", "row index", "rows"); \
+		REQUIRE_CHAIN_INDEX(j, target->matrix.columns, "!i,j", "column index", "columns"); \
+		\
+		MAT(target, i, j) = VAL_NUMBER(element_val); \
+		\
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - (n_consumed)); \
+	}
+
+STORE_IJ_OP(p_store_ij, 3)
+STORE_IJ_OP(p_store_ij_drop, 4)
 
 int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 		double alpha,
@@ -133,13 +272,13 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 	int op_b_cols = transpose_b ? B->matrix.rows : B->matrix.columns;
 
 	if (op_a_cols != op_b_rows) {
-		fail(interp, "dgemm: inner dimensions must match (op(A) is %dx%d, op(B) is %dx%d)",
+		fail(interp, "inner dimensions must match (op(A) is %dx%d, op(B) is %dx%d)",
 				op_a_rows, op_a_cols, op_b_rows, op_b_cols);
 		return -1;
 	}
 
 	if (C->matrix.rows != op_a_rows || C->matrix.columns != op_b_cols) {
-		fail(interp, "dgemm: C must be %dx%d to match the product, but is %dx%d",
+		fail(interp, "C must be %dx%d to match the product, but is %dx%d",
 				op_a_rows, op_b_cols, C->matrix.rows, C->matrix.columns);
 		return -1;
 	}
@@ -221,7 +360,7 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 		const double * restrict b_elements = B->matrix.elements;
 		double *a_column = malloc(sizeof(double) * (size_t)k);
 		if (!a_column) {
-			fail(interp, "dgemm: out of memory for a %d-element column buffer", k);
+			fail(interp, "out of memory for a %d-element column buffer", k);
 			return -1;
 		}
 
@@ -251,12 +390,12 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	POP(alpha_val);
 
 	if (VAL_TAG(alpha_val) != T_FLOAT || VAL_TAG(beta_val) != T_FLOAT) {
-		fail(interp, "dgemm: alpha and beta must be floats; got %s and %s",
+		fail(interp, "alpha and beta must be floats; got %s and %s",
 				tag_name(VAL_TAG(alpha_val)), tag_name(VAL_TAG(beta_val)));
 		return;
 	}
 	if (VAL_TAG(a_val) != T_MATRIX || VAL_TAG(b_val) != T_MATRIX || VAL_TAG(c_val) != T_MATRIX) {
-		fail(interp, "dgemm: A, B, C must be matrices; got %s, %s, %s",
+		fail(interp, "A, B, C must be matrices; got %s, %s, %s",
 				tag_name(VAL_TAG(a_val)), tag_name(VAL_TAG(b_val)), tag_name(VAL_TAG(c_val)));
 		return;
 	}
@@ -270,29 +409,17 @@ void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b) {
 	push(interp, make_matrix(matmult_handle));
 }
 
-void p_dgemm_nn(DISPATCH_ARGS) {
-	p_dgemm_helper(interp, 0, 0);
+#define DGEMM_WORD(c_name, transpose_a, transpose_b) \
+	void c_name(DISPATCH_ARGS) { \
+		p_dgemm_helper(interp, transpose_a, transpose_b); \
+		\
+		DISPATCH(interp); \
+	}
 
-	DISPATCH(interp);
-}
-
-void p_dgemm_tn(DISPATCH_ARGS) {
-	p_dgemm_helper(interp, 1, 0);
-
-	DISPATCH(interp);
-}
-
-void p_dgemm_nt(DISPATCH_ARGS) {
-	p_dgemm_helper(interp, 0, 1);
-
-	DISPATCH(interp);
-}
-
-void p_dgemm_tt(DISPATCH_ARGS) {
-	p_dgemm_helper(interp, 1, 1);
-
-	DISPATCH(interp);
-}
+DGEMM_WORD(p_dgemm_nn, 0, 0)
+DGEMM_WORD(p_dgemm_tn, 1, 0)
+DGEMM_WORD(p_dgemm_nt, 0, 1)
+DGEMM_WORD(p_dgemm_tt, 1, 1)
 
 static size_t sort_partition_nans(double *elements, size_t n_elements) {
 	int any_nan = 0;
@@ -312,147 +439,299 @@ static size_t sort_partition_nans(double *elements, size_t n_elements) {
 	return sortable;
 }
 
-static void insertion_sort_doubles(double *elements, size_t n_elements) {
-	for (size_t i = 1; i < n_elements; i++) {
-		double value = elements[i];
-		size_t j = i;
-		while (j > 0 && elements[j - 1] > value) {
-			elements[j] = elements[j - 1];
-			j--;
-		}
-		elements[j] = value;
+typedef struct {
+	double value;
+	int index;
+} ArgsortPair;
+
+static inline int argsort_pair_before(ArgsortPair left, ArgsortPair right) {
+	if (left.value != right.value)
+		return left.value < right.value;
+
+	return left.index < right.index;
+}
+
+#define SWAP_ELEMENTS(element_type, left, right) \
+	do { \
+		element_type swap_tmp = (left); \
+		(left) = (right); \
+		(right) = swap_tmp; \
+	} while (0)
+
+#define SORT_KERNELS(suffix, element_type, before) \
+	static void insertion_sort_##suffix(element_type *elements, size_t n_elements) { \
+		for (size_t i = 1; i < n_elements; i++) { \
+			element_type inserted = elements[i]; \
+			size_t j = i; \
+			while (j > 0 && before(inserted, elements[j - 1])) { \
+				elements[j] = elements[j - 1]; \
+				j--; \
+			} \
+			elements[j] = inserted; \
+		} \
+	} \
+	\
+	static element_type median_of_three_##suffix(element_type *elements, size_t n_elements) { \
+		size_t mid = n_elements / 2; \
+		size_t last = n_elements - 1; \
+		\
+		if (before(elements[mid], elements[0])) \
+			SWAP_ELEMENTS(element_type, elements[mid], elements[0]); \
+		if (before(elements[last], elements[0])) \
+			SWAP_ELEMENTS(element_type, elements[last], elements[0]); \
+		if (before(elements[last], elements[mid])) \
+			SWAP_ELEMENTS(element_type, elements[last], elements[mid]); \
+		\
+		return elements[mid]; \
+	} \
+	\
+	static void quicksort_##suffix(element_type *elements, size_t n_elements) { \
+		while (n_elements > 24) { \
+			element_type pivot = median_of_three_##suffix(elements, n_elements); \
+			size_t i = 0; \
+			size_t j = n_elements - 1; \
+			\
+			for (;;) { \
+				while (before(elements[i], pivot)) \
+					i++; \
+				while (before(pivot, elements[j])) \
+					j--; \
+				if (i >= j) \
+					break; \
+				\
+				SWAP_ELEMENTS(element_type, elements[i], elements[j]); \
+				\
+				i++; \
+				j--; \
+			} \
+			\
+			size_t left_count = j + 1; \
+			if (left_count <= n_elements - left_count) { \
+				quicksort_##suffix(elements, left_count); \
+				elements += left_count; \
+				n_elements -= left_count; \
+			} else { \
+				quicksort_##suffix(elements + left_count, n_elements - left_count); \
+				n_elements = left_count; \
+			} \
+		} \
+		insertion_sort_##suffix(elements, n_elements); \
 	}
-}
 
-static double median_of_three_doubles(double *elements, size_t n_elements) {
-	size_t mid = n_elements / 2;
-	size_t last = n_elements - 1;
+#define DOUBLE_BEFORE(left, right) ((left) < (right))
+SORT_KERNELS(doubles, double, DOUBLE_BEFORE)
+SORT_KERNELS(pairs, ArgsortPair, argsort_pair_before)
 
-	if (elements[mid] < elements[0])
-		SWAP_DOUBLES(elements[mid], elements[0]);
-	if (elements[last] < elements[0])
-		SWAP_DOUBLES(elements[last], elements[0]);
-	if (elements[last] < elements[mid])
-		SWAP_DOUBLES(elements[last], elements[mid]);
-
-	return elements[mid];
-}
-
-static void quicksort_doubles(double *elements, size_t n_elements) {
-	while (n_elements > 24) {
-		double pivot = median_of_three_doubles(elements, n_elements);
-		size_t i = 0;
-		size_t j = n_elements - 1;
-
-		for (;;) {
-			while (elements[i] < pivot)
-				i++;
-			while (elements[j] > pivot)
-				j--;
-			if (i >= j)
-				break;
-
-			SWAP_DOUBLES(elements[i], elements[j]);
-
-			i++;
-			j--;
-		}
-
-		size_t left_count = j + 1;
-		if (left_count <= n_elements - left_count) {
-			quicksort_doubles(elements, left_count);
-			elements += left_count;
-			n_elements -= left_count;
-		} else {
-			quicksort_doubles(elements + left_count, n_elements - left_count);
-			n_elements = left_count;
-		}
-	}
-	insertion_sort_doubles(elements, n_elements);
-}
-
-#define RADIX_SORT_CUTOFF 65536
+#define RADIX_SORT_CUTOFF 8192
 #define RADIX_DIGITS 65536
 
 typedef uint64_t __attribute__((may_alias)) sort_key;
 
-static void radix_sort_doubles(double *elements, size_t n_elements,
-		sort_key *scratch, size_t *digit_counts) {
-	sort_key *keys = (sort_key *)elements;
+#define DOUBLE_KEY(element) (*(sort_key *)&(element))
+#define PAIR_KEY(element) (*(sort_key *)&(element).value)
 
-	for (size_t i = 0; i < n_elements; i++)
-		keys[i] ^= -(keys[i] >> 63) | 0x8000000000000000ULL;
+#define RADIX_FORWARD(k) ((k) ^ (-((k) >> 63) | 0x8000000000000000ULL))
+#define RADIX_INVERSE(k) ((k) ^ ((((k) >> 63) - 1) | 0x8000000000000000ULL))
 
-	sort_key *from = keys;
-	sort_key *to = scratch;
-	for (int pass = 0; pass < 4; pass++) {
-		int shift = pass * 16;
-
-		memset(digit_counts, 0, RADIX_DIGITS * sizeof(size_t));
-		for (size_t i = 0; i < n_elements; i++)
-			digit_counts[(from[i] >> shift) & 0xFFFF]++;
-		if (digit_counts[(from[0] >> shift) & 0xFFFF] == n_elements)
-			continue;
-
-		size_t running = 0;
-		for (int digit = 0; digit < RADIX_DIGITS; digit++) {
-			size_t digit_count = digit_counts[digit];
-			digit_counts[digit] = running;
-			running += digit_count;
-		}
-
-		for (size_t i = 0; i < n_elements; i++)
-			to[digit_counts[(from[i] >> shift) & 0xFFFF]++] = from[i];
-
-		sort_key *filled = to;
-		to = from;
-		from = filled;
+#define RADIX_SORT(suffix, element_type, key) \
+	static void radix_sort_##suffix(element_type *elements, size_t n_elements, \
+			element_type *scratch, size_t *digit_counts) { \
+		element_type *from = elements; \
+		element_type *to = scratch; \
+		int transformed = 0; \
+		for (int pass = 0; pass < 4; pass++) { \
+			int shift = pass * 16; \
+			\
+			memset(digit_counts, 0, RADIX_DIGITS * sizeof(size_t)); \
+			if (transformed) \
+				for (size_t i = 0; i < n_elements; i++) \
+					digit_counts[(key(from[i]) >> shift) & 0xFFFF]++; \
+			else \
+				for (size_t i = 0; i < n_elements; i++) \
+					digit_counts[(RADIX_FORWARD(key(from[i])) >> shift) & 0xFFFF]++; \
+			\
+			sort_key first_key = key(from[0]); \
+			if (!transformed) \
+				first_key = RADIX_FORWARD(first_key); \
+			if (digit_counts[(first_key >> shift) & 0xFFFF] == n_elements) \
+				continue; \
+			\
+			size_t running = 0; \
+			for (int digit = 0; digit < RADIX_DIGITS; digit++) { \
+				size_t digit_count = digit_counts[digit]; \
+				digit_counts[digit] = running; \
+				running += digit_count; \
+			} \
+			\
+			int final_pass = pass == 3; \
+			for (size_t i = 0; i < n_elements; i++) { \
+				element_type element = from[i]; \
+				sort_key sortable_key = key(element); \
+				if (!transformed) \
+					sortable_key = RADIX_FORWARD(sortable_key); \
+				key(element) = final_pass ? RADIX_INVERSE(sortable_key) : sortable_key; \
+				to[digit_counts[(sortable_key >> shift) & 0xFFFF]++] = element; \
+			} \
+			transformed = !final_pass; \
+			\
+			element_type *filled = to; \
+			to = from; \
+			from = filled; \
+		} \
+		\
+		if (from != elements) { \
+			if (transformed) \
+				for (size_t i = 0; i < n_elements; i++) { \
+					element_type element = from[i]; \
+					key(element) = RADIX_INVERSE(key(element)); \
+					elements[i] = element; \
+				} \
+			else \
+				memcpy(elements, from, n_elements * sizeof(element_type)); \
+		} else if (transformed) \
+			for (size_t i = 0; i < n_elements; i++) \
+				key(elements[i]) = RADIX_INVERSE(key(elements[i])); \
 	}
-	if (from != keys)
-		memcpy(keys, from, n_elements * sizeof(sort_key));
 
-	for (size_t i = 0; i < n_elements; i++)
-		keys[i] ^= ((keys[i] >> 63) - 1) | 0x8000000000000000ULL;
-}
+RADIX_SORT(doubles, double, DOUBLE_KEY)
+RADIX_SORT(pairs, ArgsortPair, PAIR_KEY)
 
-static void sort_doubles(double *elements, size_t n_elements) {
-	size_t sortable = sort_partition_nans(elements, n_elements);
-
-	if (sortable > RADIX_SORT_CUTOFF) {
-		sort_key *scratch = malloc(sortable * sizeof(sort_key)
-				+ RADIX_DIGITS * sizeof(size_t));
-		if (scratch) {
-			radix_sort_doubles(elements, sortable, scratch,
-					(size_t *)(scratch + sortable));
-			free(scratch);
-			return;
-		}
+#define SORT_DISPATCH(suffix, element_type) \
+	static void sort_##suffix(element_type *elements, size_t n_elements) { \
+		if (n_elements > RADIX_SORT_CUTOFF) { \
+			element_type *scratch = malloc(n_elements * sizeof(element_type) \
+					+ RADIX_DIGITS * sizeof(size_t)); \
+			if (scratch) { \
+				radix_sort_##suffix(elements, n_elements, scratch, \
+						(size_t *)(scratch + n_elements)); \
+				free(scratch); \
+				return; \
+			} \
+		} \
+		\
+		quicksort_##suffix(elements, n_elements); \
 	}
 
-	quicksort_doubles(elements, sortable);
+SORT_DISPATCH(doubles, double)
+SORT_DISPATCH(pairs, ArgsortPair)
+
+static int vector_length(Interpreter *interp, Object *vector, const char *noun_phrase) {
+	int n_rows = vector->matrix.rows;
+	int n_columns = vector->matrix.columns;
+	if (n_rows != 1 && n_columns != 1) {
+		fail(interp, "expected %s (nx1 or 1xn); got %dx%d", noun_phrase, n_rows, n_columns);
+		return -1;
+	}
+
+	return n_rows * n_columns;
 }
 
 int vector_sorted_copy(Interpreter *interp, Object *source) {
-	int n_rows = source->matrix.rows;
-	int n_columns = source->matrix.columns;
-	if (n_rows != 1 && n_columns != 1) {
-		fail(interp, "sort: expected a vector (nx1 or 1xn); got %dx%d",
-				n_rows, n_columns);
+	int length = vector_length(interp, source, "a vector");
+	if (length < 0)
 		return -1;
-	}
 
-	int sorted_vector_handle = object_new_matrix(interp, n_rows, n_columns);
+	int sorted_vector_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
 	if (interp->error_flag)
 		return -1;
-	
+
 	Object *sorted_vector = OBJECT_AT(sorted_vector_handle);
-	size_t n_elements = (size_t)n_rows * (size_t)n_columns;
+	size_t n_elements = (size_t)length;
 	memcpy(sorted_vector->matrix.elements, source->matrix.elements, sizeof(double) * n_elements);
-	sort_doubles(sorted_vector->matrix.elements, n_elements);
+	size_t sortable = sort_partition_nans(sorted_vector->matrix.elements, n_elements);
+	sort_doubles(sorted_vector->matrix.elements, sortable);
 
 	return sorted_vector_handle;
 }
 
+int vector_argsort_copy(Interpreter *interp, Object *source) {
+	int length = vector_length(interp, source, "a vector");
+	if (length < 0)
+		return -1;
+
+	int permutation_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
+	if (interp->error_flag)
+		return -1;
+
+	size_t n_elements = (size_t)length;
+	ArgsortPair *pairs = malloc(n_elements * sizeof(ArgsortPair));
+	if (!pairs) {
+		fail(interp, "out of memory");
+		return -1;
+	}
+
+	const double *elements = source->matrix.elements;
+	size_t sortable = 0;
+	for (size_t i = 0; i < n_elements; i++) {
+		if (isnan(elements[i]))
+			continue;
+		pairs[sortable].value = elements[i];
+		pairs[sortable].index = (int)i;
+		sortable++;
+	}
+
+	size_t nan_tail = sortable;
+	for (size_t i = 0; i < n_elements; i++) {
+		if (!isnan(elements[i]))
+			continue;
+		pairs[nan_tail].value = NAN;
+		pairs[nan_tail].index = (int)i;
+		nan_tail++;
+	}
+		
+	sort_pairs(pairs, sortable);
+
+	
+	Object *permutation = OBJECT_AT(permutation_handle);
+	for (size_t i = 0; i < n_elements; i++)
+		permutation->matrix.elements[i] = (double)pairs[i].index;
+
+	free(pairs);
+	return permutation_handle;
+}
+
+int matrix_nonzero_indices(Interpreter *interp, Object *source) {
+	int n_rows = source->matrix.rows;
+	int n_columns = source->matrix.columns;
+	size_t n_elements = (size_t)n_rows * (size_t)n_columns;
+	const double *elements = source->matrix.elements;
+
+	int n_nonzero = 0;
+	for (size_t i = 0; i < n_elements; i++)
+		n_nonzero += elements[i] != 0.0;
+
+	int indices_handle = object_new_matrix(interp,
+			n_rows == 1 ? 1 : n_nonzero,
+			n_rows == 1 ? n_nonzero : 1);
+	if (interp->error_flag)
+		return -1;
+
+	Object *indices = OBJECT_AT(indices_handle);
+	int write_index = 0;
+	for (size_t i = 0; i < n_elements; i++)
+		if (elements[i] != 0.0)
+			indices->matrix.elements[write_index++] = (double)i;
+
+	return indices_handle;
+}
+
+void p_where(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val mask = chain_sp[-1];
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
+
+	if (VAL_TAG(mask) != T_MATRIX) {
+		fail(interp, "expected a matrix mask; got %s", tag_name(VAL_TAG(mask)));
+		return;
+	}
+
+	int indices_handle = matrix_nonzero_indices(interp, OBJECT_AT(VAL_DATA(mask)));
+	if (interp->error_flag) return;
+
+	chain_sp[-1] = make_matrix(indices_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
 
 #define ADD(a, b) ((a) + (b))
 
@@ -606,7 +885,7 @@ void p_diagonal_matrix(DISPATCH_ARGS) {
 
 	POP(diag_val);
 	if (VAL_TAG(diag_val) != T_FLOAT) {
-		fail(interp, "diagonal-matrix: expected a float fill value; got %s", tag_name(VAL_TAG(diag_val)));
+		fail(interp, "expected a float fill value; got %s", tag_name(VAL_TAG(diag_val)));
 		return;
 	}
 
@@ -622,7 +901,10 @@ void p_diagonal_matrix(DISPATCH_ARGS) {
 }
 
 void p_diagonal(DISPATCH_ARGS) {
-	POP_MATRIX(source, "diagonal");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val source_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "diagonal", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	int diag_len = MIN(source->matrix.rows, source->matrix.columns);
 	NEW_MATRIX(diag_handle, diagonal, 1, diag_len);
@@ -630,27 +912,34 @@ void p_diagonal(DISPATCH_ARGS) {
 	for (int i = 0; i < diag_len; i++)
 		diagonal->matrix.elements[i] = MAT(source, i, i);
 
-	push(interp, make_matrix(diag_handle));
+	chain_sp[-1] = make_matrix(diag_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_reshape(DISPATCH_ARGS) {
-	POP_INT(new_cols, "reshape", "column count");
-	POP_INT(new_rows, "reshape", "row count");
-	POP_MATRIX(source, "reshape");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val cols_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(cols_val, T_FLOAT, "reshape", "a float column count");
+	int new_cols = (int)VAL_NUMBER(cols_val);
+	Val rows_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(rows_val, T_FLOAT, "reshape", "a float row count");
+	int new_rows = (int)VAL_NUMBER(rows_val);
+	Val source_val = chain_sp[-3];
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "reshape", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	if (new_rows < 0 || new_cols < 0) {
-		fail(interp, "reshape: dimensions must be non-negative; got %dx%d", new_rows, new_cols);
+		fail(interp, "dimensions must be non-negative; got %dx%d", new_rows, new_cols);
 		return;
 	}
 	if (new_cols != 0 && new_rows > INT_MAX / new_cols) {
-		fail(interp, "reshape: %dx%d too large (element count overflows)", new_rows, new_cols);
+		fail(interp, "%dx%d too large (element count overflows)", new_rows, new_cols);
 		return;
 	}
 	int total = source->matrix.rows * source->matrix.columns;
 	if (new_rows * new_cols != total) {
-		fail(interp, "reshape: cannot reshape %d elements (%dx%d) into %dx%d (%d)",
+		fail(interp, "cannot reshape %d elements (%dx%d) into %dx%d (%d)",
 				total, source->matrix.rows, source->matrix.columns,
 				new_rows, new_cols, new_rows * new_cols);
 		return;
@@ -660,20 +949,20 @@ void p_reshape(DISPATCH_ARGS) {
 	memcpy(target->matrix.elements, source->matrix.elements,
 			(size_t)total * sizeof(double));
 
-	push(interp, make_matrix(target_handle));
+	chain_sp[-3] = make_matrix(target_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_matrix(DISPATCH_ARGS) {
 	if (interp->dsp < 2) {
-		fail(interp, "matrix: stack too shallow (expected array and at least one dimension)");
+		fail(interp, "stack underflow (expected array and at least one dimension)");
 		return;
 	}
 	Val top = interp->data_stack[interp->dsp - 1];
 	Val below = interp->data_stack[interp->dsp - 2];
 	if (VAL_TAG(top) != T_FLOAT) {
-		fail(interp, "matrix: expected a float dimension on top; got %s", tag_name(VAL_TAG(top)));
+		fail(interp, "expected a float dimension on top; got %s", tag_name(VAL_TAG(top)));
 		return;
 	}
 
@@ -681,12 +970,12 @@ void p_matrix(DISPATCH_ARGS) {
 	Val arr_val;
 	if (VAL_TAG(below) == T_FLOAT) {
 		if (interp->dsp < 3) {
-			fail(interp, "matrix: stack too shallow (expected array below two dimensions)");
+			fail(interp, "stack underflow (expected array below two dimensions)");
 			return;
 		}
 		arr_val = interp->data_stack[interp->dsp - 3];
 		if (VAL_TAG(arr_val) != T_ARRAY) {
-			fail(interp, "matrix: expected an array; got %s", tag_name(VAL_TAG(arr_val)));
+			fail(interp, "expected an array; got %s", tag_name(VAL_TAG(arr_val)));
 			return;
 		}
 		num_rows = (int)VAL_NUMBER(below);
@@ -696,14 +985,14 @@ void p_matrix(DISPATCH_ARGS) {
 		num_rows = (int)VAL_NUMBER(top);
 		Object *arr = OBJECT_AT(VAL_DATA(below));
 		if (num_rows <= 0 || arr->len % num_rows != 0) {
-			fail(interp, "matrix: %d elements does not divide evenly into %d rows", arr->len, num_rows);
+			fail(interp, "%d elements does not divide evenly into %d rows", arr->len, num_rows);
 			return;
 		}
 		num_cols = arr->len / num_rows;
 		arr_val = below;
 		interp->dsp -= 2;
 	} else {
-		fail(interp, "matrix: expected an array below the dimension(s); got %s", tag_name(VAL_TAG(below)));
+		fail(interp, "expected an array below the dimension(s); got %s", tag_name(VAL_TAG(below)));
 		return;
 	}
 
@@ -718,14 +1007,14 @@ void p_matrix(DISPATCH_ARGS) {
 	Object *input_array = OBJECT_AT(VAL_DATA(array_val));
 	int num_elements = matrix->matrix.rows * matrix->matrix.columns;
 	if (input_array->len != num_elements) {
-		fail(interp, "matrix: array has %d elements but %dx%d needs %d",
+		fail(interp, "array has %d elements but %dx%d needs %d",
 				input_array->len, matrix->matrix.rows, matrix->matrix.columns, num_elements);
 		return;
 	}
 
 	for (int i = 0; i < num_elements; i++) {
 		if (VAL_TAG(input_array->items[i]) != T_FLOAT) {
-			fail(interp, "matrix: element %d is %s, expected a float", i, tag_name(VAL_TAG(input_array->items[i])));
+			fail(interp, "element %d is %s, expected a float", i, tag_name(VAL_TAG(input_array->items[i])));
 			return;
 		}
 		matrix->matrix.elements[i] = VAL_NUMBER(input_array->items[i]);
@@ -737,35 +1026,55 @@ void p_matrix(DISPATCH_ARGS) {
 }
 
 void p_dim(DISPATCH_ARGS) {
-	POP_MATRIX(m, "dim");
-	push(interp, make_float(m->matrix.rows));
-	push(interp, make_float(m->matrix.columns));
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	Val matrix_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(matrix_val, T_MATRIX, "dim", "a matrix");
+	Object *matrix = OBJECT_AT(VAL_DATA(matrix_val));
 
-	DISPATCH(interp);
+	chain_sp[-1] = make_float(matrix->matrix.rows);
+	chain_sp[0] = make_float(matrix->matrix.columns);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 void p_transpose(DISPATCH_ARGS) {
-	POP_MATRIX(source, "transpose");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val source_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "transpose", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+
 	NEW_MATRIX(target_handle, target, source->matrix.columns, source->matrix.rows);
 	for (int i = 0; i < source->matrix.rows; i++)
 		for (int j = 0; j < source->matrix.columns; j++)
 			MAT(target, j, i) = MAT(source, i, j);
 
-	push(interp, make_matrix(target_handle));
+	chain_sp[-1] = make_matrix(target_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_submatrix(DISPATCH_ARGS) {
-	POP_INT(col_end, "submatrix", "col-end");
-	POP_INT(col_start, "submatrix", "col-start");
-	POP_INT(row_end, "submatrix", "row-end");
-	POP_INT(row_start, "submatrix", "row-start");
-	POP_MATRIX(source, "submatrix");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 5);
+	Val col_end_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(col_end_val, T_FLOAT, "submatrix", "a float col-end");
+	int col_end = (int)VAL_NUMBER(col_end_val);
+	Val col_start_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(col_start_val, T_FLOAT, "submatrix", "a float col-start");
+	int col_start = (int)VAL_NUMBER(col_start_val);
+	Val row_end_val = chain_sp[-3];
+	REQUIRE_CHAIN_TAG(row_end_val, T_FLOAT, "submatrix", "a float row-end");
+	int row_end = (int)VAL_NUMBER(row_end_val);
+	Val row_start_val = chain_sp[-4];
+	REQUIRE_CHAIN_TAG(row_start_val, T_FLOAT, "submatrix", "a float row-start");
+	int row_start = (int)VAL_NUMBER(row_start_val);
+	Val source_val = chain_sp[-5];
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "submatrix", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	if (row_start < 0 || row_end > source->matrix.rows || row_start > row_end
 			|| col_start < 0 || col_end > source->matrix.columns || col_start > col_end) {
-		fail(interp, "submatrix: [%d,%d)x[%d,%d) out of bounds for %dx%d",
+		fail(interp, "[%d,%d)x[%d,%d) out of bounds for %dx%d",
 				row_start, row_end, col_start, col_end,
 				source->matrix.rows, source->matrix.columns);
 		return;
@@ -779,9 +1088,9 @@ void p_submatrix(DISPATCH_ARGS) {
 		for (int col = 0; col < slice_cols; col++)
 			MAT(slice, row, col) = MAT(source, row_start + row, col_start + col);
 
-	push(interp, make_matrix(slice_handle));
+	chain_sp[-5] = make_matrix(slice_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 4);
 }
 
 
@@ -813,12 +1122,13 @@ REDUCE_AXIS_HANDLER(p_column_maxes, "column-maxes", matrix_max_columns)
 REDUCE_AXIS_HANDLER(p_column_mins, "column-mins", matrix_min_columns)
 
 void p_matrix_range(DISPATCH_ARGS) {
-	POP(step_val);
-	POP(end_val);
-	POP(start_val);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val step_val = chain_sp[-1];
+	Val end_val = chain_sp[-2];
+	Val start_val = chain_sp[-3];
 
 	if (VAL_TAG(start_val) != T_FLOAT || VAL_TAG(end_val) != T_FLOAT || VAL_TAG(step_val) != T_FLOAT) {
-		fail(interp, "matrix-range: expected three floats (start end step); got %s, %s, %s",
+		fail(interp, "expected three floats (start end step); got %s, %s, %s",
 				tag_name(VAL_TAG(start_val)), tag_name(VAL_TAG(end_val)), tag_name(VAL_TAG(step_val)));
 		return;
 	}
@@ -828,18 +1138,18 @@ void p_matrix_range(DISPATCH_ARGS) {
 	double step = VAL_NUMBER(step_val);
 
 	if (step == 0.0) {
-		fail(interp, "matrix-range: step cannot be zero");
+		fail(interp, "step cannot be zero");
 		return;
 	}
 
 	if ((step > 0.0 && end < start) || (step < 0.0 && end > start)) {
-		fail(interp, "matrix-range: step sign does not match start/end direction");
+		fail(interp, "step sign does not match start/end direction");
 		return;
 	}
 
 	double raw_steps = (end - start) / step;
 	if (raw_steps > (double)INT_MAX - 1.0) {
-		fail(interp, "matrix-range: too many elements");
+		fail(interp, "too many elements");
 		return;
 	}
 	int n_steps = (int)raw_steps + 1;
@@ -849,53 +1159,86 @@ void p_matrix_range(DISPATCH_ARGS) {
 	for (int i = 0; i < n_steps; i++)
 		elements[i] = start + i * step;
 
-	push(interp, make_matrix(handle));
+	chain_sp[-3] = make_matrix(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_select_rows(DISPATCH_ARGS) {
-	PEEK_TYPE_AT(indices_val, 0, "select-rows", T_ARRAY);
-	PEEK_TYPE_AT(matrix_val, 1, "select-rows", T_MATRIX);
-	Object *indices = OBJECT_AT(VAL_DATA(indices_val));
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val indices_val = chain_sp[-1];
+	Val matrix_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(matrix_val, T_MATRIX, "select-rows", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(matrix_val));
 
-	int columns = source->matrix.columns;
-	int source_rows = source->matrix.rows;
+	int n_source_columns = source->matrix.columns;
+	int n_source_rows = source->matrix.rows;
+
+	if (VAL_TAG(indices_val) == T_MATRIX) {
+		Object *index_vector = OBJECT_AT(VAL_DATA(indices_val));
+		int n_indices = vector_length(interp, index_vector, "an index vector");
+		if (n_indices < 0)
+			return;
+
+		const double *elements = index_vector->matrix.elements;
+		for (int i = 0; i < n_indices; i++) {
+			int row = (int)elements[i];
+			if (row < 0 || row >= n_source_rows) {
+				fail(interp, "row %d out of bounds (%d rows)", row, n_source_rows);
+				return;
+			}
+		}
+
+		NEW_MATRIX(vector_selected_handle, vector_selected, n_indices, n_source_columns);
+
+		for (int i = 0; i < n_indices; i++)
+			memcpy(&MAT(vector_selected, i, 0), &MAT(source, (int)elements[i], 0), sizeof(double) * (size_t)n_source_columns);
+		chain_sp[-2] = make_matrix(vector_selected_handle);
+
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+	}
+
+	if (VAL_TAG(indices_val) != T_ARRAY) {
+		fail(interp, "expected an index array or vector; got %s", tag_name(VAL_TAG(indices_val)));
+		return;
+	}
+	Object *indices = OBJECT_AT(VAL_DATA(indices_val));
 
 	for (int i = 0; i < indices->len; i++) {
 		if (VAL_TAG(indices->items[i]) != T_FLOAT) {
-			fail(interp, "select-rows: index %d is %s, expected a float", i, tag_name(VAL_TAG(indices->items[i])));
+			fail(interp, "index %d is %s, expected a float", i, tag_name(VAL_TAG(indices->items[i])));
 			return;
 		}
 		int row = (int)VAL_NUMBER(indices->items[i]);
-		if (row < 0 || row >= source_rows) {
-			fail(interp, "select-rows: row %d out of bounds (%d rows)", row, source_rows);
+		if (row < 0 || row >= n_source_rows) {
+			fail(interp, "row %d out of bounds (%d rows)", row, n_source_rows);
 			return;
 		}
 	}
 
-	NEW_MATRIX(selected_handle, selected, indices->len, columns);
+	NEW_MATRIX(selected_handle, selected, indices->len, n_source_columns);
 
 	for (int i = 0; i < indices->len; i++) {
 		int row = (int)VAL_NUMBER(indices->items[i]);
-		memcpy(&MAT(selected, i, 0), &MAT(source, row, 0), sizeof(double) * (size_t)columns);
+		memcpy(&MAT(selected, i, 0), &MAT(source, row, 0), sizeof(double) * (size_t)n_source_columns);
 	}
 
-	interp->data_stack[interp->dsp - 2] = make_matrix(selected_handle);
-	interp->dsp--;
+	chain_sp[-2] = make_matrix(selected_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_augment(DISPATCH_ARGS) {
-	PEEK_TYPE_AT(b_val, 0, "augment", T_MATRIX);
-	PEEK_TYPE_AT(a_val, 1, "augment", T_MATRIX);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val b_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(b_val, T_MATRIX, "augment", "a matrix");
+	Val a_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(a_val, T_MATRIX, "augment", "a matrix");
 	Object *a = OBJECT_AT(VAL_DATA(a_val));
 	Object *b = OBJECT_AT(VAL_DATA(b_val));
 
 	if (a->matrix.rows != b->matrix.rows) {
-		fail(interp, "augment: row counts differ (%d vs %d)", a->matrix.rows, b->matrix.rows);
+		fail(interp, "row counts differ (%d vs %d)", a->matrix.rows, b->matrix.rows);
 		return;
 	}
 
@@ -909,20 +1252,22 @@ void p_augment(DISPATCH_ARGS) {
 		memcpy(&MAT(augmented, i, a_columns), &MAT(b, i, 0), sizeof(double) * (size_t)b_columns);
 	}
 
-	interp->data_stack[interp->dsp - 2] = make_matrix(augmented_handle);
-	interp->dsp--;
+	chain_sp[-2] = make_matrix(augmented_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_vstack(DISPATCH_ARGS) {
-	PEEK_TYPE_AT(b_val, 0, "vstack", T_MATRIX);
-	PEEK_TYPE_AT(a_val, 1, "vstack", T_MATRIX);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val b_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(b_val, T_MATRIX, "vstack", "a matrix");
+	Val a_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(a_val, T_MATRIX, "vstack", "a matrix");
 	Object *a = OBJECT_AT(VAL_DATA(a_val));
 	Object *b = OBJECT_AT(VAL_DATA(b_val));
 
 	if (a->matrix.columns != b->matrix.columns) {
-		fail(interp, "vstack: column counts differ (%d vs %d)", a->matrix.columns, b->matrix.columns);
+		fail(interp, "column counts differ (%d vs %d)", a->matrix.columns, b->matrix.columns);
 		return;
 	}
 
@@ -936,42 +1281,49 @@ void p_vstack(DISPATCH_ARGS) {
 	memcpy(stacked->matrix.elements + a_cells, b->matrix.elements,
 			sizeof(double) * (size_t)b_rows * (size_t)columns);
 
-	interp->data_stack[interp->dsp - 2] = make_matrix(stacked_handle);
-	interp->dsp--;
+	chain_sp[-2] = make_matrix(stacked_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_variance(DISPATCH_ARGS) {
-	POP_MATRIX(source, "var");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val source_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "var", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
 	if (n < 2) {
-		fail(interp, "var: needs at least 2 elements; got %zu", n);
+		fail(interp, "needs at least 2 elements; got %zu", n);
 		return;
 	}
 
-	push(interp, make_float(matrix_variance_overall(source)));
+	chain_sp[-1] = make_float(matrix_variance_overall(source));
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_quantile(DISPATCH_ARGS) {
-	POP_FLOAT(probability, "quantile", "probability");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val probability_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(probability_val, T_FLOAT, "quantile", "a float probability");
+	double probability = VAL_NUMBER(probability_val);
 	if (probability < 0.0 || probability > 1.0) {
-		fail(interp, "quantile: probability must be in [0,1]; got %g", probability);
+		fail(interp, "probability must be in [0,1]; got %g", probability);
 		return;
 	}
 
-	POP_MATRIX(source, "quantile");
+	Val source_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "quantile", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
 	if (n == 0) {
-		fail(interp, "quantile: empty matrix");
+		fail(interp, "empty matrix");
 		return;
 	}
 
 	double *sorted = malloc(n * sizeof(double));
 	if (!sorted) {
-		fail(interp, "quantile: out of memory");
+		fail(interp, "out of memory");
 		return;
 	}
 	memcpy(sorted, source->matrix.elements, n * sizeof(double));
@@ -985,7 +1337,7 @@ void p_quantile(DISPATCH_ARGS) {
 		value += fraction * (sorted[lower + 1] - sorted[lower]);
 
 	free(sorted);
-	push(interp, make_float(value));
+	chain_sp[-2] = make_float(value);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }

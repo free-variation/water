@@ -9,16 +9,16 @@
 :x 10 
 
 [ 1 2 3 ] 
-error: destruct: expected array, set, or frame; got a float
-error: destruct: expected array, set, or frame; got a string
-error: destruct: expected array, set, or frame; got a symbol
-error: destruct: stack too shallow
+error: expected array, set, or frame; got a float
+error: expected array, set, or frame; got a string
+error: expected array, set, or frame; got a symbol
+error: stack underflow
 1 2 3 
 10 20 30 
 11 12 
 100 200 300 
 hi :sym 42 
-error: destruct-to: length mismatch (source 2, target 3)
-error: destruct-to: source must be an array; got a float
-error: destruct-to: target must be an array; got a float
-error: destruct-to: target item at index 0 must be symbol or xt; got a float
+error: length mismatch (source 2, target 3)
+error: source must be an array; got a float
+error: target must be an array; got a float
+error: target item at index 0 must be symbol or xt; got a float

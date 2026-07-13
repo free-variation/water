@@ -6,7 +6,7 @@
 0 
 1 
 0 
-error: regex: missing terminating ] for character class
+error: missing terminating ] for character class
 [ [ "chr1" "chr" "1" ]
   [ "chr2" "chr" "2" ] ] 
 [ [ "x=1" "x" "1" ]
@@ -29,9 +29,9 @@ error: regex: missing terminating ] for character class
 4 
 3 
 1 
-error: regex: missing closing parenthesis
-error: match-all: expected a string; got a float
-error: match-all: expected a string; got a float
+error: missing closing parenthesis
+error: expected a string; got a float
+error: expected a string; got a float
 heLLo 
 (c|g|t)(c|g|t)(c|g|t)(c|g|t) 
 abc 
@@ -48,11 +48,11 @@ XaX
 a b c 
 a(c|g|t)c(a|g|t) 
  
-error: regex: missing closing parenthesis
-error: replace: backref \3 but pattern has 0 group(s)
-error: replace: expected a string; got a float
-error: replace: expected a string; got a float
-error: replace: expected a string; got a float
+error: missing closing parenthesis
+error: backref \3 but pattern has 0 group(s)
+error: expected a string; got a float
+error: expected a string; got a float
+error: expected a string; got a float
 [ "chr1" "chr" "1" ] 
 [ "x=1" "x" "1" ] 
 [ "1" ] 
@@ -67,11 +67,11 @@ error: replace: expected a string; got a float
 [ "café" ] 
 [ "naïve_x" ] 
 [ "a" ] 
-error: regex: missing closing parenthesis
-error: match: expected a string; got a float
-error: match: expected a string; got a float
+error: missing closing parenthesis
+error: expected a string; got a float
+error: expected a string; got a float
 [ "a" "b" "c" ] [ "a" "" "b" ] [ "" "a" "" ] [ "nodelim" ] [ "" ] [ "a" "b" "c" ] [ "a" "b" "c" ] 1 
-error: split: expected a string; got a float
+error: expected a string; got a float
 3 
 0 
 -1 

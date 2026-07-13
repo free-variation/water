@@ -12,21 +12,18 @@ struct Interpreter;
 	(interp)->dsp = (int)((reg_sp) - (interp)->data_stack); \
 } while (0)
 
-#define REQUIRE_STACK_DEPTH_MSG(interp, reg_ip, reg_sp, popped, ...) do { \
+#define REQUIRE_STACK_DEPTH(interp, reg_ip, reg_sp, popped) do { \
 	if (unlikely((reg_sp) - (popped) < (interp)->data_stack)) { \
 		SYNC_REGISTERS(interp, reg_ip, reg_sp); \
-		fail(interp, __VA_ARGS__); \
+		fail(interp, "stack underflow"); \
 		return; \
 	} \
 } while (0)
 
-#define REQUIRE_STACK_DEPTH(interp, reg_ip, reg_sp, popped) \
-	REQUIRE_STACK_DEPTH_MSG(interp, reg_ip, reg_sp, popped, "data stack underflow")
-
 #define REQUIRE_STACK_ROOM(interp, reg_ip, reg_sp, pushed) do { \
 	if (unlikely((reg_sp) + (pushed) > (interp)->data_stack + DATA_STACK_DEPTH)) { \
 		SYNC_REGISTERS(interp, reg_ip, reg_sp); \
-		fail(interp, "data stack overflow"); \
+		fail(interp, "stack overflow"); \
 		return; \
 	} \
 } while (0)

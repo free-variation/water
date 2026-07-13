@@ -32,11 +32,11 @@
 0 
 1 
 1 
-error: unify: cannot unify 1 with 2
-error: unify: cannot unify "a" with "b"
-error: unify: cannot unify :foo with :bar
-error: unify: cannot unify [ 1 2 ] with [ 1 2 3 ]
-error: unify: cannot unify [ 1 2 ] with [ 1 9 ]
-error: unify: cannot unify { :a 1 } with { :a 2 }
-error: unify: cannot unify 1 with 2
+error: cannot unify 1 with 2
+error: cannot unify "a" with "b"
+error: cannot unify :foo with :bar
+error: cannot unify [ 1 2 ] with [ 1 2 3 ]
+error: cannot unify [ 1 2 ] with [ 1 9 ]
+error: cannot unify { :a 1 } with { :a 2 }
+error: cannot unify 1 with 2
 1 

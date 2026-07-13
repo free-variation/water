@@ -4,7 +4,7 @@
 1 
 0 0 0 
 3.5 3.5 3.5 
-error: var: needs at least 2 elements; got 1
+error: needs at least 2 elements; got 1
 1 
 10 
 5.5 
@@ -16,9 +16,9 @@ error: var: needs at least 2 elements; got 1
 42 
 2 
 6.5 
-error: quantile: probability must be in [0,1]; got 1.5
-error: quantile: expected a float probability; got a symbol
-error: quantile: empty matrix
+error: probability must be in [0,1]; got 1.5
+error: expected a float probability; got a symbol
+error: empty matrix
 5.5 
 5 
 2.5 
@@ -30,8 +30,8 @@ error: quantile: empty matrix
 3.25 
 9.1 
 1 
-error: quantile: probability must be in [0,1]; got 1.5
-in percentile
+error: probability must be in [0,1]; got 1.5
+in quantile ← percentile
 4.5 
 4 
 0 

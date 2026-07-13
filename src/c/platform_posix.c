@@ -282,11 +282,16 @@ static char *resolve_program_path(const char *name) {
 }
 
 void p_start_process(DISPATCH_ARGS) {
-	PEEK_TYPE_AT(argv_val, 0, "start-process", T_ARRAY);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val argv_val = chain_sp[-1];
+	if (VAL_TAG(argv_val) != T_ARRAY) {
+		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(argv_val)));
+		return;
+	}
 	Object *argv_array = OBJECT_AT(VAL_DATA(argv_val));
 	int argc = argv_array->len;
 	if (argc < 1) {
-		fail(interp, "start-process: argv needs at least the program name");
+		fail(interp, "argv needs at least the program name");
 		return;
 	}
 
@@ -294,7 +299,7 @@ void p_start_process(DISPATCH_ARGS) {
 	for (int i = 0; i < argc; i++) {
 		if (VAL_TAG(argv_array->items[i]) != T_STRING) {
 			free(argv);
-			fail(interp, "start-process: argv element %d is %s, expected a string",
+			fail(interp, "argv element %d is %s, expected a string",
 					i, tag_name(VAL_TAG(argv_array->items[i])));
 			return;
 		}
@@ -306,7 +311,7 @@ void p_start_process(DISPATCH_ARGS) {
 	if (!program_path) {
 		const char *name = argv[0];
 		free(argv);
-		fail(interp, "start-process: %s: command not found", name);
+		fail(interp, "%s: command not found", name);
 		return;
 	}
 
@@ -316,7 +321,7 @@ void p_start_process(DISPATCH_ARGS) {
 	if (pipe(in_pipe) < 0 || pipe(out_pipe) < 0 || pipe(err_pipe) < 0) {
 		free(argv);
 		free(program_path);
-		fail(interp, "start-process: pipe failed");
+		fail(interp, "pipe failed");
 		return;
 	}
 
@@ -328,7 +333,7 @@ void p_start_process(DISPATCH_ARGS) {
 	if (pid < 0) {
 		free(argv);
 		free(program_path);
-		fail(interp, "start-process: fork failed");
+		fail(interp, "fork failed");
 		return;
 	}
 
@@ -358,15 +363,21 @@ void p_start_process(DISPATCH_ARGS) {
 	frame_put(proc, intern_symbol(interp, "out"), make_stream(out_pipe[0]));
 	frame_put(proc, intern_symbol(interp, "err"), make_stream(err_pipe[0]));
 
-	interp->data_stack[interp->dsp - 1] = make_frame(proc_handle);
+	chain_sp[-1] = make_frame(proc_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_wait(DISPATCH_ARGS) {
-	POP_INT(pid, "wait", "pid");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val pid_val = chain_sp[-1];
+	if (VAL_TAG(pid_val) != T_FLOAT) {
+		fail(interp, "expected a float pid; got %s", tag_name(VAL_TAG(pid_val)));
+		return;
+	}
+	int pid = (int)VAL_NUMBER(pid_val);
 	if (pid <= 0) {
-		fail(interp, "wait: invalid pid %d (expected a spawned process id)", pid);
+		fail(interp, "invalid pid %d (expected a spawned process id)", pid);
 		return;
 	}
 
@@ -377,7 +388,7 @@ void p_wait(DISPATCH_ARGS) {
 	} while (result < 0 && errno == EINTR);
 
 	if (result < 0) {
-		fail(interp, "wait: %s", strerror(errno));
+		fail(interp, "%s", strerror(errno));
 		return;
 	}
 
@@ -388,15 +399,21 @@ void p_wait(DISPATCH_ARGS) {
 		code = 128 + WTERMSIG(status);
 	else
 		code = -1;
-	push(interp, make_float((double)code));
+	chain_sp[-1] = make_float((double)code);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_stop_process(DISPATCH_ARGS) {
-	POP_INT(pid, "stop", "pid");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val pid_val = chain_sp[-1];
+	if (VAL_TAG(pid_val) != T_FLOAT) {
+		fail(interp, "expected a float pid; got %s", tag_name(VAL_TAG(pid_val)));
+		return;
+	}
+	int pid = (int)VAL_NUMBER(pid_val);
 	if (pid <= 0) {
-		fail(interp, "stop: invalid pid %d (expected a spawned process id)", pid);
+		fail(interp, "invalid pid %d (expected a spawned process id)", pid);
 		return;
 	}
 
@@ -409,7 +426,7 @@ void p_stop_process(DISPATCH_ARGS) {
 	} while (result < 0 && errno == EINTR);
 
 	if (result < 0) {
-		fail(interp, "stop: %s", strerror(errno));
+		fail(interp, "%s", strerror(errno));
 		return;
 	}
 
@@ -420,13 +437,19 @@ void p_stop_process(DISPATCH_ARGS) {
 		code = 128 + WTERMSIG(status);
 	else
 		code = -1;
-	push(interp, make_float((double)code));
+	chain_sp[-1] = make_float((double)code);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_running(DISPATCH_ARGS) {
-	POP_INT(pid, "running?", "pid");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val pid_val = chain_sp[-1];
+	if (VAL_TAG(pid_val) != T_FLOAT) {
+		fail(interp, "expected a float pid; got %s", tag_name(VAL_TAG(pid_val)));
+		return;
+	}
+	int pid = (int)VAL_NUMBER(pid_val);
 
 	siginfo_t info;
 	info.si_pid = 0;
@@ -435,7 +458,7 @@ void p_running(DISPATCH_ARGS) {
 		result = waitid(P_PID, (id_t)pid, &info, WEXITED | WNOHANG | WNOWAIT);
 	} while (result < 0 && errno == EINTR);
 
-	push(interp, make_bool(result == 0 && info.si_pid == 0));
+	chain_sp[-1] = make_bool(result == 0 && info.si_pid == 0);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }

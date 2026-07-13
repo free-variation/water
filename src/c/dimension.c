@@ -204,22 +204,27 @@ static int new_dimension() {
 	return n_dimensions++;
 }
 
-static int unit_eq(Unit *left, Unit *right) {
+static int rational_eq(Rational left, Rational right) {
+	return left.numerator == right.numerator && left.denominator == right.denominator;
+}
+
+static int same_dimensions(Unit *left, Unit *right) {
 	if (left->n_terms != right->n_terms)
 		return 0;
 
-	if (left->scale.numerator != right->scale.numerator
-			|| left->scale.denominator != right->scale.denominator)
-		return 0;
-
-
 	for (int i = 0; i < left->n_terms; i++)
 		if (left->terms[i].dimension != right->terms[i].dimension
-				|| left->terms[i].power.numerator != right->terms[i].power.numerator
-				|| left->terms[i].power.denominator != right->terms[i].power.denominator)
+				|| !rational_eq(left->terms[i].power, right->terms[i].power))
 			return 0;
 
 	return 1;
+}
+
+static int unit_eq(Unit *left, Unit *right) {
+	if (!rational_eq(left->scale, right->scale))
+		return 0;
+
+	return same_dimensions(left, right);
 }
 
 static int unit_intern(DimTerm *terms, int n_terms, Rational scale) {
@@ -276,14 +281,8 @@ int unit_conversion(int from, int to, double *factor) {
 	Unit *source = &units[from];
 	Unit *target = &units[to];
 
-	if (source->n_terms != target->n_terms)
+	if (!same_dimensions(source, target))
 		return 0;
-
-	for (int i = 0; i < source->n_terms; i++)
-		if (source->terms[i].dimension != target->terms[i].dimension
-				|| source->terms[i].power.numerator != target->terms[i].power.numerator
-				|| source->terms[i].power.denominator != target->terms[i].power.denominator)
-			return 0;
 
 	*factor = ((double)source->scale.numerator / source->scale.denominator)
 		/ ((double)target->scale.numerator / target->scale.denominator);
@@ -304,21 +303,21 @@ int unit_id_valid(int unit) {
 }
 
 void dimension_save(FILE *file) {
-	w_i32(file, n_dimensions - init_n_dimensions);
+	write_i32(file, n_dimensions - init_n_dimensions);
 	for (int i = init_n_dimensions; i < n_dimensions; i++)
-		w_i32(file, dimension_names[i]);
+		write_i32(file, dimension_names[i]);
 
-	w_i32(file, n_units - init_n_units);
+	write_i32(file, n_units - init_n_units);
 	for (int i = init_n_units; i < n_units; i++) {
-		w_i32(file, units[i].n_terms);
+		write_i32(file, units[i].n_terms);
 		for (int t = 0; t < units[i].n_terms; t++) {
-			w_i32(file, units[i].terms[t].dimension);
-			w_i32(file, units[i].terms[t].power.numerator);
-			w_i32(file, units[i].terms[t].power.denominator);
+			write_i32(file, units[i].terms[t].dimension);
+			write_i32(file, units[i].terms[t].power.numerator);
+			write_i32(file, units[i].terms[t].power.denominator);
 		}
-		w_i32(file, units[i].scale.numerator);
-		w_i32(file, units[i].scale.denominator);
-		w_i32(file, units[i].name);
+		write_i32(file, units[i].scale.numerator);
+		write_i32(file, units[i].scale.denominator);
+		write_i32(file, units[i].name);
 	}
 }
 
@@ -329,28 +328,28 @@ int dimension_load(FILE *file) {
 	n_units = init_n_units;
 
 	int32_t user_dims;
-	if (!r_i32(file, &user_dims) || user_dims < 0)
+	if (!read_i32(file, &user_dims) || user_dims < 0)
 		return 0;
 	for (int i = 0; i < user_dims; i++) {
 		int32_t name;
-		if (!r_i32(file, &name))
+		if (!read_i32(file, &name))
 			return 0;
 		GROW_IF_FULL_SYS(n_dimensions, dimension_cap, dimension_names);
 		dimension_names[n_dimensions++] = name;
 	}
 
 	int32_t user_units;
-	if (!r_i32(file, &user_units) || user_units < 0)
+	if (!read_i32(file, &user_units) || user_units < 0)
 		return 0;
 	for (int i = 0; i < user_units; i++) {
 		int32_t n_terms;
-		if (!r_i32(file, &n_terms) || n_terms < 0)
+		if (!read_i32(file, &n_terms) || n_terms < 0)
 			return 0;
 
 		DimTerm *terms = malloc(sizeof(DimTerm) * (size_t)(n_terms > 0 ? n_terms : 1));
 		for (int t = 0; t < n_terms; t++) {
 			int32_t dimension, numerator, denominator;
-			if (!r_i32(file, &dimension) || !r_i32(file, &numerator) || !r_i32(file, &denominator)) {
+			if (!read_i32(file, &dimension) || !read_i32(file, &numerator) || !read_i32(file, &denominator)) {
 				free(terms);
 				return 0;
 			}
@@ -360,7 +359,7 @@ int dimension_load(FILE *file) {
 		}
 
 		int32_t scale_numerator, scale_denominator, name;
-		if (!r_i32(file, &scale_numerator) || !r_i32(file, &scale_denominator) || !r_i32(file, &name)) {
+		if (!read_i32(file, &scale_numerator) || !read_i32(file, &scale_denominator) || !read_i32(file, &name)) {
 			free(terms);
 			return 0;
 		}
@@ -435,14 +434,14 @@ static int unit_combine(int left, int right, int sign, double *collapse_factor) 
 int unit_multiply(Interpreter *interp, int left, int right, double *collapse_factor) {
 	int combined = unit_combine(left, right, 1, collapse_factor);
 	if (combined < 0)
-		fail(interp, "*: unit scale or exponent overflow");
+		fail(interp, "unit scale or exponent overflow");
 	return combined;
 }
 
 int unit_divide(Interpreter *interp, int left, int right, double *collapse_factor) {
 	int combined = unit_combine(left, right, -1, collapse_factor);
 	if (combined < 0)
-		fail(interp, "/: unit scale or exponent overflow");
+		fail(interp, "unit scale or exponent overflow");
 	return combined;
 }
 
@@ -452,7 +451,7 @@ int unit_pow(Interpreter *interp, int unit, int numerator, int denominator) {
 	int success;
 	Rational scale = rational_pow(units[unit].scale, exponent, &success);
 	if (!success) {
-		fail(interp, "unit: cannot raise a scaled unit to the power %d/%d exactly (irrational root or scale)",
+		fail(interp, "cannot raise a scaled unit to the power %d/%d exactly (irrational root or scale)",
 				exponent.numerator, exponent.denominator);
 		return -1;
 	}
@@ -464,7 +463,7 @@ int unit_pow(Interpreter *interp, int unit, int numerator, int denominator) {
 		scaled_terms[i].dimension = base_unit->terms[i].dimension;
 		if (!rational_multiply(base_unit->terms[i].power, exponent, &scaled_terms[i].power)) {
 			free(scaled_terms);
-			fail(interp, "unit: exponent overflow raising to %d/%d", numerator, denominator);
+			fail(interp, "exponent overflow raising to %d/%d", numerator, denominator);
 			return -1;
 		}
 	}
@@ -568,7 +567,7 @@ void apply_unit(Interpreter *interp, int cfa) {
 
 	POP(magnitude);
 	if (VAL_TAG(magnitude) != T_FLOAT && VAL_TAG(magnitude) != T_MATRIX) {
-		fail(interp, "unit: expected a number or matrix");
+		fail(interp, "expected a number or matrix");
 		return;
 	}
 
@@ -587,26 +586,32 @@ void dounit(DISPATCH_ARGS) {
 void p_unit(DISPATCH_ARGS) {
 	char *name = next_token();
 	if (!name || !*name) {
-		fail(interp, "unit: expected a name");
+		fail(interp, "expected a name");
 		return;
 	}
 
-	POP_QUANTITY(quantity, "unit");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val quantity_val = chain_sp[-1];
+	if (VAL_TAG(quantity_val) != T_QUANTITY) {
+		fail(interp, "expected %s; got %s", tag_name(T_QUANTITY), tag_name(VAL_TAG(quantity_val)));
+		return;
+	}
+	Pair *quantity = &pairs.table[VAL_DATA(quantity_val)];
 	int source_unit = (int)quantity->tail.bits;
 	Val magnitude = quantity->head;
 	if (VAL_TAG(magnitude) != T_FLOAT) {
-		fail(interp, "unit: scale must be a scalar number; got %s", tag_name(VAL_TAG(magnitude)));
+		fail(interp, "scale must be a scalar number; got %s", tag_name(VAL_TAG(magnitude)));
 		return;
 	}
 
 	double value = VAL_NUMBER(magnitude);
 	Rational scale;
 	if (!rational_of_double(value, &scale)) {
-		fail(interp, "unit: scale must be a positive simple rational of the base unit; got %g", value);
+		fail(interp, "scale must be a positive simple rational of the base unit; got %g", value);
 		return;
 	}
 	if (!rational_multiply(scale, units[source_unit].scale, &scale)) {
-		fail(interp, "unit: scale overflow combining with the base unit");
+		fail(interp, "scale overflow combining with the base unit");
 		return;
 	}
 
@@ -627,5 +632,5 @@ void p_unit(DISPATCH_ARGS) {
 	emit(interp, (cell)dounit);
 	emit(interp, (cell)unit);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }

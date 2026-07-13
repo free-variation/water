@@ -14,9 +14,13 @@ outer got  10
 11 
 L2 
 L1 inner-xt threw 
-1 / : division by zero 
-caught: / : division by zero 
+1 {
+  :message division by zero
+  :trace in / ← [: 1 0 / :]
+}
+
+caught: division by zero 
 after 
 inner caught 
-error: shift/shift-with: no enclosing reset on the return stack
-in throw
+error: no enclosing reset on the return stack
+in shift-with ← throw

@@ -27,5 +27,5 @@ false
 1 
 1 
 1 
-error: frame>json: cannot serialize a set
-error: frame>json: cannot serialize a non-boolean symbol
+error: cannot serialize a set
+error: cannot serialize a non-boolean symbol

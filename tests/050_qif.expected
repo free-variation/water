@@ -6,5 +6,5 @@ truthy
 falsy 
 16 
 0 
-error: ?if: stack too shallow
-in oops
+error: stack underflow
+in (?0branch) ← oops

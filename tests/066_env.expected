@@ -6,5 +6,5 @@ world
 0 
 1 
 1 
-error: env: expected a string; got a float
-error: env!: expected a string; got a float
+error: expected a string; got a float
+error: expected a string; got a float

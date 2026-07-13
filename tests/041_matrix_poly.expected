@@ -31,9 +31,9 @@
 <matrix 2x2>
           1          3
           2          4
-3 2 error: matrix: 5 elements does not divide evenly into 2 rows
-error: matrix: 3 elements does not divide evenly into 0 rows
-error: matrix: 3 elements does not divide evenly into -1 rows
-error: matrix: expected an array below the dimension(s); got a string
-error: matrix: stack too shallow (expected array and at least one dimension)
-error: matrix: stack too shallow (expected array and at least one dimension)
+3 2 error: 5 elements does not divide evenly into 2 rows
+error: 3 elements does not divide evenly into 0 rows
+error: 3 elements does not divide evenly into -1 rows
+error: expected an array below the dimension(s); got a string
+error: stack underflow (expected array and at least one dimension)
+error: stack underflow (expected array and at least one dimension)

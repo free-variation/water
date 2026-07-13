@@ -226,6 +226,34 @@ clear
 [ 1 2 3 4 ] 2 2 matrix sort . cr    \ error: only vector-shaped matrices sort
 
 clear
+\ argsort ( m -- m ): the sorting permutation of a vector, shape preserved —
+\ element i is the source index of the i-th smallest value. Ties keep index
+\ order (stable ranks); NaNs go last in index order; the source is unchanged.
+
+[ 30 10 20 ] vector argsort .       \ [ 1 2 0 ] as 3x1
+[ 1 2 3 ] vector argsort .          \ [ 0 1 2 ] already ascending
+[ 3 2 1 ] vector argsort .          \ [ 2 1 0 ] reversed
+[ 7 ] vector argsort .              \ [ 0 ] single
+[ ] vector argsort .                \ 0x1 empty
+[ 5 4 6 ] 1 3 matrix argsort .      \ [ 1 0 2 ] as 1x3, shape preserved
+
+\ ties break by source index: the two 1.2s keep their order
+[ 3.5 1.2 9 1.2 ] vector argsort .  \ [ 1 3 0 2 ]
+
+\ NaNs last, in index order (ln of a negative is NaN)
+[ -3 1 -1 ] vector ln argsort .     \ [ 1 0 2 ]
+
+\ ranks are argsort applied twice
+[ 30 10 20 ] vector argsort argsort .   \ [ 2 0 1 ]
+
+\ functional: the source vector is not mutated
+[ 3 1 2 ] vector dup argsort drop .     \ [ 3 1 2 ] as 3x1
+
+\ === errors ===
+5 argsort . cr                      \ error: not a matrix
+[ 1 2 3 4 ] 2 2 matrix argsort . cr \ error: only vectors argsort
+
+clear
 \ array>set ( array -- set ): one sorted pass (val_cmp) + dedup, O(n log n).
 \ Sorts by val_cmp, dedups equal elements, and does not mutate the source array.
 

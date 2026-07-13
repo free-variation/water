@@ -12,7 +12,7 @@
           1          2          3          4
           5          6          7          8
           9         10         11         12
-error: submatrix: [0,4)x[0,1) out of bounds for 3x4
+error: [0,4)x[0,1) out of bounds for 3x4
 <matrix 3x4>
           9         10         11         12
           1          2          3          4
@@ -28,8 +28,59 @@ error: submatrix: [0,4)x[0,1) out of bounds for 3x4
           1          2          3          4
           5          6          7          8
           9         10         11         12
-error: select-rows: row 3 out of bounds (2 rows)
-error: select-rows: index 1 is a symbol, expected a float
+error: row 3 out of bounds (2 rows)
+error: index 1 is a symbol, expected a float
+<matrix 2x4>
+          9         10         11         12
+          1          2          3          4
+<matrix 2x4>
+          5          6          7          8
+          9         10         11         12
+<matrix 0x4>
+error: row 5 out of bounds (2 rows)
+error: expected an index vector (nx1 or 1xn); got 2x2
+error: expected an index array or vector; got a string
+<matrix 3x1>
+          1
+          3
+          4
+<matrix 1x2>
+          0          2
+<matrix 2x1>
+          1
+          2
+<matrix 0x1>
+<matrix 2x1>
+          1
+          3
+error: expected a matrix mask; got a float
+<matrix 2x2>
+          3          4
+          5          6
+<matrix 4x1>
+          0
+          1
+          0
+          1
+<matrix 2x2>
+          1          0
+          1          0
+<matrix 2x1>
+          1
+          3
+1 0 
+<matrix 2x1>
+          0
+          1
+<matrix 3x1>
+          1
+          0
+          1
+<matrix 2x1>
+          0
+          2
+1 0 
+error: expected a float or a matrix; got a string
 <matrix 2x3>
           1          2          9
           3          4          8
@@ -46,8 +97,8 @@ error: select-rows: index 1 is a symbol, expected a float
 <matrix 2x3>
           7          1          2
           8          3          4
-error: augment: row counts differ (2 vs 3)
-error: augment: expected a matrix; got an array
+error: row counts differ (2 vs 3)
+error: expected a matrix; got an array
 <matrix 3x2>
           1          2
           3          4
@@ -62,8 +113,8 @@ error: augment: expected a matrix; got an array
           1          2
           3          4
           5          6
-error: vstack: column counts differ (2 vs 3)
-error: vstack: expected a matrix; got an array
+error: column counts differ (2 vs 3)
+error: expected a matrix; got an array
 <matrix 2x2>
           1          3
           2          4

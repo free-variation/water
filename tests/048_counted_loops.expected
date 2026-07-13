@@ -1,13 +1,13 @@
 *****
 7 7 7 
 0 1 2 3 4 
-error: times: count must be non-negative; got -1
-error: times: expected a float count; got an execution token
-error: times: expected an execution token; got a float
+error: count must be non-negative; got -1
+error: expected a float count; got an execution token
+error: expected an execution token; got a float
 0 1 2 3 4 
 
 45 
 30 
-error: i-times: count must be non-negative; got -1
-error: i-times: expected a float count; got an execution token
-error: i-times: expected an execution token; got a float
+error: count must be non-negative; got -1
+error: expected a float count; got an execution token
+error: expected an execution token; got a float

@@ -2,51 +2,86 @@
 #include "water.h"
 
 void p_env(DISPATCH_ARGS) {
-	POP_STRING(name, "env");
-	const char *value = getenv(name->bytes);
-	if (value == NULL)
-		push(interp, make_tagged(T_NONE, 0));
-	else
-		push(interp, make_string(object_new_string(interp, value, (int)strlen(value))));
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val name_val = chain_sp[-1];
+	if (VAL_TAG(name_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(name_val)));
+		return;
+	}
 
-	DISPATCH(interp);
+	const char *value = getenv(OBJECT_AT(VAL_DATA(name_val))->bytes);
+	if (value == NULL)
+		chain_sp[-1] = make_tagged(T_NONE, 0);
+	else {
+		int handle = object_new_string(interp, value, (int)strlen(value));
+		if (interp->error_flag)
+			return;
+		chain_sp[-1] = make_string(handle);
+	}
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_env_set(DISPATCH_ARGS) {
-	POP_STRING(value, "env!");
-	POP_STRING(name, "env!");
-	if (setenv(name->bytes, value->bytes, 1) != 0)
-		fail(interp, "env!: could not set %s", name->bytes);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val value_val = chain_sp[-1];
+	if (VAL_TAG(value_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(value_val)));
+		return;
+	}
+	Val name_val = chain_sp[-2];
+	if (VAL_TAG(name_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(name_val)));
+		return;
+	}
+	Object *name = OBJECT_AT(VAL_DATA(name_val));
 
-	DISPATCH(interp);
+	if (setenv(name->bytes, OBJECT_AT(VAL_DATA(value_val))->bytes, 1) != 0) {
+		fail(interp, "could not set %s", name->bytes);
+		return;
+	}
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_cd(DISPATCH_ARGS) {
-	POP_STRING(path, "cd");
-	if (chdir(path->bytes) != 0)
-		fail(interp, "cd: cannot change to %s", path->bytes);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val path_val = chain_sp[-1];
+	if (VAL_TAG(path_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
+		return;
+	}
+	Object *path = OBJECT_AT(VAL_DATA(path_val));
 
-	DISPATCH(interp);
+	if (chdir(path->bytes) != 0) {
+		fail(interp, "cannot change to %s", path->bytes);
+		return;
+	}
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_cwd(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
 	char buffer[PATH_MAX];
 	if (getcwd(buffer, sizeof buffer) == NULL) {
-		fail(interp, "cwd: cannot read working directory");
+		fail(interp, "cannot read working directory");
 		return;
 	}
-	push(interp, make_string(object_new_string(interp, buffer, (int)strlen(buffer))));
 
-	DISPATCH(interp);
+	int handle = object_new_string(interp, buffer, (int)strlen(buffer));
+	if (interp->error_flag)
+		return;
+	*chain_sp = make_string(handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
-void p_read_file(DISPATCH_ARGS) {
-	POP_STRING(path, "read-file");
-
-	FILE *file = fopen(path->bytes, "rb");
+static FILE *open_sized_read(Interpreter *interp, const char *path, long *size_out) {
+	FILE *file = fopen(path, "rb");
 	if (file == NULL) {
-		fail(interp, "read-file: cannot open %s", path->bytes);
-		return;
+		fail(interp, "cannot open %s", path);
+		return NULL;
 	}
 
 	fseek(file, 0, SEEK_END);
@@ -54,9 +89,26 @@ void p_read_file(DISPATCH_ARGS) {
 	rewind(file);
 	if (size < 0 || size > INT_MAX) {
 		fclose(file);
-		fail(interp, "read-file: cannot size %s", path->bytes);
+		fail(interp, "cannot size %s", path);
+		return NULL;
+	}
+
+	*size_out = size;
+	return file;
+}
+
+void p_read_file(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val path_val = chain_sp[-1];
+	if (VAL_TAG(path_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
 		return;
 	}
+
+	long size;
+	FILE *file = open_sized_read(interp, OBJECT_AT(VAL_DATA(path_val))->bytes, &size);
+	if (!file)
+		return;
 
 	int handle = object_new_string_uninit(interp, (int)size);
 	if (interp->error_flag) {
@@ -70,18 +122,15 @@ void p_read_file(DISPATCH_ARGS) {
 
 	string->len = (int)got;
 	string->bytes[got] = 0;
-	push(interp, make_string(handle));
+	chain_sp[-1] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
-static void write_file(Interpreter *interp, const char *mode, const char *op) {
-	POP_STRING(path, op);
-	POP_STRING(content, op);
-
+static void write_file(Interpreter *interp, Object *content, Object *path, const char *mode) {
 	FILE *file = fopen(path->bytes, mode);
 	if (file == NULL) {
-		fail(interp, "%s: cannot open %s", op, path->bytes);
+		fail(interp, "cannot open %s", path->bytes);
 		return;
 	}
 
@@ -89,20 +138,32 @@ static void write_file(Interpreter *interp, const char *mode, const char *op) {
 	fclose(file);
 
 	if (written != (size_t)content->len)
-		fail(interp, "%s: short write to %s", op, path->bytes);
+		fail(interp, "short write to %s", path->bytes);
 }
 
-void p_write_file(DISPATCH_ARGS) {
-	write_file(interp, "wb", "write-file");
+#define WRITE_FILE_OP(c_name, mode) \
+	void c_name(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
+		Val path_val = chain_sp[-1]; \
+		if (VAL_TAG(path_val) != T_STRING) { \
+			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val))); \
+			return; \
+		} \
+		Val content_val = chain_sp[-2]; \
+		if (VAL_TAG(content_val) != T_STRING) { \
+			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(content_val))); \
+			return; \
+		} \
+		\
+		write_file(interp, OBJECT_AT(VAL_DATA(content_val)), OBJECT_AT(VAL_DATA(path_val)), mode); \
+		if (interp->error_flag) \
+			return; \
+		\
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2); \
+	}
 
-	DISPATCH(interp);
-}
-
-void p_append_file(DISPATCH_ARGS) {
-	write_file(interp, "ab", "append-file");
-
-	DISPATCH(interp);
-}
+WRITE_FILE_OP(p_write_file, "wb")
+WRITE_FILE_OP(p_append_file, "ab")
 
 static int tsv_row_to_array(Interpreter *interp, char *row, int row_length) {
 	int cell_count = 1;
@@ -149,27 +210,22 @@ static int tsv_row_to_array(Interpreter *interp, char *row, int row_length) {
 }
 
 void p_read_tsv(DISPATCH_ARGS) {
-	POP_STRING(path, "read-tsv");
-
-	FILE *file = fopen(path->bytes, "rb");
-	if (file == NULL) {
-		fail(interp, "read-tsv: cannot open %s", path->bytes);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val path_val = chain_sp[-1];
+	if (VAL_TAG(path_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
 		return;
 	}
 
-	fseek(file, 0, SEEK_END);
-	long size = ftell(file);
-	rewind(file);
-	if (size < 0 || size > INT_MAX) {
-		fclose(file);
-		fail(interp, "read-tsv: cannot size %s", path->bytes);
+	long size;
+	FILE *file = open_sized_read(interp, OBJECT_AT(VAL_DATA(path_val))->bytes, &size);
+	if (!file)
 		return;
-	}
 
 	char *buffer = malloc((size_t)size + 1);
 	if (buffer == NULL) {
 		fclose(file);
-		fail(interp, "read-tsv: out of memory");
+		fail(interp, "out of memory");
 		return;
 	}
 	int length = (int)fread(buffer, 1, (size_t)size, file);
@@ -218,18 +274,28 @@ void p_read_tsv(DISPATCH_ARGS) {
 
 	gc_root_pop(interp);
 	free(buffer);
-	push(interp, make_array(outer_handle));
+	chain_sp[-1] = make_array(outer_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_write_tsv(DISPATCH_ARGS) {
-	POP_STRING(path, "write-tsv");
-	POP_ARRAY(rows, "write-tsv");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val path_val = chain_sp[-1];
+	if (VAL_TAG(path_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
+		return;
+	}
+	Val rows_val = chain_sp[-2];
+	if (VAL_TAG(rows_val) != T_ARRAY) {
+		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(rows_val)));
+		return;
+	}
+	Object *rows = OBJECT_AT(VAL_DATA(rows_val));
 
-	FILE *file = fopen(path->bytes, "wb");
+	FILE *file = fopen(OBJECT_AT(VAL_DATA(path_val))->bytes, "wb");
 	if (file == NULL) {
-		fail(interp, "write-tsv: cannot open %s", path->bytes);
+		fail(interp, "cannot open %s", OBJECT_AT(VAL_DATA(path_val))->bytes);
 		return;
 	}
 
@@ -237,7 +303,7 @@ void p_write_tsv(DISPATCH_ARGS) {
 		Val row_val = rows->items[r];
 		if (VAL_TAG(row_val) != T_ARRAY) {
 			fclose(file);
-			fail(interp, "write-tsv: row %d is %s, expected an array", r, tag_name(VAL_TAG(row_val)));
+			fail(interp, "row %d is %s, expected an array", r, tag_name(VAL_TAG(row_val)));
 			return;
 		}
 		Object *row = OBJECT_AT(VAL_DATA(row_val));
@@ -261,7 +327,7 @@ void p_write_tsv(DISPATCH_ARGS) {
 					for (int b = 0; b < string->len; b++)
 						if (string->bytes[b] == '\t' || string->bytes[b] == '\n') {
 							fclose(file);
-							fail(interp, "write-tsv: row %d cell %d contains a tab or newline", r, c);
+							fail(interp, "row %d cell %d contains a tab or newline", r, c);
 							return;
 						}
 					fwrite(string->bytes, 1, (size_t)string->len, file);
@@ -269,7 +335,7 @@ void p_write_tsv(DISPATCH_ARGS) {
 				}
 				default:
 					fclose(file);
-					fail(interp, "write-tsv: row %d cell %d is %s, cannot represent in TSV", r, c, tag_name(VAL_TAG(cell)));
+					fail(interp, "row %d cell %d is %s, cannot represent in TSV", r, c, tag_name(VAL_TAG(cell)));
 					return;
 			}
 		}
@@ -278,13 +344,13 @@ void p_write_tsv(DISPATCH_ARGS) {
 
 	fclose(file);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_write(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "write");
 	if (VAL_TAG(stream_val) != T_STREAM) {
-		fail(interp, "write: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
+		fail(interp, "expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
 		return;
 	}
 	PEEK_TYPE_AT(string_val, 1, "write", T_STRING);
@@ -297,21 +363,19 @@ void p_write(DISPATCH_ARGS) {
 		if (bytes_written < 0) {
 			if (errno == EINTR)
 				continue;
-			fail(interp, "write: %s", strerror(errno));
+			fail(interp, "%s", strerror(errno));
 			return;
 		}
 		total_written += (int)bytes_written;
 	}
 
-	interp->dsp -= 2;
-
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_read(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "read");
 	if (VAL_TAG(stream_val) != T_STREAM) {
-		fail(interp, "read: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
+		fail(interp, "expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
 		return;
 	}
 	int file_descriptor = (int)VAL_DATA(stream_val);
@@ -320,21 +384,21 @@ void p_read(DISPATCH_ARGS) {
 	int capacity = 1 << 16;
 	char *buffer = malloc((size_t)capacity);
 	if (!buffer) {
-		fail(interp, "read: out of memory");
+		fail(interp, "out of memory");
 		return;
 	}
 	while (1) {
 		if (length == capacity) {
 			if (capacity > INT_MAX / 2) {
 				free(buffer);
-				fail(interp, "read: stream exceeds %d bytes", INT_MAX);
+				fail(interp, "stream exceeds %d bytes", INT_MAX);
 				return;
 			}
 			capacity *= 2;
 			char *grown = realloc(buffer, (size_t)capacity);
 			if (!grown) {
 				free(buffer);
-				fail(interp, "read: out of memory");
+				fail(interp, "out of memory");
 				return;
 			}
 			buffer = grown;
@@ -345,7 +409,7 @@ void p_read(DISPATCH_ARGS) {
 			if (errno == EINTR)
 				continue;
 			free(buffer);
-			fail(interp, "read: %s", strerror(errno));
+			fail(interp, "%s", strerror(errno));
 			return;
 		}
 
@@ -358,21 +422,20 @@ void p_read(DISPATCH_ARGS) {
 	free(buffer);
 	if (interp->error_flag) return;
 
-	interp->data_stack[interp->dsp - 1] = make_string(handle);
+	chain_sp[-1] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_close(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "close");
 	if (VAL_TAG(stream_val) != T_STREAM) {
-		fail(interp, "close: expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
+		fail(interp, "expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
 		return;
 	}
 	close((int)VAL_DATA(stream_val));
-	interp->dsp -= 1;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 

@@ -40,43 +40,59 @@ static void sort_cfas_ascending(int *cfas, int count) {
 	}
 }
 
-void w_u8 (FILE *file, uint8_t value) { fwrite(&value, 1, 1, file); }
+void write_u8 (FILE *file, uint8_t value) { fwrite(&value, 1, 1, file); }
 
-void w_i32(FILE *file, int32_t value) { fwrite(&value, 4, 1, file); }
+void write_i32(FILE *file, int32_t value) { fwrite(&value, 4, 1, file); }
 
-void w_i64(FILE *file, int64_t value) { fwrite(&value, 8, 1, file); }
+void write_i64(FILE *file, int64_t value) { fwrite(&value, 8, 1, file); }
 
-void w_val(FILE *file, Val value) {
-	w_i32(file, (int32_t)VAL_TAG(value));
-	w_i64(file, VAL_DATA(value));
+void write_val(FILE *file, Val value) {
+	write_i32(file, (int32_t)VAL_TAG(value));
+	write_i64(file, VAL_DATA(value));
 }
 
-int r_u8 (FILE *file, uint8_t *out_value) { return fread(out_value, 1, 1, file) == 1; }
+int read_u8 (FILE *file, uint8_t *out_value) { return fread(out_value, 1, 1, file) == 1; }
 
-int r_u32(FILE *file, uint32_t *out_value) { return fread(out_value, 4, 1, file) == 1; }
+int read_u32(FILE *file, uint32_t *out_value) { return fread(out_value, 4, 1, file) == 1; }
 
-int r_i32(FILE *file, int32_t *out_value) { return fread(out_value, 4, 1, file) == 1; }
+int read_i32(FILE *file, int32_t *out_value) { return fread(out_value, 4, 1, file) == 1; }
 
-int r_i64(FILE *file, int64_t *out_value) { return fread(out_value, 8, 1, file) == 1; }
+int read_i64(FILE *file, int64_t *out_value) { return fread(out_value, 8, 1, file) == 1; }
 
-int r_val(FILE *file, Val *out_value) {
+int read_val(FILE *file, Val *out_value) {
 	int32_t tag;
 	int64_t data;
-	if (!r_i32(file, &tag) || !r_i64(file, &data))
+	if (!read_i32(file, &tag) || !read_i64(file, &data))
 		return 0;
 	*out_value = make_tagged((Tag)tag, data);
 	return 1;
 }
 
+static void write_vals(FILE *file, const Val *values, int n_values) {
+	for (int i = 0; i < n_values; i++)
+		write_val(file, values[i]);
+}
+
+static int read_vals(FILE *file, Val *values, int n_values) {
+	for (int i = 0; i < n_values; i++)
+		if (!read_val(file, &values[i]))
+			return 0;
+	return 1;
+}
+
 void p_save_image(DISPATCH_ARGS) {
-	POP_STRING(filename_obj, "save-image");
-	gc_root_push(interp, filename_obj_val);
-	const char *filename = filename_obj->bytes;
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val filename_val = chain_sp[-1];
+	if (VAL_TAG(filename_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(filename_val)));
+		return;
+	}
+	const char *filename = OBJECT_AT(VAL_DATA(filename_val))->bytes;
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
 
 	FILE *file = fopen(filename, "wb");
 	if (!file) {
 		fail(interp, "cannot create %s", filename);
-		gc_root_pop(interp);
 		return;
 	}
 
@@ -85,34 +101,33 @@ void p_save_image(DISPATCH_ARGS) {
 	static int collected[VOCABULARY_INIT_SIZE / 4];
 	for (int c = vocab.latest_cfa; c >= vocab.init_here; c = (int)WORD_LINK(c)) {
 		if (user_word_count >= (int)(sizeof collected / sizeof collected[0])) {
-			fail(interp, "save-image: too many words");
+			fail(interp, "too many words");
 			fclose(file);
-			gc_root_pop(interp);
 			return;
 		}
 		collected[user_word_count++] = c;
 	}
 
 	fwrite(IMAGE_MAGIC, 1, 4, file);
-	w_i32(file, (int32_t)IMAGE_VERSION);
+	write_i32(file, (int32_t)IMAGE_VERSION);
 
 	int32_t user_dict_cells = vocab.here - vocab.init_here;
 	int32_t user_namepool_bytes = vocab.names_here - vocab.init_names_here;
 	int32_t user_sourcepool_bytes = vocab.source_here - vocab.init_source_here;
 	int32_t user_symbolpool_bytes = vocab.symbol_pool_here - vocab.init_symbol_pool_here;
-	w_i32(file, user_dict_cells);
-	w_i32(file, user_namepool_bytes);
-	w_i32(file, user_sourcepool_bytes);
-	w_i32(file, user_symbolpool_bytes);
-	w_i32(file, vocab.latest_cfa);
-	w_i32(file, interp->dsp);
-	w_i32(file, arena.object_space.n);
+	write_i32(file, user_dict_cells);
+	write_i32(file, user_namepool_bytes);
+	write_i32(file, user_sourcepool_bytes);
+	write_i32(file, user_symbolpool_bytes);
+	write_i32(file, vocab.latest_cfa);
+	write_i32(file, interp->dsp);
+	write_i32(file, arena.object_space.n);
 
-	w_i32(file, vocab.init_here);
-	w_i32(file, vocab.init_latest_cfa);
-	w_i32(file, vocab.init_names_here);
-	w_i32(file, vocab.init_source_here);
-	w_i32(file, vocab.init_symbol_pool_here);
+	write_i32(file, vocab.init_here);
+	write_i32(file, vocab.init_latest_cfa);
+	write_i32(file, vocab.init_names_here);
+	write_i32(file, vocab.init_source_here);
+	write_i32(file, vocab.init_symbol_pool_here);
 
 	int init_here = vocab.init_here;
 	int *sorted_cfas = malloc(sizeof(int) * (size_t)MAX(user_word_count, 1));
@@ -131,11 +146,10 @@ void p_save_image(DISPATCH_ARGS) {
 			cell handler = vocab.dict[c];
 			int id = handler_to_id(handler);
 			if (id < 0) {
-				fail(interp, "save-image: unrecognised handler in body of '%s' at offset %d", &vocab.name_pool[WORD_NAME(cfa)], c - cfa);
+				fail(interp, "unrecognised handler in body of '%s' at offset %d", &vocab.name_pool[WORD_NAME(cfa)], c - cfa);
 				free(out);
 				free(sorted_cfas);
 				fclose(file);
-				gc_root_pop(interp);
 				return;
 			}
 			out[c - init_here] = (cell)id;
@@ -147,11 +161,11 @@ void p_save_image(DISPATCH_ARGS) {
 	}
 
 	for (int i = 0; i < user_dict_cells; i++)
-		w_i64(file, (int64_t)out[i]);
+		write_i64(file, (int64_t)out[i]);
 	free(out);
 	free(sorted_cfas);
 
-	w_i32(file, user_word_count);
+	write_i32(file, user_word_count);
 	for (int i = 0; i < user_word_count; i++) {
 		int c = collected[i];
 		cfa_handler h = (cfa_handler)vocab.dict[c];
@@ -160,13 +174,12 @@ void p_save_image(DISPATCH_ARGS) {
 			: (h == dosym) ? HANDLER_DOSYM
 			: (h == dounit) ? HANDLER_DOUNIT : 0;
 		if (kind == 0) {
-			fail(interp, "save-image: unrecognised handler at cfa %d", c);
+			fail(interp, "unrecognised handler at cfa %d", c);
 			fclose(file);
-			gc_root_pop(interp);
 			return;
 		}
-		w_i32(file, c);
-		w_u8(file, kind);
+		write_i32(file, c);
+		write_u8(file, kind);
 	}
 
 	fwrite(&vocab.name_pool[vocab.init_names_here], 1, (size_t)user_namepool_bytes, file);
@@ -177,14 +190,14 @@ void p_save_image(DISPATCH_ARGS) {
 	for (int i = 0; i < vocab.n_quotation_spans; i++)
 		if (vocab.quotation_spans[i].start_cfa >= vocab.init_here)
 			user_span_count++;
-	w_i32(file, user_span_count);
+	write_i32(file, user_span_count);
 	for (int i = 0; i < vocab.n_quotation_spans; i++) {
 		QuotationSpan *span = &vocab.quotation_spans[i];
 		if (span->start_cfa < vocab.init_here)
 			continue;
-		w_i32(file, span->start_cfa);
-		w_i32(file, span->end_cfa);
-		w_i32(file, span->source_offset);
+		write_i32(file, span->start_cfa);
+		write_i32(file, span->end_cfa);
+		write_i32(file, span->source_offset);
 	}
 
 	dimension_save(file);
@@ -192,69 +205,64 @@ void p_save_image(DISPATCH_ARGS) {
 	for (int slot = 0; slot < arena.object_space.n; slot++) {
 		Object *obj = arena.objects[slot];
 		if (!obj) {
-			w_u8(file, 0);
+			write_u8(file, 0);
 			continue;
 		}
-		w_u8(file, 1);
-		w_u8(file, (uint8_t)obj->kind);
-		w_i32(file, obj->len);
-		w_i32(file, obj->capacity);
+		write_u8(file, 1);
+		write_u8(file, (uint8_t)obj->kind);
+		write_i32(file, obj->len);
+		write_i32(file, obj->capacity);
 		switch (obj->kind) {
 			case OBJECT_STRING:
 				fwrite(obj->bytes, 1, (size_t)obj->len, file);
 				break;
 			case OBJECT_SET:
 			case OBJECT_ARRAY:
-				for (int j = 0; j < obj->len; j++)
-					w_val(file, obj->items[j]);
+				write_vals(file, obj->items, obj->len);
 				break;
 			case OBJECT_FRAME:
 				for (int j = 0; j < obj->len; j++) {
-					w_i64(file, (int64_t)obj->frame.keys[j]);
-					w_val(file, obj->frame.values[j]);
+					write_i64(file, (int64_t)obj->frame.keys[j]);
+					write_val(file, obj->frame.values[j]);
 				}
 				break;
 			case OBJECT_MATRIX: {
-									w_i32(file, obj->matrix.rows);
-									w_i32(file, obj->matrix.columns);
+									write_i32(file, obj->matrix.rows);
+									write_i32(file, obj->matrix.columns);
 									size_t n = (size_t)obj->matrix.rows * (size_t)obj->matrix.columns;
 									if (n > 0)
 										fwrite(obj->matrix.elements, sizeof(double), n, file);
 									break;
 								}
 			case OBJECT_CONTINUATION:
-								w_i32(file, obj->continuation.return_len);
+								write_i32(file, obj->continuation.return_len);
 								for (int j = 0; j < obj->continuation.return_len; j++)
-									w_val(file, obj->continuation.return_slice[j]);
-								w_i32(file, obj->continuation.resume_ip);
-								w_i32(file, obj->continuation.local_base_offset);
+									write_val(file, obj->continuation.return_slice[j]);
+								write_i32(file, obj->continuation.resume_ip);
+								write_i32(file, obj->continuation.local_base_offset);
 								break;
 			case OBJECT_SEGMENT:
-				w_i32(file, obj->segment.element_type);
-				w_i32(file, obj->segment.length);
+				write_i32(file, obj->segment.element_type);
+				write_i32(file, obj->segment.length);
 				if (obj->segment.length > 0)
 					fwrite(obj->segment.data, segment_element_size(obj->segment.element_type), (size_t)obj->segment.length, file);
 				break;
 		}
 	}
 
-	w_i32(file, pairs.space.n);
+	write_i32(file, pairs.space.n);
 	for (int i = 0; i < pairs.space.n; i++) {
-		w_val(file, pairs.table[i].head);
-		w_val(file, pairs.table[i].tail);
+		write_val(file, pairs.table[i].head);
+		write_val(file, pairs.table[i].tail);
 	}
 
-	w_i32(file, interp->lvar_top);
-	for (int i = 0; i < interp->lvar_top; i++)
-		w_val(file, interp->lvar_stack[i]);
-
-	for (int i = 0; i < interp->dsp; i++)
-		w_val(file, interp->data_stack[i]);
+	write_i32(file, interp->lvar_top);
+	write_vals(file, interp->lvar_stack, interp->lvar_top);
+	write_vals(file, interp->data_stack, interp->dsp);
 
 	fclose(file);
-	gc_root_pop(interp);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 static int loaded_handle_ok(Interpreter *interp, Val v) {
@@ -332,7 +340,7 @@ void p_load_image(DISPATCH_ARGS) {
 		return;
 	}
 	uint32_t version;
-	if (!r_u32(file, &version) || version != IMAGE_VERSION) {
+	if (!read_u32(file, &version) || version != IMAGE_VERSION) {
 		fail(interp, "%s: version %u, expected %u", filename, version, IMAGE_VERSION);
 		fclose(file);
 		return;
@@ -340,13 +348,13 @@ void p_load_image(DISPATCH_ARGS) {
 
 	int32_t user_dict_cells, user_namepool_bytes, user_sourcepool_bytes, user_symbolpool_bytes;
 	int32_t saved_latest_cfa, saved_dsp, saved_n_objects;
-	if (!r_i32(file, &user_dict_cells)
-			|| !r_i32(file, &user_namepool_bytes)
-			|| !r_i32(file, &user_sourcepool_bytes)
-			|| !r_i32(file, &user_symbolpool_bytes)
-			|| !r_i32(file, &saved_latest_cfa)
-			|| !r_i32(file, &saved_dsp)
-			|| !r_i32(file, &saved_n_objects))
+	if (!read_i32(file, &user_dict_cells)
+			|| !read_i32(file, &user_namepool_bytes)
+			|| !read_i32(file, &user_sourcepool_bytes)
+			|| !read_i32(file, &user_symbolpool_bytes)
+			|| !read_i32(file, &saved_latest_cfa)
+			|| !read_i32(file, &saved_dsp)
+			|| !read_i32(file, &saved_n_objects))
 	{
 		fail(interp, "%s: truncated sizes", filename);
 		fclose(file);
@@ -354,9 +362,9 @@ void p_load_image(DISPATCH_ARGS) {
 	}
 
 	int32_t m_here, m_latest, m_names, m_sources, m_symbols;
-	if (!r_i32(file, &m_here) || !r_i32(file, &m_latest)
-			|| !r_i32(file, &m_names) || !r_i32(file, &m_sources)
-			|| !r_i32(file, &m_symbols))
+	if (!read_i32(file, &m_here) || !read_i32(file, &m_latest)
+			|| !read_i32(file, &m_names) || !read_i32(file, &m_sources)
+			|| !read_i32(file, &m_symbols))
 	{
 		fail(interp, "%s: truncated markers", filename);
 		fclose(file);
@@ -387,7 +395,7 @@ void p_load_image(DISPATCH_ARGS) {
 
 	for (int i = 0; i < user_dict_cells; i++) {
 		int64_t c;
-		if (!r_i64(file, &c)) {
+		if (!read_i64(file, &c)) {
 			fail(interp, "%s: truncated dict", filename);
 			goto done;
 		}
@@ -396,7 +404,7 @@ void p_load_image(DISPATCH_ARGS) {
 	vocab.here = vocab.init_here + user_dict_cells;
 
 	int32_t user_word_count;
-	if (!r_i32(file, &user_word_count)) {
+	if (!read_i32(file, &user_word_count)) {
 		fail(interp, "%s: missing handler table", filename);
 		goto done;
 	}
@@ -408,7 +416,7 @@ void p_load_image(DISPATCH_ARGS) {
 	for (int i = 0; i < user_word_count; i++) {
 		int32_t c;
 		uint8_t kind;
-		if (!r_i32(file, &c) || !r_u8(file, &kind)) {
+		if (!read_i32(file, &c) || !read_u8(file, &kind)) {
 			fail(interp, "%s: truncated handler table", filename);
 			goto done;
 		}
@@ -462,7 +470,7 @@ void p_load_image(DISPATCH_ARGS) {
 	rebuild_symbol_hash();
 
 	int32_t user_span_count;
-	if (!r_i32(file, &user_span_count)) {
+	if (!read_i32(file, &user_span_count)) {
 		fail(interp, "%s: truncated quotation spans", filename);
 		goto done;
 	}
@@ -472,7 +480,7 @@ void p_load_image(DISPATCH_ARGS) {
 	}
 	for (int i = 0; i < user_span_count; i++) {
 		int32_t span_start, span_end, span_source;
-		if (!r_i32(file, &span_start) || !r_i32(file, &span_end) || !r_i32(file, &span_source)) {
+		if (!read_i32(file, &span_start) || !read_i32(file, &span_end) || !read_i32(file, &span_source)) {
 			fail(interp, "%s: truncated quotation spans", filename);
 			goto done;
 		}
@@ -502,7 +510,7 @@ void p_load_image(DISPATCH_ARGS) {
 
 	for (int slot = 0; slot < saved_n_objects; slot++) {
 		uint8_t presence;
-		if (!r_u8(file, &presence)) {
+		if (!read_u8(file, &presence)) {
 			fail(interp, "%s: truncated objects", filename);
 			goto done;
 		}
@@ -513,7 +521,7 @@ void p_load_image(DISPATCH_ARGS) {
 
 		uint8_t kind;
 		int32_t len, cap;
-		if (!r_u8(file, &kind) || !r_i32(file, &len) || !r_i32(file, &cap)) {
+		if (!read_u8(file, &kind) || !read_i32(file, &len) || !read_i32(file, &cap)) {
 			fail(interp, "%s: truncated object header", filename);
 			goto done;
 		}
@@ -540,11 +548,9 @@ void p_load_image(DISPATCH_ARGS) {
 			case OBJECT_SET:
 			case OBJECT_ARRAY:
 				obj->items = arena_malloc(sizeof(Val) * (size_t)MAX(cap, 1));
-				for (int j = 0; j < len; j++) {
-					if (!r_val(file, &obj->items[j])) {
-						fail(interp, "%s: truncated items", filename);
-						goto done;
-					}
+				if (!read_vals(file, obj->items, len)) {
+					fail(interp, "%s: truncated items", filename);
+					goto done;
 				}
 				break;
 			case OBJECT_FRAME:
@@ -552,7 +558,7 @@ void p_load_image(DISPATCH_ARGS) {
 				obj->frame.values = arena_malloc(sizeof(Val) * (size_t)MAX(cap, 1));
 				for (int j = 0; j < len; j++) {
 					int64_t key;
-					if (!r_i64(file, &key) || !r_val(file, &obj->frame.values[j])) {
+					if (!read_i64(file, &key) || !read_val(file, &obj->frame.values[j])) {
 						fail(interp, "%s: truncated frame", filename);
 						goto done;
 					}
@@ -561,7 +567,7 @@ void p_load_image(DISPATCH_ARGS) {
 				break;
 			case OBJECT_MATRIX: {
 									int32_t rows, cols;
-									if (!r_i32(file, &rows) || !r_i32(file, &cols)) {
+									if (!read_i32(file, &rows) || !read_i32(file, &cols)) {
 										fail(interp, "%s: truncated matrix header", filename);
 										goto done;
 									}
@@ -582,7 +588,7 @@ void p_load_image(DISPATCH_ARGS) {
 								}
 			case OBJECT_CONTINUATION: {
 										  int32_t return_len;
-										  if (!r_i32(file, &return_len) || return_len < 0) {
+										  if (!read_i32(file, &return_len) || return_len < 0) {
 											  fail(interp, "%s: bad continuation header", filename);
 											  goto done;
 										  }
@@ -591,13 +597,13 @@ void p_load_image(DISPATCH_ARGS) {
 											  malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 										  heap_bytes_add((size_t)return_len * sizeof(Val));
 										  for (int j = 0; j < return_len; j++) {
-											  if (!r_val(file, &obj->continuation.return_slice[j])) {
+											  if (!read_val(file, &obj->continuation.return_slice[j])) {
 												  fail(interp, "%s: truncated continuation slice", filename);
 												  goto done;
 											  }
 										  }
 										  int32_t resume_ip;
-										  if (!r_i32(file, &resume_ip)
+										  if (!read_i32(file, &resume_ip)
 												  || resume_ip < DICT_RESERVED || resume_ip >= vocab.here)
 										  {
 											  fail(interp, "%s: continuation resume_ip out of range", filename);
@@ -605,7 +611,7 @@ void p_load_image(DISPATCH_ARGS) {
 										  }
 										  obj->continuation.resume_ip = resume_ip;
 										  int32_t local_base_offset;
-										  if (!r_i32(file, &local_base_offset)) {
+										  if (!read_i32(file, &local_base_offset)) {
 											  fail(interp, "%s: truncated continuation local_base_offset", filename);
 											  goto done;
 										  }
@@ -614,7 +620,7 @@ void p_load_image(DISPATCH_ARGS) {
 									  }
 			case OBJECT_SEGMENT: {
 									 int32_t element_type, length;
-									 if (!r_i32(file, &element_type) || !r_i32(file, &length)) {
+									 if (!read_i32(file, &element_type) || !read_i32(file, &length)) {
 										 fail(interp, "%s: truncated segment header", filename);
 										 goto done;
 									 }
@@ -644,14 +650,14 @@ void p_load_image(DISPATCH_ARGS) {
 	arena.object_space.n_free = 0;
 
 	int32_t saved_n_pairs;
-	if (!r_i32(file, &saved_n_pairs) || saved_n_pairs < 0) {
+	if (!read_i32(file, &saved_n_pairs) || saved_n_pairs < 0) {
 		fail(interp, "%s: bad pair count", filename);
 		goto done;
 	}
 	while (pairs.space.cap < saved_n_pairs)
 		GROW_PAIR_TABLE(pairs.space.cap * 2);
 	for (int i = 0; i < saved_n_pairs; i++) {
-		if (!r_val(file, &pairs.table[i].head) || !r_val(file, &pairs.table[i].tail)) {
+		if (!read_val(file, &pairs.table[i].head) || !read_val(file, &pairs.table[i].tail)) {
 			fail(interp, "%s: truncated pairs", filename);
 			goto done;
 		}
@@ -661,7 +667,7 @@ void p_load_image(DISPATCH_ARGS) {
 	pairs.space.n_free = 0;
 
 	int32_t saved_lvar_top;
-	if (!r_i32(file, &saved_lvar_top) || saved_lvar_top < 0) {
+	if (!read_i32(file, &saved_lvar_top) || saved_lvar_top < 0) {
 		fail(interp, "%s: bad lvar count", filename);
 		goto done;
 	}
@@ -669,20 +675,16 @@ void p_load_image(DISPATCH_ARGS) {
 		interp->lvar_cap *= 2;
 		interp->lvar_stack = realloc(interp->lvar_stack, sizeof(Val) * (size_t)interp->lvar_cap);
 	}
-	for (int i = 0; i < saved_lvar_top; i++) {
-		if (!r_val(file, &interp->lvar_stack[i])) {
-			fail(interp, "%s: truncated lvars", filename);
-			goto done;
-		}
+	if (!read_vals(file, interp->lvar_stack, saved_lvar_top)) {
+		fail(interp, "%s: truncated lvars", filename);
+		goto done;
 	}
 	interp->lvar_top = saved_lvar_top;
 	interp->bind_trail_top = 0;
 
-	for (int i = 0; i < saved_dsp; i++) {
-		if (!r_val(file, &interp->data_stack[i])) {
-			fail(interp, "%s: truncated stack", filename);
-			goto done;
-		}
+	if (!read_vals(file, interp->data_stack, saved_dsp)) {
+		fail(interp, "%s: truncated stack", filename);
+		goto done;
 	}
 	interp->dsp = saved_dsp;
 

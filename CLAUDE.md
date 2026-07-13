@@ -9,8 +9,11 @@
 - Counts carry n_: n_rows, n_elements, n_terms.
 - Hoist repeated field accesses into named locals before use.
 - Blank lines separate paragraphs: guard clauses, allocation+check, result.
-- Error messages: lowercase after "word: ", ASCII only, name the word first
-  ("sort: expected a vector (nx1 or 1xn); got %dx%d").
+- Runtime error messages carry no word prefix — the error trace names the
+  failing op ("in sort ← rank") and catch delivers `{ :message :trace }`.
+  Lowercase, ASCII only ("expected a vector (nx1 or 1xn); got %dx%d").
+  Compile-time diagnostics (compiler.c) keep their construct prefix;
+  filename contexts keep the filename.
 - Multi-statement macros wrap in do { } while (0) unless they exist to leak
   a binding (LOWER_BOUND pattern).
 - Domain files own single-representation kernels; words.c owns
@@ -24,12 +27,21 @@
   mapping: > becomes _to_ (p_string_to_chars), ? drops (p_has), ! becomes
   _set/_store/_inplace or drops (p_env_set, p_slice_store, p_add_inplace,
   p_set_add); libc collisions take a trailing underscore (p_emit_).
-- Two weights: register-threaded words work on chain_ip/chain_sp, open
-  with REQUIRE_STACK_DEPTH/ROOM, end DISPATCH_REGISTERS, and must
-  SYNC_REGISTERS before any fail or allocation; heavier words use
-  POP_*/PEEK_* + push and end DISPATCH(interp) — always the final
-  statement, blank line before it. Early success exits are
-  push + DISPATCH inside the branch.
+- Words are register-threaded by default: work on chain_ip/chain_sp, open
+  with REQUIRE_STACK_DEPTH/ROOM, end DISPATCH_REGISTERS; kernels return
+  handles for the word to write into chain_sp. A word may be interp-state
+  (POP_*/PEEK_* + push, end DISPATCH(interp), blank line before it) only
+  for one of two decidable reasons: it re-enters the interpreter
+  (execute_xt/call_step — the stack moves under it), or its tail calls
+  push-style shared helpers (binary_op/unary_op/push_quantity). Never by
+  convenience or perceived cost. Early success exits dispatch inside the
+  branch.
+- SYNC_REGISTERS before fail/allocation only in ops that read operands
+  from chain_ip (their resume point diverges from the entry spill) or
+  that deliberately expose an adjusted sp. A plain word's registers equal
+  the spill until its final DISPATCH_REGISTERS, so its body carries no
+  syncs — and it must not allocate after writing result slots above sp
+  (they sit above the spilled dsp, invisible to GC).
 - Float fast path first in polymorphic words: stay in registers, exit via
   DISPATCH_REGISTERS in the if; then SYNC_REGISTERS (sp minus consumed
   operands) and the tag chain.
@@ -37,8 +49,7 @@
   re-check with `if (interp->error_flag) return;` after every fallible
   call. Helpers signal with -1 (handle-producers), 0 (did-it-work), or
   NULL (pointer-producers) — fail was already called; the sentinel only
-  stops the caller. Shared helpers take the word name as a
-  `const char *op` and use it in every message.
+  stops the caller.
 - POP_* for consumed scalars; PEEK_*_AT for heap operands that must stay
   stack-rooted across allocation, committed at the end by dsp adjustment
   or in-place overwrite. Raw Val is x_val, unwrapped is x.
@@ -63,9 +74,7 @@
 - Cleanup is inline per error path (free/fclose/finalize/gc_root_pop
   before return); no goto outside image.c.
 - Message formats: "expected X; got %s" (literal type phrase); half-open
-  ranges "[%d, %d) out of bounds for length %d"; "(max %d)"; single-char
-  word names space the colon ("+ : unit mismatch"), multi-char bind it
-  ("f/: division by zero").
+  ranges "[%d, %d) out of bounds for length %d"; "(max %d)".
 - Printing words fflush(stdout) before DISPATCH. Unused params silenced
   with (void)x; at the top.
 - Typedefs CamelCase; enum members domain-prefixed SHOUT; kernel context
@@ -107,6 +116,10 @@ new inline that calls functions → the tail.
   Binding is early: earlier compilations keep the old target; a
   self-reference recurses, so capture the old xt with `'` first if
   needed.
+- LAPACK-free stats live in lib.h2o (wasm-capable), in a marked stats
+  section; statistics.h2o accelerates one by redefining it in toto (early
+  binding makes partial masking useless). The word's golden runs native
+  (masked) and wasm (unmasked) and must agree, pinning both copies.
 - Locals: `>name` receives from the stack at entry, bare names are
   uninitialized scratch; quotations receive with `|> a b |`. Counter
   loops: `0 to i begin i n lt while ... f++ i repeat`.

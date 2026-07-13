@@ -119,7 +119,7 @@ static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 	if (!re) {
 		PCRE2_UCHAR message[256];
 		pcre2_get_error_message(errcode, message, sizeof(message));
-		fail(interp, "regex: %s", (char *)message);
+		fail(interp, "%s", (char *)message);
 		return NULL;
 	}
 	pcre2_jit_compile(re, PCRE2_JIT_COMPLETE);
@@ -217,7 +217,7 @@ void p_match_all(DISPATCH_ARGS) {
 			if (!grown) {
 				free(spans);
 				pcre2_match_data_free(md);
-				fail(interp, "match-all: out of memory");
+				fail(interp, "out of memory");
 				return;
 			}
 			spans = grown;
@@ -231,9 +231,8 @@ void p_match_all(DISPATCH_ARGS) {
 
 	if (count == 0) {
 		free(spans);
-		interp->dsp -= 2;
-		push(interp, make_float(0.0));
-		DISPATCH(interp);
+		chain_sp[-2] = make_float(0.0);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 	}
 
 	NEW_ARRAY(result_handle, result, count);
@@ -252,10 +251,9 @@ void p_match_all(DISPATCH_ARGS) {
 	gc_root_pop(interp);
 	free(spans);
 
-	interp->dsp -= 2;
-	push(interp, make_array(result_handle));
+	chain_sp[-2] = make_array(result_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_match(DISPATCH_ARGS) {
@@ -269,18 +267,16 @@ void p_match(DISPATCH_ARGS) {
 	pcre2_match_data_free(md);
 
 	if (resume_from < 0) {
-		interp->dsp -= 2;
-		push(interp, make_float(0.0));
-		DISPATCH(interp);
+		chain_sp[-2] = make_float(0.0);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 	}
 
 	int handle = capture_array(interp, subject, match_offsets, num_groups);
 	if (interp->error_flag) return;
 
-	interp->dsp -= 2;
-	push(interp, make_array(handle));
+	chain_sp[-2] = make_array(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_split(DISPATCH_ARGS) {
@@ -322,10 +318,9 @@ void p_split(DISPATCH_ARGS) {
 	if (interp->error_flag)
 		return;
 
-	interp->dsp -= 2;
-	push(interp, make_array(result_handle));
+	chain_sp[-2] = make_array(result_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 static void append_bytes(Interpreter *interp, char **buffer, int *length, int *capacity, const char *src, int n) {
@@ -338,7 +333,7 @@ static void append_bytes(Interpreter *interp, char **buffer, int *length, int *c
 		if (!grown) {
 			free(*buffer);
 			*buffer = NULL;
-			fail(interp, "replace: out of memory");
+			fail(interp, "out of memory");
 			return;
 		}
 		*buffer = grown;
@@ -379,7 +374,7 @@ void p_replace(DISPATCH_ARGS) {
 					if (group >= num_groups) {
 						free(out);
 						pcre2_match_data_free(md);
-						fail(interp, "replace: backref \\%d but pattern has %d group(s)", group, num_groups - 1);
+						fail(interp, "backref \\%d but pattern has %d group(s)", group, num_groups - 1);
 						return;
 					}
 					if (match_offsets[2 * group] >= 0)
@@ -415,45 +410,76 @@ void p_replace(DISPATCH_ARGS) {
 	free(out);
 	if (interp->error_flag) return;
 
-	interp->dsp -= 3;
-	push(interp, make_string(result));
+	chain_sp[-3] = make_string(result);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_substring(DISPATCH_ARGS) {
-	POP_INT(end, "substring", "end");
-	POP_INT(start, "substring", "start");
-	PEEK_STRING_AT(source, 0, "substring");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val end_val = chain_sp[-1];
+	if (VAL_TAG(end_val) != T_FLOAT) {
+		fail(interp, "expected a float end; got %s", tag_name(VAL_TAG(end_val)));
+		return;
+	}
+	int end = (int)VAL_NUMBER(end_val);
+	Val start_val = chain_sp[-2];
+	if (VAL_TAG(start_val) != T_FLOAT) {
+		fail(interp, "expected a float start; got %s", tag_name(VAL_TAG(start_val)));
+		return;
+	}
+	int start = (int)VAL_NUMBER(start_val);
+	Val source_val = chain_sp[-3];
+	if (VAL_TAG(source_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val)));
+		return;
+	}
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	int char_count = string_codepoint_count(source);
 	if (start < 0 || end > char_count || start > end) {
-		fail(interp, "substring: range [%d, %d) out of bounds for length %d", start, end, char_count);
+		fail(interp, "range [%d, %d) out of bounds for length %d", start, end, char_count);
 		return;
 	}
 
 	int start_byte = utf8_byte_offset(source->bytes, source->len, start);
 	int end_byte = utf8_byte_offset(source->bytes, source->len, end);
 	int handle = object_new_string(interp, source->bytes + start_byte, end_byte - start_byte);
-	interp->data_stack[interp->dsp - 1] = make_string(handle);
+	chain_sp[-3] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_byte_substring(DISPATCH_ARGS) {
-	POP_INT(end, "byte-substring", "end");
-	POP_INT(start, "byte-substring", "start");
-	PEEK_STRING_AT(source, 0, "byte-substring");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val end_val = chain_sp[-1];
+	if (VAL_TAG(end_val) != T_FLOAT) {
+		fail(interp, "expected a float end; got %s", tag_name(VAL_TAG(end_val)));
+		return;
+	}
+	int end = (int)VAL_NUMBER(end_val);
+	Val start_val = chain_sp[-2];
+	if (VAL_TAG(start_val) != T_FLOAT) {
+		fail(interp, "expected a float start; got %s", tag_name(VAL_TAG(start_val)));
+		return;
+	}
+	int start = (int)VAL_NUMBER(start_val);
+	Val source_val = chain_sp[-3];
+	if (VAL_TAG(source_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val)));
+		return;
+	}
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	if (start < 0 || end > source->len || start > end) {
-		fail(interp, "byte-substring: range [%d, %d) out of bounds for length %d", start, end, source->len);
+		fail(interp, "range [%d, %d) out of bounds for length %d", start, end, source->len);
 		return;
 	}
 
 	int handle = object_new_string(interp, source->bytes + start, end - start);
-	interp->data_stack[interp->dsp - 1] = make_string(handle);
+	chain_sp[-3] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 static Val produce_char_string(Interpreter *interp, Object *source, int start_byte, int end_byte) {
@@ -468,44 +494,49 @@ static Val produce_codepoint(Interpreter *interp, Object *source, int start_byte
 	return make_float((double)codepoint);
 }
 
-static void char_index_op(Interpreter *interp, const char *op,
+static Val char_index_value(Interpreter *interp, Object *source, int index,
 		Val (*produce)(Interpreter *, Object *, int start_byte, int end_byte)) {
-	POP_INT(index, op, "index");
-	PEEK_STRING_AT(source, 0, op);
-
 	int char_count = string_codepoint_count(source);
 	if (index < 0 || index >= char_count) {
-		fail(interp, "%s: index %d out of bounds for length %d", op, index, char_count);
-		return;
+		fail(interp, "index %d out of bounds for length %d", index, char_count);
+		return make_tagged(T_NONE, 0);
 	}
 
 	int start_byte = utf8_byte_offset(source->bytes, source->len, index);
 	int end_byte = utf8_byte_offset(source->bytes, source->len, index + 1);
-	Val result = produce(interp, source, start_byte, end_byte);
-	if (interp->error_flag) return;
-
-	interp->data_stack[interp->dsp - 1] = result;
+	return produce(interp, source, start_byte, end_byte);
 }
 
-void p_char_at(DISPATCH_ARGS) {
-	char_index_op(interp, "char-at", produce_char_string);
+#define CHAR_INDEX_OP(c_name, produce) \
+	void c_name(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
+		Val index_val = chain_sp[-1]; \
+		if (VAL_TAG(index_val) != T_FLOAT) { \
+			fail(interp, "expected a float index; got %s", tag_name(VAL_TAG(index_val))); \
+			return; \
+		} \
+		Val source_val = chain_sp[-2]; \
+		if (VAL_TAG(source_val) != T_STRING) { \
+			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val))); \
+			return; \
+		} \
+		\
+		Val element = char_index_value(interp, OBJECT_AT(VAL_DATA(source_val)), (int)VAL_NUMBER(index_val), produce); \
+		if (interp->error_flag) \
+			return; \
+		chain_sp[-2] = element; \
+		\
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1); \
+	}
 
-	DISPATCH(interp);
-}
+CHAR_INDEX_OP(p_char_at, produce_char_string)
+CHAR_INDEX_OP(p_codepoint_at, produce_codepoint)
 
-void p_codepoint_at(DISPATCH_ARGS) {
-	char_index_op(interp, "codepoint-at", produce_codepoint);
-
-	DISPATCH(interp);
-}
-
-static void string_explode(Interpreter *interp, const char *op,
+static int exploded_array(Interpreter *interp, Object *source,
 		Val (*produce)(Interpreter *, Object *, int start_byte, int end_byte)) {
-	PEEK_STRING_AT(source, 0, op);
-
 	int char_count = string_codepoint_count(source);
 	int handle = object_new_array(interp, char_count);
-	if (interp->error_flag) return;
+	if (interp->error_flag) return -1;
 	Object *result = OBJECT_AT(handle);
 	memset(result->items, 0, sizeof(Val) * (size_t)char_count);
 	gc_root_push(interp, make_array(handle));
@@ -518,48 +549,70 @@ static void string_explode(Interpreter *interp, const char *op,
 		result->items[index] = produce(interp, source, start_byte, end_byte);
 		if (interp->error_flag) {
 			gc_root_pop(interp);
-			return;
+			return -1;
 		}
 		start_byte = end_byte;
 	}
 	gc_root_pop(interp);
 
-	interp->data_stack[interp->dsp - 1] = make_array(handle);
+	return handle;
 }
 
-void p_string_to_chars(DISPATCH_ARGS) {
-	string_explode(interp, "string>chars", produce_char_string);
+#define STRING_EXPLODE_OP(c_name, produce) \
+	void c_name(DISPATCH_ARGS) { \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1); \
+		Val source_val = chain_sp[-1]; \
+		if (VAL_TAG(source_val) != T_STRING) { \
+			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val))); \
+			return; \
+		} \
+		\
+		int handle = exploded_array(interp, OBJECT_AT(VAL_DATA(source_val)), produce); \
+		if (handle < 0) \
+			return; \
+		chain_sp[-1] = make_array(handle); \
+		\
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp); \
+	}
 
-	DISPATCH(interp);
-}
-
-void p_string_to_codepoints(DISPATCH_ARGS) {
-	string_explode(interp, "string>codepoints", produce_codepoint);
-
-	DISPATCH(interp);
-}
+STRING_EXPLODE_OP(p_string_to_chars, produce_char_string)
+STRING_EXPLODE_OP(p_string_to_codepoints, produce_codepoint)
 
 void p_codepoint_to_char(DISPATCH_ARGS) {
-	POP_INT(code, "codepoint>char", "codepoint");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val code_val = chain_sp[-1];
+	if (VAL_TAG(code_val) != T_FLOAT) {
+		fail(interp, "expected a float codepoint; got %s", tag_name(VAL_TAG(code_val)));
+		return;
+	}
+	int code = (int)VAL_NUMBER(code_val);
 	if (code < 0 || code > 0x10FFFF) {
-		fail(interp, "codepoint>char: codepoint %d out of range", code);
+		fail(interp, "codepoint %d out of range", code);
 		return;
 	}
 
 	char encoded[4];
 	int length = utf8_encode(code, encoded);
-	push(interp, make_string(object_new_string(interp, encoded, length)));
+	chain_sp[-1] = make_string(object_new_string(interp, encoded, length));
+	if (interp->error_flag)
+		return;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_codepoints_to_string(DISPATCH_ARGS) {
-	POP_ARRAY(codes, "codespoints>string");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val codes_val = chain_sp[-1];
+	if (VAL_TAG(codes_val) != T_ARRAY) {
+		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(codes_val)));
+		return;
+	}
+	Object *codes = OBJECT_AT(VAL_DATA(codes_val));
 
 	int codepoint_count = codes->len;
 	char *buffer = malloc((size_t)codepoint_count * 4 + 1);
 	if (!buffer) {
-		fail(interp, "codepoints>string: out of memory");
+		fail(interp, "out of memory");
 		return;
 	}
 
@@ -568,14 +621,14 @@ void p_codepoints_to_string(DISPATCH_ARGS) {
 		Val item = codes->items[i];
 		if (VAL_TAG(item) != T_FLOAT) {
 			free(buffer);
-			fail(interp, "codepoints>string: element %d is not a number; got %s", i, tag_name(VAL_TAG(item)));
+			fail(interp, "element %d is not a number; got %s", i, tag_name(VAL_TAG(item)));
 			return;
 		}
 
 		int code = (int)VAL_NUMBER(item);
 		if (code < 0 || code > 0x10FFFF) {
 			free(buffer);
-			fail(interp, "codepoints>string: codepoint %d out of range at element %d", code, i);
+			fail(interp, "codepoint %d out of range at element %d", code, i);
 			return;
 		}
 
@@ -584,9 +637,11 @@ void p_codepoints_to_string(DISPATCH_ARGS) {
 
 	int handle = object_new_string(interp, buffer, offset);
 	free(buffer);
-	push(interp, make_string(handle));
+	if (interp->error_flag)
+		return;
+	chain_sp[-1] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 static inline int trim_is_ws(unsigned char c) {
@@ -604,32 +659,37 @@ void p_trim(DISPATCH_ARGS) {
 		end--;
 
 	int handle = object_new_string(interp, source->bytes + start, end - start);
-	interp->data_stack[interp->dsp - 1] = make_string(handle);
+	if (interp->error_flag)
+		return;
+	chain_sp[-1] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_string_to_number(DISPATCH_ARGS) {
-	POP_STRING(source, "string>number");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val string_val = chain_sp[-1];
+	if (VAL_TAG(string_val) != T_STRING) {
+		fail(interp, "expected a string; got %s", tag_name(VAL_TAG(string_val)));
+		return;
+	}
+	Object *source = OBJECT_AT(VAL_DATA(string_val));
 
 	const char *text = source->bytes;
 	char *end;
 	double value = strtod(text, &end);
 
 	if (end == text) {
-		push(interp, make_tagged(T_NONE, 0));
-		DISPATCH(interp);
+		chain_sp[-1] = make_tagged(T_NONE, 0);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 	}
 
 	while (isspace((unsigned char)*end))
 		end++;
 
-	if (*end != 0)
-		push(interp, make_tagged(T_NONE, 0));
-	else
-		push(interp, make_float(value));
+	chain_sp[-1] = *end != 0 ? make_tagged(T_NONE, 0) : make_float(value);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_join(DISPATCH_ARGS) {
@@ -640,7 +700,7 @@ void p_join(DISPATCH_ARGS) {
 	int64_t total = 0;
 	for (int i = 0; i < array->len; i++) {
 		if (VAL_TAG(array->items[i]) != T_STRING) {
-			fail(interp, "join: element %d is %s, expected a string", i, tag_name(VAL_TAG(array->items[i])));
+			fail(interp, "element %d is %s, expected a string", i, tag_name(VAL_TAG(array->items[i])));
 			return;
 		}
 		total += OBJECT_AT(VAL_DATA(array->items[i]))->len;
@@ -648,7 +708,7 @@ void p_join(DISPATCH_ARGS) {
 	if (array->len > 0)
 		total += (int64_t)separator->len * (array->len - 1);
 	if (total > INT_MAX) {
-		fail(interp, "join: result too large (%lld bytes)", (long long)total);
+		fail(interp, "result too large (%lld bytes)", (long long)total);
 		return;
 	}
 
@@ -666,8 +726,7 @@ void p_join(DISPATCH_ARGS) {
 		offset += piece->len;
 	}
 
-	interp->data_stack[interp->dsp - 2] = make_string(handle);
-	interp->dsp -= 1;
+	chain_sp[-2] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }

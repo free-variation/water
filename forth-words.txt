@@ -1,5 +1,7 @@
 !
+!e
 !i
+!i,j
 %
 '
 )]
@@ -34,6 +36,7 @@
 ?
 ?if
 @
+@e
 @i
 @i,j
 @j
@@ -69,6 +72,7 @@ append-file
 apropos
 argmax
 argmin
+argsort
 array
 array-of
 array>cons
@@ -150,6 +154,7 @@ env
 env!
 epoch>date
 epoch>date-local
+eq
 execute
 exit
 exp
@@ -260,6 +265,7 @@ member?
 merge
 min
 mod
+nan?
 negate
 nip
 none?
@@ -429,6 +435,7 @@ vvf/
 wait
 wall-now
 water
+where
 while
 wildcard?
 with-db

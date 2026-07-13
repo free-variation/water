@@ -123,14 +123,15 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **In-place matrix ops** — `+!`/`-!`/`*!`/`/!` mutate the left matrix in place (explicit; the programmer decides). Float-only fast paths (`f+`, `f-`, `f*`, `f/`, `f^`, …) skip the type dispatch when both operands are known floats.
 - **Matrix construction** — `R C 0-matrix` (zeros), `[ ... ] R C matrix`, `[ ... ] vector` (an n×1 column, length inferred), `V N diagonal-matrix` (N×N with V on the diagonal), `N identity-matrix`, `start end step matrix-range` (a 1×N row over a stepped range).
 - **DGEMM** — `dgemm-nn`/`tn`/`nt`/`tt` (`αAB + βC`) for all four transpose variants, each with its own loop order chosen so the inner loop runs unit-stride with `restrict` pointers: `nn` and `tn` are ikj axpy kernels, `nt` and `tt` are vectorized dot products (`tt` staging Aᵀ's column through a scratch buffer).
-- **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells.
+- **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells; `@e` reads by flat row-major index (what `argmax`/`where`/`argsort` produce); `!i,j` and `!e` store a single element in place.
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
-- **Selection** — `augment` (concatenate two matrices column-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array).
+- **Selection** — `augment`/`hstack` (concatenate two matrices column-wise), `vstack` (row-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array or an index vector).
 - **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `argmax`, `argmin` (flat row-major index of the extreme element), `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
 - **Norms** — `norm` (Euclidean/L2) and `frobenius-norm`, both √(Σ elements²) over the matrix; `dot` ( v w -- f ) is the inner product.
 - **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the loadable statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, and `ci` on these.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
-- **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `lt`/`gt` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). On scalars, strings, and collections all three are structural.
+- **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `lt`/`gt`/`eq` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). On scalars, strings, and collections comparison is structural, `eq` agreeing with `=`.
+- **Sorting and masks** — `sort` (ascending copy of a vector, NaNs last), `argsort` (the sorting permutation as an index vector; ties keep index order), `where` (flat indices of a mask's nonzero elements), `nan?` (the NaN mask — NaNs compare false under `lt`/`gt`/`eq`). Masks compose: `dup 0 @j 0 lt where select-rows` keeps the rows whose first column is negative.
 
 ### Dimensioned quantities
 
@@ -302,7 +303,7 @@ A third stack for stashing arbitrary Vals without disturbing the data or return 
 Built in `lib.h2o` on top of the continuation primitives:
 
 - **`throw`** — non-local exit with a value.
-- **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — returning the error message as the exception value, so a runtime fault is recoverable, not just a user `throw`.
+- **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — delivering a `{ :message :trace }` frame (the trace names the failing word innermost-first) as the exception value, so a runtime fault is recoverable, not just a user `throw`. A `throw`n value passes through raw.
 - **`try-catch`** — wraps an xt with a recovery handler that runs on either kind of failure. Arity-agnostic.
 - **`ensure`** — `( body-xt cleanup-xt -- … )` runs cleanup on both the normal and the throw/error path, then re-raises on throw. **`with-db`** / **`with-stream`** build on it to open (or take) a resource, run a body with it, and release it however the body exits.
 

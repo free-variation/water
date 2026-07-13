@@ -21,10 +21,10 @@ o'brien
 2 
 1 
 :alice 
-error: db-query: query takes 1 parameter(s) 0 given
-error: db-query: query takes 0 parameter(s) 1 given
-error: db-query: cannot bind a set as a parameter
-error: db-close: expected a database; got a float
-error: db-query: near "SELCT": syntax error
-error: db-exec: no such table: nope
-error: db-query: database is closed
+error: query takes 1 parameter(s) 0 given
+error: query takes 0 parameter(s) 1 given
+error: cannot bind a set as a parameter
+error: expected a database; got a float
+error: near "SELCT": syntax error
+error: no such table: nope
+error: database is closed

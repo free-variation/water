@@ -8,4 +8,4 @@
 2 
 3 
 [ 3 1 ] 
-error: group-by: expected a symbol; got a float
+error: expected a symbol; got a float

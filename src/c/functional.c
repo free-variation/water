@@ -6,6 +6,21 @@ static _Thread_local Interpreter *worker_interp;
 static _Thread_local int worker_slot;
 static _Atomic int parallel_error;
 
+static int call_one_result(Interpreter *interp, CallContext *context, int xt, int dsp_before,
+		const char *op, const char *callable, const char *unit, Val *result_out) {
+	call_step(interp, context, xt);
+	if (interp->error_flag)
+		return 0;
+	if (interp->dsp != dsp_before + 1) {
+		fail(interp, "%s: %s must leave exactly one value per %s, but changed the stack by %d",
+				op, callable, unit, interp->dsp - dsp_before);
+		return 0;
+	}
+
+	*result_out = pop(interp);
+	return 1;
+}
+
 void p_map(DISPATCH_ARGS) {
 	POP_XT(xt, "map");
 	PEEK_SEQUENCE_AT(source_val, 0, "map");
@@ -21,13 +36,8 @@ void p_map(DISPATCH_ARGS) {
 	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		int dsp_before = interp->dsp;
 		push(interp, source->items[i]);
-		call_step(interp, &context, xt);
-		if (interp->error_flag) break;
-		if (interp->dsp != dsp_before + 1) {
-			fail(interp, "map: quotation must leave exactly one value per element, but changed the stack by %d", interp->dsp - dsp_before);
+		if (!call_one_result(interp, &context, xt, dsp_before, "map", "quotation", "element", &result->items[i]))
 			break;
-		}
-		result->items[i] = pop(interp);
 	}
 	call_close(interp, &context);
 
@@ -44,12 +54,12 @@ void p_map(DISPATCH_ARGS) {
 void p_mapn(DISPATCH_ARGS) {
 	POP_INT(arity, "mapn", "arity");
 	if (arity < 1) {
-		fail(interp, "mapn: arity must be >= 1; got %d", arity);
+		fail(interp, "arity must be >= 1; got %d", arity);
 		return;
 	}
 	POP_XT(xt, "mapn");
 	if (arity > interp->dsp) {
-		fail(interp, "mapn: arity %d exceeds %d values on the stack", arity, interp->dsp);
+		fail(interp, "arity %d exceeds %d values on the stack", arity, interp->dsp);
 		return;
 	}
 
@@ -57,13 +67,13 @@ void p_mapn(DISPATCH_ARGS) {
 	int row_count = -1;
 	for (int i = 0; i < arity; i++) {
 		if (VAL_TAG(interp->data_stack[first_source + i]) != T_ARRAY) {
-			fail(interp, "mapn: source %d is %s, expected an array", i, tag_name(VAL_TAG(interp->data_stack[first_source + i])));
+			fail(interp, "source %d is %s, expected an array", i, tag_name(VAL_TAG(interp->data_stack[first_source + i])));
 			return;
 		}
 		Object *source = OBJECT_AT(VAL_DATA(interp->data_stack[first_source + i]));
 		if (row_count < 0) row_count = source->len;
 		else if (source->len != row_count) {
-			fail(interp, "mapn: source arrays differ in length (%d vs %d)", source->len, row_count);
+			fail(interp, "source arrays differ in length (%d vs %d)", source->len, row_count);
 			return;
 		}
 	}
@@ -81,13 +91,8 @@ void p_mapn(DISPATCH_ARGS) {
 			Object *source = OBJECT_AT(VAL_DATA(interp->data_stack[first_source + source_index]));
 			push(interp, source->items[row]);
 		}
-		call_step(interp, &context, xt);
-		if (interp->error_flag) break;
-		if (interp->dsp != dsp_before + 1) {
-			fail(interp, "mapn: quotation must leave exactly one value per row, but changed the stack by %d", interp->dsp - dsp_before);
+		if (!call_one_result(interp, &context, xt, dsp_before, "mapn", "quotation", "row", &result->items[row]))
 			break;
-		}
-		result->items[row] = pop(interp);
 	}
 	call_close(interp, &context);
 
@@ -114,13 +119,10 @@ void p_filter(DISPATCH_ARGS) {
 	for (int i = 0; i < source->len && !interp->error_flag; i++) {
 		int dsp_before = interp->dsp;
 		push(interp, source->items[i]);
-		call_step(interp, &context, xt);
-		if (interp->error_flag) break;
-		if (interp->dsp != dsp_before + 1) {
-			fail(interp, "filter: predicate must leave exactly one value per element, but changed the stack by %d", interp->dsp - dsp_before);
+		Val verdict;
+		if (!call_one_result(interp, &context, xt, dsp_before, "filter", "predicate", "element", &verdict))
 			break;
-		}
-		keep[i] = truthy(pop(interp));
+		keep[i] = truthy(verdict);
 		n_kept += keep[i];
 	}
 	call_close(interp, &context);
@@ -181,7 +183,7 @@ void p_reduce(DISPATCH_ARGS) {
 		POP_INT(n, word_name, "count"); \
 		POP_XT(xt, word_name); \
 		if (n < 0) { \
-			fail(interp, word_name ": count must be non-negative; got %d", n); \
+			fail(interp, "count must be non-negative; got %d", n); \
 			return; \
 		} \
 		CallContext context; \
@@ -242,8 +244,10 @@ static int cpu_count(void) {
 }
 
 void p_num_cores(DISPATCH_ARGS) {
-	push(interp, make_float(cpu_count()));
-	DISPATCH(interp);
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	*chain_sp = make_float(cpu_count());
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 static void pmap_kernel(int start_index, int end_index, void *context) {
@@ -374,7 +378,7 @@ void p_pfilter(DISPATCH_ARGS) {
 	if (parallel_apply(domain, worker_count, items_per_claim, pfilter_kernel, &filter, &region)) {
 		free(keep);
 		region_abort(&region);
-		fail(interp, "pfilter: a worker predicate failed (faulted or allocated past the parallel headroom)");
+		fail(interp, "a worker predicate failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
 
@@ -465,7 +469,7 @@ void p_pmap(DISPATCH_ARGS) {
 
 	if (failed) {
 		region_abort(&region);
-		fail(interp, "pmap: a worker quotation failed (faulted or allocated past the parallel headroom)");
+		fail(interp, "a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
 
@@ -554,7 +558,7 @@ void p_pmap_reduce(DISPATCH_ARGS) {
 		gc_root_pop(interp);
 		gc_root_pop(interp);
 		region_abort(&region);
-		fail(interp, "pmap-reduce: a worker quotation failed (faulted or allocated past the parallel headroom)");
+		fail(interp, "a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
 

@@ -83,6 +83,19 @@ case "$out" in
 esac
 rm -f "$img" "$trunc"
 
+# a tiny object table forces collections inside allocating helpers; the
+# operands must stay rooted, so results stay correct under constant GC
+# (verified to fail without the roots: binary case yields 99144)
+exact "GC pressure: binary_op operands stay rooted" \
+  ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 4 5 6 7 8 ] vector 2 ^ sum acc + to acc f++ i repeat acc ; pressure . cr' \
+  "102000 " 0 -b --max-objects 60
+exact "GC pressure: unary_op operand stays rooted" \
+  ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 ] vector exp sum acc + to acc f++ i repeat acc round ; pressure . cr' \
+  "15096 " 0 -b --max-objects 60
+exact "GC pressure: unify-cons values stay rooted" \
+  ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [( 1 2 3 )] _ ~ drop acc 1 + to acc f++ i repeat acc ; pressure . cr' \
+  "500 " 0 -b --max-objects 60
+
 # --arena overrides the reservation (gigabytes, optional g suffix)
 exact "--arena accepts a size"      '2 3 + . cr'  "5 "  0 -b --arena 2g
 has   "--arena needs a value"       ''  "needs a size"   2 --arena

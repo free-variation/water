@@ -5,13 +5,13 @@
 [ 1 2 3 4 5 ] 
 [ 9 ] 
 [ 5 4 3 2 1 ] 
-error: slice!: target [0, 5) out of bounds for length 3
-in rev!
-error: slice!: target [2, 4) out of bounds for length 3
-in rev!
-error: slice!: target [-1, 1) out of bounds for length 3
-in rev!
-error: slice!: length must be non-negative; got -1
-in rev!
-error: slice!: source must be an array or set; got a float
-in rev!
+error: target [0, 5) out of bounds for length 3
+in slice! ← rev!
+error: target [2, 4) out of bounds for length 3
+in slice! ← rev!
+error: target [-1, 1) out of bounds for length 3
+in slice! ← rev!
+error: length must be non-negative; got -1
+in slice! ← rev!
+error: source must be an array or set; got a float
+in slice! ← rev!

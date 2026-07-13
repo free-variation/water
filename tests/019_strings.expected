@@ -27,20 +27,20 @@ zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz
 1 
 1 
 1 
-error: format: {d} needs a float; got a string
-error: format: {.2f} needs a float; got a string
-error: format: bad spec 'z'
-error: format: bad spec '.2x'
+error: {d} needs a float; got a string
+error: {.2f} needs a float; got a string
+error: bad spec 'z'
+error: bad spec '.2x'
 ell 
 hello 
 h 
 o 
  
  
-error: substring: range [0, 6) out of bounds for length 5
-error: substring: range [-1, 3) out of bounds for length 5
-error: substring: range [3, 1) out of bounds for length 5
-error: substring: expected a string; got a float
+error: range [0, 6) out of bounds for length 5
+error: range [-1, 3) out of bounds for length 5
+error: range [3, 1) out of bounds for length 5
+error: expected a string; got a float
 héllo 
 wörld 
 héll 
@@ -54,8 +54,8 @@ h
 😀 
 233 
 128512 
-error: char-at: index 5 out of bounds for length 5
-error: codepoint-at: index -1 out of bounds for length 5
+error: index 5 out of bounds for length 5
+error: index -1 out of bounds for length 5
 [ "h" "é" "l" "l" "o" ] 
 [ "x" "😀" "y" ] 
 [ 104 233 108 108 111 ] 
@@ -66,22 +66,22 @@ héllo
 x😀y 
  
 héllo 😀 wörld 
-error: codepoint>char: codepoint 1114112 out of range
-error: codepoints>string: codepoint -1 out of range at element 1
+error: codepoint 1114112 out of range
+error: codepoint -1 out of range at element 1
 hi 
 2 
 mid word 
 data 
 0 
 0 
-error: trim: expected a string; got a float
+error: expected a string; got a float
 a,b,c 
 abc 
 x 
  
 chr1 
 one - two 
-error: join: element 1 is a float, expected a string
+error: element 1 is a float, expected a string
 1 
 1 
 1 
@@ -97,9 +97,9 @@ error: join: element 1 is a float, expected a string
 1 
 1 
 1 
-error: format: {0} needs 1 stack value(s) but only 0 present
-error: format: {3} needs 4 stack value(s) but only 1 present
-error: format: expected a template string; got a float
+error: {0} needs 1 stack value(s) but only 0 present
+error: {3} needs 4 stack value(s) but only 1 present
+error: expected a template string; got a float
 1 
 1 
 1 

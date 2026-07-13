@@ -52,9 +52,9 @@ static int ffi_pointer_intern(void *pointer) {
 	return index;
 }
 
-static int ffi_type_of(Interpreter *interp, Val symbol, FFITypeTag *tag, ffi_type **type, const char *op) {
+static int ffi_type_of(Interpreter *interp, Val symbol, FFITypeTag *tag, ffi_type **type) {
 	if (VAL_TAG(symbol) != T_SYMBOL) {
-		fail(interp, "%s: type must be a symbol; got %s", op, tag_name(VAL_TAG(symbol)));
+		fail(interp, "type must be a symbol; got %s", tag_name(VAL_TAG(symbol)));
 		return 0;
 	}
 
@@ -78,42 +78,47 @@ static int ffi_type_of(Interpreter *interp, Val symbol, FFITypeTag *tag, ffi_typ
 		*tag = FFI_STRING;
 		*type = &ffi_type_pointer;
 	} else {
-		fail(interp, "%s: unknown FFI type :%s", op, name);
+		fail(interp, "unknown FFI type :%s", name);
 		return 0;
 	}
 	return 1;
 }
 
 void p_ffi_open(DISPATCH_ARGS) {
-	POP_STRING(library_path, "ffi-open");
-
-	void *library = dlopen(library_path->bytes, RTLD_NOW | RTLD_GLOBAL);
-	if (!library) {
-		fail(interp, "ffi-open: %s", dlerror());
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val path_val = chain_sp[-1];
+	if (VAL_TAG(path_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
 		return;
 	}
 
-	push(interp, make_pointer(ffi_pointer_intern(library)));
+	void *library = dlopen(OBJECT_AT(VAL_DATA(path_val))->bytes, RTLD_NOW | RTLD_GLOBAL);
+	if (!library) {
+		fail(interp, "%s", dlerror());
+		return;
+	}
 
-	DISPATCH(interp);
+	chain_sp[-1] = make_pointer(ffi_pointer_intern(library));
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
-static void make_ffi_binding(Interpreter *interp, Val library_val, Object *function_name, Object *arg_types, Val return_symbol, int fixed_args, const char *name, const char *op) {
+static void make_ffi_binding(Interpreter *interp, Val library_val, Object *function_name, Object *arg_types, Val return_symbol, int fixed_args, const char *name) {
 	if (VAL_TAG(library_val) != T_PTR) {
-		fail(interp, "%s: library must be a pointer handle; got %s", op, tag_name(VAL_TAG(library_val)));
+		fail(interp, "library must be a pointer handle; got %s", tag_name(VAL_TAG(library_val)));
 		return;
 	}
 
 	void *library = ffi_pointers[VAL_DATA(library_val)];
 	void *function = dlsym(library, function_name->bytes);
 	if (!function) {
-		fail(interp, "%s: symbol %s not found", op, function_name->bytes);
+		fail(interp, "symbol %s not found", function_name->bytes);
 		return;
 	}
 
 	int argc = arg_types->len;
 	if (argc > FFI_MAX_ARGS) {
-		fail(interp, "%s: too many arguments (max %d)", op, FFI_MAX_ARGS);
+		fail(interp, "too many arguments (max %d)", FFI_MAX_ARGS);
 		return;
 	}
 
@@ -122,13 +127,13 @@ static void make_ffi_binding(Interpreter *interp, Val library_val, Object *funct
 	binding->argc = argc;
 
 	ffi_type *return_ffi;
-	if (!ffi_type_of(interp, return_symbol, &binding->return_tag, &return_ffi, op)) {
+	if (!ffi_type_of(interp, return_symbol, &binding->return_tag, &return_ffi)) {
 		free(binding);
 		return;
 	}
 
 	for (int i = 0; i < argc; i++)
-		if (!ffi_type_of(interp, arg_types->items[i], &binding->arg_tags[i], &binding->arg_ffi[i], op)) {
+		if (!ffi_type_of(interp, arg_types->items[i], &binding->arg_tags[i], &binding->arg_ffi[i])) {
 			free(binding);
 			return;
 		}
@@ -140,7 +145,7 @@ static void make_ffi_binding(Interpreter *interp, Val library_val, Object *funct
 		prepared = ffi_prep_cif_var(&binding->cif, FFI_DEFAULT_ABI, (unsigned)fixed_args, (unsigned)argc, return_ffi, binding->arg_ffi) == FFI_OK;
 	if (!prepared) {
 		free(binding);
-		fail(interp, "%s: ffi_prep_cif failed", op);
+		fail(interp, "ffi_prep_cif failed");
 		return;
 	}
 
@@ -156,56 +161,90 @@ static void make_ffi_binding(Interpreter *interp, Val library_val, Object *funct
 }
 
 void p_ffi_function(DISPATCH_ARGS) {
-	POP(return_symbol);
-	POP_ARRAY(arg_types, "ffi-function");
-	POP_STRING(function_name, "ffi-function");
-	POP(library_val);
-
-	if (interp->error_flag) return;
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 4);
+	Val return_symbol = chain_sp[-1];
+	Val arg_types_val = chain_sp[-2];
+	if (VAL_TAG(arg_types_val) != T_ARRAY) {
+		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(arg_types_val)));
+		return;
+	}
+	Object *arg_types = OBJECT_AT(VAL_DATA(arg_types_val));
+	Val function_name_val = chain_sp[-3];
+	if (VAL_TAG(function_name_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(function_name_val)));
+		return;
+	}
+	Object *function_name = OBJECT_AT(VAL_DATA(function_name_val));
+	Val library_val = chain_sp[-4];
 
 	char *name = next_token();
 	if (!name) {
-		fail(interp, "ffi-function: expected a name");
+		fail(interp, "expected a name");
 		return;
 	}
 
-	make_ffi_binding(interp, library_val, function_name, arg_types, return_symbol, -1, name, "ffi-function");
+	make_ffi_binding(interp, library_val, function_name, arg_types, return_symbol, -1, name);
+	if (interp->error_flag)
+		return;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 4);
 }
 
 void p_ffi_variadic(DISPATCH_ARGS) {
-	POP_INT(fixed_args, "ffi-variadic", "fixed-argument count");
-	POP(return_symbol);
-	POP_ARRAY(arg_types, "ffi-variadic");
-	POP_STRING(function_name, "ffi-variadic");
-	POP(library_val);
-
-	if (interp->error_flag) return;
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 5);
+	Val fixed_args_val = chain_sp[-1];
+	if (VAL_TAG(fixed_args_val) != T_FLOAT) {
+		fail(interp, "expected a float fixed-argument count; got %s", tag_name(VAL_TAG(fixed_args_val)));
+		return;
+	}
+	int fixed_args = (int)VAL_NUMBER(fixed_args_val);
+	Val return_symbol = chain_sp[-2];
+	Val arg_types_val = chain_sp[-3];
+	if (VAL_TAG(arg_types_val) != T_ARRAY) {
+		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(arg_types_val)));
+		return;
+	}
+	Object *arg_types = OBJECT_AT(VAL_DATA(arg_types_val));
+	Val function_name_val = chain_sp[-4];
+	if (VAL_TAG(function_name_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(function_name_val)));
+		return;
+	}
+	Object *function_name = OBJECT_AT(VAL_DATA(function_name_val));
+	Val library_val = chain_sp[-5];
 
 	if (fixed_args < 0 || fixed_args > arg_types->len) {
-		fail(interp, "ffi-variadic: fixed count %d out of range for %d arguments", fixed_args, arg_types->len);
+		fail(interp, "fixed count %d out of range for %d arguments", fixed_args, arg_types->len);
 		return;
 	}
 
 	char *name = next_token();
 	if (!name) {
-		fail(interp, "ffi-variadic: expected a name");
+		fail(interp, "expected a name");
 		return;
 	}
 
-	make_ffi_binding(interp, library_val, function_name, arg_types, return_symbol, fixed_args, name, "ffi-variadic");
+	make_ffi_binding(interp, library_val, function_name, arg_types, return_symbol, fixed_args, name);
+	if (interp->error_flag)
+		return;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 5);
 }
 
 void p_ffi_call(DISPATCH_ARGS) {
-	POP_INT(index, "ffi-call", "binding");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		fail(interp, "expected a float binding; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+	int index = (int)VAL_NUMBER(index_val);
 	FFIBinding *binding = ffi_bindings[index];
 
 	int argc = binding->argc;
-	if (interp->dsp < argc) {
-		fail(interp, "ffi-call: stack too shallow; need %d arguments", argc);
+	Val *call_args = chain_sp - 1 - argc;
+	if (call_args < interp->data_stack) {
+		fail(interp, "stack underflow; need %d arguments", argc);
 		return;
 	}
 
@@ -217,10 +256,9 @@ void p_ffi_call(DISPATCH_ARGS) {
 	} arg_cells[FFI_MAX_ARGS];
 
 	void *arg_pointers[FFI_MAX_ARGS];
-	int first_arg = interp->dsp - argc;
 
 	for (int i = 0; i < argc; i++) {
-		Val argument = interp->data_stack[first_arg + i];
+		Val argument = call_args[i];
 		switch (binding->arg_tags[i]) {
 			case FFI_INT:
 				arg_cells[i].as_int = (int)VAL_NUMBER(argument);
@@ -236,7 +274,7 @@ void p_ffi_call(DISPATCH_ARGS) {
 				break;
 			case FFI_PTR:
 				if (VAL_TAG(argument) != T_PTR) {
-					fail(interp, "ffi-call: argument %d expected a pointer; got %s", i, tag_name(VAL_TAG(argument)));
+					fail(interp, "argument %d expected a pointer; got %s", i, tag_name(VAL_TAG(argument)));
 					return;
 				}
 				pthread_mutex_lock(&ffi_pointers_lock);
@@ -246,14 +284,14 @@ void p_ffi_call(DISPATCH_ARGS) {
 				break;
 			case FFI_STRING:
 				if (VAL_TAG(argument) != T_STRING) {
-					fail(interp, "ffi-call: argument %d expected a string; got %s", i, tag_name(VAL_TAG(argument)));
+					fail(interp, "argument %d expected a string; got %s", i, tag_name(VAL_TAG(argument)));
 					return;
 				}
 				arg_cells[i].as_pointer = OBJECT_AT(VAL_DATA(argument))->bytes;
 				arg_pointers[i] = &arg_cells[i].as_pointer;
 				break;
 			default:
-				fail(interp, "ffi-call: argument %d has return-only type :void", i);
+				fail(interp, "argument %d has return-only type :void", i);
 				return;
 		}
 	}
@@ -265,40 +303,49 @@ void p_ffi_call(DISPATCH_ARGS) {
 	} result;
 	ffi_call(&binding->cif, FFI_FN(binding->function), &result, arg_pointers);
 
-	interp->dsp -= argc;
-
+	Val *returned_top = call_args;
 	switch (binding->return_tag) {
 		case FFI_VOID:
 			break;
 		case FFI_INT:
-			push(interp, make_float((double)(int)result.as_int));
+			*returned_top++ = make_float((double)(int)result.as_int);
 			break;
 		case FFI_LONG:
-			push(interp, make_float((double)(long)result.as_int));
+			*returned_top++ = make_float((double)(long)result.as_int);
 			break;
 		case FFI_DOUBLE:
-			push(interp, make_float(result.as_double));
+			*returned_top++ = make_float(result.as_double);
 			break;
 		case FFI_PTR:
-			push(interp, make_pointer(ffi_pointer_intern(result.as_pointer)));
+			*returned_top++ = make_pointer(ffi_pointer_intern(result.as_pointer));
 			break;
 		case FFI_STRING:
-			if (result.as_pointer)
-				push(interp, make_string(object_new_string(interp, result.as_pointer, (int)strlen(result.as_pointer))));
-			else
-				push(interp, make_tagged(T_NONE, 0));
+			if (result.as_pointer) {
+				SYNC_REGISTERS(interp, chain_ip, call_args);
+				int handle = object_new_string(interp, result.as_pointer, (int)strlen(result.as_pointer));
+				if (interp->error_flag)
+					return;
+				*returned_top++ = make_string(handle);
+			} else
+				*returned_top++ = make_tagged(T_NONE, 0);
 			break;
 	}
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, returned_top);
 }
 
 void p_ffi_free(DISPATCH_ARGS) {
-	POP_PTR(index, "ffi-free");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val pointer_val = chain_sp[-1];
+	if (VAL_TAG(pointer_val) != T_PTR) {
+		fail(interp, "expected %s; got %s", tag_name(T_PTR), tag_name(VAL_TAG(pointer_val)));
+		return;
+	}
+	int index = (int)VAL_DATA(pointer_val);
 	free(ffi_pointers[index]);
 	ffi_pointers[index] = NULL;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 int ffi_register_call_cfa(int cfa) {
@@ -307,15 +354,27 @@ int ffi_register_call_cfa(int cfa) {
 }
 
 void p_matrix_to_pointer(DISPATCH_ARGS) {
-	POP_MATRIX(matrix, "matrix>pointer");
-	push(interp, make_pointer(ffi_pointer_intern(matrix->matrix.elements)));
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val matrix_val = chain_sp[-1];
+	if (VAL_TAG(matrix_val) != T_MATRIX) {
+		fail(interp, "expected %s; got %s", tag_name(T_MATRIX), tag_name(VAL_TAG(matrix_val)));
+		return;
+	}
 
-	DISPATCH(interp);
+	chain_sp[-1] = make_pointer(ffi_pointer_intern(OBJECT_AT(VAL_DATA(matrix_val))->matrix.elements));
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_segment_to_pointer(DISPATCH_ARGS) {
-	POP_SEGMENT(segment, "segment>pointer");
-	push(interp, make_pointer(ffi_pointer_intern(segment->segment.data)));
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val segment_val = chain_sp[-1];
+	if (VAL_TAG(segment_val) != T_SEGMENT) {
+		fail(interp, "expected %s; got %s", tag_name(T_SEGMENT), tag_name(VAL_TAG(segment_val)));
+		return;
+	}
 
-	DISPATCH(interp);
+	chain_sp[-1] = make_pointer(ffi_pointer_intern(OBJECT_AT(VAL_DATA(segment_val))->segment.data));
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }

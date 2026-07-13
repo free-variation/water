@@ -49,11 +49,11 @@
 <matrix 2x3>
           1          2          3
           4          5          6
-error: reshape: cannot reshape 6 elements (2x3) into 2x2 (4)
-error: reshape: expected a float row count; got a string
-error: reshape: expected a matrix; got a float
-error: reshape: dimensions must be non-negative; got -2x-2
-error: reshape: 100000x100000 too large (element count overflows)
+error: cannot reshape 6 elements (2x3) into 2x2 (4)
+error: expected a float row count; got a string
+error: expected a matrix; got a float
+error: dimensions must be non-negative; got -2x-2
+error: 100000x100000 too large (element count overflows)
 error: matrix dimensions: 100000x100000 too large (element count overflows)
 error: matrix dimensions: 1000000000x1000000000 too large (element count overflows)
 error: matrix dimensions: must be non-negative; got -1x3

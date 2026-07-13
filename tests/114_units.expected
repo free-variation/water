@@ -27,12 +27,12 @@
 1 
 0 
 500 ml.s^-1 
-error: + : unit mismatch
-error: + : cannot add a quantity and a plain number
-error: ^ : exponent must be a number; got a quantity
-error: ^ : exponent must be a simple rational
-error: sin: expected a float or a matrix; got a quantity
-error: unit: scale must be a positive simple rational of the base unit; got 0.707107
+error: unit mismatch
+error: cannot add a quantity and a plain number
+error: exponent must be a number; got a quantity
+error: exponent must be a simple rational
+error: expected a float or a matrix; got a quantity
+error: scale must be a positive simple rational of the base unit; got 0.707107
 <matrix 2x2> m
           1          2
           3          4
@@ -55,4 +55,4 @@ error: unit: scale must be a positive simple rational of the base unit; got 0.70
 5 
 1 
 3600 
-error: *: unit scale or exponent overflow
+error: unit scale or exponent overflow

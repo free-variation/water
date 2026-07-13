@@ -8,4 +8,4 @@
 12 
 103 
 9 
-error: shift/shift-with: no enclosing reset on the return stack
+error: no enclosing reset on the return stack

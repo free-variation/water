@@ -1,19 +1,19 @@
 error: %: division by zero
-in inner ← mid ← outer
+in % ← inner ← mid ← outer
 error: return stack overflow
 in spin ×65536
 error: %: division by zero
-in [: 1 0 % :]
+in % ← [: 1 0 % :]
 error: %: division by zero
-in [: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18… :]
+in % ← [: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18… :]
 error: %: division by zero
-in haslocals ← top
+in % ← haslocals ← top
 error: %: division by zero
-in w1 ← w2 ← w3 ← w4 ← w5 ← w6 ← w7 ← w8 ← w9 ← w10 ← …+3 ← w14 ← w15 ← w16
+in % ← w1 ← w2 ← w3 ← w4 ← w5 ← w6 ← w7 ← w8 ← w9 ← w10 ← …+3 ← w14 ← w15 ← w16
 error: %: division by zero
-in [: 0 % :]
+in % ← [: 0 % :]
 error: %: division by zero
-in [: 1 0 % :]
+in % ← [: 1 0 % :]
 error: %: division by zero
-in [: 2 0 % :]
+in % ← [: 2 0 % :]
 1 

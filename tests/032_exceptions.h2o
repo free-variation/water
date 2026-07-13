@@ -67,11 +67,11 @@ symbol :oops
 
 \ --- catch / try-catch intercept interpreter errors, not just throws ---
 
-\ -- 16: division by zero, caught -> (msg 1)
-[: 1 0 / :] catch . . cr                              \ 1 / : division by zero
+\ -- 16: division by zero, caught -> (error frame 1)
+[: 1 0 / :] catch . . cr                              \ 1 { :message :trace }
 
-\ -- 17: try-catch handler receives the error message
-[: 1 0 / :] [: "caught: " swap + . cr :] try-catch    \ caught: / : division by zero
+\ -- 17: try-catch handler receives the error frame; :message holds the text
+[: 1 0 / :] [: :message @ "caught: " swap + . cr :] try-catch    \ caught: division by zero
 
 \ -- 18: error_flag is cleared — execution continues after the catch
 [: 1 0 / :] catch 2drop "after" . cr                  \ after

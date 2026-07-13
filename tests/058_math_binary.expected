@@ -42,4 +42,4 @@ error: %: expected two floats; got a string and a float
 8 
 4 
 1 
-error: fsqrt: data stack underflow
+error: stack underflow

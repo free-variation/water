@@ -2,7 +2,11 @@ error: unknown word: >x
 error: unknown word: loopy
 3 
 1 
-unknown word: >z 
+{
+  :message unknown word: >z
+  :trace in load ← [: "/tmp/w124_bad.h2o" load :]
+}
+
 error: unknown word: broken
 error: unknown word: nosuchword
 error: unknown word: partial

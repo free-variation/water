@@ -6,5 +6,5 @@
 4 
 9 
 null 
-error: head-tail: expected a pair; got a float
-error: head-tail: expected a pair; got none
+error: expected a pair; got a float
+error: expected a pair; got none

@@ -11,3 +11,35 @@
 3 identity-matrix 0 1 @i,j . cr
 3 double-segment 0 10 !i 1 20 !i 2 30 !i 1 @i .
 3 int-segment 0 7 !i 1 8 !i 2 9 !i 2 @i .
+
+cr \ @e / !e: flat row-major element read and store; !i,j: the (row,column) store.
+[ 1 2 3 4 5 6 ] 2 3 matrix 0 @e . cr        \ 1
+[ 1 2 3 4 5 6 ] 2 3 matrix 4 @e . cr        \ 5
+[ 10 20 30 ] vector 1 @e . cr               \ 20  nx1
+[ 10 20 30 ] 1 3 matrix 1 @e . cr           \ 20  1xn, same access
+[ 3 1 4 ] vector dup argmin @e . cr         \ 1   argmin's flat index consumed
+[ -1 1 ] vector ln 0 @e . cr                \ null: a NaN element reads as null
+[ 0 0 0 ] vector 1 9 !e . cr                \ stores in place, leaves the vector
+[ 1 2 3 ] vector 0 null !e sort . cr        \ null stores as NaN; sorts last
+2 2 0-matrix 0 1 7 !i,j 1 0 8 !i,j . cr     \ (row, column) stores chain
+
+\ === fused stores: compiled words pin the rewritten shapes and their behavior ===
+: element-into | >target >position >element | target position element !e drop ;
+' element-into see-compiled
+[ 0 0 0 ] vector to fused-target
+fused-target 1 42 element-into  fused-target . cr    \ 42 at index 1 via (!e.lll0)
+
+: double-into | >target >position | target position  position 2 *  !e drop ;
+' double-into see-compiled
+fused-target 2 double-into  fused-target . cr        \ 4 at index 2 via (!e-drop)
+
+: corner-nine | >target | target 0 1 9 !i,j drop ;
+' corner-nine see-compiled
+2 2 0-matrix to fused-block
+fused-block corner-nine  fused-block . cr            \ 9 at (0,1) via (!i,j-drop)
+
+\ errors
+[ 1 2 3 ] vector 3 @e                       \ (element index out of bounds)
+[ 1 2 3 ] vector 1 :x !e                    \ (value must be a float or null)
+[ 1 2 3 4 ] 2 2 matrix 0 2 5 !i,j           \ (column index out of bounds)
+"x" 0 @e                                    \ (not a matrix)

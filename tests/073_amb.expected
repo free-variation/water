@@ -12,5 +12,5 @@
 4 
 error: no enclosing amb to backtrack to
 in [: fail :]
-error: unify: cannot unify 1 with 5
-in c
+error: cannot unify 1 with 5
+in ~ ← c

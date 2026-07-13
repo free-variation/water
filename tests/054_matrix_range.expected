@@ -8,6 +8,6 @@
           3
 <matrix 1x4>
           0          3          6          9
-error: matrix-range: step cannot be zero
-error: matrix-range: step sign does not match start/end direction
-error: matrix-range: too many elements
+error: step cannot be zero
+error: step sign does not match start/end direction
+error: too many elements

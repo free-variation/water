@@ -7,6 +7,6 @@
 [ ] 
 [ 3 1 4 5 2 ] 
 [ 1 2 3 4 5 ] 
-error: sample: cannot draw 5 without replacement from 2
-error: sample: count must be non-negative; got -1
-error: sample: expected array or set; got a float
+error: cannot draw 5 without replacement from 2
+error: count must be non-negative; got -1
+error: expected array or set; got a float

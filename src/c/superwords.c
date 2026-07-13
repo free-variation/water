@@ -22,30 +22,30 @@
 	X(fma, a->number * b.number + c.number, p_fmul_add, "vvf*+") \
 	X(fms, c.number - a->number * b.number, p_fmul_sub, "vvf*-")
 
-static int next_var_slot(Interpreter *interp, const char *op) {
+static int next_var_slot(Interpreter *interp) {
 	char *token = next_token();
 	if (!token) {
-		fail(interp, "%s: expected a variable name", op);
+		fail(interp, "expected a variable name");
 		return -1;
 	}
 	int var_cfa = find(token);
 	if (!var_cfa || (cfa_handler)vocab.dict[var_cfa] != dovar) {
-		fail(interp, "%s: %s is not a variable", op, token);
+		fail(interp, "%s is not a variable", token);
 		return -1;
 	}
 	return var_cfa + 1;
 }
 
-static void compile_two_var_op(Interpreter *interp, int runtime_cfa, const char *op) {
+static void compile_two_var_op(Interpreter *interp, int runtime_cfa) {
 	if (!compiler.compiling) {
-		fail(interp, "%s: only valid while compiling", op);
+		fail(interp, "only valid while compiling");
 		return;
 	}
-	int slot1 = next_var_slot(interp, op);
+	int slot1 = next_var_slot(interp);
 	if (slot1 < 0) {
 		return;
 	}
-	int slot2 = next_var_slot(interp, op);
+	int slot2 = next_var_slot(interp);
 	if (slot2 < 0) {
 		return;
 	}
@@ -54,12 +54,12 @@ static void compile_two_var_op(Interpreter *interp, int runtime_cfa, const char 
 	emit(interp, (cell)slot2);
 }
 
-static void compile_one_var_op(Interpreter *interp, int runtime_cfa, const char *op) {
+static void compile_one_var_op(Interpreter *interp, int runtime_cfa) {
 	if (!compiler.compiling) {
-		fail(interp, "%s: only valid while compiling", op);
+		fail(interp, "only valid while compiling");
 		return;
 	}
-	int slot = next_var_slot(interp, op);
+	int slot = next_var_slot(interp);
 	if (slot < 0) {
 		return;
 	}
@@ -68,13 +68,13 @@ static void compile_one_var_op(Interpreter *interp, int runtime_cfa, const char 
 }
 
 static void p_fmul_add(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "f*+: data stack underflow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	chain_sp[-3].number = chain_sp[-3].number * chain_sp[-2].number + chain_sp[-1].number;
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 static void p_fmul_sub(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 3, "f*-: data stack underflow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	chain_sp[-3].number = chain_sp[-1].number - chain_sp[-3].number * chain_sp[-2].number;
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
@@ -90,7 +90,7 @@ static void p_fmul_sub(DISPATCH_ARGS) {
 		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 1); \
 	} \
 	static void p_compile_vv_##suffix(DISPATCH_ARGS) { \
-		compile_two_var_op(interp, vv_##suffix##_cfa, "vvf" #op); \
+		compile_two_var_op(interp, vv_##suffix##_cfa); \
 	}
 FLOAT_BINOPS(GEN_VV)
 
@@ -108,21 +108,21 @@ FLOAT_BINOPS(GEN_VV_STORE)
 #define GEN_VF(suffix, op, base) \
 	static int vf_##suffix##_cfa; \
 	static void p_vf_##suffix(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 1, chain_sp, 1, "vf" #op ": data stack underflow"); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1); \
 		Val x; \
 		x.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
 		chain_sp[-1].number = chain_sp[-1].number op x.number; \
 		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp); \
 	} \
 	static void p_compile_vf_##suffix(DISPATCH_ARGS) { \
-		compile_one_var_op(interp, vf_##suffix##_cfa, "vf" #op); \
+		compile_one_var_op(interp, vf_##suffix##_cfa); \
 	}
 FLOAT_BINOPS(GEN_VF)
 
 #define GEN_LF(suffix, op, base) \
 	static int lf_##suffix##_cfa; \
 	static void p_lf_##suffix(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 1, chain_sp, 1, "lf" #op ": data stack underflow"); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1); \
 		Val k; \
 		k.bits = (uint64_t)chain_ip[0]; \
 		chain_sp[-1].number = chain_sp[-1].number op k.number; \
@@ -141,14 +141,14 @@ FLOAT_BINOPS(GEN_LF)
 		DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp + 1); \
 	} \
 	static void p_compile_vfn_##suffix(DISPATCH_ARGS) { \
-		compile_one_var_op(interp, vfn_##suffix##_cfa, "vf" #suffix); \
+		compile_one_var_op(interp, vfn_##suffix##_cfa); \
 	}
 FLOAT_UNARY_FUNCTIONS(GEN_VFN)
 
 #define GEN_FUSED(suffix, expr, base, name) \
 	static int vv_##suffix##_cfa; \
 	static void p_vv_##suffix(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 2, chain_sp, 1, name ": data stack underflow"); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip + 2, chain_sp, 1); \
 		Val b, c; \
 		b.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
 		c.bits = (uint64_t)vocab.dict[chain_ip[1]]; \
@@ -157,14 +157,14 @@ FLOAT_UNARY_FUNCTIONS(GEN_VFN)
 		DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp); \
 	} \
 	static void p_compile_vv_##suffix(DISPATCH_ARGS) { \
-		compile_two_var_op(interp, vv_##suffix##_cfa, name); \
+		compile_two_var_op(interp, vv_##suffix##_cfa); \
 	}
 FLOAT_FUSED(GEN_FUSED)
 
 #define GEN_FUSED_STORE(suffix, expr, base, name) \
 	static int vv_##suffix##_store_cfa; \
 	static void p_vv_##suffix##_store(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 3, chain_sp, 1, name "!: data stack underflow"); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip + 3, chain_sp, 1); \
 		Val b, c; \
 		b.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
 		c.bits = (uint64_t)vocab.dict[chain_ip[1]]; \
@@ -177,7 +177,7 @@ FLOAT_FUSED(GEN_FUSED_STORE)
 #define GEN_VF_STORE(suffix, op, base) \
 	static int vf_##suffix##_store_cfa; \
 	static void p_vf_##suffix##_store(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 2, chain_sp, 1, "vf" #op "!: data stack underflow"); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip + 2, chain_sp, 1); \
 		Val x; \
 		x.bits = (uint64_t)vocab.dict[chain_ip[0]]; \
 		double a = chain_sp[-1].number; \
@@ -198,19 +198,14 @@ FLOAT_BINOPS(GEN_VF_STORE)
 FLOAT_UNARY_FUNCTIONS(GEN_VFN_STORE)
 
 static int emit_fused_two_var(Interpreter *interp, int runtime_cfa, int slot_a, int slot_b) {
-	vocab.here -= 4;
-	emit_call(interp, runtime_cfa);
-	emit(interp, (cell)slot_a);
-	emit(interp, (cell)slot_b);
+	fuse_rewrite_pair(interp, 4, runtime_cfa, (cell)slot_a, (cell)slot_b);
 	compiler.fuse_prev_var = 0;
 	compiler.fuse_prev2_var = 0;
 	return 1;
 }
 
 static int emit_fused_one_var(Interpreter *interp, int runtime_cfa, int slot) {
-	vocab.here -= 2;
-	emit_call(interp, runtime_cfa);
-	emit(interp, (cell)slot);
+	fuse_rewrite(interp, 2, runtime_cfa, (cell)slot);
 	compiler.fuse_prev_var = 0;
 	compiler.fuse_prev2_var = 0;
 	return 1;
@@ -240,6 +235,9 @@ int superword_cell_count(cell handler) {
 }
 
 static int store_i_drop_cfa;
+static int store_e_drop_cfa;
+static int store_e_lll0_cfa;
+static int store_ij_drop_cfa;
 static int inc_store_i_cfa;
 static int dec_store_i_cfa;
 static int add_store_i_cfa;
@@ -363,6 +361,13 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 			return 1;
 		return try_fuse_at_i_lit(interp);
 	}
+	if (op_cfa == vocab.at_e_cfa) {
+		if (try_fuse_at_e_ll(interp))
+			return 1;
+		if (try_fuse_at_e_local(interp))
+			return 1;
+		return try_fuse_at_e_lit(interp);
+	}
 	cfa_handler op_handler = (cfa_handler)vocab.dict[op_cfa];
 
 	if (op_handler == p_drop
@@ -372,6 +377,35 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 			return 1;
 		vocab.here -= 1;
 		emit_call(interp, store_i_drop_cfa);
+		return 1;
+	}
+
+	if (op_handler == p_drop
+	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
+	    && dict_op_is(vocab.here - 1, p_store_e)) {
+		if (vocab.here >= 5 && vocab.here - 5 >= compiler.fuse_floor
+		    && vocab.here - 5 == compiler.loadn_at
+		    && dict_op_is(vocab.here - 5, p_load3)) {
+			cell target_slot = vocab.dict[vocab.here - 4];
+			cell index_slot = vocab.dict[vocab.here - 3];
+			cell element_slot = vocab.dict[vocab.here - 2];
+			vocab.here -= 5;
+			emit_call(interp, store_e_lll0_cfa);
+			emit(interp, target_slot);
+			emit(interp, index_slot);
+			emit(interp, element_slot);
+			return 1;
+		}
+		vocab.here -= 1;
+		emit_call(interp, store_e_drop_cfa);
+		return 1;
+	}
+
+	if (op_handler == p_drop
+	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
+	    && dict_op_is(vocab.here - 1, p_store_ij)) {
+		vocab.here -= 1;
+		emit_call(interp, store_ij_drop_cfa);
 		return 1;
 	}
 
@@ -392,10 +426,7 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_handler == base) { \
 		if (vocab.here >= 2 && vocab.here - 2 >= compiler.fuse_floor \
 		    && dict_op_is(vocab.here - 2, p_literal)) { \
-			cell bits = vocab.dict[vocab.here - 1]; \
-			vocab.here -= 2; \
-			emit_call(interp, lf_##suffix##_cfa); \
-			emit(interp, bits); \
+			fuse_rewrite(interp, 2, lf_##suffix##_cfa, vocab.dict[vocab.here - 1]); \
 			compiler.fuse_prev_var = 0; \
 			compiler.fuse_prev2_var = 0; \
 			return 1; \
@@ -472,6 +503,9 @@ void define_superwords(Interpreter *interp) {
 	define_primitive(interp, "f*+", p_fmul_add, 0);
 	define_primitive(interp, "f*-", p_fmul_sub, 0);
 	store_i_drop_cfa = define_primitive(interp, "(!i-drop)", p_store_i_drop, 4);
+	store_e_drop_cfa = define_primitive(interp, "(!e-drop)", p_store_e_drop, 4);
+	store_e_lll0_cfa = define_primitive(interp, "(!e.lll0)", p_store_e_lll0, 4);
+	store_ij_drop_cfa = define_primitive(interp, "(!i,j-drop)", p_store_ij_drop, 4);
 	unify_cons_cfa = define_primitive(interp, "(cons~)", p_unify_cons, 4);
 	inc_store_i_cfa = define_primitive(interp, "(inc!i)", p_inc_store_i, 4);
 	dec_store_i_cfa = define_primitive(interp, "(dec!i)", p_dec_store_i, 4);

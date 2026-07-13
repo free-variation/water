@@ -284,28 +284,32 @@ void region_commit(ParallelRegion *region) {
 	memset(&thread_alloc, 0, sizeof thread_alloc);
 }
 
+static void free_object_heap_backing(Object *obj) {
+	switch (obj->kind) {
+		case OBJECT_MATRIX:
+			heap_bytes_sub((size_t)obj->matrix.rows * (size_t)obj->matrix.columns * sizeof(double));
+			free(obj->matrix.elements);
+			break;
+		case OBJECT_SEGMENT:
+			heap_bytes_sub((size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
+			free(obj->segment.data);
+			break;
+		case OBJECT_CONTINUATION:
+			heap_bytes_sub((size_t)obj->continuation.return_len * sizeof(Val));
+			free(obj->continuation.return_slice);
+			break;
+		default:
+			break;
+	}
+}
+
 void region_abort(ParallelRegion *region) {
 	int high = arena.object_space.n;
 	for (int handle = region->n_objects; handle < high; handle++) {
 		Object *obj = arena.objects[handle];
 		if (!obj)
 			continue;
-		switch (obj->kind) {
-			case OBJECT_MATRIX:
-				heap_bytes_sub((size_t)obj->matrix.rows * (size_t)obj->matrix.columns * sizeof(double));
-				free(obj->matrix.elements);
-				break;
-			case OBJECT_SEGMENT:
-				heap_bytes_sub((size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
-				free(obj->segment.data);
-				break;
-			case OBJECT_CONTINUATION:
-				heap_bytes_sub((size_t)obj->continuation.return_len * sizeof(Val));
-				free(obj->continuation.return_slice);
-				break;
-			default:
-				break;
-		}
+		free_object_heap_backing(obj);
 		arena.objects[handle] = NULL;
 	}
 
@@ -462,7 +466,7 @@ int object_new_segment(Interpreter *interp, int length, SegmentType element_type
 	if (!obj->segment.data) {
 		arena_free_object(obj);
 		arena.objects[slot] = NULL;
-		fail(interp, "segment: out of memory (%lld bytes)", (long long)length * (long long)element_size);
+		fail(interp, "out of memory (%lld bytes)", (long long)length * (long long)element_size);
 		return -1;
 	}
 
@@ -544,7 +548,7 @@ static int compare_double(double a, double b) {
 
 int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 	if (depth > MAX_NESTING_DEPTH) {
-		fail(interp, "compare: structure too deeply nested (cycle?)");
+		fail(interp, "structure too deeply nested (cycle?)");
 		return 0;
 	}
 
@@ -1696,6 +1700,44 @@ typedef struct {
 	int cfa;
 } TraceFrame;
 
+static const char *handler_word_name(cell handler);
+
+static const char *running_op_name(int fault_cell, int body_start, int body_end) {
+	cell branch_handler = vocab.dict[vocab.branch_cfa];
+	cell exit_handler = vocab.dict[vocab.exit_cfa];
+	int cursor = body_start;
+	int expect_docol = 0;
+
+	while (cursor <= fault_cell && cursor < body_end) {
+		cell handler = vocab.dict[cursor];
+		cfa_handler handler_fn = (cfa_handler)handler;
+
+		int cell_count;
+		if (handler == exit_handler)
+			cell_count = 1;
+		else if (expect_docol && handler == (cell)docol)
+			cell_count = 1;
+		else if (handler_fn == docol || handler_fn == dovar || handler_fn == dounit || handler_fn == dosym)
+			cell_count = 2;
+		else
+			cell_count = op_cell_count(cursor);
+
+		if (fault_cell < cursor + cell_count) {
+			if (handler_fn == docol || handler_fn == dovar || handler_fn == dounit) {
+				int target = (int)vocab.dict[cursor + 1];
+				if (cell_count == 2 && target >= DICT_RESERVED && target < vocab.here)
+					return &vocab.name_pool[WORD_NAME(target)];
+				return NULL;
+			}
+			return handler_word_name(handler);
+		}
+
+		expect_docol = (handler == branch_handler);
+		cursor += cell_count;
+	}
+	return NULL;
+}
+
 static void capture_error_trace(Interpreter *interp) {
 	interp->error_trace[0] = 0;
 
@@ -1755,6 +1797,18 @@ static void capture_error_trace(Interpreter *interp) {
 	}
 
 	int len = 0;
+	if (n_merged > 0 && frames[0].addr == interp->ip) {
+		int body_start = frames[0].span ? frames[0].span->start_cfa : frames[0].cfa + 1;
+		int body_end = frames[0].span ? frames[0].span->end_cfa : vocab.here;
+		const char *op_name = running_op_name(interp->ip - 1, body_start, body_end);
+		if (op_name && !frames[0].span
+				&& strcmp(op_name, &vocab.name_pool[WORD_NAME(frames[0].cfa)]) == 0)
+			op_name = NULL;
+		if (op_name) {
+			trace_write(interp, &len, "in ");
+			trace_write(interp, &len, op_name);
+		}
+	}
 	for (int i = 0; i < n_merged; i++) {
 		if (n_merged > TRACE_FRAMES_FIRST + TRACE_FRAMES_LAST + 1
 				&& i == TRACE_FRAMES_FIRST) {
@@ -1765,7 +1819,7 @@ static void capture_error_trace(Interpreter *interp) {
 			i = n_merged - TRACE_FRAMES_LAST - 1;
 			continue;
 		}
-		trace_write(interp, &len, i == 0 ? "in " : " ← ");
+		trace_write(interp, &len, (i == 0 && len == 0) ? "in " : " ← ");
 		if (frames[i].span)
 			trace_write_snippet(interp, &len, frames[i].span->source_offset);
 		else
@@ -1838,7 +1892,7 @@ void p_alloc_stats(DISPATCH_ARGS) {
 	alloc_count_lvar = 0;
 	alloc_count_array = 0;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_literal(DISPATCH_ARGS) {
@@ -1866,7 +1920,7 @@ void p_0branch(DISPATCH_ARGS) {
 }
 
 void p_qzbranch(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip + 1, chain_sp, 1, "?if: stack too shallow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
 	cell *continue_ip = zbranch_falsy(chain_sp[-1]) ? chain_ip + (int)*chain_ip : chain_ip + 1;
 
 	DISPATCH_REGISTERS(interp, continue_ip, chain_sp);
@@ -1911,12 +1965,12 @@ void p_enter_locals_to(DISPATCH_ARGS) {
 
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
 		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
-		fail(interp, "(enter-locals-to): return stack overflow");
+		fail(interp, "return stack overflow");
 		return;
 	}
 	if (chain_sp - n_locals < interp->data_stack) {
 		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
-		fail(interp, "(enter-locals-to): insufficient values on data stack; need %d", n_locals);
+		fail(interp, "insufficient values on data stack; need %d", n_locals);
 		return;
 	}
 
@@ -1947,12 +2001,12 @@ void p_enter_locals_mixed(DISPATCH_ARGS) {
 
 	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
 		SYNC_REGISTERS(interp, chain_ip + 2 + n_received, chain_sp);
-		fail(interp, "(enter-locals-mixed): return stack overflow");
+		fail(interp, "return stack overflow");
 		return;
 	}
 	if (chain_sp - n_received < interp->data_stack) {
 		SYNC_REGISTERS(interp, chain_ip + 2 + n_received, chain_sp);
-		fail(interp, "(enter-locals-mixed): insufficient values on data stack; need %d", n_received);
+		fail(interp, "insufficient values on data stack; need %d", n_received);
 		return;
 	}
 
@@ -2059,7 +2113,7 @@ void p_local_store_0depth(DISPATCH_ARGS) {
 		Val *p = &interp->return_stack[interp->local_base + (int)chain_ip[0]]; \
 		if (VAL_TAG(*p) != T_FLOAT) { \
 			SYNC_REGISTERS(interp, chain_ip + 1, chain_sp); \
-			fail(interp, word_name ": expected a float local; got %s", tag_name(VAL_TAG(*p))); \
+			fail(interp, "expected a float local; got %s", tag_name(VAL_TAG(*p))); \
 			return; \
 		} \
 		double n = VAL_NUMBER(*p); \
@@ -2145,6 +2199,10 @@ static int at_i_lit_cfa;
 static int at_i_lit_local0_cfa;
 static int gather_local0_cfa;
 static int at_i_ll0_cfa;
+static int at_e_lit_cfa;
+static int at_e_local0_cfa;
+static int at_e_ll0_cfa;
+static int at_e_l1l0_cfa;
 static int at_i_l1l0_cfa;
 static int load2_cfa, load3_cfa;
 
@@ -2196,7 +2254,22 @@ int try_fuse_local_acc(Interpreter *interp, int depth, int slot) {
 	return 1;
 }
 
-int try_fuse_at_i_local(Interpreter *interp) {
+int fuse_rewrite(Interpreter *interp, int n_replaced_cells, int fused_cfa, cell operand) {
+	vocab.here -= n_replaced_cells;
+	emit_call(interp, fused_cfa);
+	emit(interp, operand);
+	return 1;
+}
+
+int fuse_rewrite_pair(Interpreter *interp, int n_replaced_cells, int fused_cfa, cell operand_a, cell operand_b) {
+	vocab.here -= n_replaced_cells;
+	emit_call(interp, fused_cfa);
+	emit(interp, operand_a);
+	emit(interp, operand_b);
+	return 1;
+}
+
+static int try_fuse_operand_op(Interpreter *interp, cfa_handler producer, int fused_cfa) {
 	if (!compiler.compiling)
 		return 0;
 
@@ -2206,39 +2279,50 @@ int try_fuse_at_i_local(Interpreter *interp) {
 		return 0;
 	if (here - 2 < compiler.fuse_floor)
 		return 0;
-	if (!dict_op_is(here - 2, p_local_fetch_0depth))
+	if (!dict_op_is(here - 2, producer))
 		return 0;
 
-	int slot = (int)dict[here - 1];
-	vocab.here -= 2;
-	emit_call(interp, at_i_local0_cfa);
-	emit(interp, (cell)slot);
+	return fuse_rewrite(interp, 2, fused_cfa, dict[here - 1]);
+}
 
-	return 1;
+static int try_fuse_literal_index_op(Interpreter *interp, int fused_cfa) {
+	if (!compiler.compiling)
+		return 0;
+
+	cell *dict = vocab.dict;
+	int here = vocab.here;
+	if (here < 2)
+		return 0;
+	if (here - 2 < compiler.fuse_floor)
+		return 0;
+	if (!dict_op_is(here - 2, p_literal))
+		return 0;
+
+	Val literal;
+	literal.bits = (uint64_t)dict[here - 1];
+	if (VAL_TAG(literal) != T_FLOAT)
+		return 0;
+
+	return fuse_rewrite(interp, 2, fused_cfa, (cell)(int)VAL_NUMBER(literal));
+}
+
+int try_fuse_at_i_local(Interpreter *interp) {
+	return try_fuse_operand_op(interp, p_local_fetch_0depth, at_i_local0_cfa);
 }
 
 int try_fuse_gather_local(Interpreter *interp) {
-	if (!compiler.compiling)
-		return 0;
-
-	cell *dict = vocab.dict;
-	int here = vocab.here;
-	if (here < 2)
-		return 0;
-	if (here - 2 < compiler.fuse_floor)
-		return 0;
-	if (!dict_op_is(here - 2, p_at_i_local0))
-		return 0;
-
-	int slot = (int)dict[here - 1];
-	vocab.here -= 2;
-	emit_call(interp, gather_local0_cfa);
-	emit(interp, (cell)slot);
-
-	return 1;
+	return try_fuse_operand_op(interp, p_at_i_local0, gather_local0_cfa);
 }
 
-int try_fuse_at_i_ll(Interpreter *interp) {
+int try_fuse_at_e_local(Interpreter *interp) {
+	return try_fuse_operand_op(interp, p_local_fetch_0depth, at_e_local0_cfa);
+}
+
+int try_fuse_at_e_lit(Interpreter *interp) {
+	return try_fuse_literal_index_op(interp, at_e_lit_cfa);
+}
+
+static int try_fuse_two_local_op(Interpreter *interp, int ll0_cfa, int l1l0_cfa) {
 	if (!compiler.compiling)
 		return 0;
 
@@ -2247,61 +2331,66 @@ int try_fuse_at_i_ll(Interpreter *interp) {
 
 	if (here >= 3 && here - 3 >= compiler.fuse_floor
 	    && here - 3 == compiler.loadn_at
-	    && dict_op_is(here - 3, p_load2)) {
-		int arr_slot = (int)dict[here - 2];
-		int idx_slot = (int)dict[here - 1];
-		vocab.here -= 3;
-		emit_call(interp, at_i_ll0_cfa);
-		emit(interp, (cell)arr_slot);
-		emit(interp, (cell)idx_slot);
-		return 1;
+	    && dict_op_is(here - 3, p_load2))
+		return fuse_rewrite_pair(interp, 3, ll0_cfa, dict[here - 2], dict[here - 1]);
+
+	if (here >= 4 && here - 4 >= compiler.fuse_floor
+	    && here - 4 == compiler.loadn_at
+	    && dict_op_is(here - 4, p_load3)) {
+		cell lead_slot = dict[here - 3];
+		cell base_slot = dict[here - 2];
+		cell idx_slot = dict[here - 1];
+		vocab.here -= 4;
+		emit_call(interp, vocab.local_fetch_0depth_cfa);
+		emit(interp, lead_slot);
+		return fuse_rewrite_pair(interp, 0, ll0_cfa, base_slot, idx_slot);
 	}
 
 	if (here >= 4 && here - 4 >= compiler.fuse_floor
 	    && dict_op_is(here - 4, p_local_fetch_0depth)
-	    && dict_op_is(here - 2, p_local_fetch_0depth)) {
-		int arr_slot = (int)dict[here - 3];
-		int idx_slot = (int)dict[here - 1];
-		vocab.here -= 4;
-		emit_call(interp, at_i_ll0_cfa);
-		emit(interp, (cell)arr_slot);
-		emit(interp, (cell)idx_slot);
-		return 1;
-	}
+	    && dict_op_is(here - 2, p_local_fetch_0depth))
+		return fuse_rewrite_pair(interp, 4, ll0_cfa, dict[here - 3], dict[here - 1]);
 
 	if (here >= 4 && here - 4 >= compiler.fuse_floor
 	    && dict_op_is(here - 4, p_local_fetch_1depth)
-	    && dict_op_is(here - 2, p_local_fetch_0depth)) {
-		int arr_slot = (int)dict[here - 3];
-		int idx_slot = (int)dict[here - 1];
-		vocab.here -= 4;
-		emit_call(interp, at_i_l1l0_cfa);
-		emit(interp, (cell)arr_slot);
-		emit(interp, (cell)idx_slot);
-		return 1;
-	}
+	    && dict_op_is(here - 2, p_local_fetch_0depth))
+		return fuse_rewrite_pair(interp, 4, l1l0_cfa, dict[here - 3], dict[here - 1]);
 
 	return 0;
 }
+
+int try_fuse_at_i_ll(Interpreter *interp) {
+	return try_fuse_two_local_op(interp, at_i_ll0_cfa, at_i_l1l0_cfa);
+}
+
+int try_fuse_at_e_ll(Interpreter *interp) {
+	return try_fuse_two_local_op(interp, at_e_ll0_cfa, at_e_l1l0_cfa);
+}
+
+typedef struct {
+	cfa_handler arith_handler;
+	int *local_cfa;
+	int *lit_cfa;
+	int *litrev_cfa;
+} LocalArithFusion;
+
+static const LocalArithFusion local_arith_fusions[] = {
+	{ p_add_f, &ll_add_0_cfa, &ll_lit_add_0_cfa, &ll_lit_add_0_cfa },
+	{ p_sub_f, &ll_sub_0_cfa, &ll_lit_sub_0_cfa, &ll_litrev_sub_0_cfa },
+	{ p_mul_f, &ll_mul_0_cfa, &ll_lit_mul_0_cfa, &ll_lit_mul_0_cfa },
+};
 
 int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
 	if (!compiler.compiling)
 		return 0;
 
-	int local_cfa, lit_cfa, litrev_cfa;
-	if (op_handler == p_add_f) {
-		local_cfa = ll_add_0_cfa;
-		lit_cfa = ll_lit_add_0_cfa;
-		litrev_cfa = ll_lit_add_0_cfa;
-	} else if (op_handler == p_sub_f) {
-		local_cfa = ll_sub_0_cfa;
-		lit_cfa = ll_lit_sub_0_cfa;
-		litrev_cfa = ll_litrev_sub_0_cfa;
-	} else if (op_handler == p_mul_f) {
-		local_cfa = ll_mul_0_cfa;
-		lit_cfa = ll_lit_mul_0_cfa;
-		litrev_cfa = ll_lit_mul_0_cfa;
-	} else
+	const LocalArithFusion *fusion = NULL;
+	for (size_t i = 0; i < sizeof local_arith_fusions / sizeof local_arith_fusions[0]; i++)
+		if (local_arith_fusions[i].arith_handler == op_handler) {
+			fusion = &local_arith_fusions[i];
+			break;
+		}
+	if (!fusion)
 		return 0;
 
 	cell *dict = vocab.dict;
@@ -2309,15 +2398,8 @@ int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
 
 	if (here >= 3 && here - 3 >= compiler.fuse_floor
 	    && here - 3 == compiler.loadn_at
-	    && dict_op_is(here - 3, p_load2)) {
-		int slot_a = (int)dict[here - 2];
-		int slot_b = (int)dict[here - 1];
-		vocab.here -= 3;
-		emit_call(interp, local_cfa);
-		emit(interp, (cell)slot_a);
-		emit(interp, (cell)slot_b);
-		return 1;
-	}
+	    && dict_op_is(here - 3, p_load2))
+		return fuse_rewrite_pair(interp, 3, *fusion->local_cfa, dict[here - 2], dict[here - 1]);
 
 	if (here < 4)
 		return 0;
@@ -2329,27 +2411,15 @@ int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
 	cfa_handler deep = (cfa_handler)dict[here - 4];
 	cfa_handler top = (cfa_handler)dict[here - 2];
 
-	if (deep == p_local_fetch_0depth && top == p_local_fetch_0depth) {
-		int slot_a = (int)dict[here - 3];
-		int slot_b = (int)dict[here - 1];
-		vocab.here -= 4;
-		emit_call(interp, local_cfa);
-		emit(interp, (cell)slot_a);
-		emit(interp, (cell)slot_b);
-		return 1;
-	}
+	if (deep == p_local_fetch_0depth && top == p_local_fetch_0depth)
+		return fuse_rewrite_pair(interp, 4, *fusion->local_cfa, dict[here - 3], dict[here - 1]);
 
 	if (deep == p_local_fetch_0depth && top == p_literal) {
 		Val lit;
 		lit.bits = (uint64_t)dict[here - 1];
 		if (VAL_TAG(lit) != T_FLOAT)
 			return 0;
-		int slot_a = (int)dict[here - 3];
-		vocab.here -= 4;
-		emit_call(interp, lit_cfa);
-		emit(interp, (cell)slot_a);
-		emit(interp, (cell)lit.bits);
-		return 1;
+		return fuse_rewrite_pair(interp, 4, *fusion->lit_cfa, dict[here - 3], (cell)lit.bits);
 	}
 
 	if (deep == p_literal && top == p_local_fetch_0depth) {
@@ -2357,12 +2427,7 @@ int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
 		lit.bits = (uint64_t)dict[here - 3];
 		if (VAL_TAG(lit) != T_FLOAT)
 			return 0;
-		int slot_a = (int)dict[here - 1];
-		vocab.here -= 4;
-		emit_call(interp, litrev_cfa);
-		emit(interp, (cell)slot_a);
-		emit(interp, (cell)lit.bits);
-		return 1;
+		return fuse_rewrite_pair(interp, 4, *fusion->litrev_cfa, dict[here - 1], (cell)lit.bits);
 	}
 
 	return 0;
@@ -2390,38 +2455,33 @@ int try_fuse_at_i_lit(Interpreter *interp) {
 	int index = (int)VAL_NUMBER(literal);
 
 	if (here >= 4 && here - 4 >= compiler.fuse_floor
-	    && dict_op_is(here - 4, p_local_fetch_0depth)) {
-		int slot = (int)dict[here - 3];
-		vocab.here -= 4;
-		emit_call(interp, at_i_lit_local0_cfa);
-		emit(interp, (cell)slot);
-		emit(interp, (cell)index);
-		return 1;
-	}
+	    && dict_op_is(here - 4, p_local_fetch_0depth))
+		return fuse_rewrite_pair(interp, 4, at_i_lit_local0_cfa, dict[here - 3], (cell)index);
 
-	vocab.here -= 2;
-	emit_call(interp, at_i_lit_cfa);
-	emit(interp, (cell)index);
-
-	return 1;
+	return try_fuse_literal_index_op(interp, at_i_lit_cfa);
 }
 
 void p_set(DISPATCH_ARGS) {
-	POP_INT(count, "set", "count");
-	if (count < 0 || count > interp->dsp) {
-		fail(interp, "set: count %d out of range (stack has %d available)", count, interp->dsp);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val count_val = chain_sp[-1];
+	if (VAL_TAG(count_val) != T_FLOAT) {
+		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
+		return;
+	}
+	int count = (int)VAL_NUMBER(count_val);
+	Val *gathered_base = chain_sp - 1 - count;
+	if (count < 0 || gathered_base < interp->data_stack) {
+		fail(interp, "count %d out of range (stack has %d available)", count, (int)(chain_sp - 1 - interp->data_stack));
 		return;
 	}
 
-	int first_item = interp->dsp - count;
-	int set_handle = build_set_from_values(interp, &interp->data_stack[first_item], count);
+	int set_handle = build_set_from_values(interp, gathered_base, count);
 	if (interp->error_flag)
 		return;
 
-	interp->dsp = first_item;
-	push(interp, make_set(set_handle));
+	gathered_base[0] = make_set(set_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, gathered_base + 1);
 }
 
 void inbuf_reset(void) {
@@ -2867,7 +2927,7 @@ void record_loaded_file(Interpreter *interp, const char *filename) {
 			return;
 	}
 	if (compiler.n_loaded_files >= MAX_LOADED_FILES) {
-		fail(interp, "load: %d-file history limit reached", MAX_LOADED_FILES);
+		fail(interp, "%d-file history limit reached", MAX_LOADED_FILES);
 		return;
 	}
 	compiler.loaded_files[compiler.n_loaded_files] = strdup(filename);
@@ -3068,7 +3128,7 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 	int i, copy_handle;
 
 	if (depth > MAX_NESTING_DEPTH) {
-		fail(interp, "copy: structure too deeply nested (cycle?)");
+		fail(interp, "structure too deeply nested (cycle?)");
 		return;
 	}
 
@@ -3127,7 +3187,7 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 
 						 while(VAL_TAG(current) == T_PAIR) {
 							 if (spine_len++ > COPY_SPINE_MAX) {
-								 fail(interp, "copy: list too long or cyclic");
+								 fail(interp, "list too long or cyclic");
 								 return;
 							 }
 
@@ -3234,6 +3294,8 @@ int op_cell_count(int cursor) {
 		return 3;
 	if (handler == (cell)p_load3)
 		return 4;
+	if (handler == (cell)p_store_e_lll0)
+		return 4;
 
 	if (handler == vocab.dict[vocab.local_fetch_cfa]
 	    || handler == vocab.dict[vocab.local_store_cfa]
@@ -3250,7 +3312,9 @@ int op_cell_count(int cursor) {
 	    || handler == (cell)p_ll_litrev_sub_0
 	    || handler == (cell)p_at_i_lit_local0
 	    || handler == (cell)p_at_i_ll0
-	    || handler == (cell)p_at_i_l1l0)
+	    || handler == (cell)p_at_i_l1l0
+	    || handler == (cell)p_at_e_ll0
+	    || handler == (cell)p_at_e_l1l0)
 		return 3;
 
 	if (handler == vocab.dict[vocab.literal_cfa]
@@ -3260,6 +3324,8 @@ int op_cell_count(int cursor) {
 	    || handler == (cell)p_local_acc_div_0
 	    || handler == (cell)p_at_i_local0
 	    || handler == (cell)p_at_i_lit
+	    || handler == (cell)p_at_e_local0
+	    || handler == (cell)p_at_e_lit
 	    || handler == (cell)p_gather_local0)
 		return 2;
 
@@ -3350,18 +3416,8 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 	}
 }
 
-void gc(Interpreter *interp) {
+static void mark_roots(Interpreter *interp) {
 	int i;
-
-	if (in_parallel) {
-		fail(interp, "gc: cannot collect inside a parallel region");
-		return;
-	}
-
-	interp->gc_epoch = atomic_fetch_add(&arena.current_epoch, 1) + 1;
-	interp->gc_object_base = 0;
-	interp->gc_pair_base = 0;
-	pairs.space.n_free = 0;
 
 	for (i = 0; i < interp->dsp; i++)
 		mark_value(interp, interp->data_stack[i]);
@@ -3371,12 +3427,28 @@ void gc(Interpreter *interp) {
 		mark_value(interp, interp->side_stack[i]);
 	for (i = 0; i < interp->n_gc_roots; i++)
 		mark_value(interp, interp->gc_roots[i]);
+}
+
+void gc(Interpreter *interp) {
+	int i;
+
+	if (in_parallel) {
+		fail(interp, "cannot collect inside a parallel region");
+		return;
+	}
+
+	interp->gc_epoch = atomic_fetch_add(&arena.current_epoch, 1) + 1;
+	interp->gc_object_base = 0;
+	interp->gc_pair_base = 0;
+	pairs.space.n_free = 0;
+
+	mark_roots(interp);
 
 	static int sorted_cfas[VOCABULARY_INIT_SIZE / 4];
 	int num_cfas = 0;
 	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
 		if (num_cfas >= (int)(sizeof sorted_cfas / sizeof sorted_cfas[0])) {
-			fail(interp, "gc: vocabulary too large to scan safely");
+			fail(interp, "vocabulary too large to scan safely");
 			return;
 		}
 		sorted_cfas[num_cfas++] = cfa;
@@ -3617,7 +3689,7 @@ int capture_render(Interpreter *interp, void (*render)(FILE *, Interpreter *, in
 	size_t size = 0;
 	FILE *out = open_memstream(&buffer, &size);
 	if (!out) {
-		fail(interp, "see>string: out of memory");
+		fail(interp, "out of memory");
 		return -1;
 	}
 
@@ -3653,23 +3725,26 @@ static void see_compiled_render(FILE *out, Interpreter *interp, int target_cfa) 
 	fputs(";\n", out);
 }
 
-void p_see_compiled(DISPATCH_ARGS) {
-	POP_XT(target_cfa, "see-compiled");
-	see_compiled_render(stdout, interp, target_cfa);
-	fflush(stdout);
+#define SEE_WORD_PAIR(print_name, string_name, print_word, string_word, render) \
+	void print_name(DISPATCH_ARGS) { \
+		POP_XT(target_cfa, print_word); \
+		render(stdout, interp, target_cfa); \
+		fflush(stdout); \
+		\
+		DISPATCH(interp); \
+	} \
+	\
+	void string_name(DISPATCH_ARGS) { \
+		POP_XT(target_cfa, string_word); \
+		int handle = capture_render(interp, render, target_cfa); \
+		if (interp->error_flag) \
+			return; \
+		push(interp, make_string(handle)); \
+		\
+		DISPATCH(interp); \
+	}
 
-	DISPATCH(interp);
-}
-
-void p_see_compiled_to_string(DISPATCH_ARGS) {
-	POP_XT(target_cfa, "see-compiled>string");
-	int handle = capture_render(interp, see_compiled_render, target_cfa);
-	if (interp->error_flag)
-		return;
-	push(interp, make_string(handle));
-
-	DISPATCH(interp);
-}
+SEE_WORD_PAIR(p_see_compiled, p_see_compiled_to_string, "see-compiled", "see-compiled>string", see_compiled_render)
 
 static void see_tree_render(FILE *out, Interpreter *interp, int target_cfa) {
 	const char *name = &vocab.name_pool[WORD_NAME(target_cfa)];
@@ -3687,32 +3762,19 @@ static void see_tree_render(FILE *out, Interpreter *interp, int target_cfa) {
 	fputs(";\n", out);
 }
 
-void p_see_tree(DISPATCH_ARGS) {
-	POP_XT(target_cfa, "see-tree");
-	see_tree_render(stdout, interp, target_cfa);
-	fflush(stdout);
-
-	DISPATCH(interp);
-}
-
-void p_see_tree_to_string(DISPATCH_ARGS) {
-	POP_XT(target_cfa, "see-tree>string");
-	int handle = capture_render(interp, see_tree_render, target_cfa);
-	if (interp->error_flag)
-		return;
-	push(interp, make_string(handle));
-
-	DISPATCH(interp);
-}
+SEE_WORD_PAIR(p_see_tree, p_see_tree_to_string, "see-tree", "see-tree>string", see_tree_render)
 void p_save(DISPATCH_ARGS) {
-	POP_STRING(filename_obj, "save");
-	gc_root_push(interp, filename_obj_val);
-	const char *filename = filename_obj->bytes;
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val filename_val = chain_sp[-1];
+	if (VAL_TAG(filename_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(filename_val)));
+		return;
+	}
+	const char *filename = OBJECT_AT(VAL_DATA(filename_val))->bytes;
 
 	FILE *file = fopen(filename, "w");
 	if (!file) {
 		fail(interp, "cannot create %s", filename);
-		gc_root_pop(interp);
 		return;
 	}
 
@@ -3743,9 +3805,8 @@ void p_save(DISPATCH_ARGS) {
 	}
 
 	fclose(file);
-	gc_root_pop(interp);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 
@@ -3755,21 +3816,7 @@ void free_one_object(Object *obj) {
 		case OBJECT_SET:
 		case OBJECT_ARRAY: arena_free(obj->items); break;
 		case OBJECT_FRAME: arena_free(obj->frame.keys); arena_free(obj->frame.values); break;
-		case OBJECT_MATRIX: {
-								heap_bytes_sub((size_t)obj->matrix.rows * (size_t)obj->matrix.columns * sizeof(double));
-								free(obj->matrix.elements);
-							   	break;
-							}
-		case OBJECT_CONTINUATION: {
-								heap_bytes_sub((size_t)obj->continuation.return_len * sizeof(Val));
-									  free(obj->continuation.return_slice);
-									  break;
-								  }
-		case OBJECT_SEGMENT: {
-								heap_bytes_sub((size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
-								 free(obj->segment.data);
-								 break;
-							 }
+		default: free_object_heap_backing(obj); break;
 	}
 	arena_free_object(obj);
 }
@@ -3782,15 +3829,7 @@ void worker_local_gc(Interpreter *interp) {
 	interp->gc_object_base = parallel_region_object_base;
 	interp->gc_pair_base = parallel_region_pair_base;
 
-	int i;
-	for (i = 0; i < interp->dsp; i++)
-		mark_value(interp, interp->data_stack[i]);
-	for (i = 0; i < interp->rsp; i++)
-		mark_value(interp, interp->return_stack[i]);
-	for (i = 0; i < interp->side_dsp; i++)
-		mark_value(interp, interp->side_stack[i]);
-	for (i = 0; i < interp->n_gc_roots; i++)
-		mark_value(interp, interp->gc_roots[i]);
+	mark_roots(interp);
 
 	thread_alloc.objects.n_free = 0;
 	int last_slot_chunk = thread_alloc.objects.n_chunks - 1;
@@ -3969,6 +4008,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.eq_cfa = define_primitive(interp, "=", p_eq, 0);
 	vocab.lt_cfa = define_primitive(interp, "lt", p_lt, 0);
 	vocab.gt_cfa = define_primitive(interp, "gt", p_gt, 0);
+	define_primitive(interp, "eq", p_eq_elements, 0);
+	define_primitive(interp, "nan?", p_nan, 0);
 	vocab.zeq_cfa = define_primitive(interp, "0=", p_zeq, 0);
 	define_primitive(interp, "and", p_and, 0);
 	define_primitive(interp, "or", p_or, 0);
@@ -4071,6 +4112,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "concat", p_concat, 0);
 	define_primitive(interp, "flatten-array", p_flatten_array, 0);
 	define_primitive(interp, "sort", p_sort, 0);
+	define_primitive(interp, "argsort", p_argsort, 0);
 	define_primitive(interp, "sample", p_sample, 0);
 	define_primitive(interp, "destruct", p_destruct, 0);
 	define_primitive(interp, "destruct-to", p_destruct_to, 0);
@@ -4145,6 +4187,10 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	at_i_l1l0_cfa = define_primitive(interp, "(@i.l1l0)", p_at_i_l1l0, 4);
 	define_primitive(interp, "(@i.array)", p_at_i_array, 4);
 	define_primitive(interp, "(@i.segment)", p_at_i_segment, 4);
+	at_e_lit_cfa = define_primitive(interp, "(@e.lit)", p_at_e_lit, 4);
+	at_e_local0_cfa = define_primitive(interp, "(@e.l0)", p_at_e_local0, 4);
+	at_e_ll0_cfa = define_primitive(interp, "(@e.ll0)", p_at_e_ll0, 4);
+	at_e_l1l0_cfa = define_primitive(interp, "(@e.l1l0)", p_at_e_l1l0, 4);
 	define_primitive(interp, "(!i.array)", p_store_i_array, 4);
 	define_primitive(interp, "(!i-drop.array)", p_store_i_drop_array, 4);
 	define_primitive(interp, "(size.len)", p_size_len, 4);
@@ -4220,6 +4266,9 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "!i", p_store_i, 0);
 	define_primitive(interp, "@j", p_at_j, 0);
 	define_primitive(interp, "@i,j", p_at_ij, 0);
+	vocab.at_e_cfa = define_primitive(interp, "@e", p_at_e, 0);
+	define_primitive(interp, "!e", p_store_e, 0);
+	define_primitive(interp, "!i,j", p_store_ij, 0);
 	define_primitive(interp, "diagonal", p_diagonal, 0);
 	define_primitive(interp, "reshape", p_reshape, 0);
 	define_primitive(interp, "matrix-range", p_matrix_range, 0);
@@ -4234,6 +4283,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "min", p_min, 0);
 	define_primitive(interp, "argmax", p_argmax, 0);
 	define_primitive(interp, "argmin", p_argmin, 0);
+	define_primitive(interp, "where", p_where, 0);
 	define_primitive(interp, "row-maxes", p_row_maxes, 0);
 	define_primitive(interp, "row-mins", p_row_mins, 0);
 	define_primitive(interp, "column-maxes", p_column_maxes, 0);

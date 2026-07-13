@@ -4,35 +4,6 @@ A TODO list of pending work, highest priority first.
 
 ---
 
-## Matrix vector vocabulary
-
-Vectors are n×1 matrices — the unboxed representation the C kernels are
-typed to — but the generic container vocabulary is array-only, so numeric
-pipelines that lead with a sort detour through boxed arrays. The words
-below close the gap; existing names go polymorphic in the house style
-(`+`/`=`/`has?` already dispatch on tags):
-
-- `sort` residuals: fuse the radix bit transforms into the first and
-  last scatter passes (~25% of traffic), and measure the
-  quicksort/radix cutoff rather than inherit 64k.
-- `argsort` — ( m -- m ) the sorting permutation as a matrix; ranks are
-  argsort applied twice, making the statistics plan's rank transform pure
-  C passes.
-- `where` — ( mask -- indices ) indices of the nonzero elements of a 0/1
-  matrix (what `lt`/`gt` return) as an index vector; `select-rows` learns
-  to accept an index matrix alongside its index array, closing the
-  mask → select loop.
-- `@e` / `!e` — ( m i -- f ) / ( m i v -- m ) flat row-major element read
-  and store. Orientation-agnostic on vectors (the same access on n×1 and
-  1×n, no `@i,j` noise-zero), and the consumer that `argmin`/`argmax`'s
-  flat indices never had. `@i` stays shape-stable: a 1×1 matrix on a
-  vector, never a float.
-
-To settle: argsort tie handling (compare indices on equal values for
-deterministic, effectively stable ranks).
-
----
-
 ## Statistics: a minimal spanning set
 
 Build applied statistics from a few kernels, each reused across many methods,
@@ -42,6 +13,15 @@ the sqrt-w idiom), the resampling loop (present as `bootstrap`), one tree
 grower (§4 — the one substantial new C), and a pairwise-distance primitive
 (§5 — small C, unless the dgemm identity suffices). Everything else is library
 code composing them.
+
+Layering: LAPACK-free stats live in lib.h2o (embedded, wasm-capable) built
+on the C kernels; statistics.h2o holds what needs the shared library and
+masks any lib.h2o word it accelerates by redefining it in toto — the golden
+suite, running both native (masked) and wasm (unmasked), keeps the copies
+honest. To that end add a built-in `svd`: a one-sided Jacobi kernel in C,
+masked by the dgesvd binding. Its goldens pin S and the U·S·Vᵀ
+reconstruction, never raw U/V entries (column signs are not canonical and
+the two implementations disagree on them).
 
 Where C work is and is not needed: IRLS needs none — each iteration is dgemm +
 element-wise link/variance words + a LAPACK solve, all C already; `fit-logistic`

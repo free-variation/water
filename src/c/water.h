@@ -391,6 +391,7 @@ typedef struct Vocabulary {
 	int eq_cfa, lt_cfa, gt_cfa, zeq_cfa;
 	int eq_f_cfa, lt_f_cfa, gt_f_cfa;
 	int at_i_cfa;
+	int at_e_cfa;
 	int eq_zbranch_cfa, lt_zbranch_cfa, gt_zbranch_cfa, zeq_zbranch_cfa;
 	int eq_f_zbranch_cfa, lt_f_zbranch_cfa, gt_f_zbranch_cfa;
 	int false_symbol, true_symbol;
@@ -555,14 +556,14 @@ extern int print_truncate;
 #define POP_TYPED(name, op, type) \
 	POP(name##_val); \
 	if (VAL_TAG(name##_val) != (type)) { \
-		fail(interp, "%s: expected %s; got %s", (op), tag_name(type), tag_name(VAL_TAG(name##_val))); \
+		fail(interp, "expected %s; got %s", tag_name(type), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	}
 
 #define POP_INT(name, op, what) \
 	POP(name##_val); \
 	if (VAL_TAG(name##_val) != T_FLOAT) { \
-		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(VAL_TAG(name##_val))); \
+		fail(interp, "expected a float %s; got %s", (what), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
 	int name = (int)VAL_NUMBER(name##_val)
@@ -570,7 +571,7 @@ extern int print_truncate;
 #define POP_FLOAT(name, op, what) \
 	POP(name##_val); \
 	if (VAL_TAG(name##_val) != T_FLOAT) { \
-		fail(interp, "%s: expected a float %s; got %s", (op), (what), tag_name(VAL_TAG(name##_val))); \
+		fail(interp, "expected a float %s; got %s", (what), tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
 	double name = VAL_NUMBER(name##_val)
@@ -589,7 +590,7 @@ extern int print_truncate;
 #define POP_COLLECTION(name, op) \
 	POP(name##_val); \
 	if (VAL_TAG(name##_val) != T_ARRAY && VAL_TAG(name##_val) != T_SET) { \
-		fail(interp, "%s: expected an array or set; got %s", (op), tag_name(VAL_TAG(name##_val))); \
+		fail(interp, "expected an array or set; got %s", tag_name(VAL_TAG(name##_val))); \
 		return; \
 	} \
 	Object *name = OBJECT_AT(VAL_DATA(name##_val))
@@ -620,7 +621,7 @@ extern int print_truncate;
 
 #define PEEK_AT(var, depth, op) \
 	if (interp->dsp <= (depth)) { \
-		fail(interp, "%s: stack too shallow", (op)); \
+		fail(interp, "stack underflow"); \
 		return; \
 	} \
 	Val var = interp->data_stack[interp->dsp - 1 - (depth)]
@@ -628,7 +629,7 @@ extern int print_truncate;
 #define PEEK_TYPE_AT(var, depth, op, type) \
 	PEEK_AT(var, depth, op); \
 	if (VAL_TAG(var) != (type)) { \
-		fail(interp, "%s: expected %s; got %s", (op), tag_name(type), tag_name(VAL_TAG(var))); \
+		fail(interp, "expected %s; got %s", tag_name(type), tag_name(VAL_TAG(var))); \
 		return; \
 	}
 
@@ -639,14 +640,14 @@ extern int print_truncate;
 #define PEEK_SEQUENCE_AT(var, depth, op) \
 	PEEK_AT(var, depth, op); \
 	if (VAL_TAG(var) != T_ARRAY && VAL_TAG(var) != T_SET) { \
-		fail(interp, "%s: expected array or set; got %s", (op), tag_name(VAL_TAG(var))); \
+		fail(interp, "expected array or set; got %s", tag_name(VAL_TAG(var))); \
 		return; \
 	}
 
 #define PEEK_COLLECTION_AT(var, depth, op) \
 	PEEK_AT(var, depth, op); \
 	if (VAL_TAG(var) != T_ARRAY && VAL_TAG(var) != T_SET && VAL_TAG(var) != T_FRAME) { \
-		fail(interp, "%s: expected array, set, or frame; got %s", (op), tag_name(VAL_TAG(var))); \
+		fail(interp, "expected array, set, or frame; got %s", tag_name(VAL_TAG(var))); \
 		return; \
 	}
 
@@ -658,8 +659,8 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 void parallel_for(int n_items, int n_threads, int items_per_claim,
 		void (*kernel)(int start_index, int end_index, void *context), void *context);
 
-void w_u8 (FILE *f, uint8_t v);
-int r_u8 (FILE *f, uint8_t *v);
+void write_u8 (FILE *f, uint8_t v);
+int read_u8 (FILE *f, uint8_t *v);
 
 typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 
@@ -673,12 +674,6 @@ typedef enum { WALK_ERROR, WALK_VIVIFY, WALK_PROBE } FrameWalkMode;
 			bsearch_high = probe; \
 		} \
 	}
-
-#define SWAP_DOUBLES(a, b) do { \
-      double swap_tmp = (a); \
-      (a) = (b); \
-      (b) = swap_tmp; \
-} while (0)
 
 static inline __attribute__((always_inline)) int frame_find(Object *frame, cell key) {
 	LOWER_BOUND(frame->len, mid, frame->frame.keys[mid] < key, at);
@@ -712,6 +707,8 @@ int find(const char *name);
 int find_local(const char *token, int *depth_out, int *slot_out);
 void forget_user(Interpreter *interp);
 void free_one_object(Object *obj);
+int fuse_rewrite(Interpreter *interp, int n_replaced_cells, int fused_cfa, cell operand);
+int fuse_rewrite_pair(Interpreter *interp, int n_replaced_cells, int fused_cfa, cell operand_a, cell operand_b);
 void gc(Interpreter *interp);
 void heap_bytes_add(size_t bytes);
 void inbuf_reset(void);
@@ -760,6 +757,9 @@ void run_outer(Interpreter *interp);
 void skip_whitespace_and_comments(void);
 int stdout_is_tty(void);
 const char *tag_name(Tag t);
+int try_fuse_at_e_lit(Interpreter *interp);
+int try_fuse_at_e_ll(Interpreter *interp);
+int try_fuse_at_e_local(Interpreter *interp);
 int try_fuse_at_i_lit(Interpreter *interp);
 int try_fuse_at_i_ll(Interpreter *interp);
 int try_fuse_at_i_local(Interpreter *interp);
@@ -779,19 +779,19 @@ int random_below(int bound);
 int read_string_literal(void);
 int string_concat(Interpreter *interp, int left_handle, int right_handle);
 void type_of_intern_names(Interpreter *interp);
-void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name);
+void unary_op(Interpreter *interp, Val operand, double (*function)(double));
 
 int create_variable(Interpreter *interp, const char *name);
 void rollback_partial_definition(void);
 void truncate_quotation_spans(void);
 
-int r_i32(FILE *f, int32_t *v);
-int r_i64(FILE *f, int64_t *v);
-int r_u32(FILE *f, uint32_t *v);
-int r_val(FILE *f, Val *v);
-void w_i32(FILE *f, int32_t v);
-void w_i64(FILE *f, int64_t v);
-void w_val(FILE *f, Val value);
+int read_i32(FILE *f, int32_t *v);
+int read_i64(FILE *f, int64_t *v);
+int read_u32(FILE *f, uint32_t *v);
+int read_val(FILE *f, Val *v);
+void write_i32(FILE *f, int32_t v);
+void write_i64(FILE *f, int64_t v);
+void write_val(FILE *f, Val value);
 
 int array_sorted_copy(Interpreter *interp, Object *source);
 int build_set_from_values(Interpreter *interp, const Val *values, int count);
@@ -816,11 +816,13 @@ int matrix_min_columns(Interpreter *interp, Object *source);
 double matrix_min_overall(Object *source);
 int matrix_min_rows(Interpreter *interp, Object *source);
 int matrix_mul(Interpreter *interp, Val left_val, Val right_val);
+int matrix_nonzero_indices(Interpreter *interp, Object *source);
 int matrix_sub(Interpreter *interp, Val left_val, Val right_val);
 int matrix_sum_columns(Interpreter *interp, Object *source);
 double matrix_sum_overall(Object *source);
 int matrix_sum_rows(Interpreter *interp, Object *source);
 double matrix_variance_overall(Object *source);
+int vector_argsort_copy(Interpreter *interp, Object *source);
 int vector_sorted_copy(Interpreter *interp, Object *source);
 
 void define_superwords(Interpreter *interp);
@@ -897,6 +899,7 @@ void p_add_f(DISPATCH_ARGS);
 void p_add_inplace(DISPATCH_ARGS);
 void p_and(DISPATCH_ARGS);
 void p_apropos(DISPATCH_ARGS);
+void p_argsort(DISPATCH_ARGS);
 void p_asin(DISPATCH_ARGS);
 void p_atan(DISPATCH_ARGS);
 void p_bit_and(DISPATCH_ARGS);
@@ -921,6 +924,7 @@ void p_drop(DISPATCH_ARGS);
 void p_dup(DISPATCH_ARGS);
 void p_emit_(DISPATCH_ARGS);
 void p_eq(DISPATCH_ARGS);
+void p_eq_elements(DISPATCH_ARGS);
 void p_eq_f(DISPATCH_ARGS);
 void p_eq_f_zbranch(DISPATCH_ARGS);
 void p_eq_string(DISPATCH_ARGS);
@@ -969,6 +973,7 @@ void p_man(DISPATCH_ARGS);
 void p_mul(DISPATCH_ARGS);
 void p_mul_f(DISPATCH_ARGS);
 void p_mul_inplace(DISPATCH_ARGS);
+void p_nan(DISPATCH_ARGS);
 void p_neg(DISPATCH_ARGS);
 void p_not(DISPATCH_ARGS);
 void p_null(DISPATCH_ARGS);
@@ -1000,6 +1005,7 @@ void p_sin(DISPATCH_ARGS);
 void p_size(DISPATCH_ARGS);
 void p_size_len(DISPATCH_ARGS);
 void p_sleep(DISPATCH_ARGS);
+void p_sort(DISPATCH_ARGS);
 void p_sq(DISPATCH_ARGS);
 void p_sq_poly(DISPATCH_ARGS);
 void p_sqrt(DISPATCH_ARGS);
@@ -1122,7 +1128,6 @@ void p_set_remove(DISPATCH_ARGS);
 void p_setclose(DISPATCH_ARGS);
 void p_setopen(DISPATCH_ARGS);
 void p_slice_store(DISPATCH_ARGS);
-void p_sort(DISPATCH_ARGS);
 void p_take(DISPATCH_ARGS);
 void p_to_slice(DISPATCH_ARGS);
 void p_union(DISPATCH_ARGS);
@@ -1131,6 +1136,11 @@ void p_update_at(DISPATCH_ARGS);
 void p_0_matrix(DISPATCH_ARGS);
 void p_argmax(DISPATCH_ARGS);
 void p_argmin(DISPATCH_ARGS);
+void p_at_e(DISPATCH_ARGS);
+void p_at_e_l1l0(DISPATCH_ARGS);
+void p_at_e_lit(DISPATCH_ARGS);
+void p_at_e_ll0(DISPATCH_ARGS);
+void p_at_e_local0(DISPATCH_ARGS);
 void p_at_ij(DISPATCH_ARGS);
 void p_at_j(DISPATCH_ARGS);
 void p_augment(DISPATCH_ARGS);
@@ -1157,11 +1167,17 @@ void p_row_maxes(DISPATCH_ARGS);
 void p_row_mins(DISPATCH_ARGS);
 void p_row_sums(DISPATCH_ARGS);
 void p_select_rows(DISPATCH_ARGS);
+void p_store_e(DISPATCH_ARGS);
+void p_store_e_drop(DISPATCH_ARGS);
+void p_store_e_lll0(DISPATCH_ARGS);
+void p_store_ij(DISPATCH_ARGS);
+void p_store_ij_drop(DISPATCH_ARGS);
 void p_submatrix(DISPATCH_ARGS);
 void p_sum(DISPATCH_ARGS);
 void p_transpose(DISPATCH_ARGS);
 void p_variance(DISPATCH_ARGS);
 void p_vstack(DISPATCH_ARGS);
+void p_where(DISPATCH_ARGS);
 
 void p_add_store_i(DISPATCH_ARGS);
 void p_at_i(DISPATCH_ARGS);
@@ -1276,7 +1292,7 @@ static inline void push(Interpreter *interp, Val value) {
 	if (interp->dsp < DATA_STACK_DEPTH) {
 		interp->data_stack[interp->dsp++] = value;
 	} else {
-		fail(interp, "data stack overflow");
+		fail(interp, "stack overflow");
 	}
 }
 
@@ -1284,7 +1300,7 @@ static inline Val pop(Interpreter *interp) {
 	if (interp->dsp > 0) {
 		return interp->data_stack[--interp->dsp];
 	}
-	fail(interp, "data stack underflow");
+	fail(interp, "stack underflow");
 	Val none = make_tagged(T_NONE, 0);
 	return none;
 }
@@ -1317,12 +1333,12 @@ static inline void call_step(Interpreter *interp, CallContext *context, int cfa)
 
 static inline __attribute__((always_inline))
 Val frame_walk(Interpreter *interp, Val node, Object *path,
-		int count, FrameWalkMode mode, int *found, const char *op) {
+		int count, FrameWalkMode mode, int *found) {
 	for (int i = 0; i < count; i++) {
 		if (VAL_TAG(node) != T_FRAME) {
 			if (found) *found = 0;
 			if (mode != WALK_PROBE)
-				fail(interp, "%s: cannot descend into %s", op, tag_name(VAL_TAG(node)));
+				fail(interp, "cannot descend into %s", tag_name(VAL_TAG(node)));
 			return node;
 		}
 
@@ -1333,7 +1349,7 @@ Val frame_walk(Interpreter *interp, Val node, Object *path,
 			node = frame->frame.values[at];
 		} else if (mode == WALK_VIVIFY) {
 			if (key == (cell)vocab.wildcard_symbol || key == (cell)vocab.descendant_symbol) {
-				fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
+				fail(interp, "path has a wildcard or descendant; use select-keys/select-values");
 				return node;
 			}
 			int child = object_new_frame(interp);
@@ -1343,9 +1359,9 @@ Val frame_walk(Interpreter *interp, Val node, Object *path,
 			if (found) *found = 0;
 			if (mode != WALK_PROBE) {
 				if (key == (cell)vocab.wildcard_symbol || key == (cell)vocab.descendant_symbol)
-					fail(interp, "%s: path has a wildcard or descendant; use select-keys/select-values", op);
+					fail(interp, "path has a wildcard or descendant; use select-keys/select-values");
 				else
-					fail(interp, "%s: no key :%s", op, &vocab.symbol_pool[key]);
+					fail(interp, "no key :%s", &vocab.symbol_pool[key]);
 			}
 			return node;
 		}

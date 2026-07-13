@@ -189,6 +189,8 @@ Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_c
 | `true` | `( -- bool )` | lib.h2o: pushes 1 (inline) | 1 | none | O(1) |
 | `false` | `( -- bool )` | lib.h2o: pushes 0 (inline) | 1 | none | O(1) |
 | `gt` | `( a b -- bool )` or `( m x -- m )` | greater-than; element-wise 1/0 matrix on matrix operands (scalar broadcast) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
+| `eq` | `( a b -- bool )` or `( m x -- m )` | equality; element-wise 1/0 matrix on matrix operands (scalar broadcast) — the mask-producing twin of `=`, which stays structural on matrices; off matrices the two agree. NaN elements equal nothing | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
+| `nan?` | `( v -- bool )` or `( m -- m )` | NaN test: 1/0 mask over a matrix's elements; `1` on `null` itself (a scalar NaN *is* `null`), `0` on any float. The only mask route to NaNs — they compare false under `lt`/`gt`/`eq` | 2 | matrix `1m(r×c)` | O(1); matrix O(r×c) |
 | `0=` | `( a -- bool )` | `!truthy(a)`; any type | 2 | none | O(1) |
 | `type-of` | `( a -- sym )` | The value's type as a symbol: `:float` `:string` `:symbol` `:array` `:set` `:pair` `:frame` `:matrix` `:quantity` `:xt` `:continuation` `:stream` `:db` `:ptr` `:segment` `:none` `:wildcard` `:lvar`. A bound logic var reports its value's type; an unbound one is `:lvar` | 2 | none | O(1) |
 | `float?` | `( a -- bool )` | lib.h2o: `type-of :float =` (inlined) | 5 | none | O(1) |
@@ -490,7 +492,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `to-slice!` | `( v₀ … vₙ₋₁ arr offset n -- arr )` | Store the n values just below `arr` into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
 | `last` | `( arr n -- arr )` | lib.h2o: `swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
 | `skip` | `( arr n -- arr )` | lib.h2o: `over size swap - swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
-| `sort` | `( arr/set/v -- arr/v )` | Sorted copy: an array orders by `val_cmp`; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error) | 1 + n log n | `1a(n)` / `1m(n)` | O(n log n); vectors above 64k elements O(n) radix |
+| `sort` | `( arr/set/v -- arr/v )` | Sorted copy: an array orders by `val_cmp`; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error) | 1 + n log n | `1a(n)` / `1m(n)` | O(n log n); vectors above 8k elements O(n) radix |
 | `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
 | `sample` | `( arr/set count repl -- arr )` | Draw `count` elements; `repl` truthy = with replacement, else without (count ≤ len) | 3 + n | `1a(count)` (+ `malloc(n)` without replacement) | O(n) |
 | `shuffle` | `( arr -- arr )` | lib.h2o: new array, elements uniformly permuted (a full `sample` without replacement); input untouched | 3 + n | as `sample` | O(n) |
@@ -587,6 +589,9 @@ Row-major `double` storage. `r` rows, `c` columns.
 |------|-------------|----------|-----|-------|---|
 | `@j` | `( m j -- col )` | Column j as an r×1 matrix (copy) | 2 + r | `1m(r×1)` | O(r) |
 | `@i,j` | `( m i j -- f )` | Single element as a float | 4 | none | O(1) |
+| `@e` | `( m i -- f )` | Element at flat row-major index i as a float — consumes `argmin`/`argmax`/`where` indices; the same access on n×1 and 1×n vectors | 3 | none | O(1) |
+| `!e` | `( m i v -- m )` | Store v (a float, or `null` for NaN) at flat row-major index i, in place | 4 | none | O(1) |
+| `!i,j` | `( m i j v -- m )` | Store v (a float, or `null` for NaN) at row i, column j, in place | 5 | none | O(1) |
 | `dim` | `( m -- r c )` | Push rows then columns | 3 | none | O(1) |
 | `reshape` | `( m r c -- m' )` | Same elements, new shape (must match); memcpy | 3 + r×c | `1m(r×c)` | O(r×c) |
 | `transpose` | `( m -- m' )` | Rows/columns swapped | 1 + r×c | `1m(c×r)` | O(r×c) |
@@ -629,7 +634,9 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `vstack` | `( a b -- m )` | Stack two matrices row-wise (a on top of b); errors unless column counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `hstack` | `( a b -- m )` | lib.h2o: `augment` under its numpy name (inlined) | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `submatrix` | `( m rs re cs ce -- m )` | Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end | 5 + r·c | `1m(r×c)` | O(r·c) |
-| `select-rows` | `( m idx -- m )` | New matrix of the rows named by the float index array `idx`; errors on a non-float or out-of-range index | 2 + k·c | `1m(k×c)` | O(k·c) |
+| `select-rows` | `( m idx -- m )` | New matrix of the rows named by `idx` — a float index array or an index vector (nx1 or 1xn, as `where`/`argsort` return); errors on a non-float or out-of-range index | 2 + k·c | `1m(k×c)` | O(k·c) |
+| `argsort` | `( v -- v' )` | The sorting permutation of a vector, shape preserved: element i is the source index of the i-th smallest value; ties keep index order, NaNs go last in index order; ranks are argsort twice | 1 + n log n | `1m(n)` + `malloc(16n)` | O(n log n); above 8k elements O(n) radix |
+| `where` | `( m -- v )` | Flat row-major indices of the nonzero elements, as a k×1 index vector (1×k for a 1×n mask); composes with the `lt`/`gt` masks and `select-rows` | 1 + n | `1m(k)` | O(n) |
 | `var` | `( m -- f )` | Sample variance (÷ n−1) over all elements; errors with fewer than 2 | 1 + n | none | O(n) |
 | `quantile` | `( m p -- f )` | Linearly-interpolated quantile at p ∈ [0,1] over all elements (sorts a copy); errors if p out of range or empty | 2 + n log n | `malloc(n)` | O(n log n) |
 | `norm` | `( m -- f )` | Euclidean (L2) norm: √(Σ aᵢⱼ²) over all elements — a vector's length; for a matrix the Frobenius (entrywise 2-)norm, not the spectral norm | 1 + n | none | O(n) |
@@ -766,8 +773,8 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 | `shift-with` | `( xt -- )` | Capture as `shift`, then run xt in the outer context with k on the stack and begin unwinding | L + xt | `1o` (cont) | O(L + xt) |
 | `resume` | `( k -- … )` | Pop k and re-enter it (multi-shot — the continuation object survives, so a retained copy can be resumed again); pushes whatever the resumed code yields | L + resumed | none | O(L + resumed) |
 | `throw` | `( exc -- )` | lib.h2o: `[: drop 1 :] shift-with` | — | `1o` (cont) | O(stack depth) |
-| `catch` | `( xt -- result 0 \| exc 1 )` | lib.h2o: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (the error message becomes the exception value) | — | cont if thrown; `1s` on a caught interpreter error | O(xt) |
-| `try-catch` | `( normal-xt err-xt -- … )` | lib.h2o: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the error message, for an interpreter error) on the stack | — | cont if thrown; `1s` on a caught interpreter error | O(normal-xt) |
+| `catch` | `( xt -- result 0 \| exc 1 )` | lib.h2o: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (an error frame `{ :message :trace }` becomes the exception value) | — | cont if thrown; `1f` + `2s` on a caught interpreter error | O(xt) |
+| `try-catch` | `( normal-xt err-xt -- … )` | lib.h2o: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the `{ :message :trace }` error frame, for an interpreter error) on the stack | — | cont if thrown; `1f` + `2s` on a caught interpreter error | O(normal-xt) |
 | `ensure` | `( body-xt cleanup-xt -- … )` | lib.h2o: run cleanup-xt (stack-neutral) whether body-xt returns normally or throws/errors, then re-raise on the throw path | — | cont if thrown | O(body-xt) |
 | `with-db` | `( path body-xt -- … )` | lib.h2o: `db-open` the path, run body-xt `( db -- … )` with the handle, `db-close` on either exit | — | 1 db + cont if thrown | O(body-xt) |
 | `with-stream` | `( stream body-xt -- … )` | lib.h2o: run body-xt `( stream -- … )` over an already-open stream, `close` it on either exit | — | cont if thrown | O(body-xt) |

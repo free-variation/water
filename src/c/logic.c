@@ -2,7 +2,6 @@
 
 void p_lvar(DISPATCH_ARGS) {
 	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
-	SYNC_REGISTERS(interp, chain_ip, chain_sp);
 	int handle = object_new_logic_var(interp);
 	if (interp->error_flag) return;
 
@@ -37,7 +36,7 @@ void trail_undo_to(Interpreter *interp, int mark) {
 
 static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int depth) {
 	if (depth > MAX_NESTING_DEPTH) {
-		fail(interp, "unify: structure too deeply nested (cycle?)");
+		fail(interp, "structure too deeply nested (cycle?)");
 		return 0;
 	}
 
@@ -135,7 +134,7 @@ static void unify_outcome(Interpreter *interp, Val left, Val right, int unified)
 		if (lf) { print_val_inspect(lf, interp, deref(interp, left)); fclose(lf); }
 		FILE *rf = open_memstream(&rbuf, &rn);
 		if (rf) { print_val_inspect(rf, interp, deref(interp, right)); fclose(rf); }
-		fail(interp, "unify: cannot unify %s with %s", lbuf ? lbuf : "?", rbuf ? rbuf : "?");
+		fail(interp, "cannot unify %s with %s", lbuf ? lbuf : "?", rbuf ? rbuf : "?");
 		free(lbuf);
 		free(rbuf);
 	}
@@ -143,8 +142,10 @@ static void unify_outcome(Interpreter *interp, Val left, Val right, int unified)
 }
 
 void p_unify(DISPATCH_ARGS) {
-	POP(right);
-	POP(left);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val right = chain_sp[-1];
+	Val left = chain_sp[-2];
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
 
 	int unified = unify(interp, left, right);
 	unify_outcome(interp, left, right, unified);
@@ -167,7 +168,13 @@ void p_unify_cons(DISPATCH_ARGS) {
 	} else if (VAL_TAG(target) == T_UNBOUND) {
 		unified = 1;
 	} else {
+		gc_root_push(interp, left);
+		gc_root_push(interp, head);
+		gc_root_push(interp, tail);
 		int slot = object_new_pair(interp);
+		gc_root_pop(interp);
+		gc_root_pop(interp);
+		gc_root_pop(interp);
 		if (interp->error_flag) return;
 
 		pairs.table[slot].head = head;
@@ -187,8 +194,9 @@ void p_unify_cons(DISPATCH_ARGS) {
 }
 
 void p_matches(DISPATCH_ARGS) {
-	POP(row);
-	POP(pattern);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val row = chain_sp[-1];
+	Val pattern = chain_sp[-2];
 
 	int trail_mark = interp->bind_trail_top;
 	int matched = unify(interp, pattern, row);
@@ -196,9 +204,9 @@ void p_matches(DISPATCH_ARGS) {
 
 	if (interp->error_flag) return;
 
-	push(interp, make_bool(matched));
+	chain_sp[-2] = make_bool(matched);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_deref(DISPATCH_ARGS) {

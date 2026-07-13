@@ -22,10 +22,10 @@
 
 5 
 7 
-error: @: no key :z
+error: no key :z
 5 
 42 
-error: @: no key :z
+error: no key :z
 error: @: expected a symbol or path (array of symbols); got a float
 [ { :a 1 } ] 
 1 
@@ -52,7 +52,7 @@ error: @: expected a symbol or path (array of symbols); got a float
 }
 
 7 
-error: !: empty path
+error: empty path
 {
   :a 99
 }
@@ -91,7 +91,7 @@ error: !: expected a symbol or path (array of symbols); got a float
   :b 2
 }
 
-error: frame: keys and values must be the same length (1 vs 2)
+error: keys and values must be the same length (1 vs 2)
 {
   :b 2
 }
@@ -106,8 +106,8 @@ error: frame: keys and values must be the same length (1 vs 2)
   :c 3
 }
 
-error: delete-at: no key :z
-error: delete-at: empty path
+error: no key :z
+error: empty path
 {
   :b 2
 }
@@ -115,7 +115,7 @@ error: delete-at: empty path
 {
 }
 
-error: delete-at: no key :z
+error: no key :z
 error: delete-at: expected a symbol or path (array of symbols); got a float
 1 
 0 
@@ -124,7 +124,7 @@ error: delete-at: expected a symbol or path (array of symbols); got a float
 1 
 0 
 1 
-error: has?: expected a symbol or path (array of symbols); got a float
+error: expected a symbol or path (array of symbols); got a float
 {
   :n 6
 }
@@ -136,9 +136,9 @@ error: has?: expected a symbol or path (array of symbols); got a float
 }
 
 15 
-error: update-at: no key :z
-error: update-at: xt required on stack; got a float
-error: update-at: empty path
+error: no key :z
+error: xt required on stack; got a float
+error: empty path
 {
   :a 6
 }
@@ -152,7 +152,7 @@ error: update-at: empty path
   :k 42
 }
 
-error: update-at: no key :z
+error: no key :z
 error: update-at: expected a symbol or path (array of symbols); got a float
 1010 99 
 707 1 2 

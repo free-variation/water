@@ -53,6 +53,8 @@ static double scalar_dec(double x) { return x - 1.0; }
 static double scalar_sq(double x) { return x * x; }
 static double scalar_lt(double a, double b) { return a < b; }
 static double scalar_gt(double a, double b) { return a > b; }
+static double scalar_eq(double a, double b) { return a == b; }
+static double scalar_nan(double element) { return isnan(element) ? 1.0 : 0.0; }
 static double scalar_add(double a, double b) { return a + b; }
 static double scalar_sub(double a, double b) { return a - b; }
 static double scalar_mul(double a, double b) { return a * b; }
@@ -81,11 +83,81 @@ static Val scale_collapsed_magnitude(Val magnitude, double factor) {
 	return make_float(VAL_NUMBER(magnitude) * factor);
 }
 
-static void unary_quantity_op(Interpreter *interp, Val quantity, double (*function)(double), const char *name, int result_unit) {
+static int quantity_additive_op(Interpreter *interp, Val left, Val right,
+		scalar_operator scalar_op, const char *op, const char *verb) {
+	int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
+	int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
+	if (!left_is_quantity && !right_is_quantity)
+		return 0;
+
+	if (!left_is_quantity || !right_is_quantity) {
+		fail(interp, "cannot %s a quantity and a plain number", verb);
+		return 1;
+	}
+
+	Val left_magnitude, right_magnitude;
+	int left_unit, right_unit;
+	unwrap_quantity(left,  1, &left_magnitude,  &left_unit);
+	unwrap_quantity(right, 1, &right_magnitude, &right_unit);
+	int base = interp->dsp - 2;
+
+	if (left_unit != right_unit) {
+		double factor;
+		if (!unit_conversion(right_unit, left_unit, &factor)) {
+			fail(interp, "unit mismatch");
+			return 1;
+		}
+		binary_op(interp, right_magnitude, make_float(factor), scalar_mul, "*");
+		if (interp->error_flag) return 1;
+		right_magnitude = interp->data_stack[interp->dsp - 1];
+	}
+
+	binary_op(interp, left_magnitude, right_magnitude, scalar_op, op);
+	if (interp->error_flag) return 1;
+
+	Val combined = pop(interp);
+	interp->dsp = base;
+	push_quantity(interp, combined, left_unit);
+	return 1;
+}
+
+static int quantity_multiplicative_op(Interpreter *interp, Val left, Val right,
+		scalar_operator scalar_op, int (*unit_op)(Interpreter *, int, int, double *),
+		const char *op, int guards_zero) {
+	int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
+	int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
+	if (!left_is_quantity && !right_is_quantity)
+		return 0;
+
+	Val left_magnitude, right_magnitude;
+	int left_unit, right_unit;
+	unwrap_quantity(left,  left_is_quantity,  &left_magnitude,  &left_unit);
+	unwrap_quantity(right, right_is_quantity, &right_magnitude, &right_unit);
+
+	if (guards_zero && VAL_TAG(right_magnitude) == T_FLOAT && VAL_NUMBER(right_magnitude) == 0.0) {
+		fail(interp, "division by zero");
+		return 1;
+	}
+
+	binary_op(interp, left_magnitude, right_magnitude, scalar_op, op);
+	if (interp->error_flag) return 1;
+
+	Val combined = pop(interp);
+	interp->dsp -= 2;
+	double collapse_factor;
+	int combined_unit = unit_op(interp, left_unit, right_unit, &collapse_factor);
+	if (interp->error_flag) return 1;
+	if (collapse_factor != 1.0)
+		combined = scale_collapsed_magnitude(combined, collapse_factor);
+	push_quantity(interp, combined, combined_unit);
+	return 1;
+}
+
+static void unary_quantity_op(Interpreter *interp, Val quantity, double (*function)(double), int result_unit) {
 	int slot = (int)VAL_DATA(quantity);
 
 	gc_root_push(interp, quantity);
-	unary_op(interp, pairs.table[slot].head, function, name);
+	unary_op(interp, pairs.table[slot].head, function);
 	gc_root_pop(interp);
 
 	if (interp->error_flag)
@@ -95,7 +167,7 @@ static void unary_quantity_op(Interpreter *interp, Val quantity, double (*functi
 }
 
 void p_add(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "+: stack too shallow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val left = chain_sp[-2];
 	Val right = chain_sp[-1];
 
@@ -132,47 +204,15 @@ void p_add(DISPATCH_ARGS) {
 		BROADCAST_MATRIX_OP_SCALAR(+);
 	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY)
 		execute_cfa(interp, find("concat"));
-	else {
-		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
-		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
-
-		if (left_is_quantity && right_is_quantity) {
-			Val left_magnitude, right_magnitude;
-			int left_unit, right_unit;
-			unwrap_quantity(left,  1, &left_magnitude,  &left_unit);
-			unwrap_quantity(right, 1, &right_magnitude, &right_unit);
-			int base = interp->dsp - 2;
-
-			if (left_unit != right_unit) {
-				double factor;
-				if (!unit_conversion(right_unit, left_unit, &factor)) {
-					fail(interp, "+ : unit mismatch");
-					return;
-				}
-				binary_op(interp, right_magnitude, make_float(factor), scalar_mul, "*");
-				if (interp->error_flag) return;
-				right_magnitude = interp->data_stack[interp->dsp - 1];
-			}
-
-			binary_op(interp, left_magnitude, right_magnitude, scalar_add, "+");
-			if (interp->error_flag) return;
-
-			Val sum = pop(interp);
-			interp->dsp = base;
-			push_quantity(interp, sum, left_unit);
-		}
-		else if (left_is_quantity || right_is_quantity)
-			fail(interp, "+ : cannot add a quantity and a plain number");
-		else
-			fail(interp, "+ : expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s",
-					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
-	}
+	else if (!quantity_additive_op(interp, left, right, scalar_add, "+", "add"))
+		fail(interp, "expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s",
+				tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
 	DISPATCH(interp);
 }
 
 void p_sub(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "-: stack too shallow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val left = chain_sp[-2];
 	Val right = chain_sp[-1];
 
@@ -200,47 +240,15 @@ void p_sub(DISPATCH_ARGS) {
 		BROADCAST_SCALAR_OP_MATRIX(-);
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
 		BROADCAST_MATRIX_OP_SCALAR(-);
-	else {
-		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
-		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
-
-		if (left_is_quantity && right_is_quantity) {
-			Val left_magnitude, right_magnitude;
-			int left_unit, right_unit;
-			unwrap_quantity(left,  1, &left_magnitude,  &left_unit);
-			unwrap_quantity(right, 1, &right_magnitude, &right_unit);
-			int base = interp->dsp - 2;
-
-			if (left_unit != right_unit) {
-				double factor;
-				if (!unit_conversion(right_unit, left_unit, &factor)) {
-					fail(interp, "- : unit mismatch");
-					return;
-				}
-				binary_op(interp, right_magnitude, make_float(factor), scalar_mul, "*");
-				if (interp->error_flag) return;
-				right_magnitude = interp->data_stack[interp->dsp - 1];
-			}
-
-			binary_op(interp, left_magnitude, right_magnitude, scalar_sub, "-");
-			if (interp->error_flag) return;
-
-			Val difference = pop(interp);
-			interp->dsp = base;
-			push_quantity(interp, difference, left_unit);
-		}
-		else if (left_is_quantity || right_is_quantity)
-			fail(interp, "- : cannot subtract a quantity and a plain number");
-		else
-			fail(interp, "- : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s",
-					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
-	}
+	else if (!quantity_additive_op(interp, left, right, scalar_sub, "-", "subtract"))
+		fail(interp, "expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s",
+				tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
 	DISPATCH(interp);
 }
 
 void p_mul(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "*: stack too shallow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val left = chain_sp[-2];
 	Val right = chain_sp[-1];
 
@@ -269,29 +277,8 @@ void p_mul(DISPATCH_ARGS) {
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
 		BROADCAST_MATRIX_OP_SCALAR(*);
 	else {
-		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
-		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
-
-		if (left_is_quantity || right_is_quantity) {
-			Val left_magnitude, right_magnitude;
-			int left_unit, right_unit;
-			unwrap_quantity(left,  left_is_quantity,  &left_magnitude,  &left_unit);
-			unwrap_quantity(right, right_is_quantity, &right_magnitude, &right_unit);
-
-			binary_op(interp, left_magnitude, right_magnitude, scalar_mul, "*");
-			if (interp->error_flag) return;
-
-			Val product = pop(interp);
-			interp->dsp -= 2;
-			double collapse_factor;
-			int product_unit = unit_multiply(interp, left_unit, right_unit, &collapse_factor);
-			if (interp->error_flag) return;
-			if (collapse_factor != 1.0)
-				product = scale_collapsed_magnitude(product, collapse_factor);
-			push_quantity(interp, product, product_unit);
-		}
-		else
-			fail(interp, "* : expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s",
+		if (!quantity_multiplicative_op(interp, left, right, scalar_mul, unit_multiply, "*", 0))
+			fail(interp, "expected two floats, two sets, two matrices, or scalar/matrix; got %s and %s",
 					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 	}
 
@@ -299,13 +286,13 @@ void p_mul(DISPATCH_ARGS) {
 }
 
 void p_div(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "/: stack too shallow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val left = chain_sp[-2];
 	Val right = chain_sp[-1];
 	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
 		if (VAL_NUMBER(right) == 0.0) {
 			SYNC_REGISTERS(interp, chain_ip, chain_sp);
-			fail(interp, "/ : division by zero");
+			fail(interp, "division by zero");
 			return;
 		}
 		chain_sp[-2] = make_float(VAL_NUMBER(left) / VAL_NUMBER(right));
@@ -318,7 +305,7 @@ void p_div(DISPATCH_ARGS) {
 		int n = divisor->matrix.rows * divisor->matrix.columns;
 		for (int i = 0; i < n; i++) {
 			if (divisor->matrix.elements[i] == 0.0) {
-				fail(interp, "/ : division by zero (matrix element %d)", i);
+				fail(interp, "division by zero (matrix element %d)", i);
 				return;
 			}
 		}
@@ -332,40 +319,14 @@ void p_div(DISPATCH_ARGS) {
 		BROADCAST_SCALAR_OP_MATRIX(/);
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT) {
 		if (VAL_NUMBER(right) == 0.0) {
-			fail(interp, "/ : division by zero");
+			fail(interp, "division by zero");
 			return;
 		}
 		BROADCAST_MATRIX_OP_SCALAR(/);
 	}
 	else {
-		int left_is_quantity  = VAL_TAG(left)  == T_QUANTITY;
-		int right_is_quantity = VAL_TAG(right) == T_QUANTITY;
-
-		if (left_is_quantity || right_is_quantity) {
-			Val left_magnitude, right_magnitude;
-			int left_unit, right_unit;
-			unwrap_quantity(left,  left_is_quantity,  &left_magnitude,  &left_unit);
-			unwrap_quantity(right, right_is_quantity, &right_magnitude, &right_unit);
-
-			if (VAL_TAG(right_magnitude) == T_FLOAT && VAL_NUMBER(right_magnitude) == 0.0) {
-				fail(interp, "/ : division by zero");
-				return;
-			}
-
-			binary_op(interp, left_magnitude, right_magnitude, scalar_div, "/");
-			if (interp->error_flag) return;
-
-			Val quotient = pop(interp);
-			interp->dsp -= 2;
-			double collapse_factor;
-			int quotient_unit = unit_divide(interp, left_unit, right_unit, &collapse_factor);
-			if (interp->error_flag) return;
-			if (collapse_factor != 1.0)
-				quotient = scale_collapsed_magnitude(quotient, collapse_factor);
-			push_quantity(interp, quotient, quotient_unit);
-		}
-		else
-			fail(interp, "/ : expected two floats, two matrices, or scalar/matrix; got %s and %s",
+		if (!quantity_multiplicative_op(interp, left, right, scalar_div, unit_divide, "/", 1))
+			fail(interp, "expected two floats, two matrices, or scalar/matrix; got %s and %s",
 					tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 	}
 
@@ -380,7 +341,7 @@ void p_div(DISPATCH_ARGS) {
 			Object *left_matrix = OBJECT_AT(VAL_DATA(left)); \
 			Object *right_matrix = OBJECT_AT(VAL_DATA(right)); \
 			if (left_matrix->matrix.rows != right_matrix->matrix.rows || left_matrix->matrix.columns != right_matrix->matrix.columns) { \
-				fail(interp, word ": matrix shapes differ (%dx%d vs %dx%d)", left_matrix->matrix.rows, left_matrix->matrix.columns, right_matrix->matrix.rows, right_matrix->matrix.columns); \
+				fail(interp, "matrix shapes differ (%dx%d vs %dx%d)", left_matrix->matrix.rows, left_matrix->matrix.columns, right_matrix->matrix.rows, right_matrix->matrix.columns); \
 				return; \
 			} \
 			size_t num_elements = (size_t)left_matrix->matrix.rows * (size_t)left_matrix->matrix.columns; \
@@ -406,7 +367,7 @@ void p_div(DISPATCH_ARGS) {
 				elements[i] = scalar op elements[i]; \
 			push(interp, right); \
 		} else { \
-			fail(interp, word ": expected a matrix operand; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right))); \
+			fail(interp, "expected a matrix operand; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right))); \
 		} \
 		DISPATCH(interp); \
 	}
@@ -416,24 +377,28 @@ INPLACE_OP(p_sub_inplace, "-!", -)
 INPLACE_OP(p_mul_inplace, "*!", *)
 INPLACE_OP(p_div_inplace, "/!", /)
 
-#define BINARY_FLOAT_OP(name, opname, op) \
+#define BINARY_FLOAT_OP(name, opname, expr) \
 	void name(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "%s: data stack underflow", opname); \
-		chain_sp[-2].number = chain_sp[-2].number op chain_sp[-1].number; \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
+		double a = chain_sp[-2].number; \
+		double b = chain_sp[-1].number; \
+		chain_sp[-2].number = (expr); \
 		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1); \
 	}
 
-BINARY_FLOAT_OP(p_add_f, "f+", +)
-BINARY_FLOAT_OP(p_sub_f, "f-", -)
-BINARY_FLOAT_OP(p_mul_f, "f*", *)
+BINARY_FLOAT_OP(p_add_f, "f+", a + b)
+BINARY_FLOAT_OP(p_sub_f, "f-", a - b)
+BINARY_FLOAT_OP(p_mul_f, "f*", a * b)
+BINARY_FLOAT_OP(p_fpow, "f^", pow(a, b))
+BINARY_FLOAT_OP(p_fmodop, "fmod", fmod(a, b))
 
-BINARY_FLOAT_OP(p_eq_f, "feq", ==)
-BINARY_FLOAT_OP(p_lt_f, "flt", <)
-BINARY_FLOAT_OP(p_gt_f, "fgt", >)
+BINARY_FLOAT_OP(p_eq_f, "feq", a == b)
+BINARY_FLOAT_OP(p_lt_f, "flt", a < b)
+BINARY_FLOAT_OP(p_gt_f, "fgt", a > b)
 
 #define BITWISE_BINARY_OP(name, opname, op) \
 	void name(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "%s: data stack underflow", opname); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
 		int64_t a = (int64_t)chain_sp[-2].number; \
 		int64_t b = (int64_t)chain_sp[-1].number; \
 		chain_sp[-2].number = (double)(a op b); \
@@ -446,23 +411,22 @@ BITWISE_BINARY_OP(p_lshift, "lshift", <<)
 BITWISE_BINARY_OP(p_rshift, "rshift", >>)
 
 void p_bit_not(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 1, "bit-not: data stack underflow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	chain_sp[-1].number = (double)(~(int64_t)chain_sp[-1].number);
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_lowest_bit(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 1, "lowest-bit: data stack underflow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	uint64_t bits = (uint64_t)(int64_t)chain_sp[-1].number;
 	chain_sp[-1].number = bits ? (double)__builtin_ctzll(bits) : -1.0;
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_div_f(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 2, "f/: data stack underflow");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	if (chain_sp[-1].number == 0.0) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "f/: division by zero");
+		fail(interp, "division by zero");
 		return;
 	}
 	chain_sp[-2].number = chain_sp[-2].number / chain_sp[-1].number;
@@ -548,10 +512,26 @@ void p_eq_string(DISPATCH_ARGS) {
 	}
 MATRIX_COMPARISON_OP(p_lt, <, scalar_lt, "lt")
 MATRIX_COMPARISON_OP(p_gt, >, scalar_gt, "gt")
+MATRIX_COMPARISON_OP(p_eq_elements, ==, scalar_eq, "eq")
+
+void p_nan(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	if (VAL_TAG(chain_sp[-1]) == T_NONE) {
+			chain_sp[-1] = make_bool(1);
+			DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+	}
+
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
+	unary_op(interp, chain_sp[-1], scalar_nan);
+	if (interp->error_flag) return;
+
+	DISPATCH(interp);
+}
+			
 
 #define UNARY_FLOAT_OP(name, opname, expr) \
 	void name(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH_MSG(interp, chain_ip, chain_sp, 1, "%s: data stack underflow", opname); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1); \
 		double n = chain_sp[-1].number; \
 		chain_sp[-1].number = (expr); \
 		DISPATCH_REGISTERS(interp, chain_ip, chain_sp); \
@@ -564,7 +544,7 @@ void p_zeq(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
-#define COMPARISON_ZBRANCH(name, op) \
+#define COMPARISON_ZBRANCH(name, op, word) \
 	void name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 2); \
 		Val right = chain_sp[-1]; \
@@ -582,12 +562,12 @@ void p_zeq(DISPATCH_ARGS) {
 		DISPATCH_REGISTERS(interp, continue_ip, chain_sp - 2); \
 	}
 
-COMPARISON_ZBRANCH(p_eq_zbranch, ==);
-COMPARISON_ZBRANCH(p_lt_zbranch, <);
-COMPARISON_ZBRANCH(p_gt_zbranch, >);
+COMPARISON_ZBRANCH(p_eq_zbranch, ==, "(=0branch)");
+COMPARISON_ZBRANCH(p_lt_zbranch, <, "(lt0branch)");
+COMPARISON_ZBRANCH(p_gt_zbranch, >, "(gt0branch)");
 
 
-#define FLOAT_COMPARISON_ZBRANCH(name, op) \
+#define FLOAT_COMPARISON_ZBRANCH(name, op, word) \
 	void name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 2); \
 		double left = chain_sp[-2].number; \
@@ -596,9 +576,9 @@ COMPARISON_ZBRANCH(p_gt_zbranch, >);
 		DISPATCH_REGISTERS(interp, continue_ip, chain_sp - 2); \
 	}
 
-FLOAT_COMPARISON_ZBRANCH(p_eq_f_zbranch, ==);
-FLOAT_COMPARISON_ZBRANCH(p_lt_f_zbranch, <);
-FLOAT_COMPARISON_ZBRANCH(p_gt_f_zbranch, >);
+FLOAT_COMPARISON_ZBRANCH(p_eq_f_zbranch, ==, "(feq0branch)");
+FLOAT_COMPARISON_ZBRANCH(p_lt_f_zbranch, <, "(flt0branch)");
+FLOAT_COMPARISON_ZBRANCH(p_gt_f_zbranch, >, "(fgt0branch)");
 
 void p_zeq_zbranch(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
@@ -711,15 +691,14 @@ void p_roll(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val depth_val = chain_sp[-1];
 	if (VAL_TAG(depth_val) != T_FLOAT) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "roll: expected a float depth; got %s", tag_name(VAL_TAG(depth_val)));
+		fail(interp, "expected a float depth; got %s", tag_name(VAL_TAG(depth_val)));
 		return;
 	}
 	int n = (int)VAL_NUMBER(depth_val);
 	Val *rolled_top = chain_sp - 1;
 	if (n < 0 || rolled_top - n < interp->data_stack) {
 		SYNC_REGISTERS(interp, chain_ip, rolled_top);
-		fail(interp, "roll: depth %d out of range (stack has %d below it)", n, (int)(rolled_top - interp->data_stack));
+		fail(interp, "depth %d out of range (stack has %d below it)", n, (int)(rolled_top - interp->data_stack));
 		return;
 	}
 
@@ -746,7 +725,8 @@ static int grid_if_matrix(FILE *out, Val value) {
 }
 
 void p_dot(DISPATCH_ARGS) {
-	POP(value);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val value = chain_sp[-1];
 	if (!grid_if_matrix(stdout, value)) {
 		if (VAL_TAG(value) == T_FRAME) {
 			print_frame_pretty(stdout, interp, OBJECT_AT(VAL_DATA(value)), 0);
@@ -761,13 +741,14 @@ void p_dot(DISPATCH_ARGS) {
 	}
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_dot_all(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	int saved = print_truncate;
 	print_truncate = 0;
-	POP(value);
+	Val value = chain_sp[-1];
 	if (!grid_if_matrix(stdout, value)) {
 		print_val(stdout, interp, value);
 		putchar(' ');
@@ -775,17 +756,18 @@ void p_dot_all(DISPATCH_ARGS) {
 	fflush(stdout);
 	print_truncate = saved;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_render(DISPATCH_ARGS) {
-	PEEK_AT(value, 0, "render");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val value = chain_sp[-1];
 
 	char *buffer = NULL;
 	size_t size = 0;
 	FILE *out = open_memstream(&buffer, &size);
 	if (!out) {
-		fail(interp, "render: out of memory");
+		fail(interp, "out of memory");
 		return;
 	}
 
@@ -813,25 +795,29 @@ void p_render(DISPATCH_ARGS) {
 	if (interp->error_flag)
 		return;
 
-	interp->data_stack[interp->dsp - 1] = make_string(handle);
+	chain_sp[-1] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_cr(DISPATCH_ARGS) {
-	(void)interp;
-
 	putchar('\n');
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_emit_(DISPATCH_ARGS) {
-	POP_INT(char_code, "emit", "character code");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val code_val = chain_sp[-1];
+	if (VAL_TAG(code_val) != T_FLOAT) {
+		fail(interp, "expected a float character code; got %s", tag_name(VAL_TAG(code_val)));
+		return;
+	}
+	int char_code = (int)VAL_NUMBER(code_val);
 
 	if (char_code < 0 || char_code > 0x10FFFF) {
-		fail(interp, "emit: codepoint %d out of range", char_code);
+		fail(interp, "codepoint %d out of range", char_code);
 		return;
 	}
 
@@ -845,17 +831,17 @@ void p_emit_(DISPATCH_ARGS) {
 
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_dots(DISPATCH_ARGS) {
-	for (int i = 0; i < interp->dsp; i++) {
-		print_val_inspect(stdout, interp, interp->data_stack[i]);
+	for (Val *slot = interp->data_stack; slot < chain_sp; slot++) {
+		print_val_inspect(stdout, interp, *slot);
 		putchar(' ');
 	}
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_bye(DISPATCH_ARGS) {
@@ -867,7 +853,6 @@ void p_bye(DISPATCH_ARGS) {
 void p_tor(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	if (interp->rsp >= RETURN_STACK_DEPTH) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
 		fail(interp, "return stack overflow");
 		return;
 	}
@@ -879,7 +864,6 @@ void p_tor(DISPATCH_ARGS) {
 void p_rfrom(DISPATCH_ARGS) {
 	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
 	if (interp->rsp <= 0) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
 		fail(interp, "return stack underflow");
 		return;
 	}
@@ -891,8 +875,7 @@ void p_rfrom(DISPATCH_ARGS) {
 void p_rfetch(DISPATCH_ARGS) {
 	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
 	if (interp->rsp <= 0) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "r@: return stack is empty");
+		fail(interp, "return stack is empty");
 		return;
 	}
 	*chain_sp = interp->return_stack[interp->rsp - 1];
@@ -901,40 +884,42 @@ void p_rfetch(DISPATCH_ARGS) {
 }
 
 void p_to_side(DISPATCH_ARGS) {
-	POP(value);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	if (interp->side_dsp >= SIDESTACK_DEPTH) {
-		fail(interp, ">side: side stack overflow (max %d)", SIDESTACK_DEPTH);
+		fail(interp, "side stack overflow (max %d)", SIDESTACK_DEPTH);
 		return;
 	}
-	interp->side_stack[interp->side_dsp++] = value;
+	interp->side_stack[interp->side_dsp++] = chain_sp[-1];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_side_to(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
 	if (interp->side_dsp <= 0) {
-		fail(interp, "side>: side stack is empty");
+		fail(interp, "side stack is empty");
 		return;
 	}
-	push(interp, interp->side_stack[--interp->side_dsp]);
+	*chain_sp = interp->side_stack[--interp->side_dsp];
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 void p_side_drop(DISPATCH_ARGS) {
 	if (interp->side_dsp <= 0) {
-		fail(interp, "side-drop: side stack is empty");
+		fail(interp, "side stack is empty");
 		return;
 	}
 	interp->side_dsp--;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_side_depth(DISPATCH_ARGS) {
-	push(interp, make_float((double)interp->side_dsp));
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	*chain_sp = make_float((double)interp->side_dsp);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 void p_execute(DISPATCH_ARGS) {
@@ -953,8 +938,10 @@ int push_prompt(Interpreter *interp, int kind) {
 
 void p_reset(DISPATCH_ARGS) {
 	push_prompt(interp, PROMPT_EXCEPTION);
+	if (interp->error_flag)
+		return;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 
@@ -969,7 +956,7 @@ static int find_prompt(Interpreter *interp, int kind) {
 	if (mark_index < 0) {
 		fail(interp, kind == PROMPT_CHOICE
 				? "no enclosing amb to backtrack to"
-				: "shift/shift-with: no enclosing reset on the return stack");
+				: "no enclosing reset on the return stack");
 		return -1;
 	}
 
@@ -1063,10 +1050,23 @@ void p_execute_catching(DISPATCH_ARGS) {
 
 	if (interp->error_flag) {
 		interp->error_flag = 0;
-		int handle = object_new_string(interp, interp->error_message,
+		int message_handle = object_new_string(interp, interp->error_message,
 				(int)strlen(interp->error_message));
+		gc_root_push(interp, make_string(message_handle));
+		int trace_handle = object_new_string(interp, interp->error_trace,
+				(int)strlen(interp->error_trace));
+		gc_root_push(interp, make_string(trace_handle));
+
+		NEW_FRAME(error_handle, error_frame);
+		gc_root_push(interp, make_frame(error_handle));
+		frame_put(error_frame, intern_symbol(interp, "message"), make_string(message_handle));
+		frame_put(error_frame, intern_symbol(interp, "trace"), make_string(trace_handle));
+		gc_root_pop(interp);
+		gc_root_pop(interp);
+		gc_root_pop(interp);
+
 		interp->dsp = base_dsp;
-		push(interp, make_string(handle));
+		push(interp, make_frame(error_handle));
 		push(interp, make_float(1));
 
 		int mark_index = find_prompt(interp, PROMPT_EXCEPTION);
@@ -1082,7 +1082,7 @@ void p_execute_catching(DISPATCH_ARGS) {
 void p_resume(DISPATCH_ARGS) {
 	POP_CONT(continuation, "resume");
 	if (continuation->continuation.capture_generation != vocab.forget_generation) {
-		fail(interp, "resume: continuation outlived its defining word");
+		fail(interp, "continuation outlived its defining word");
 		return;
 	}
 	int saved_ip = interp->ip;
@@ -1164,7 +1164,7 @@ void p_water(DISPATCH_ARGS) {
 	printf("\n%*swater %s\n", 42, "", VERSION);
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_size(DISPATCH_ARGS) {
@@ -1186,8 +1186,7 @@ void p_size(DISPATCH_ARGS) {
 		RETARGET_OP(p_size_len);
 		elements = (double)OBJECT_AT(VAL_DATA(collection))->len;
 	} else {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "size: expected a set, array, matrix, string, segment, or frame; got %s", tag_name(VAL_TAG(collection)));
+		fail(interp, "expected a set, array, matrix, string, segment, or frame; got %s", tag_name(VAL_TAG(collection)));
 		return;
 	}
 	chain_sp[-1] = make_float(elements);
@@ -1198,7 +1197,6 @@ void p_size(DISPATCH_ARGS) {
 void p_sort(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val collection = chain_sp[-1];
-	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
 
 	int sorted_handle;
 	if (VAL_TAG(collection) == T_ARRAY)
@@ -1208,12 +1206,29 @@ void p_sort(DISPATCH_ARGS) {
 	else if (VAL_TAG(collection) == T_MATRIX)
 		sorted_handle = vector_sorted_copy(interp, OBJECT_AT(VAL_DATA(collection)));
 	else {
-		fail(interp, "sort: expected an array, set, or vector; got %s", tag_name(VAL_TAG(collection)));
+		fail(interp, "expected an array, set, or vector; got %s", tag_name(VAL_TAG(collection)));
 		return;
 	}
 	if (interp->error_flag) return;
 
 	chain_sp[-1] = VAL_TAG(collection) == T_MATRIX ? make_matrix(sorted_handle) : make_array(sorted_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
+void p_argsort(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val collection = chain_sp[-1];
+
+	if (VAL_TAG(collection) != T_MATRIX) {
+		fail(interp, "expected a vector (nx1 or 1xn); got %s", tag_name(VAL_TAG(collection)));
+		return;
+	}
+
+	int permutation_handle = vector_argsort_copy(interp, OBJECT_AT(VAL_DATA(collection)));
+	if (interp->error_flag) return;
+
+	chain_sp[-1] = make_matrix(permutation_handle);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
@@ -1271,7 +1286,7 @@ void p_words(DISPATCH_ARGS) {
 	free(names);
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 static int contains_case_insensitive(const char *haystack, const char *needle) {
@@ -1283,8 +1298,13 @@ static int contains_case_insensitive(const char *haystack, const char *needle) {
 }
 
 void p_apropos(DISPATCH_ARGS) {
-	POP_STRING(query_obj, "apropos");
-	const char *query = query_obj->bytes;
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val query_val = chain_sp[-1];
+	if (VAL_TAG(query_val) != T_STRING) {
+		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(query_val)));
+		return;
+	}
+	const char *query = OBJECT_AT(VAL_DATA(query_val))->bytes;
 
 	for (int i = 0; i < help_entry_count; i++) {
 		const HelpEntry *entry = &help_entries[i];
@@ -1306,7 +1326,7 @@ void p_apropos(DISPATCH_ARGS) {
 	}
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 static void see_source_render(FILE *out, Interpreter *interp, int target_cfa) {
@@ -1341,21 +1361,32 @@ static void see_source_render(FILE *out, Interpreter *interp, int target_cfa) {
 }
 
 void p_see(DISPATCH_ARGS) {
-	POP_XT(target_cfa, "see");
-	see_source_render(stdout, interp, target_cfa);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val target_val = chain_sp[-1];
+	if (VAL_TAG(target_val) != T_XT) {
+		fail(interp, "expected %s; got %s", tag_name(T_XT), tag_name(VAL_TAG(target_val)));
+		return;
+	}
+	see_source_render(stdout, interp, (int)VAL_DATA(target_val));
 	fflush(stdout);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_see_to_string(DISPATCH_ARGS) {
-	POP_XT(target_cfa, "see>string");
-	int handle = capture_render(interp, see_source_render, target_cfa);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val target_val = chain_sp[-1];
+	if (VAL_TAG(target_val) != T_XT) {
+		fail(interp, "expected %s; got %s", tag_name(T_XT), tag_name(VAL_TAG(target_val)));
+		return;
+	}
+
+	int handle = capture_render(interp, see_source_render, (int)VAL_DATA(target_val));
 	if (interp->error_flag)
 		return;
-	push(interp, make_string(handle));
+	chain_sp[-1] = make_string(handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 static void help_put(Interpreter *interp, int frame_handle, const char *key, const char *text) {
@@ -1367,7 +1398,13 @@ static void help_put(Interpreter *interp, int frame_handle, const char *key, con
 }
 
 void p_man(DISPATCH_ARGS) {
-	POP_XT(target_cfa, "man");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val target_val = chain_sp[-1];
+	if (VAL_TAG(target_val) != T_XT) {
+		fail(interp, "expected %s; got %s", tag_name(T_XT), tag_name(VAL_TAG(target_val)));
+		return;
+	}
+	int target_cfa = (int)VAL_DATA(target_val);
 
 	const char *name = name_of(target_cfa);
 	const HelpEntry *entry = NULL;
@@ -1396,13 +1433,13 @@ void p_man(DISPATCH_ARGS) {
 		gc_root_pop(interp);
 		gc_root_pop(interp);
 
-		push(interp, make_frame(unit_frame_handle));
-		DISPATCH(interp);
+		chain_sp[-1] = make_frame(unit_frame_handle);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 	}
 
 	if (!entry) {
-		push(interp, make_tagged(T_NONE, 0));
-		DISPATCH(interp);
+		chain_sp[-1] = make_tagged(T_NONE, 0);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 	}
 
 	NEW_FRAME(frame_handle, frame);
@@ -1418,9 +1455,9 @@ void p_man(DISPATCH_ARGS) {
 	}
 	gc_root_pop(interp);
 
-	push(interp, make_frame(frame_handle));
+	chain_sp[-1] = make_frame(frame_handle);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 int read_string_literal(void) {
@@ -1457,7 +1494,7 @@ static void interp_append(Interpreter *interp, char **buffer, int *capacity, int
 			if (*capacity > INT_MAX / 2) {
 				free(*buffer);
 				*buffer = NULL;
-				fail(interp, "format: result too large");
+				fail(interp, "result too large");
 				return;
 			}
 			*capacity *= 2;
@@ -1466,7 +1503,7 @@ static void interp_append(Interpreter *interp, char **buffer, int *capacity, int
 		if (!grown) {
 			free(*buffer);
 			*buffer = NULL;
-			fail(interp, "format: out of memory");
+			fail(interp, "out of memory");
 			return;
 		}
 		*buffer = grown;
@@ -1543,7 +1580,7 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 		const char *spec, int spec_len,
 		char **out_buffer, int *capacity, int *out_length) {
 	if (spec_len >= 64) {
-		fail(interp, "format: spec too long");
+		fail(interp, "spec too long");
 		return;
 	}
 	char cspec[64];
@@ -1552,7 +1589,7 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 
 	char conv;
 	if (parse_format_spec(cspec, spec_len, &conv) != 0) {
-		fail(interp, "format: bad spec '%s'", cspec);
+		fail(interp, "bad spec '%s'", cspec);
 		return;
 	}
 
@@ -1563,7 +1600,7 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 
 	if (conv == 'd' || conv == 'i') {
 		if (VAL_TAG(value) != T_FLOAT) {
-			fail(interp, "format: {%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
+			fail(interp, "{%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
 			return;
 		}
 		cspec[spec_len - 1] = 0;
@@ -1576,7 +1613,7 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 		}
 	} else if (conv && conv != 's') {
 		if (VAL_TAG(value) != T_FLOAT) {
-			fail(interp, "format: {%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
+			fail(interp, "{%s} needs a float; got %s", cspec, tag_name(VAL_TAG(value)));
 			return;
 		}
 		double as_float = VAL_NUMBER(value);
@@ -1620,7 +1657,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 	int capacity = template->len + 64;
 	char *out_buffer = malloc((size_t)capacity);
 	if (!out_buffer) {
-		fail(interp, "format: out of memory");
+		fail(interp, "out of memory");
 		return object_new_string(interp, "", 0);
 	}
 	int out_length = 0;
@@ -1651,7 +1688,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 				if (close < template->len && template->bytes[close] == '}') {
 					int stack_index = interp->dsp - 1 - digit_value;
 					if (stack_index < 0) {
-						fail(interp, "format: {%d} needs %d stack value(s) but only %d present",
+						fail(interp, "{%d} needs %d stack value(s) but only %d present",
 								digit_value, digit_value + 1, interp->dsp);
 						free(out_buffer);
 						return object_new_string(interp, "", 0);
@@ -1708,7 +1745,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 void p_format(DISPATCH_ARGS) {
 	POP(template_val);
 	if (VAL_TAG(template_val) != T_STRING) {
-		fail(interp, "format: expected a template string; got %s", tag_name(VAL_TAG(template_val)));
+		fail(interp, "expected a template string; got %s", tag_name(VAL_TAG(template_val)));
 		return;
 	}
 	int result = interpolate(interp, (int)VAL_DATA(template_val));
@@ -1720,65 +1757,78 @@ void p_format(DISPATCH_ARGS) {
 }
 
 void p_gc(DISPATCH_ARGS) {
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
 	gc(interp);
+	if (interp->error_flag)
+		return;
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_clear(DISPATCH_ARGS) {
-	interp->dsp = 0;
-
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, interp->data_stack);
 }
 
-void unary_op(Interpreter *interp, Val operand, double (*function)(double), const char *name) {
+void unary_op(Interpreter *interp, Val operand, double (*function)(double)) {
 	if (VAL_TAG(operand) == T_FLOAT) {
 		push(interp, make_float(function(VAL_NUMBER(operand))));
 	} else if (VAL_TAG(operand) == T_MATRIX) {
+		gc_root_push(interp, operand);
 		Object *source = OBJECT_AT(VAL_DATA(operand));
 		int target_handle = object_new_matrix(interp, source->matrix.rows, source->matrix.columns);
-		if (interp->error_flag)
+		if (interp->error_flag) {
+			gc_root_pop(interp);
 			return;
+		}
 
 		Object *target = OBJECT_AT(target_handle);
 		int num_elements = source->matrix.rows * source->matrix.columns;
 		for (int i = 0; i < num_elements; i++)
 			target->matrix.elements[i] = function(source->matrix.elements[i]);
 
+		gc_root_pop(interp);
 		push(interp, make_matrix(target_handle));
 	} else {
-		fail(interp, "%s: expected a float or a matrix; got %s", name, tag_name(VAL_TAG(operand)));
+		fail(interp, "expected a float or a matrix; got %s", tag_name(VAL_TAG(operand)));
 	}
 }
 
 #define UNARY_MATH_OP_NAMED(cname, func, word) \
 	void p_##cname(DISPATCH_ARGS) { \
-		POP(operand); \
-		unary_op(interp, operand, func, word); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1); \
+		if (VAL_TAG(chain_sp[-1]) == T_FLOAT) { \
+			chain_sp[-1] = make_float(func(chain_sp[-1].number)); \
+			DISPATCH_REGISTERS(interp, chain_ip, chain_sp); \
+		} \
+		\
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 1); \
+		unary_op(interp, chain_sp[-1], func); \
 		DISPATCH(interp); \
 	}
 #define UNARY_MATH_OP(name, func) UNARY_MATH_OP_NAMED(name, func, #name)
 
 #define UNARY_QUANTITY_OP(cname, func, word, result_unit) \
 	void p_##cname(DISPATCH_ARGS) { \
-		if (interp->dsp >= 1 && VAL_TAG(interp->data_stack[interp->dsp - 1]) == T_FLOAT) { \
-			Val *top = &interp->data_stack[interp->dsp - 1]; \
-			*top = make_float(func(top->number)); \
-			DISPATCH(interp); \
+		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1); \
+		if (VAL_TAG(chain_sp[-1]) == T_FLOAT) { \
+			chain_sp[-1] = make_float(func(chain_sp[-1].number)); \
+			DISPATCH_REGISTERS(interp, chain_ip, chain_sp); \
 		} \
-		POP(operand); \
+		\
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 1); \
+		Val operand = chain_sp[-1]; \
 		if (VAL_TAG(operand) == T_QUANTITY) { \
 			int unit = (result_unit); \
 			if (interp->error_flag) return; \
-			unary_quantity_op(interp, operand, func, word, unit); \
+			unary_quantity_op(interp, operand, func, unit); \
 		} else \
-			unary_op(interp, operand, func, word); \
+			unary_op(interp, operand, func); \
 		DISPATCH(interp); \
 	}
 
-UNARY_QUANTITY_OP(neg,  scalar_negate, "negate", (int)pairs.table[VAL_DATA(operand)].tail.bits)
-UNARY_QUANTITY_OP(abs,  fabs,          "abs",    (int)pairs.table[VAL_DATA(operand)].tail.bits)
-UNARY_QUANTITY_OP(sqrt, sqrt,          "sqrt",   unit_pow(interp, (int)pairs.table[VAL_DATA(operand)].tail.bits, 1, 2))
+UNARY_QUANTITY_OP(neg, scalar_negate, "negate", (int)pairs.table[VAL_DATA(operand)].tail.bits)
+UNARY_QUANTITY_OP(abs, fabs, "abs", (int)pairs.table[VAL_DATA(operand)].tail.bits)
+UNARY_QUANTITY_OP(sqrt, sqrt, "sqrt", unit_pow(interp, (int)pairs.table[VAL_DATA(operand)].tail.bits, 1, 2))
 UNARY_MATH_OP(exp, exp)
 UNARY_MATH_OP(log, log10)
 UNARY_MATH_OP(ln, log)
@@ -1797,12 +1847,7 @@ UNARY_MATH_OP_NAMED(inc_poly, scalar_inc, "1+")
 UNARY_MATH_OP_NAMED(dec_poly, scalar_dec, "1-")
 UNARY_MATH_OP_NAMED(sq_poly, scalar_sq, "sq")
 
-void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name) {
-	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
-		push(interp, make_float(function(VAL_NUMBER(left), VAL_NUMBER(right))));
-		return;
-	}
-
+static void binary_matrix_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name) {
 	if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_MATRIX) {
 		Object *a = OBJECT_AT(VAL_DATA(left));
 		Object *b = OBJECT_AT(VAL_DATA(right));
@@ -1851,6 +1896,19 @@ void binary_op(Interpreter *interp, Val left, Val right, scalar_operator functio
 	     tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 }
 
+void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name) {
+	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
+		push(interp, make_float(function(VAL_NUMBER(left), VAL_NUMBER(right))));
+		return;
+	}
+
+	gc_root_push(interp, left);
+	gc_root_push(interp, right);
+	binary_matrix_op(interp, left, right, function, name);
+	gc_root_pop(interp);
+	gc_root_pop(interp);
+}
+
 static int rational_of_double(double value, int *numerator, int *denominator) {
 	for (int candidate = 1; candidate <= 64; candidate++) {
 		double scaled = value * candidate;
@@ -1865,24 +1923,25 @@ static int rational_of_double(double value, int *numerator, int *denominator) {
 }
 
 void p_power(DISPATCH_ARGS) {
-	POP(right);
-	POP(left);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val right = chain_sp[-1];
+	Val left = chain_sp[-2];
 
 	if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) {
-		push(interp, make_float(pow(VAL_NUMBER(left), VAL_NUMBER(right))));
-		DISPATCH(interp);
-		return;
+		chain_sp[-2] = make_float(pow(VAL_NUMBER(left), VAL_NUMBER(right)));
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 	}
 
+	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
 	if (VAL_TAG(left) == T_QUANTITY) {
 		if (VAL_TAG(right) != T_FLOAT) {
-			fail(interp, "^ : exponent must be a number; got %s", tag_name(VAL_TAG(right)));
+			fail(interp, "exponent must be a number; got %s", tag_name(VAL_TAG(right)));
 			return;
 		}
 
 		int numerator, denominator;
 		if (!rational_of_double(VAL_NUMBER(right), &numerator, &denominator)) {
-			fail(interp, "^ : exponent must be a simple rational");
+			fail(interp, "exponent must be a simple rational");
 			return;
 		}
 
@@ -1890,9 +1949,7 @@ void p_power(DISPATCH_ARGS) {
 		int unit = unit_pow(interp, (int)pairs.table[slot].tail.bits, numerator, denominator);
 		if (interp->error_flag) return;
 
-		gc_root_push(interp, left);
 		binary_op(interp, pairs.table[slot].head, right, pow, "^");
-		gc_root_pop(interp);
 		if (interp->error_flag) return;
 
 		push_quantity(interp, pop(interp), unit);
@@ -1905,8 +1962,9 @@ void p_power(DISPATCH_ARGS) {
 }
 
 void p_divmod(DISPATCH_ARGS) {
-	POP(right);
-	POP(left);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val right = chain_sp[-1];
+	Val left = chain_sp[-2];
 	if (VAL_TAG(left) != T_FLOAT || VAL_TAG(right) != T_FLOAT) {
 		fail(interp, "%%: expected two floats; got %s and %s", tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 		return;
@@ -1920,11 +1978,10 @@ void p_divmod(DISPATCH_ARGS) {
 	}
 
 	double quotient = trunc(dividend / divisor);
-	double remainder = dividend - quotient * divisor;
-	push(interp, make_float(remainder));
-	push(interp, make_float(quotient));
+	chain_sp[-2] = make_float(dividend - quotient * divisor);
+	chain_sp[-1] = make_float(quotient);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 UNARY_FLOAT_OP(p_fabs, "fabs", fabs(n))
@@ -1947,32 +2004,6 @@ UNARY_FLOAT_OP(p_fround_down, "fround-down", floor(n))
 UNARY_FLOAT_OP(p_inc, "f1+", n + 1.0)
 UNARY_FLOAT_OP(p_dec, "f1-", n - 1.0)
 UNARY_FLOAT_OP(p_sq, "fsq", n * n)
-
-void p_fpow(DISPATCH_ARGS) {
-	if (interp->dsp < 2) {
-		fail(interp, "f^: data stack underflow");
-		return;
-	}
-	Val *left = &interp->data_stack[interp->dsp - 2];
-	Val *right = &interp->data_stack[interp->dsp - 1];
-	left->number = pow(left->number, right->number);
-	interp->dsp--;
-
-	DISPATCH(interp);
-}
-
-void p_fmodop(DISPATCH_ARGS) {
-	if (interp->dsp < 2) {
-		fail(interp, "fmod: data stack underflow");
-		return;
-	}
-	Val *left = &interp->data_stack[interp->dsp - 2];
-	Val *right = &interp->data_stack[interp->dsp - 1];
-	left->number = fmod(left->number, right->number);
-	interp->dsp--;
-
-	DISPATCH(interp);
-}
 
 static _Atomic uint64_t random_base_seed = 0x2545F4914F6CDD1DULL;
 static _Atomic uint64_t random_stream_counter = 0;
@@ -2014,20 +2045,27 @@ static uint64_t random_next(void) {
 }
 
 void p_seed(DISPATCH_ARGS) {
-	POP_INT(seed_value, "seed", "seed");
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val seed_val = chain_sp[-1];
+	if (VAL_TAG(seed_val) != T_FLOAT) {
+		fail(interp, "expected a float seed; got %s", tag_name(VAL_TAG(seed_val)));
+		return;
+	}
+	int seed_value = (int)VAL_NUMBER(seed_val);
 	atomic_store(&random_base_seed, (uint64_t)seed_value);
 	atomic_store(&random_stream_counter, 0);
 	random_seeded = 0;
 	random_ensure_seeded();
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_random(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
 	uint64_t bits = random_next() >> 11;
-	push(interp, make_float((double)bits * 0x1.0p-53));
+	*chain_sp = make_float((double)bits * 0x1.0p-53);
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 int random_below(int bound) {
@@ -2043,22 +2081,27 @@ int random_below(int bound) {
 }
 
 void p_random_int(DISPATCH_ARGS) {
-	POP_INT(bound, "random-int", "bound");
-	if (bound <= 0) {
-		fail(interp, "random-int: bound must be positive; got %d", bound);
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val bound_val = chain_sp[-1];
+	if (VAL_TAG(bound_val) != T_FLOAT) {
+		fail(interp, "expected a float bound; got %s", tag_name(VAL_TAG(bound_val)));
 		return;
 	}
-	push(interp, make_float((double)random_below(bound)));
+	int bound = (int)VAL_NUMBER(bound_val);
+	if (bound <= 0) {
+		fail(interp, "bound must be positive; got %d", bound);
+		return;
+	}
+	chain_sp[-1] = make_float((double)random_below(bound));
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_sleep(DISPATCH_ARGS) {
-	Val seconds_val = pop(interp);
-	if (interp->error_flag)
-		return;
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val seconds_val = chain_sp[-1];
 	if (VAL_TAG(seconds_val) != T_FLOAT) {
-		fail(interp, "sleep: expected a float; got %s", tag_name(VAL_TAG(seconds_val)));
+		fail(interp, "expected a float; got %s", tag_name(VAL_TAG(seconds_val)));
 		return;
 	}
 
@@ -2070,6 +2113,6 @@ void p_sleep(DISPATCH_ARGS) {
 		nanosleep(&request, NULL);
 	}
 
-	DISPATCH(interp);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 

@@ -1,7 +1,7 @@
 <matrix 2x2>
           2          2
           2          2
-error: / : division by zero (matrix element 1)
-error: / : division by zero (matrix element 0)
-error: / : division by zero
+error: division by zero (matrix element 1)
+error: division by zero (matrix element 0)
+error: division by zero
 2 
