@@ -105,7 +105,13 @@ New constant → its subsystem cluster in 2. New type → lowest layer that
 can express it. New declaration → its file's block, alphabetical slot. A
 new inline that calls functions → the tail.
 
-## Forth (lib.h2o, tests)
+## Forth (src/forth, lib/, tests)
+- The embedded library is src/forth/*.h2o, concatenated in FORTH_SRCS
+  order (Makefile) and burned into the binary. Binding is early, so a
+  word must be defined in an earlier file (or earlier in the same file)
+  than every use; changing the order changes what compiles. A new
+  embedded word goes in the file owning its domain, and its reference
+  row's prefix names that file. lib/ holds the loadable libraries.
 - Stack-effect comment line above each definition: ( a b -- c ) \ summary.
 - Markers postfix after ; — inline, internal.
 - Plumbing words are marked internal.
@@ -116,8 +122,8 @@ new inline that calls functions → the tail.
   Binding is early: earlier compilations keep the old target; a
   self-reference recurses, so capture the old xt with `'` first if
   needed.
-- LAPACK-free stats live in lib.h2o (wasm-capable), in a marked stats
-  section; statistics.h2o accelerates one by redefining it in toto (early
+- LAPACK-free stats live in the embedded library (wasm-capable);
+  statistics.h2o accelerates one by redefining it in toto (early
   binding makes partial masking useless). The word's golden runs native
   (masked) and wasm (unmasked) and must agree, pinning both copies.
 - Locals: `>name` receives from the stack at entry, bare names are

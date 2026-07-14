@@ -1,0 +1,80 @@
+\ subprocess convenience
+
+( string proc -- )  \ write the string to the child's stdin
+: write-in :in @ write ;
+
+( proc -- string )  \ read all of the child's stdout
+: read-out :out @ read ;
+
+( proc -- string )  \ read all of the child's stderr
+: read-err :err @ read ;
+
+( string -- proc) \ start a process from an argv string
+: run " +" split start-process ;
+
+( proc -- ) \ close a process's streams and reap it (graceful — waits for exit); the teardown mirror of start-process
+: end-process
+	dup :in @ close
+	dup :out @ close
+	dup :err @ close
+	:pid @ wait drop ;
+
+( argv -- result ) \ run one argv array to completion; return { :out :err :status }; closes all streams and reaps (the singular of parallel-run)
+: run-result
+	| proc result >argv |
+	argv start-process to proc
+	{ :out proc read-out :err proc read-err :status proc :pid @ wait } to result
+	proc :in @ close
+	proc :out @ close
+	proc :err @ close
+	result ;
+
+( commands width -- results )  \ run each argv array in commands as a subprocess,
+\ at most width at a time; collect { :out :err :status } per command in input
+\ order, refilling a slot as soon as its child finishes (as-completed).
+: parallel-run
+  | command-count slot-count results slotprocs slot-commands next-command completed-count >commands >width |
+  commands size to command-count
+  width 1 lt if 1 to width then
+  width command-count lt if width else command-count then to slot-count
+  null command-count array-of to results
+  null slot-count array-of to slotprocs
+  0 slot-count array-of to slot-commands
+  [: | proc >slot |
+    commands slot @i start-process to proc
+    slotprocs slot proc !i drop
+    slot-commands slot slot !i drop
+  :] slot-count i-times
+  slot-count to next-command
+  0 to completed-count
+  begin completed-count command-count lt while
+    [: | proc command-index >slot |
+      slotprocs slot @i to proc
+      proc null = not if
+        proc :pid @ running? not if
+          slot-commands slot @i to command-index
+          results command-index { :out proc read-out :err proc read-err :status proc :pid @ wait } !i drop
+          completed-count 1 + to completed-count
+          next-command command-count lt if
+            commands next-command @i start-process to proc
+            slotprocs slot proc !i drop
+            slot-commands slot next-command !i drop
+            next-command 1 + to next-command
+          else
+            slotprocs slot null !i drop
+          then
+        then
+      then
+    :] slot-count i-times
+    0.005 sleep
+  repeat
+  results ;
+
+( array xt -- image )
+: pmap >r num-cores 1 r> pmap-ext ;
+
+( array predicate -- image )
+: pfilter >r num-cores 1 r> pfilter-ext ;
+
+( array identity map-xt combine-xt -- result )
+: pmap-reduce >r >r >r num-cores 1 r> r> r> pmap-reduce-ext ;

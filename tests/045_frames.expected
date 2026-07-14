@@ -122,6 +122,13 @@ error: delete-at: expected a symbol or path (array of symbols); got a float
 0 
 1 
 1 
+99 
+2 
+99 
+99 
+error: expected a frame; got a float
+error: @or: expected a symbol or path (array of symbols); got a float
+1 
 0 
 1 
 error: expected a symbol or path (array of symbols); got a float

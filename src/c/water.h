@@ -626,6 +626,14 @@ extern int print_truncate;
 	} \
 	Val var = interp->data_stack[interp->dsp - 1 - (depth)]
 
+#define REQUIRE_CHAIN_TAG(value, tag, op, expected_phrase) \
+	do { \
+		if (VAL_TAG(value) != (tag)) { \
+			fail(interp, "expected " expected_phrase "; got %s", tag_name(VAL_TAG(value))); \
+			return; \
+		} \
+	} while (0)
+
 #define PEEK_TYPE_AT(var, depth, op, type) \
 	PEEK_AT(var, depth, op); \
 	if (VAL_TAG(var) != (type)) { \
@@ -821,7 +829,6 @@ int matrix_sub(Interpreter *interp, Val left_val, Val right_val);
 int matrix_sum_columns(Interpreter *interp, Object *source);
 double matrix_sum_overall(Object *source);
 int matrix_sum_rows(Interpreter *interp, Object *source);
-double matrix_variance_overall(Object *source);
 int vector_argsort_copy(Interpreter *interp, Object *source);
 int vector_sorted_copy(Interpreter *interp, Object *source);
 
@@ -1098,6 +1105,7 @@ void p_flatten_array(DISPATCH_ARGS);
 void p_frame(DISPATCH_ARGS);
 void p_frame_delete_at(DISPATCH_ARGS);
 void p_frame_get(DISPATCH_ARGS);
+void p_frame_get_or(DISPATCH_ARGS);
 void p_frame_get_symbol(DISPATCH_ARGS);
 void p_frame_keys(DISPATCH_ARGS);
 void p_frame_set(DISPATCH_ARGS);
@@ -1161,7 +1169,6 @@ void p_matrix_range(DISPATCH_ARGS);
 void p_max(DISPATCH_ARGS);
 void p_min(DISPATCH_ARGS);
 void p_norm(DISPATCH_ARGS);
-void p_quantile(DISPATCH_ARGS);
 void p_reshape(DISPATCH_ARGS);
 void p_row_maxes(DISPATCH_ARGS);
 void p_row_mins(DISPATCH_ARGS);
@@ -1175,9 +1182,12 @@ void p_store_ij_drop(DISPATCH_ARGS);
 void p_submatrix(DISPATCH_ARGS);
 void p_sum(DISPATCH_ARGS);
 void p_transpose(DISPATCH_ARGS);
-void p_variance(DISPATCH_ARGS);
 void p_vstack(DISPATCH_ARGS);
 void p_where(DISPATCH_ARGS);
+
+double matrix_variance_overall(Object *source);
+void p_quantile(DISPATCH_ARGS);
+void p_variance(DISPATCH_ARGS);
 
 void p_add_store_i(DISPATCH_ARGS);
 void p_at_i(DISPATCH_ARGS);

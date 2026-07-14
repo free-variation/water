@@ -1,0 +1,611 @@
+\ SVG plotting. A current plot accumulates marks: frames holding coordinates
+\ (data-space or pixel-space) plus the style captured when the mark was made.
+\ Pixels are computed only inside plot>svg, after the domain is resolved —
+\ pinned :xmin/:xmax/:ymin/:ymax if set (data-domain, plot!), otherwise the
+\ padded extent of the data-space marks — so draw order never matters and the
+\ domain may be changed after drawing. Statistical plots read named style keys
+\ (:point-fill, :bar-fill, ...), all settable with plot!. NaN coordinates are
+\ skipped; text is XML-escaped. Render with plot>svg or plot-save; view the
+\ file in a browser.
+
+variable current-plot
+
+10 codepoint>char constant nl
+
+\ === state ===
+
+( w h -- ) \ start a new plot: canvas size, empty mark list, default style
+: plot
+	|> w h |
+	{ :w w :h h :parts [ ]
+	  :margin 40 :ticks 5 :font-size 11
+	  :stroke "black" :fill "none" :stroke-width 1 :text-anchor "start"
+	  :point-fill "steelblue" :point-stroke "none" :point-radius 3
+	  :series-stroke "steelblue" :series-width 2
+	  :line-stroke "crimson" :line-width 2
+	  :bar-fill "steelblue" :bar-stroke "white"
+	  :box-stroke "black" :axis-stroke "gray" }
+	to current-plot ;
+
+( val sym -- ) \ set a plot property: a style key, :margin, :ticks, or a domain bound
+: plot! current-plot swap rot ! drop ;
+
+( sym -- val ) \ read a plot property
+: plot@ current-plot swap @ ;
+
+( mark -- ) \ append a mark frame to the current plot
+: add-mark :parts plot@ swap add-last! drop ; internal
+
+\ === helpers ===
+
+( a b -- smaller )
+: min2 2dup gt if swap then drop ; internal
+
+( a b -- larger )
+: max2 2dup lt if swap then drop ; internal
+
+( v -- v' ) \ any vector shape as nx1
+: as-column dup dim * 1 reshape ; internal
+
+( v -- v' ) \ the finite elements, NaNs dropped
+: drop-nans dup nan? 0 eq where select-rows ; internal
+
+( s -- s' ) \ escape XML text and single-quoted attribute content
+: xml-escape
+	"&" "\&amp;" replace
+	"<" "\&lt;" replace
+	">" "\&gt;" replace
+	"'" "\&apos;" replace ; internal
+
+( lo hi -- lo' hi' ) \ expand a range by 5% each side; degenerate span -> ±1
+: pad-range
+	| >lo >hi span |
+	hi lo - to span
+	span 0= if lo 1 - hi 1 + exit then
+	lo span 0.05 * - hi span 0.05 * + ; internal
+
+\ === marks ===
+\ Coordinates live under :xs/:ys as nx1 vectors; :x-space/:y-space is :data or
+\ :pixel per axis. Style values are frozen into the mark at creation.
+
+( x1 y1 x2 y2 stroke width xspace yspace -- )
+: line-mark
+	| >x1 >y1 >x2 >y2 >stroke >width >xspace >yspace |
+	{ :kind :line :xs x1 x2 2 array vector :ys y1 y2 2 array vector
+	  :stroke stroke :stroke-width width :x-space xspace :y-space yspace }
+	add-mark ; internal
+
+( x1 y1 x2 y2 fill stroke width xspace yspace -- ) \ opposite corners
+: rect-mark
+	| >x1 >y1 >x2 >y2 >fill >stroke >width >xspace >yspace |
+	{ :kind :rect :xs x1 x2 2 array vector :ys y1 y2 2 array vector
+	  :fill fill :stroke stroke :stroke-width width :x-space xspace :y-space yspace }
+	add-mark ; internal
+
+( cx cy r fill stroke xspace yspace -- ) \ r is always pixels
+: circle-mark
+	| >cx >cy >r >fill >stroke >xspace >yspace |
+	{ :kind :circle :xs cx 1 array vector :ys cy 1 array vector
+	  :r r :fill fill :stroke stroke :x-space xspace :y-space yspace }
+	add-mark ; internal
+
+( x y s anchor xspace yspace -- )
+: text-mark
+	| >x >y >s >anchor >xspace >yspace |
+	{ :kind :text :xs x 1 array vector :ys y 1 array vector
+	  :s s "{0}" format xml-escape :anchor anchor :font-size :font-size plot@
+	  :x-space xspace :y-space yspace }
+	add-mark ; internal
+
+\ === layer 0: pixel-space primitives, current style ===
+
+( x1 y1 x2 y2 -- ) \ line segment, current stroke
+: svg-line :stroke plot@ :stroke-width plot@ :pixel :pixel line-mark ;
+
+( x y w h -- ) \ rectangle, current stroke and fill
+: svg-rect
+	| >x >y >w >h |
+	x y x w + y h +
+	:fill plot@ :stroke plot@ :stroke-width plot@ :pixel :pixel rect-mark ;
+
+( cx cy r -- ) \ circle marker, current fill and stroke
+: svg-circle :fill plot@ :stroke plot@ :pixel :pixel circle-mark ;
+
+( x y s -- ) \ text at (x,y), current font size and anchor
+: svg-text :text-anchor plot@ :pixel :pixel text-mark ;
+
+\ === style: current values, captured by later marks ===
+
+( color -- ) \ set the current stroke color
+: stroke :stroke plot! ;
+
+( color -- ) \ set the current fill color
+: fill :fill plot! ;
+
+( w -- ) \ set the current stroke width
+: stroke-width :stroke-width plot! ;
+
+( anchor -- ) \ set the current text anchor: "start", "middle", or "end"
+: text-anchor :text-anchor plot! ;
+
+\ === layer 1: domain and axes ===
+
+( xs ys -- ) \ pin the domain to the padded extents of two vectors
+: data-domain
+	|> xs ys |
+	xs as-column drop-nans
+	dup dim * 0= if "data-domain: no finite x values" throw then
+	dup min swap max pad-range :xmax plot! :xmin plot!
+	ys as-column drop-nans
+	dup dim * 0= if "data-domain: no finite y values" throw then
+	dup min swap max pad-range :ymax plot! :ymin plot! ;
+
+( -- )
+: border-mark { :kind :border :stroke :axis-stroke plot@ } add-mark ; internal
+
+( -- )
+: x-ticks-mark
+	{ :kind :x-ticks :n :ticks plot@ :stroke :axis-stroke plot@
+	  :font-size :font-size plot@ } add-mark ; internal
+
+( -- )
+: y-ticks-mark
+	{ :kind :y-ticks :n :ticks plot@ :stroke :axis-stroke plot@
+	  :font-size :font-size plot@ } add-mark ; internal
+
+( -- ) \ plot-area border and labeled ticks, laid out at render time
+: axes border-mark x-ticks-mark y-ticks-mark ;
+
+\ === layer 2: data-space plots ===
+
+( xs ys -- ) \ scatter markers; style keys :point-fill :point-stroke :point-radius
+: scatter
+	| >xs >ys |
+	xs as-column to xs
+	ys as-column to ys
+	xs dim * ys dim * = not if
+		ys dim * xs dim *
+		"scatter: expected equal-length vectors; got {0} and {1}" format throw
+	then
+	{ :kind :points :xs xs :ys ys
+	  :r :point-radius plot@ :fill :point-fill plot@ :stroke :point-stroke plot@
+	  :x-space :data :y-space :data }
+	add-mark ;
+
+( xs ys -- ) \ connected line through the points in order, split at NaN gaps;
+\ style keys :series-stroke :series-width
+: series
+	| >xs >ys |
+	xs as-column to xs
+	ys as-column to ys
+	xs dim * ys dim * = not if
+		ys dim * xs dim *
+		"series: expected equal-length vectors; got {0} and {1}" format throw
+	then
+	{ :kind :polyline :xs xs :ys ys
+	  :stroke :series-stroke plot@ :stroke-width :series-width plot@
+	  :x-space :data :y-space :data }
+	add-mark ;
+
+( slope intercept -- ) \ the line y = slope*x + intercept, clipped to the domain
+\ at render time; style keys :line-stroke :line-width
+: abline
+	|> slope intercept |
+	{ :kind :abline :slope slope :intercept intercept
+	  :stroke :line-stroke plot@ :stroke-width :line-width plot@ }
+	add-mark ;
+
+( data nbins -- ) \ tally into nbins equal bars; pins the domain (override with
+\ plot! after); style keys :bar-fill :bar-stroke
+: histogram
+	| >data >nbins lo hi width counts n i b tally xleft maxc |
+	nbins 1 lt if nbins "histogram: expected at least 1 bin; got {0}" format throw then
+	data as-column drop-nans to data
+	data dim * to n
+	n 0= if "histogram: no finite values" throw then
+	data min to lo
+	data max to hi
+	hi lo = if lo hi pad-range to hi to lo then
+	hi lo - nbins / to width
+	nbins 1 0-matrix to counts
+	0 to maxc
+	0 to i
+	begin i n lt while
+		data i @e lo - width / round-down to b
+		b nbins 1 - gt if nbins 1 - to b then
+		counts b @e 1+ to tally
+		counts b tally !e drop
+		tally maxc gt if tally to maxc then
+		f++ i
+	repeat
+	lo :xmin plot! hi :xmax plot!
+	0 :ymin plot! maxc :ymax plot!
+	0 to i
+	begin i nbins lt while
+		lo i width * + to xleft
+		xleft 0 xleft width + counts i @e
+		:bar-fill plot@ :bar-stroke plot@ 1 :data :data rect-mark
+		f++ i
+	repeat ;
+
+( data cx hw -- ) \ Tukey box at center cx: whiskers to the most extreme points
+\ within 1.5·IQR of the quartiles, points beyond drawn as outliers
+: box-at
+	| >data >cx >hw q1 q2 q3 reach fence-lo fence-hi within outliers box-stroke n |
+	data as-column drop-nans to data
+	data dim * 0= if "boxplot: no finite values" throw then
+	data 0.25 quantile to q1
+	data 0.5 quantile to q2
+	data 0.75 quantile to q3
+	q3 q1 - 1.5 * to reach
+	q1 reach - to fence-lo
+	q3 reach + to fence-hi
+	data  data fence-lo lt data fence-hi gt +  0 eq where select-rows to within
+	data  data fence-lo lt data fence-hi gt +  where select-rows to outliers
+	:box-stroke plot@ to box-stroke
+	cx hw - q1 cx hw + q3 "none" box-stroke 1 :data :data rect-mark
+	cx hw - q2 cx hw + q2 box-stroke 1 :data :data line-mark
+	cx q3 cx within max box-stroke 1 :data :data line-mark
+	cx q1 cx within min box-stroke 1 :data :data line-mark
+	outliers dim * to n
+	n 0 gt if
+		{ :kind :points :xs n 1 0-matrix cx + :ys outliers
+		  :r 2.5 :fill "none" :stroke box-stroke
+		  :x-space :data :y-space :data }
+		add-mark
+	then ; internal
+
+( data -- ) \ one boxplot centered in the plot; pins the domain; :box-stroke
+: boxplot
+	|> data |
+	0 :xmin plot! 1 :xmax plot!
+	data as-column drop-nans
+	dup dim * 0= if "boxplot: no finite values" throw then
+	dup min swap max pad-range :ymax plot! :ymin plot!
+	data 0.5 0.2 box-at ;
+
+( arrays labels -- ) \ side-by-side boxplots on a shared y axis, one per vector;
+\ labels is a parallel array of category strings. Pins the domain.
+: boxplots
+	| >arrays >labels k i data lo hi bound label-y |
+	arrays size to k
+	labels size k = not if
+		labels size k
+		"boxplots: expected one label per array; got {0} arrays and {1} labels" format throw
+	then
+	k 0= if "boxplots: no arrays" throw then
+	arrays 0 @i as-column drop-nans dup min swap max to hi to lo
+	1 to i
+	begin i k lt while
+		arrays i @i as-column drop-nans to data
+		data min to bound bound lo lt if bound to lo then
+		data max to bound bound hi gt if bound to hi then
+		f++ i
+	repeat
+	0.5 :xmin plot! k 0.5 + :xmax plot!
+	lo hi pad-range :ymax plot! :ymin plot!
+	:h plot@ :margin plot@ - 16 + to label-y
+	0 to i
+	begin i k lt while
+		arrays i @i i 1 + 0.3 box-at
+		i 1 + label-y labels i @i "middle" :data :pixel text-mark
+		f++ i
+	repeat ;
+
+\ === render ===
+
+( dx -- px ) \ data x to pixel x under the resolved domain
+: x>px
+	| >dx w m lo hi |
+	:w plot@ to w
+	:margin plot@ to m
+	:rxmin plot@ to lo
+	:rxmax plot@ to hi
+	dx lo - hi lo - / w m 2 * - * m + ; internal
+
+( dy -- py ) \ data y to pixel y (flipped: ymin at the bottom)
+: y>px
+	| >dy h m lo hi |
+	:h plot@ to h
+	:margin plot@ to m
+	:rymin plot@ to lo
+	:rymax plot@ to hi
+	h m - dy lo - hi lo - / h m 2 * - * - ; internal
+
+( mark i -- px ) \ the i-th x coordinate, pixel-mapped; null passes through
+: mark-x
+	|> mark i |
+	mark :xs @ i @e
+	dup nan? if exit then
+	mark :x-space @ :data = if x>px then ; internal
+
+( mark i -- py )
+: mark-y
+	|> mark i |
+	mark :ys @ i @e
+	dup nan? if exit then
+	mark :y-space @ :data = if y>px then ; internal
+
+( x1 y1 x2 y2 stroke width -- s )
+: line-element
+	"<line x1='{5}' y1='{4}' x2='{3}' y2='{2}' stroke='{1}' stroke-width='{0}'/>"
+	format ; internal
+
+( x y w h fill stroke width -- s )
+: rect-element
+	"<rect x='{6}' y='{5}' width='{4}' height='{3}' fill='{2}' stroke='{1}' stroke-width='{0}'/>"
+	format ; internal
+
+( cx cy r fill stroke -- s )
+: circle-element
+	"<circle cx='{4}' cy='{3}' r='{2}' fill='{1}' stroke='{0}'/>" format ; internal
+
+( x y font-size anchor s -- s )
+: text-element
+	"<text x='{4}' y='{3}' font-size='{2}' text-anchor='{1}' font-family='sans-serif' fill='black'>{0}</text>"
+	format ; internal
+
+( run mark -- s ) \ one <polyline> from an array of "x,y" pieces
+: polyline-element
+	|> run mark |
+	run " " join
+	mark :stroke @ mark :stroke-width @
+	"<polyline points='{2}' fill='none' stroke='{1}' stroke-width='{0}'/>"
+	format ; internal
+
+( mark -- s )
+: render-line
+	| >mark x1 y1 x2 y2 |
+	mark 0 mark-x to x1
+	mark 0 mark-y to y1
+	mark 1 mark-x to x2
+	mark 1 mark-y to y2
+	x1 nan? y1 nan? or x2 nan? or y2 nan? or if "" exit then
+	x1 y1 x2 y2 mark :stroke @ mark :stroke-width @ line-element ; internal
+
+( mark -- s )
+: render-rect
+	| >mark x1 y1 x2 y2 |
+	mark 0 mark-x to x1
+	mark 0 mark-y to y1
+	mark 1 mark-x to x2
+	mark 1 mark-y to y2
+	x1 nan? y1 nan? or x2 nan? or y2 nan? or if "" exit then
+	x1 x2 min2  y1 y2 min2
+	x1 x2 max2 x1 x2 min2 -
+	y1 y2 max2 y1 y2 min2 -
+	mark :fill @ mark :stroke @ mark :stroke-width @ rect-element ; internal
+
+( mark -- s )
+: render-circle
+	| >mark cx cy |
+	mark 0 mark-x to cx
+	mark 0 mark-y to cy
+	cx nan? cy nan? or if "" exit then
+	cx cy mark :r @ mark :fill @ mark :stroke @ circle-element ; internal
+
+( mark -- s )
+: render-points
+	| >mark n i px py pieces |
+	[ ] to pieces
+	mark :xs @ dim * to n
+	0 to i
+	begin i n lt while
+		mark i mark-x to px
+		mark i mark-y to py
+		px nan? py nan? or not if
+			pieces px py mark :r @ mark :fill @ mark :stroke @ circle-element
+			add-last! drop
+		then
+		f++ i
+	repeat
+	pieces nl join ; internal
+
+( mark -- s )
+: render-polyline
+	| >mark n i px py run segments |
+	[ ] to run
+	[ ] to segments
+	mark :xs @ dim * to n
+	0 to i
+	begin i n lt while
+		mark i mark-x to px
+		mark i mark-y to py
+		px nan? py nan? or if
+			run size 1 gt if segments run mark polyline-element add-last! drop then
+			[ ] to run
+		else
+			run px py "{1},{0}" format add-last! drop
+		then
+		f++ i
+	repeat
+	run size 1 gt if segments run mark polyline-element add-last! drop then
+	segments nl join ; internal
+
+( mark -- s )
+: render-text
+	| >mark x y |
+	mark 0 mark-x to x
+	mark 0 mark-y to y
+	x nan? y nan? or if "" exit then
+	x y mark :font-size @ mark :anchor @ mark :s @ text-element ; internal
+
+( mark -- s ) \ clip y = slope*x + intercept to the resolved domain
+: render-abline
+	| >mark slope intercept x1 y1 x2 y2 ylo yhi |
+	mark :slope @ to slope
+	mark :intercept @ to intercept
+	slope nan? intercept nan? or if "" exit then
+	:rxmin plot@ to x1
+	:rxmax plot@ to x2
+	:rymin plot@ to ylo
+	:rymax plot@ to yhi
+	slope 0= if
+		intercept ylo lt intercept yhi gt or if "" exit then
+		intercept to y1
+		intercept to y2
+	else
+		x1 slope * intercept + to y1
+		x2 slope * intercept + to y2
+		y1 ylo lt if ylo intercept - slope / to x1 ylo to y1 then
+		y1 yhi gt if yhi intercept - slope / to x1 yhi to y1 then
+		y2 ylo lt if ylo intercept - slope / to x2 ylo to y2 then
+		y2 yhi gt if yhi intercept - slope / to x2 yhi to y2 then
+		y1 y2 = if "" exit then
+	then
+	x1 x>px y1 y>px x2 x>px y2 y>px
+	mark :stroke @ mark :stroke-width @ line-element ; internal
+
+( mark -- s )
+: render-border
+	| >mark m |
+	:margin plot@ to m
+	m m :w plot@ m 2 * - :h plot@ m 2 * -
+	"none" mark :stroke @ 1 rect-element ; internal
+
+( mark -- s )
+: render-x-ticks
+	| >mark n lo step v px bottom i pieces |
+	mark :n @ to n
+	:rxmin plot@ to lo
+	:rxmax plot@ lo - n / to step
+	:h plot@ :margin plot@ - to bottom
+	[ ] to pieces
+	0 to i
+	begin i n 1+ lt while
+		lo i step * + to v
+		v x>px to px
+		pieces px bottom px bottom 5 + mark :stroke @ 1 line-element add-last! drop
+		pieces px bottom 16 + mark :font-size @ "middle" v "{0:.3g}" format text-element
+		add-last! drop
+		f++ i
+	repeat
+	pieces nl join ; internal
+
+( mark -- s )
+: render-y-ticks
+	| >mark n lo step v py left i pieces |
+	mark :n @ to n
+	:rymin plot@ to lo
+	:rymax plot@ lo - n / to step
+	:margin plot@ to left
+	[ ] to pieces
+	0 to i
+	begin i n 1+ lt while
+		lo i step * + to v
+		v y>px to py
+		pieces left py left 5 - py mark :stroke @ 1 line-element add-last! drop
+		pieces left 8 - py 4 + mark :font-size @ "end" v "{0:.3g}" format text-element
+		add-last! drop
+		f++ i
+	repeat
+	pieces nl join ; internal
+
+( mark -- s ) \ one SVG element or block; "" for marks that draw nothing
+: render-mark
+	| >mark kind |
+	mark :kind @ to kind
+	kind :line = if mark render-line exit then
+	kind :rect = if mark render-rect exit then
+	kind :circle = if mark render-circle exit then
+	kind :points = if mark render-points exit then
+	kind :polyline = if mark render-polyline exit then
+	kind :text = if mark render-text exit then
+	kind :abline = if mark render-abline exit then
+	kind :border = if mark render-border exit then
+	kind :x-ticks = if mark render-x-ticks exit then
+	mark render-y-ticks ; internal
+
+( coords-key space-key -- lo hi ) \ extent of the data-space marks; 0 1 when none
+: extent-of
+	| >coords-key >space-key parts mark v lo hi i |
+	:parts plot@ to parts
+	null to lo
+	0 to i
+	begin i parts size lt while
+		parts i @i to mark
+		mark space-key has? if
+			mark space-key @ :data = if
+				mark coords-key @ drop-nans to v
+				v dim * 0 gt if
+					lo null = if
+						v min to lo
+						v max to hi
+					else
+						v min lo min2 to lo
+						v max hi max2 to hi
+					then
+				then
+			then
+		then
+		f++ i
+	repeat
+	lo null = if 0 1 else lo hi then ; internal
+
+( -- ) \ store the render domain in :rx*/:ry*: pinned bounds or padded extents
+: resolve-domain
+	current-plot :xmin has? if
+		:xmin plot@ :xmax plot@ 2dup = if pad-range then
+	else
+		:xs :x-space extent-of pad-range
+	then
+	:rxmax plot! :rxmin plot!
+	current-plot :ymin has? if
+		:ymin plot@ :ymax plot@ 2dup = if pad-range then
+	else
+		:ys :y-space extent-of pad-range
+	then
+	:rymax plot! :rymin plot! ; internal
+
+( -- s ) \ resolve the domain, render every mark, wrap in an <svg> document
+: plot>svg
+	resolve-domain
+	:w plot@ :h plot@
+	"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {1} {0}'>" format nl +
+	:parts plot@ [: render-mark :] map [: size 0 gt :] filter nl join +
+	nl + "</svg>" + nl + ;
+
+( path -- ) \ render the current plot and write it to a file
+: plot-save plot>svg swap write-file ;
+
+\ === convenience: open, draw, render in one call ===
+
+( xs ys -- s ) \ complete scatter plot as an SVG string
+: scatter-plot
+	|> xs ys |
+	640 480 plot
+	axes
+	xs ys scatter
+	plot>svg ;
+
+( xs ys -- s ) \ complete line plot of ys against xs
+: series-plot
+	|> xs ys |
+	640 480 plot
+	axes
+	xs ys series
+	plot>svg ;
+
+( data nbins -- s ) \ complete histogram as an SVG string
+: histogram-plot
+	|> data nbins |
+	640 480 plot
+	data nbins histogram
+	axes
+	plot>svg ;
+
+( data -- s ) \ complete single boxplot as an SVG string
+: boxplot-plot
+	|> data |
+	640 480 plot
+	data boxplot
+	border-mark y-ticks-mark
+	plot>svg ;
+
+( arrays labels -- s ) \ complete side-by-side boxplots as an SVG string
+: boxplots-plot
+	|> arrays labels |
+	640 480 plot
+	arrays labels boxplots
+	border-mark y-ticks-mark
+	plot>svg ;

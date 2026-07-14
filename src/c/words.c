@@ -1666,6 +1666,16 @@ int interpolate(Interpreter *interp, int template_handle) {
 
 	for (int cursor = 0; cursor < template->len; ) {
 		if (template->bytes[cursor] == '{') {
+			if (template->len - cursor >= 4 && memcmp(&template->bytes[cursor], "{nl}", 4) == 0) {
+				interp_append(interp, &out_buffer, &capacity, &out_length, "\n", 1);
+				cursor += 4;
+				continue;
+			}
+			if (template->len - cursor >= 5 && memcmp(&template->bytes[cursor], "{tab}", 5) == 0) {
+				interp_append(interp, &out_buffer, &capacity, &out_length, "\t", 1);
+				cursor += 5;
+				continue;
+			}
 			int scan = cursor + 1, digit_value = 0, saw_digit = 0;
 			while (scan < template->len && isdigit((unsigned char)template->bytes[scan])) {
 				digit_value = digit_value * 10 + (template->bytes[scan] - '0');

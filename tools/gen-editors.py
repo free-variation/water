@@ -138,10 +138,13 @@ def emit_vim(auto):
     L.append(kw("waterLogic", LOGIC))
     L.append(kw("waterBoolean", BOOLEAN))
     L.append("")
-    L.append('syn match   waterDelimiter "[][{}<>]"')
+    # [ ] { } are self-delimiting and color anywhere; < > are ordinary word
+    # characters (array>set, x>px, >local) and only delimit as standalone tokens.
+    L.append('syn match   waterDelimiter "[][{}]"')
+    L.append('syn match   waterDelimiter "\\%(^\\|\\s\\)\\zs[<>]\\ze\\%(\\s\\|$\\)"')
     L.append('syn match   waterDelimiter "\\[("')
     L.append('syn match   waterDelimiter ")\\]"')
-    L.append('syn match   waterDelimiter "\\s\\zs|\\ze\\s"')
+    L.append('syn match   waterDelimiter "\\%(^\\|\\s\\)\\zs|\\ze\\%(\\s\\|$\\)"')
     L.append("")
     # vim folds operators into the builtin group (the broad iskeyword covers them).
     # `|` is a vim command separator and `"` starts a comment, so tokens containing
@@ -228,7 +231,8 @@ def emit_vscode(auto):
                      "match": BOUNDARY_BEHIND + r"/[A-Za-z][^\s{};]*"},
             "logicvar": {"name": "variable.other.logicvar.water",
                          "match": BOUNDARY_BEHIND + r"[A-Z][^\s\[\]{};]*" + BOUNDARY_AHEAD},
-            "delimiters": {"name": "punctuation.section.water", "match": r"\[\(|\)\]|[\[\]{}<>]"},
+            "delimiters": {"name": "punctuation.section.water",
+                           "match": r"\[\(|\)\]|[\[\]{}]|" + BOUNDARY_BEHIND + r"[<>]" + BOUNDARY_AHEAD},
         },
     }
     return json.dumps(grammar, indent=2) + "\n"

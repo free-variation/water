@@ -2,7 +2,6 @@
 \ of data. Serial bootstrap is deterministic under a fixed seed; pbootstrap gives
 \ the identical distribution (serial resampling + pure fit), so going parallel is a
 \ speed-only choice. Estimate distributions converge to the data statistic.
-"lib/statistics.h2o" load
 
 \ exact distribution under a fixed seed: 8 resampled column means of 1..10
 1 seed [ 1 2 3 4 5 6 7 8 9 10 ] 10 1 matrix [: mean :] 8 bootstrap . cr

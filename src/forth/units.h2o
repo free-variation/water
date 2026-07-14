@@ -1,0 +1,102 @@
+\ ---- SI units and basic currencies ----
+\ Dimensioned quantities (see the reference). Names are spelled out and
+\ lowercase: a capital symbol like N or A would shadow the capital-letter
+\ logic-var convention. Each currency is its own dimension: the major unit is
+\ the base, the minor unit 1/100 of it.
+
+base unit m
+base unit s
+base unit kg
+base unit ampere
+base unit kelvin
+base unit mol
+
+1 1 s /                 unit hertz
+1 kg 1 m * 1 s / 1 s /  unit newton
+1 newton 1 m / 1 m /    unit pascal
+1 newton 1 m *          unit joule
+1 joule 1 s /           unit watt
+1 ampere 1 s *          unit coulomb
+1 watt 1 ampere /       unit volt
+
+60 s     unit minute
+3600 s   unit hour
+86400 s  unit day
+7 day    unit week
+
+( -- instant )  \ wall-clock time: epoch seconds as a quantity in s
+: wall-now (wall-now) s ;
+inline
+
+( instant -- date )  \ { :year :month :day :hour :minute :second :weekday :yearday }, UTC
+: epoch>date  1 s / (epoch>date) ;
+inline
+
+( date -- instant )  \ :year required; :month :day default 1, clock fields 0; UTC
+: date>epoch  (date>epoch) s ;
+inline
+
+( instant -- date )  \ epoch>date in the process's local timezone
+: epoch>date-local  1 s / (epoch>date-local) ;
+inline
+
+( date -- instant )  \ date>epoch in the process's local timezone; mktime resolves DST
+: date>epoch-local  (date>epoch-local) s ;
+inline
+
+( instant format -- string )  \ render an instant with strftime, UTC
+: format-time  swap 1 s / swap (format-time) ;
+inline
+
+( instant format -- string )  \ render an instant with strftime in the local timezone
+: format-time-local  swap 1 s / swap (format-time-local) ;
+inline
+
+( string format -- instant )  \ parse with strptime; unmatched fields default to 1970-01-01
+\ 00:00:00, read as UTC unless the format captures an offset with %z
+: parse-time  (parse-time) s ;
+inline
+
+( instant -- string )  \ ISO 8601 in UTC: 2026-07-09T12:34:56Z
+: time>iso  "%Y-%m-%dT%H:%M:%SZ" format-time ;
+inline
+
+( string -- instant )  \ parse the ISO 8601 Z form time>iso emits
+: iso>time  "%Y-%m-%dT%H:%M:%SZ" parse-time ;
+inline
+
+( year month -- days )
+: days-in-month
+	| >y >m |
+	{ :year y :month m 1 + } date>epoch
+	{ :year y :month m } date>epoch
+	-  1 day / ;
+
+( instant delta -- instant )  \ calendar shift, UTC: :years :months step the
+\ calendar with the day clamped to the target month; :weeks :days :hours
+\ :minutes :seconds add exactly
+: date-shift
+	| date months year month day-of-month >instant >delta |
+	delta :years 0 @or 12 *
+	delta :months 0 @or + to months
+	months 0 = not if
+		instant epoch>date to date
+		date :year @ 12 * date :month @ + 1 - months + to months
+		months 12 quotient to year
+		months 12 mod 1 + to month
+		year month days-in-month to day-of-month
+		date :day @ day-of-month lt if date :day @ to day-of-month then
+		{ :year year :month month :day day-of-month
+		  :hour date :hour @ :minute date :minute @ :second date :second @ } date>epoch to instant
+	then
+	instant
+	delta :weeks   0 @or week +
+	delta :days    0 @or day +
+	delta :hours   0 @or hour +
+	delta :minutes 0 @or minute +
+	delta :seconds 0 @or s + ;
+1000 m   unit km
+
+base unit $   1 $ 100 / unit ¢
+base unit £   1 £ 100 / unit penny
+base unit €   1 € 100 / unit eurocent

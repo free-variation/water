@@ -1,0 +1,60 @@
+variable pi
+3.141592653589793 to pi
+
+\ aliases
+: true 1 ; inline
+: false 0 ; inline
+: print . ; inline
+: print-stack .s ; inline
+
+: help lookup man . ;
+
+\ type predicates, one per type-of symbol; a bound logic var reports as its value
+: float? type-of :float = ; inline
+: string? type-of :string = ; inline
+: symbol? type-of :symbol = ; inline
+: array? type-of :array = ; inline
+: set? type-of :set = ; inline
+: pair? type-of :pair = ; inline
+: frame? type-of :frame = ; inline
+: matrix? type-of :matrix = ; inline
+: quantity? type-of :quantity = ; inline
+: xt? type-of :xt = ; inline
+: continuation? type-of :continuation = ; inline
+: stream? type-of :stream = ; inline
+: db? type-of :db = ; inline
+: ptr? type-of :ptr = ; inline
+: segment? type-of :segment = ; inline
+: none? type-of :none = ; inline
+: wildcard? type-of :wildcard = ; inline
+: lvar? type-of :lvar = ; inline
+
+( a b -- a b a b )
+: 2dup over over ;
+inline
+
+( a b -- )
+: 2drop drop drop ;
+inline
+
+( a b -- b )
+: nip swap drop ;
+inline
+
+\ arithmetic words
+
+( a b -- remainder )  \ = % drop ; sign follows the dividend
+: mod % drop ;
+inline
+
+( a b -- quotient )  \ integer quotient toward zero ( = % swap drop )
+: quotient % swap drop ;
+inline
+
+( a b -- smaller )  \ the lt-ordered lesser of two scalars
+: min2 2dup gt if swap then drop ;
+inline
+
+( a b -- larger )  \ the lt-ordered greater of two scalars
+: max2 2dup lt if swap then drop ;
+inline

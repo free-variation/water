@@ -14,6 +14,13 @@ error: ^: matrix shapes differ (1x2 vs 1x3)
 2 1.5 
 1 
 2 
+3 
+3 
+7 
+7 
+-5 
+4 
+apple 
 error: %: division by zero
 error: %: expected two floats; got a string and a float
 3 

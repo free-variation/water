@@ -193,6 +193,12 @@ clear
 \ --- a plain literal is raw: no substitution ---
 "raw {0} {1}"  "raw {0} {1}" =  . cr                         \ 1
 
+\ --- {nl} and {tab} directives: control characters without string escapes ---
+"a{nl}b" format .                                            \ a, then b on its own line
+"a{tab}b" format size . cr                                   \ 3
+"x{nl}" format size . cr                                     \ 2
+7 "{nl}{0}{nl}" format size . cr                             \ 3 (directives drop nothing extra)
+
 \ --- errors (each clears at the REPL, so they are independent) ---
 "{0}" format                                                 \ empty stack
 5 "{3}" format                                               \ needs 4, has 1

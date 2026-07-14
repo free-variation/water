@@ -128,7 +128,8 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Selection** — `augment`/`hstack` (concatenate two matrices column-wise), `vstack` (row-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array or an index vector).
 - **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `argmax`, `argmin` (flat row-major index of the extreme element), `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
 - **Norms** — `norm` (Euclidean/L2) and `frobenius-norm`, both √(Σ elements²) over the matrix; `dot` ( v w -- f ) is the inner product.
-- **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the loadable statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, and `ci` on these.
+- **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the embedded statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, `ci`, `histogram-table`, and the `bootstrap` family on these — all wasm-capable.
+- **SVG plotting** (`lib/plot.h2o`) — scatter, line series, histogram, and Tukey boxplots over a deferred-rendering figure: marks accumulate with the style in effect, the domain resolves at render (pinned or auto from the data), and `show-figure` opens a live-reloading browser view that `save-figure` updates in place.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
 - **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `lt`/`gt`/`eq` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). On scalars, strings, and collections comparison is structural, `eq` agreeing with `=`.
 - **Sorting and masks** — `sort` (ascending copy of a vector, NaNs last), `argsort` (the sorting permutation as an index vector; ties keep index order), `where` (flat indices of a mask's nonzero elements), `nan?` (the NaN mask — NaNs compare false under `lt`/`gt`/`eq`). Masks compose: `dup 0 @j 0 lt where select-rows` keeps the rows whose first column is negative.
@@ -139,8 +140,8 @@ A magnitude (float or matrix) carrying a unit; arithmetic propagates and checks 
 
 - **`base` / `unit`** — declare dimensions and units. `base unit m`; `1 kg 1 m * 1 s / 1 s / unit newton` (derived); `1 $ 100 / unit ¢` (scaled sub-unit). A unit word is postfix — `10 m`, `3 newton`.
 - **Arithmetic** — `*`/`/` combine unit exponents and scales (a dimensionless result collapses back to a bare float/matrix); `+`/`-` require the same dimension and rescale across scales; `^`/`sqrt` scale the exponents; `= < >` compare by value, normalizing scale within a dimension. Named units print by name, unnamed compounds in base form.
-- **Standard set** (`lib.h2o`) — SI `m s kg ampere kelvin mol`, derived `hertz newton pascal joule watt coulomb volt`, `minute`/`hour`/`day`/`week`/`km`, and currencies `$`/`¢`, `£`/`penny`, `€`/`eurocent`.
-- **Constants** (`lib.h2o`) — capitalized: `PI` `E` `TAU` `PHI`, and the physical set as dimensioned quantities (`C` `G` `H` `HBAR` `KB` `NA` `QE`, SI-2019 exact values) — `C 2 ^ 1 kg *` is E=mc², and prints in joules.
+- **Standard set** (`units.h2o`) — SI `m s kg ampere kelvin mol`, derived `hertz newton pascal joule watt coulomb volt`, `minute`/`hour`/`day`/`week`/`km`, and currencies `$`/`¢`, `£`/`penny`, `€`/`eurocent`.
+- **Constants** (`constants.h2o`) — capitalized: `PI` `E` `TAU` `PHI`, and the physical set as dimensioned quantities (`C` `G` `H` `HBAR` `KB` `NA` `QE`, SI-2019 exact values) — `C 2 ^ 1 kg *` is E=mc², and prints in joules.
 
 ### Bitwise
 
@@ -238,7 +239,7 @@ Drive external programs over pipes (`fork`/`execv`/`pipe`/`waitpid`, with a manu
 - **`argv start-process`** — launch from an argv array; returns a frame `{ :pid :in :out :err }` with the child's pid and its stdin/stdout/stderr as `T_STREAM` values.
 - **`write`** / **`read`** / **`close`** — write a string to a stream, read a stream to EOF, close one (closing `:in` sends EOF).
 - **`running?`** / **`wait`** / **`stop`** — non-blocking liveness check, block-until-exit, signal-and-reap.
-- `lib.h2o` conveniences: **`run`** (split a command line and start it), **`read-out`** / **`read-err`** / **`write-in`**.
+- `subprocess.h2o` conveniences: **`run`** (split a command line and start it), **`read-out`** / **`read-err`** / **`write-in`**.
 - **`commands width parallel-run`** — run a batch of argv arrays concurrently, at most `width` at a time, collecting `{ :out :err :status }` per command in input order (refills a slot as each child finishes). Process-level parallelism — e.g. firing off many `curl` requests at once.
 
 ### SQLite
@@ -249,7 +250,7 @@ Embedded relational storage via the vendored SQLite amalgamation — built into 
 - **`db-exec`** — `( db statement params -- n )` — run an INSERT/UPDATE/DELETE/CREATE with `params` bound to its `?` placeholders; returns the affected-row count (0 for DDL).
 - **`db-query`** — `( db query params -- rel )` — run a query; returns a fact-database relation `{ :rows <bag of row frames> :index { } }`, each row keyed by column-name symbols (INTEGER/REAL → float, TEXT → string, NULL → `null`, BLOB → raw bytes). Duplicates are kept, in result order; the result drops straight into `query` / `inner-join`.
 - **Bound parameters** — `params` is an array bound positionally to the `?` placeholders (`[ ]` for none); floats, strings, symbols, and `null` bind, so string values need no hand-escaping.
-- **`create-index`** — `( rel cols -- rel )`, `lib.h2o` — index a query result on `cols`, interning those columns to symbols so the fact-db index and `query` can use them.
+- **`create-index`** — `( rel cols -- rel )`, `logic.h2o` — index a query result on `cols`, interning those columns to symbols so the fact-db index and `query` can use them.
 
 ### Data: TSV, datasets, and statistics
 
@@ -288,7 +289,7 @@ A four-primitive substrate the rest of the control story is built on. See `docs/
 
 ### Generators
 
-Coroutines on the continuation primitives, in `lib.h2o`:
+Coroutines on the continuation primitives, in `generators.h2o`:
 
 - **`yield`** — emit a value to the driver and suspend until resumed.
 - **`start-generator`** — run a producer to its first `yield`, leaving the yielded value and a resumable continuation.
@@ -300,7 +301,7 @@ A third stack for stashing arbitrary Vals without disturbing the data or return 
 
 ### Exceptions (library)
 
-Built in `lib.h2o` on top of the continuation primitives:
+Built in `generators.h2o` on top of the continuation primitives:
 
 - **`throw`** — non-local exit with a value.
 - **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — delivering a `{ :message :trace }` frame (the trace names the failing word innermost-first) as the exception value, so a runtime fault is recoverable, not just a user `throw`. A `throw`n value passes through raw.
@@ -368,7 +369,7 @@ src/c/foreign.c        — FFI (libffi), pointer registry, matrix/segment bridge
 src/c/platform_posix.c — POSIX platform: arena mmap, isocline REPL, subprocesses
 src/c/platform_wasi.c  — WASI platform: allocator + erroring stubs for FFI/subprocess
 src/c/help_table.c     — generated help/man text (from docs/reference.md)
-src/forth/lib.h2o      — standard library (embedded, auto-loaded at startup)
+src/forth/*.h2o        — standard library (concatenated in Makefile order, embedded)
 lib/                   — loadable libraries: statistics.h2o, files.h2o, claude.h2o
 external/              — vendored deps: pcre2, sqlite, isocline, lapacke
 tests/                 — golden-output test files

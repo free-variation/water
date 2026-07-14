@@ -40,6 +40,7 @@
 @i
 @i,j
 @j
+@or
 C
 E
 G
@@ -79,16 +80,20 @@ array>cons
 array>frame
 array>set
 array?
+as-column
 asin
 assert
 atan
 augment
 base
+basename
 begin
 bit-and
 bit-not
 bit-or
 bit-xor
+bootstrap
+bootstrap-with
 bulk-load
 bye
 byte-size
@@ -97,6 +102,7 @@ catch
 cd
 char-at
 choose
+ci
 clear
 close
 codepoint-at
@@ -144,6 +150,7 @@ dim
 dot
 double-segment
 drop
+drop-nans
 dup
 each
 else
@@ -221,6 +228,7 @@ gt
 has?
 head-tail
 help
+histogram-table
 hstack
 i-times
 identity-matrix
@@ -232,6 +240,7 @@ int-segment
 internal
 intersection
 iota
+iqr
 iso>time
 join
 json>frame
@@ -260,10 +269,13 @@ matrix-range
 matrix>pointer
 matrix?
 max
+max2
 mean
+median
 member?
 merge
 min
+min2
 mod
 nan?
 negate
@@ -281,6 +293,8 @@ pair?
 parallel-run
 parse-time
 partition
+pbootstrap
+percentile
 pfilter
 pfilter-ext
 pi
@@ -306,6 +320,7 @@ read-file
 read-out
 read-tsv
 reduce
+regress-with
 reify
 relation
 reload
@@ -335,8 +350,11 @@ run
 run-result
 running?
 sample
+sample-with-replacement
+sample-without-replacement
 save
 save-image
+se
 see
 see-compiled
 see-compiled>string
@@ -359,6 +377,7 @@ shuffle
 side-depth
 side-drop
 side>
+sigmoid
 sin
 size
 skip
@@ -371,6 +390,7 @@ sq
 sqrt
 start-generator
 start-process
+std
 stderr
 stdin
 stdout
@@ -439,12 +459,14 @@ where
 while
 wildcard?
 with-db
+with-intercept
 with-stream
 words
 write
 write-file
 write-in
 write-tsv
+xml-escape
 xt?
 yield
 {

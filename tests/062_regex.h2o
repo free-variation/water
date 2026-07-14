@@ -101,6 +101,16 @@ c" "
 \ --- chained substitutions (IUB style) ---
 "aBcD" "B" "(c|g|t)" replace "D" "(a|g|t)" replace . cr   \ a(c|g|t)c(a|g|t)
 
+\ --- basename: the path's last component ---
+"/a/b/c.svg" basename . cr                    \ c.svg
+"plain.txt" basename . cr                     \ plain.txt
+"/trailing/" basename size . cr               \ 0
+
+\ --- xml-escape: & < > ' to entities, for text and single-quoted attributes ---
+"<b>&nasty' label</b>" xml-escape . cr        \ &lt;b&gt;&amp;nasty&apos; label&lt;/b&gt;
+"plain text" xml-escape . cr                  \ plain text
+"&amp;" xml-escape . cr                       \ &amp;amp;  (re-escapes escaped input)
+
 \ --- empty subject ---
 "" "a" "X" replace . cr                       \ (empty)
 

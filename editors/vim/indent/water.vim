@@ -62,12 +62,34 @@ let s:bclose = {'}': 1, ']': 1, '>': 1, ':]': 1, ')]': 1}
 let s:cfopen = {'if': 1, '?if': 1, 'begin': 1}
 let s:cfclose = {'then': 1, 'until': 1, 'again': 1, 'repeat': 1, ';': 1}
 
+" Column of the quote that closes a still-open multi-line string, -1 if the
+" whole line is string text. Doubled quotes are the in-string escape.
+function! s:CloseQuote(line) abort
+  return match(substitute(a:line, '""', '  ', 'g'), '"')
+endfunction
+
 function! GetWaterIndent() abort
   let sw = shiftwidth()
   let stack = []
+  let in_string = 0
 
   for lnum in range(1, v:lnum - 1)
-    let toks = s:Tokens(s:Blank(getline(lnum)))
+    let line = getline(lnum)
+    if in_string
+      let close = s:CloseQuote(line)
+      if close < 0
+        continue
+      endif
+      let line = repeat(' ', close + 1) . line[close + 1 :]
+      let in_string = 0
+    endif
+    let blanked = s:Blank(line)
+    let opener = s:CloseQuote(blanked)
+    if opener >= 0
+      let in_string = 1
+      let blanked = strpart(blanked, 0, opener)
+    endif
+    let toks = s:Tokens(blanked)
     let base = indent(lnum)
     let ti = 0
     let ntoks = len(toks)
@@ -97,6 +119,9 @@ function! GetWaterIndent() abort
     endwhile
   endfor
 
+  if in_string
+    return 0
+  endif
   if empty(stack)
     return 0
   endif

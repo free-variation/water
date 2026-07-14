@@ -1,0 +1,34 @@
+\ matrix words
+
+( arr -- matrix ) \ constructs a nx1 matrix from an array
+: vector dup size 1 matrix ; inline
+
+( v1 v2 -- float) \ dot product of two vectors
+: dot * sum ; inline
+
+( s -- sxs-identity-matrix )
+: identity-matrix 1 swap diagonal-matrix ;
+
+( m -- n )  \ rows times columns
+: num-elements dim * ; inline
+
+( m -- 1xN-matrix )
+: flatten dup dim * 1 swap reshape ;
+
+( m -- mean )
+: mean dup size swap sum swap / ;
+
+( m -- row-means )  \ each row's sum divided by the number of columns
+: row-means dup dim swap drop swap row-sums swap / ;
+
+( m -- column-means )  \ each column's sum divided by the number of rows
+: column-means dup dim drop swap column-sums swap / ;
+
+( a b -- m )  \ column-wise concatenation: vstack's twin, augment's numpy name
+: hstack augment ; inline
+
+( v -- v' )  \ any vector shape as nx1
+: as-column dup dim * 1 reshape ; inline
+
+( v -- v' )  \ the finite elements of a vector, NaNs dropped
+: drop-nans dup nan? 0 eq where select-rows ; inline

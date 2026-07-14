@@ -53,3 +53,7 @@ cr
 [ 1 2 3 4 5 6 ] 1 6 matrix size . cr    \ 6   row vector
 [ 1 2 3 4 5 6 ] 6 1 matrix size . cr    \ 6   column vector
 1 1 0-matrix size . cr                  \ 1   single element
+
+\ num-elements: rows times columns
+[ 1 2 3 4 5 6 ] 2 3 matrix num-elements . cr  \ 6
+1 1 0-matrix num-elements . cr                \ 1

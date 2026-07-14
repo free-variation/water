@@ -47,6 +47,12 @@ XaX
 -a-b-c- 
 a b c 
 a(c|g|t)c(a|g|t) 
+c.svg 
+plain.txt 
+0 
+&lt;b&gt;&amp;nasty&apos; label&lt;/b&gt; 
+plain text 
+&amp;amp; 
  
 error: missing closing parenthesis
 error: backref \3 but pattern has 0 group(s)

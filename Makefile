@@ -6,8 +6,13 @@ CFLAGS += -flto
 endif
 LDLIBS = -lm -lffi
 
-SRCS = src/c/core.c src/c/words.c src/c/compiler.c src/c/io.c src/c/image.c src/c/collections.c src/c/matrix.c src/c/indexing.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/foreign.c src/c/platform_posix.c src/c/dimension.c src/c/time.c
+SRCS = src/c/core.c src/c/words.c src/c/compiler.c src/c/io.c src/c/image.c src/c/collections.c src/c/matrix.c src/c/statistics.c src/c/indexing.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/foreign.c src/c/platform_posix.c src/c/dimension.c src/c/time.c
 HDRS = src/c/water.h src/c/platform.h src/c/lib_embed.h src/c/logo_embed.h src/c/repl_highlight_groups.h
+
+# Embedded library, concatenated in this order. Binding is early: a word must
+# be defined in an earlier file than every file that uses it (units before the
+# constants that use joule, predicates before the words that call them).
+FORTH_SRCS = src/forth/core.h2o src/forth/arrays.h2o src/forth/strings.h2o src/forth/exceptions.h2o src/forth/matrix.h2o src/forth/subprocess.h2o src/forth/logic.h2o src/forth/generators.h2o src/forth/datasets.h2o src/forth/statistics.h2o src/forth/units.h2o src/forth/constants.h2o
 
 # Vendored PCRE2 (see external/pcre2/PROVENANCE; refresh with tools/vendor-pcre2.sh).
 PCRE2_DIR    = external/pcre2
@@ -77,7 +82,7 @@ WASI_SDK        = $(HOME)/wasi-sdk
 WASI_CC         = $(WASI_SDK)/bin/clang
 WASI_AR         = $(WASI_SDK)/bin/llvm-ar
 WASI_SYSROOT    = $(WASI_SDK)/share/wasi-sysroot
-WASM_SRCS       = src/c/core.c src/c/words.c src/c/compiler.c src/c/io.c src/c/image.c src/c/collections.c src/c/matrix.c src/c/indexing.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/dimension.c src/c/platform_wasi.c src/c/time.c
+WASM_SRCS       = src/c/core.c src/c/words.c src/c/compiler.c src/c/io.c src/c/image.c src/c/collections.c src/c/matrix.c src/c/statistics.c src/c/indexing.c src/c/functional.c src/c/superwords.c src/c/strings.c src/c/help_table.c src/c/logic.c src/c/database.c src/c/dimension.c src/c/platform_wasi.c src/c/time.c
 WASM_CFLAGS     = --sysroot $(WASI_SYSROOT) -O2 -I$(PCRE2_SRC) -I$(SQLITE_DIR) -Wno-ignored-pragmas -Wl,-z,stack-size=8388608
 WASM_PCRE2_OBJS = $(patsubst %.c,%.wasm.o,$(wildcard $(PCRE2_SRC)/pcre2_*.c))
 WASM_PCRE2_LIB  = $(PCRE2_DIR)/libpcre2-8-wasm.a
@@ -130,8 +135,8 @@ $(LAPACKE_DIR)/%.o: $(LAPACKE_DIR)/%.c
 src/c/help_table.c: docs/reference.md tools/gen-help.py
 	python3 tools/gen-help.py
 
-src/c/lib_embed.h: src/forth/lib.h2o
-	cd src/forth && xxd -i lib.h2o > ../../src/c/lib_embed.h
+src/c/lib_embed.h: $(FORTH_SRCS)
+	scratch=$$(mktemp -d) && cat $(FORTH_SRCS) > $$scratch/lib.h2o && (cd $$scratch && xxd -i lib.h2o) > src/c/lib_embed.h && rm -rf $$scratch
 
 src/c/logo_embed.h: water-logo.txt
 	xxd -i water-logo.txt > src/c/logo_embed.h

@@ -1,38 +1,6 @@
-( matrix -- float ) \ standard deviation
-: std var sqrt ;
-
-( matrix -- float ) \ standard error of the mean: s / sqrt(n)
-: se |> mat | mat var mat size / sqrt ;
-
-( matrix -- float) \ median
-: median 0.5 quantile ;
-
-( matrix percent -- float ) \ percent, pct in [0,100]
-: percentile 100 / quantile ;
-
-( matrix -- float ) \ interquartile range, Q3 - Q1
-: iqr dup 0.75 quantile swap 0.25 quantile - ;
-
-( matrix level -- low high ) \ percentile CI: level e.g. 0.95 -> [q(0.025), q(0.975)]
-: ci
-	| >mat >level tail |
-	1 level - 2 / to tail
-
-	mat tail quantile
-	mat 1 tail - quantile ;
-
-: sample-without-replacement false sample ; inline
-: sample-with-replacement true sample ; inline
-
-( data fit-xt replications fit-mapper -- [estimates] )
-: bootstrap-with
-	| >data >fit-xt >replications >fit-mapper n resamples |
-	data dim drop to n
-	replications iota [: |> i | data n resample-indices select-rows :] map to resamples
-	resamples fit-xt fit-mapper execute ;
-
-: bootstrap ' map bootstrap-with ;
-: pbootstrap ' pmap bootstrap-with ;
+\ LAPACK acceleration layer. Everything LAPACK-free lives in the embedded
+\ src/forth/statistics.h2o; this loadable library holds what needs the shared
+\ library, and may mask an embedded word by redefining it in toto.
 
 \ ---- Accelerate BLAS: shadow the built-in dgemm words ----
 \ Same ( alpha A B beta C -- R ) contract, fresh R; words compiled after this
@@ -151,12 +119,6 @@ dup "LAPACKE_dgelsd" [
 
 	b 0 cols 0 1 submatrix ;
 
-( X -- X' ) \ prepend a column of 1s so beta[0] is the intercept
-: with-intercept
-	dup dim drop    
-	1 0-matrix 1 +    \ rows x 1 column of ones
-	swap augment ; 
-
 ( augmented-matrix -- betas ) \ augmented is observations x (predictors + 1) ; last column is y
 : fit-augmented
 	| >aug-mat rows cols |
@@ -166,42 +128,8 @@ dup "LAPACKE_dgelsd" [
 	aug-mat 0 rows cols 1- cols submatrix
 	fit-linear ;
 
-( betas replications j -- column )
-: coefficient-column
-	|> betas replications j |
-
-	betas [: |> b | b j 0 @i,j :] map replications 1 matrix ;
-
-( beta betas replications j -- frame )
-: coefficient-summary
-	| >beta >betas >replications >j column low high |
-
-	betas replications j coefficient-column to column
-	column 0.95 ci to high to low
-	{ :estimate beta j 0 @i,j 
-	  :se column std 
-	  :bias column mean beta j 0 @i,j -
-	  :ci-low low 
-	  :ci-high high } ;
-
-( dataset predictors response replications fit-augmented-xt -- [records] )
-\ Shared regression pipeline: build the design matrix (with intercept) and the
-\ response, point-estimate with fit on the full data, then bootstrap-resample
-\ rows and refit for per-coefficient SE/CI/bias. The fit picks linear vs logistic.
-: regress-with
-	| >dataset >predictors >response >replications >fit x y data beta betas |
-	dataset predictors dataset>matrix with-intercept to x
-	dataset response 1 array dataset>matrix to y
-	x y augment to data
-	data fit execute to beta
-	data fit replications bootstrap to betas
-	0 beta size 1- range [: |> j | beta betas replications j coefficient-summary :] map ;
-
 ( dataset predictors response replications -- [records] )
 : linear-regression  ' fit-augmented regress-with ;
-
-( values -- probabilities ) \ logistic elementwise: maps reals to (0,1)
-: sigmoid negate exp 1+ 1 swap / ;
 
 ( X y max-iterations tolerance -- beta ) \ logistic regression by IRLS; X is n×k (incl. intercept), y in {0,1}
 : fit-logistic

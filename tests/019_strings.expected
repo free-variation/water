@@ -97,6 +97,10 @@ error: element 1 is a float, expected a string
 1 
 1 
 1 
+a
+b 3 
+2 
+3 
 error: {0} needs 1 stack value(s) but only 0 present
 error: {3} needs 4 stack value(s) but only 1 present
 error: expected a template string; got a float

@@ -140,6 +140,19 @@
 \ has? : consumes frame and path, leaves only the bool
 { :a 1 } [ :a ] has? . cr
 
+\ @or : value when the key is present, fallback when absent (no error)
+{ :a 1 } :a 99 @or . cr
+{ :a 1 } :b 99 @or . cr
+
+\ @or : paths too, including a non-frame mid-path
+{ :a { :b 2 } } /a/b 99 @or . cr
+{ :a { :b 2 } } /a/z 99 @or . cr
+{ :a 5 } /a/b 99 @or . cr
+
+\ @or : non-frame subject errors; so does a non-key
+5 :a 9 @or . cr
+{ :a 1 } 42 9 @or . cr
+
 \ has? : symbol form, present
 { :a 1 } :a has? . cr
 

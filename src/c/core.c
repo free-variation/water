@@ -4049,6 +4049,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "side-drop", p_side_drop, 0);
 	define_primitive(interp, "side-depth", p_side_depth, 0);
 	define_primitive(interp, "@", p_frame_get, 0);
+	define_primitive(interp, "@or", p_frame_get_or, 0);
 	define_primitive(interp, "!", p_frame_set, 0);
 	define_primitive(interp, "keys", p_frame_keys, 0);
 	define_primitive(interp, "values", p_frame_values, 0);

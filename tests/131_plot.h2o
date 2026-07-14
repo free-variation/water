@@ -1,0 +1,106 @@
+\ lib/plot.h2o: SVG plotting. Marks accumulate as data- or pixel-space frames;
+\ figure>svg resolves the domain (pinned or padded auto-extent) into one affine
+\ per axis and renders. Style comes from aes defaults, figure! overrides.
+"lib/plot.h2o" load
+
+\ === full document: two points, auto domain, axes ===
+320 240 figure
+2 :ticks figure!
+axes
+[ 0 10 ] vector [ 0 10 ] vector scatter
+figure>svg .
+clear
+
+\ === scatter: NaN points are skipped ===
+640 480 figure
+[ -1 1 4 ] vector ln [ 1 2 3 ] vector scatter
+figure>svg "circle" split size 1 - . cr                      \ 2
+clear
+
+\ === deferred mapping: pin the domain after drawing; the point moves ===
+640 480 figure
+[ 5 ] vector [ 5 ] vector scatter
+figure>svg "cx='320' cy='240'" has? . cr                     \ 1 (auto: centered)
+0 :xmin figure! 10 :xmax figure! 0 :ymin figure! 10 :ymax figure!
+figure>svg "cx='320' cy='240'" has? . cr                     \ 1 (5 = mid of [0,10])
+0 :xmin figure! 20 :xmax figure!
+figure>svg "cx='180' cy='240'" has? . cr                     \ 1 (5 = quarter of [0,20])
+clear
+
+\ === histogram: [1 1 2 3] in 2 bins -> counts [2 2], domain [1,3]x[0,2] ===
+640 480 figure
+[ 1 1 2 3 ] vector 2 histogram
+figure>svg
+dup "rect" split size 1 - . cr                               \ 2 (two bars)
+dup "x='40' y='40' width='280' height='400'" has? . cr       \ 1 (first bar)
+"x='320' y='40' width='280' height='400'" has? . cr          \ 1 (second bar)
+clear
+
+\ === histogram: constant data takes the range value +/- 1 ===
+[ 5 5 5 ] vector 4 histogram-plot "rect" split size 2 - . cr \ 4 (bars besides border)
+clear
+
+\ === boxplot: [1 2 3 4 100] -> fences [-1,7], one outlier, whiskers 1 and 4 ===
+640 480 figure
+[ 1 2 3 4 100 ] vector boxplot
+figure>svg
+dup "circle" split size 1 - . cr                             \ 1 (the outlier)
+dup "rect" split size 1 - . cr                               \ 1 (the box)
+"line" split size 1 - . cr                                   \ 3 (median + 2 whiskers)
+clear
+
+\ === series: a NaN gap splits the polyline; 1-point runs draw nothing ===
+640 480 figure
+[ 1 2 3 4 ] vector [ 1 2 3 4 ] vector series
+figure>svg "polyline" split size 1 - . cr                    \ 1 (one 4-point line)
+640 480 figure
+[ 1 2 3 4 5 ] vector [ 1 2 -1 3 4 ] vector ln series
+figure>svg "polyline" split size 1 - . cr                    \ 2 (split at ln -1)
+clear
+
+\ === abline: y = x on [0,10]x[0,5] clips at (5,5) ===
+640 480 figure
+0 :xmin figure! 10 :xmax figure! 0 :ymin figure! 5 :ymax figure!
+1 0 abline
+figure>svg "x1='40' y1='440' x2='320' y2='40'" has? . cr     \ 1
+640 480 figure
+0 :xmin figure! 10 :xmax figure! 0 :ymin figure! 5 :ymax figure!
+1 20 abline
+figure>svg "line" has? . cr                                  \ 0 (entirely above)
+clear
+
+\ === pixel-space primitives ignore the domain; text is escaped ===
+640 480 figure
+1 2 3 4 svg-line
+100 200 "<b>&nasty' label" svg-text
+figure>svg
+dup "x1='1' y1='2' x2='3' y2='4'" has? . cr                  \ 1
+"&lt;b&gt;&amp;nasty&apos; label" has? . cr                  \ 1
+clear
+
+\ === style: aes defaults, figure! overrides, both captured per mark ===
+{ :point-radius 5 } aes!
+640 480 figure
+"tomato" :point-fill figure!
+[ 1 2 ] vector [ 1 2 ] vector scatter
+"black" :point-fill figure!
+[ 3 ] vector [ 3 ] vector scatter
+figure>svg
+dup "r='5' fill='tomato'" split size 1 - . cr                \ 2 (first scatter)
+"r='5' fill='black'" split size 1 - . cr                     \ 1 (second scatter)
+:margin figure@ . cr                                         \ 40
+{ :point-radius 3 } aes!
+clear
+
+\ === viewer plumbing: paths and the escaped page ===
+"figs/demo.svg" wrapper-path . cr                            \ figs/demo.html
+"demo" wrapper-path . cr                                     \ demo.html
+clear
+
+\ === errors (thrown; caught here to show the message) ===
+[: [ 1 2 ] vector [ 1 2 3 ] vector scatter :] [: . cr :] try-catch   \ (length mismatch)
+[: [ 1 2 ] vector [ 1 ] vector series :] [: . cr :] try-catch        \ (length mismatch)
+[: [ 1 2 ] vector 0 histogram :] [: . cr :] try-catch                \ (no bins)
+[: [ -1 ] vector ln boxplot :] [: . cr :] try-catch                  \ (no finite values)
+[: [ -1 ] vector ln [ 1 ] vector data-domain :] [: . cr :] try-catch \ (no finite x)
+[: [ [ 1 ] vector ] [ ] boxplots :] [: . cr :] try-catch             \ (label mismatch)

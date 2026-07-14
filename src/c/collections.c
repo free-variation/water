@@ -1136,6 +1136,29 @@ void p_frame_get(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
+void p_frame_get_or(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val frame_val = chain_sp[-3];
+	if (VAL_TAG(frame_val) != T_FRAME) {
+		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
+		return;
+	}
+	Val key_or_path = chain_sp[-2];
+	Val fallback = chain_sp[-1];
+	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
+
+	DISPATCH_SYMBOL_OR_PATH(key_or_path, "@or", {
+			FRAME_LOOKUP(frame, VAL_DATA(key_or_path), at, present);
+			chain_sp[-3] = present ? frame->frame.values[at] : fallback;
+			}, {
+			int walk_found = 0;
+			Val walked = frame_walk(interp, frame_val, path, path->len, WALK_PROBE, &walk_found);
+			chain_sp[-3] = walk_found ? walked : fallback;
+			});
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
+}
+
 void p_frame_set(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	Val frame_val = chain_sp[-3];

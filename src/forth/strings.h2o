@@ -1,0 +1,14 @@
+\ string words
+
+( s pat -- i | -1 )  \ codepoint index of pat's first regex match in s, -1 if none
+: index-of  2dup has? if split 0 @i size else 2drop -1 then ;
+
+( s -- s' )  \ escape XML text and single-quoted attribute content
+: xml-escape
+	"&" "\&amp;" replace
+	"<" "\&lt;" replace
+	">" "\&gt;" replace
+	"'" "\&apos;" replace ;
+
+( path -- filename )  \ the path's last component
+: basename "^.*/" "" replace ; inline

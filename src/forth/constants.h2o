@@ -1,0 +1,18 @@
+\ ---- mathematical and physical constants ----
+\ Capitalized by convention. Mathematical values are computed, not typed.
+\ Physical values are the exact SI-2019 definitions (G is CODATA 2018, the
+\ one measured value); the dimensioned ones are quantities, so unit algebra
+\ applies — KB 300 kelvin * is an energy.
+
+pi constant PI
+1 exp constant E
+pi 2 * constant TAU
+5 sqrt 1 + 2 / constant PHI
+
+299792458 m 1 s / constant C
+6.67430e-11 m 1 m * 1 m * 1 kg / 1 s / 1 s / constant G
+6.62607015e-34 joule 1 s * constant H
+H TAU / constant HBAR
+1.380649e-23 joule 1 kelvin / constant KB
+6.02214076e23 1 mol / constant NA
+1.602176634e-19 coulomb constant QE

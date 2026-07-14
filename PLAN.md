@@ -14,9 +14,9 @@ grower (§4 — the one substantial new C), and a pairwise-distance primitive
 (§5 — small C, unless the dgemm identity suffices). Everything else is library
 code composing them.
 
-Layering: LAPACK-free stats live in lib.h2o (embedded, wasm-capable) built
+Layering: LAPACK-free stats live in the embedded library (wasm-capable) built
 on the C kernels; statistics.h2o holds what needs the shared library and
-masks any lib.h2o word it accelerates by redefining it in toto — the golden
+masks any embedded word it accelerates by redefining it in toto — the golden
 suite, running both native (masked) and wasm (unmasked), keeps the copies
 honest. To that end add a built-in `svd`: a one-sided Jacobi kernel in C,
 masked by the dgesvd binding. Its goldens pin S and the U·S·Vᵀ
@@ -109,6 +109,20 @@ their own files).
 
 To settle: bandwidth selection (CV vs plug-in rules); whether multinomial
 logistic reuses the Firth machinery or defers it to the binary case.
+
+### 2b. Correlations
+
+The core set, split by the C rule (tight loops that can be large go to C):
+
+- **pearson** — src/forth/statistics.h2o: center both vectors, then
+  `cx cy dot  cx cx dot cy cy dot * sqrt /`; no new C.
+- **spearman** — src/forth/statistics.h2o: ranks are `argsort argsort`,
+  then pearson on the ranks; tie handling via midranks when it matters.
+- **kendall** — the concordant/discordant pair count is the tight loop
+  (merge-sort inversion count, O(n log n)); that kernel goes in
+  statistics.c, the word on top in forth.
+- **qnorm** — src/forth/statistics.h2o (scalar rational approximation,
+  no loop); unblocks the QQ plot and `fit-line` in lib/plot.h2o.
 
 ### 3. The resampling loop as the inference engine
 
@@ -234,27 +248,23 @@ from session definitions, so the undocumented canary reaches them.
 
 ---
 
-## Basic graphing
+## Basic graphing: residuals
 
-Charts rendered to an SVG file; a browser tab does the display (an
-auto-refresh wrapper page or extension re-reads it). Water writes, the
-browser refreshes — no windowing, no display dependency, no rasterizer.
+lib/plot.h2o draws scatter, series, histogram, and boxplots to SVG with a
+live-reloading browser viewer. Remaining:
 
-- **SVG output** — text generation over `format` + `write-file`; no
-  rasterizer, no new C. Each plot word draws the whole chart and
-  overwrites the target file, so the viewer always shows the latest state.
-- **Chart set** — scatter, line, step (the ecdf as drawn), histogram
-  (binning in library code), bar; axes, ticks, and labels computed in
-  library code from the data range.
-- **Stats consumers** — QQ plots (sort + Φ⁻¹), ROC and calibration curves
-  (the model-metrics bullet), residual and fit plots for the regressions,
-  ecdf step functions.
-
-To settle: nice-number tick heuristics; overlaying several series in one
-chart (an array of series per plot word, probably); torn frames on
-overwrite (`write-file` truncates in place — either a `rename-file` word
-for temp-and-rename atomicity, or accept that viewers re-read fast);
-whether one fixed, readable style is enough (it should be).
+- **Chart set** — step (the ecdf as drawn) and bar charts.
+- **Stats consumers** — QQ plots (sort + qnorm, which lands in
+  src/forth/statistics.h2o and brings back plot-side `fit-line` over
+  `abline`), ROC and calibration curves (the model-metrics bullet),
+  residual and fit plots for the regressions.
+- **Nice-number tick heuristics** — ticks currently divide the padded
+  range evenly; snap them to 1/2/5 steps.
+- **Torn frames on overwrite** — `write-file` truncates in place; either
+  a `rename-file` word for temp-and-rename atomicity, or accept that
+  viewers re-read fast.
+- Reference rows for the plot words (the loadable-library coverage item
+  above).
 
 ---
 
@@ -374,11 +384,11 @@ keeps the HTTP work:
   bounded read is required.
 - A FastCGI record codec — decode `BEGIN_REQUEST` / `PARAMS` (the CGI environment
   → a request frame) / `STDIN` (body → a string), and encode `STDOUT` +
-  `END_REQUEST`. The framing is simple: `lib.h2o` over `read-n`/`write` plus byte
+  `END_REQUEST`. The framing is simple: embedded forth over `read-n`/`write` plus byte
   arithmetic, with maybe a tiny C helper for the 2/4-byte length fields.
 
 **Serve loop.** A plain sequential `accept → decode → handle → respond` loop in
-`lib.h2o`, each handler wrapped in `try-catch` so a bad request can't kill the
+library forth, each handler wrapped in `try-catch` so a bad request can't kill the
 worker; per-request allocations are reclaimed by GC. No threads.
 
 **Worker processes.** Run N worker processes all accepting on the same socket
@@ -390,9 +400,9 @@ retries elsewhere.
 (`PRAGMA journal_mode=WAL`) plus a `busy_timeout`, so concurrent reads across
 workers don't block and writes serialize safely (single host).
 
-**Cost:** `accept` + `read-n` are small C; the FastCGI codec is `lib.h2o` (plus an
+**Cost:** `accept` + `read-n` are small C; the FastCGI codec is library forth (plus an
 optional tiny C codec for the integer fields); the serve loop and response
-builders are `lib.h2o`.
+builders are library forth.
 
 ---
 
@@ -523,7 +533,7 @@ In rough priority:
 
 Building on the generator primitives:
 
-- Lazy `map` / `filter` / `take` / `zip` as `lib.h2o` wrappers that resume the
+- Lazy `map` / `filter` / `take` / `zip` as generators.h2o wrappers that resume the
   source on demand, with `lazy>array` to force a finite prefix.
 - A cooperative scheduler (`spawn` / `run-scheduler`, a queue of `T_CONT`s) for
   producer/consumer pipelines.
@@ -534,7 +544,7 @@ Building on the generator primitives:
   — a *complete* search, distinct from the depth-first `amb` / `fail`. Generators
   are the substrate; the interleaving combinators are the work.
 
-All `lib.h2o` on the existing primitives — no new C.
+All library forth on the existing primitives — no new C.
 
 ---
 
@@ -550,7 +560,7 @@ live here instead. File and function name each invariant's home.
 - `forget_user` frees only objects above `object_space.init`; below it
   sit literals baked into the compiled-in vocabulary (e.g. `run`'s
   `" +"`), which must survive every reset (core.c, `forget_user`).
-- Images save only above the `init_*` watermarks: lib.h2o is rebuilt
+- Images save only above the `init_*` watermarks: the embedded library is rebuilt
   every process and is not user state. Anything that grows the watermark
   set must grow all of it — here, latest_cfa, names, sources, symbols,
   objects, pairs, dimensions, quotation spans (core.c,
