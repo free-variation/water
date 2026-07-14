@@ -1,0 +1,391 @@
+\ SVG plotting. A current plot accumulates SVG fragment strings; layer 0 draws
+\ in pixel space, layer 1 maps data coordinates and draws axes, layer 2 builds
+\ statistical plots (scatter, best-fit line, histogram, boxplot, Q-Q) on
+\ vectors. Wasm-capable: the least-squares line is computed directly, not via
+\ statistics.h2o's LAPACKE fit-linear. Render with plot>svg or plot-save; view
+\ the file in a browser.
+
+variable current-plot
+
+10 codepoint>char constant nl
+
+\ === state ===
+
+( val sym -- ) \ store val at key in the current plot
+: plot! current-plot swap rot ! drop ; internal
+
+( w h -- ) \ start a new plot: pixel canvas, empty part list, default style
+: plot
+	|> w h |
+	{ :w w :h h :parts [ ] :margin 40 :font-size 11
+	  :stroke "black" :fill "none" :stroke-width 1
+	  :xmin 0 :xmax 1 :ymin 0 :ymax 1 }
+	to current-plot ;
+
+( s -- ) \ append an SVG fragment to the current plot
+: emit-part current-plot :parts @ swap add-last! drop ; internal
+
+\ === layer 0: pixel-space primitives ===
+
+( x1 y1 x2 y2 -- ) \ line segment, current stroke
+: svg-line
+	current-plot :stroke @ current-plot :stroke-width @
+	"<line x1='{5}' y1='{4}' x2='{3}' y2='{2}' stroke='{1}' stroke-width='{0}'/>"
+	format emit-part ;
+
+( x y w h -- ) \ rectangle, current stroke and fill
+: svg-rect
+	current-plot :stroke @ current-plot :fill @ current-plot :stroke-width @
+	"<rect x='{6}' y='{5}' width='{4}' height='{3}' fill='{1}' stroke='{2}' stroke-width='{0}'/>"
+	format emit-part ;
+
+( cx cy r -- ) \ circle marker, current fill and stroke
+: svg-circle
+	current-plot :fill @ current-plot :stroke @
+	"<circle cx='{4}' cy='{3}' r='{2}' fill='{1}' stroke='{0}'/>"
+	format emit-part ;
+
+( x y s -- ) \ text anchored at (x,y), current font size
+: svg-text
+	current-plot :font-size @
+	"<text x='{3}' y='{2}' font-size='{0}' font-family='sans-serif' fill='black'>{1}</text>"
+	format emit-part ;
+
+( -- s ) \ the full SVG document as a string; viewBox-only, so it scales to fit
+: plot>svg
+	current-plot :w @ current-plot :h @
+	"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {1} {0}'>"
+	format nl +
+	current-plot :parts @ nl join +
+	nl + "</svg>" + nl + ;
+
+( path -- ) \ render the current plot and write it to a file
+: plot-save plot>svg swap write-file ;
+
+\ === style ===
+
+( color -- ) \ set the current stroke color
+: stroke :stroke plot! ;
+
+( color -- ) \ set the current fill color
+: fill :fill plot! ;
+
+( w -- ) \ set the current stroke width
+: stroke-width :stroke-width plot! ;
+
+\ === layer 1: coordinate mapping and axes ===
+
+( dx -- px ) \ map a data x to a pixel x within the plot area
+: x>px
+	| >dx w m xmin xmax |
+	current-plot :w @ to w
+	current-plot :margin @ to m
+	current-plot :xmin @ to xmin
+	current-plot :xmax @ to xmax
+	dx xmin - xmax xmin - / w m 2 * - * m + ; internal
+
+( dy -- py ) \ map a data y to a pixel y (flipped: ymin at the bottom)
+: y>px
+	| >dy h m ymin ymax |
+	current-plot :h @ to h
+	current-plot :margin @ to m
+	current-plot :ymin @ to ymin
+	current-plot :ymax @ to ymax
+	h m - dy ymin - ymax ymin - / h m 2 * - * - ; internal
+
+( lo hi -- lo' hi' ) \ expand a range by 5% each side; degenerate span -> ±1
+: pad-range
+	| >lo >hi span |
+	hi lo - to span
+	span 0= if lo 1 - hi 1 + exit then
+	lo span 0.05 * - hi span 0.05 * + ; internal
+
+( xs ys -- ) \ set the plot domain from the extents of two vectors, padded
+: data-domain
+	|> xs ys |
+	xs min xs max pad-range :xmax plot! :xmin plot!
+	ys min ys max pad-range :ymax plot! :ymin plot! ;
+
+( n -- ) \ n+1 evenly spaced x ticks with labels along the bottom
+: x-ticks
+	| >n lo hi step bottom i v px |
+	current-plot :xmin @ to lo
+	current-plot :xmax @ to hi
+	hi lo - n / to step
+	current-plot :h @ current-plot :margin @ - to bottom
+	0 to i
+	begin i n gt not while
+		lo i step * + to v
+		v x>px to px
+		"gray" stroke
+		px bottom px bottom 5 + svg-line
+		px 8 - bottom 16 + v "{0:.3g}" format svg-text
+		i 1 + to i
+	repeat ; internal
+
+( n -- ) \ n+1 evenly spaced y ticks with labels along the left
+: y-ticks
+	| >n lo hi step left i v py |
+	current-plot :ymin @ to lo
+	current-plot :ymax @ to hi
+	hi lo - n / to step
+	current-plot :margin @ to left
+	0 to i
+	begin i n gt not while
+		lo i step * + to v
+		v y>px to py
+		"gray" stroke
+		left py left 5 - py svg-line
+		left 32 - py 4 + v "{0:.3g}" format svg-text
+		i 1 + to i
+	repeat ; internal
+
+( -- ) \ draw just the plot-area border from the current margin
+: plot-border
+	"none" fill "gray" stroke 1 stroke-width
+	current-plot :margin @ dup
+	current-plot :w @ current-plot :margin @ 2 * -
+	current-plot :h @ current-plot :margin @ 2 * -
+	svg-rect ; internal
+
+( -- ) \ draw the plot-area border and labeled ticks from the current domain
+: axes
+	plot-border
+	5 x-ticks
+	5 y-ticks ;
+
+\ === layer 2: statistical plots on vectors ===
+
+( xs ys -- ) \ scatter points at the current domain
+: scatter
+	| >xs >ys n i |
+	"steelblue" fill "none" stroke
+	xs dim * to n
+	0 to i
+	begin i n lt while
+		xs i @e x>px
+		ys i @e y>px
+		3 svg-circle
+		i 1 + to i
+	repeat ;
+
+( xs ys -- slope intercept ) \ ordinary least-squares fit of ys on xs
+: line-fit
+	| >xs >ys xbar ybar cx cy slope |
+	xs mean to xbar
+	ys mean to ybar
+	xs xbar - to cx
+	ys ybar - to cy
+	cx cy * sum cx sq sum / to slope
+	slope
+	ybar slope xbar * - ;
+
+( slope intercept -- ) \ draw a data-space line, clipped to the plot area
+: line-at
+	| >slope >intercept x1 y1 x2 y2 ymin ymax |
+	current-plot :xmin @ to x1
+	current-plot :xmax @ to x2
+	current-plot :ymin @ to ymin
+	current-plot :ymax @ to ymax
+	slope 0= if
+		intercept ymin lt intercept ymax gt or if exit then
+		x1 x>px intercept y>px x2 x>px intercept y>px svg-line exit
+	then
+	x1 slope * intercept + to y1
+	x2 slope * intercept + to y2
+	y1 ymin lt if ymin intercept - slope / to x1 ymin to y1 then
+	y1 ymax gt if ymax intercept - slope / to x1 ymax to y1 then
+	y2 ymin lt if ymin intercept - slope / to x2 ymin to y2 then
+	y2 ymax gt if ymax intercept - slope / to x2 ymax to y2 then
+	x1 x>px y1 y>px x2 x>px y2 y>px svg-line ; internal
+
+( xs ys -- ) \ overlay the least-squares line, clipped to the plot area
+: fit-line
+	|> xs ys |
+	"crimson" stroke 2 stroke-width
+	xs ys line-fit line-at ;
+
+( data nbins -- ) \ tally data into nbins bars; sets the domain from the counts
+: histogram
+	| >data >nbins lo hi width counts n i b c cnt xleft maxc |
+	data min to lo
+	data max to hi
+	hi lo - nbins / to width
+	0 nbins array-of to counts
+	data dim * to n
+	0 to maxc
+	0 to i
+	begin i n lt while
+		data i @e lo - width / round-down to b
+		b nbins 1 - gt if nbins 1 - to b then
+		counts b @i 1+ to c
+		counts b c !i drop
+		c maxc gt if c to maxc then
+		i 1 + to i
+	repeat
+	lo :xmin plot! hi :xmax plot!
+	0 :ymin plot! maxc :ymax plot!
+	"steelblue" fill "white" stroke 1 stroke-width
+	0 to i
+	begin i nbins lt while
+		lo i width * + to xleft
+		counts i @i to cnt
+		xleft x>px
+		cnt y>px
+		xleft width + x>px xleft x>px -
+		0 y>px cnt y>px -
+		svg-rect
+		i 1 + to i
+	repeat ;
+
+( data cx hw -- ) \ draw one box with whiskers at data-x center cx, half-width hw
+: box-at
+	| >data >cx >hw q1 q2 q3 lo hi xl xr |
+	data 0.25 quantile to q1
+	data 0.5 quantile to q2
+	data 0.75 quantile to q3
+	data min to lo
+	data max to hi
+	cx hw - to xl
+	cx hw + to xr
+	"none" fill "black" stroke 1 stroke-width
+	xl x>px q3 y>px xr x>px xl x>px - q1 y>px q3 y>px - svg-rect
+	xl x>px q2 y>px xr x>px q2 y>px svg-line
+	cx x>px hi y>px cx x>px q3 y>px svg-line
+	cx x>px lo y>px cx x>px q1 y>px svg-line ; internal
+
+( data -- ) \ single vertical boxplot centered in the plot; sets the domain
+: boxplot
+	|> data |
+	0 :xmin plot! 1 :xmax plot!
+	data min data max pad-range :ymax plot! :ymin plot!
+	data 0.5 0.2 box-at ;
+
+( arrays labels -- ) \ side-by-side boxplots on a shared y-axis, one per vector;
+\ labels is a parallel array of category strings. Sets the domain.
+: boxplots
+	| >arrays >labels k i data lo hi m bottom |
+	arrays size to k
+	arrays 0 @i dup min to lo max to hi
+	1 to i
+	begin i k lt while
+		arrays i @i to data
+		data min to m m lo lt if m to lo then
+		data max to m m hi gt if m to hi then
+		i 1 + to i
+	repeat
+	0.5 :xmin plot! k 0.5 + :xmax plot!
+	lo hi pad-range :ymax plot! :ymin plot!
+	current-plot :h @ current-plot :margin @ - 16 + to bottom
+	0 to i
+	begin i k lt while
+		arrays i @i i 1 + 0.3 box-at
+		i 1 + x>px 12 - bottom labels i @i svg-text
+		i 1 + to i
+	repeat ;
+
+( p -- z ) \ inverse standard-normal CDF (Acklam's approximation), p in (0,1)
+: qnorm
+	| >p q r |
+	p 0.02425 lt if
+		p ln -2 * sqrt to q
+		-7.784894002430293e-3 q * -0.3223964580411365 +
+		q * -2.400758277161838 + q * -2.549732539343734 +
+		q * 4.374664141464968 + q * 2.938163982698783 +
+		7.784695709041462e-3 q * 0.3224671290700398 +
+		q * 2.445134137142996 + q * 3.754408661907416 +
+		q * 1 + / exit
+	then
+	p 0.97575 gt if
+		1 p - ln -2 * sqrt to q
+		-7.784894002430293e-3 q * -0.3223964580411365 +
+		q * -2.400758277161838 + q * -2.549732539343734 +
+		q * 4.374664141464968 + q * 2.938163982698783 +
+		7.784695709041462e-3 q * 0.3224671290700398 +
+		q * 2.445134137142996 + q * 3.754408661907416 +
+		q * 1 + / negate exit
+	then
+	p 0.5 - to q
+	q q * to r
+	-39.69683028665376 r * 220.9460984245205 +
+	r * -275.9285104469687 + r * 138.357751867269 +
+	r * -30.66479806614716 + r * 2.506628277459239 +
+	q *
+	-54.47609879822406 r * 161.5858368580409 +
+	r * -155.6989798598866 + r * 66.80131188771972 +
+	r * -13.28068155288572 + r * 1 + / ;
+
+( data -- ) \ reference line through the 1st and 3rd quartile points (R's qqline)
+: qq-line
+	| >data yq1 yq3 xq1 xq3 slope |
+	data 0.25 quantile to yq1
+	data 0.75 quantile to yq3
+	0.25 qnorm to xq1
+	0.75 qnorm to xq3
+	yq3 yq1 - xq3 xq1 - / to slope
+	"crimson" stroke 2 stroke-width
+	slope yq1 slope xq1 * - line-at ; internal
+
+( data -- ) \ normal Q-Q plot with reference line; sets the domain
+: qqplot
+	| >data sorted n i txs tys |
+	data sort to sorted
+	sorted dim * to n
+	[ ] to txs
+	[ ] to tys
+	0 to i
+	begin i n lt while
+		txs i 0.5 + n / qnorm add-last! drop
+		tys sorted i @e add-last! drop
+		i 1 + to i
+	repeat
+	txs vector to txs
+	tys vector to tys
+	txs tys data-domain
+	txs tys scatter
+	data qq-line ;
+
+\ === convenience: open, draw, render in one call ===
+
+( xs ys -- s ) \ complete scatter plot as an SVG string
+: scatter-plot
+	|> xs ys |
+	640 480 plot
+	xs ys data-domain
+	axes
+	xs ys scatter
+	plot>svg ;
+
+( data nbins -- s ) \ complete histogram as an SVG string
+: histogram-plot
+	|> data nbins |
+	640 480 plot
+	data nbins histogram
+	axes
+	plot>svg ;
+
+( data -- s ) \ complete single boxplot as an SVG string
+: boxplot-plot
+	|> data |
+	640 480 plot
+	data boxplot
+	plot-border
+	5 y-ticks
+	plot>svg ;
+
+( arrays labels -- s ) \ complete side-by-side boxplots as an SVG string
+: boxplots-plot
+	|> arrays labels |
+	640 480 plot
+	arrays labels boxplots
+	plot-border
+	5 y-ticks
+	plot>svg ;
+
+( data -- s ) \ complete normal Q-Q plot as an SVG string
+: qq-plot
+	|> data |
+	640 480 plot
+	data qqplot
+	axes
+	plot>svg ;
