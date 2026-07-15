@@ -377,6 +377,29 @@ int build_set_from_values(Interpreter *interp, const Val *values, int count) {
 	return set_handle;
 }
 
+void p_set(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val count_val = chain_sp[-1];
+	if (VAL_TAG(count_val) != T_FLOAT) {
+		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
+		return;
+	}
+	int count = (int)VAL_NUMBER(count_val);
+	Val *gathered_base = chain_sp - 1 - count;
+	if (count < 0 || gathered_base < interp->data_stack) {
+		fail(interp, "count %d out of range (stack has %d available)", count, (int)(chain_sp - 1 - interp->data_stack));
+		return;
+	}
+
+	int set_handle = build_set_from_values(interp, gathered_base, count);
+	if (interp->error_flag)
+		return;
+
+	gathered_base[0] = make_set(set_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, gathered_base + 1);
+}
+
 void p_array_to_set(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val array_val = chain_sp[-1];

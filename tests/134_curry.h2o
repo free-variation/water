@@ -1,0 +1,36 @@
+\ curry ( value xt -- xt' ): bind a value into a new anonymous word — xt'
+\ pushes the value, then calls xt. The bound value is captured at curry time;
+\ the curried xt travels through other words' frames intact.
+
+\ === basic partial application ===
+5 ' + curry constant add-five
+10 add-five execute . cr             \ 15
+3 add-five execute . cr              \ 8
+
+clear
+
+\ === any value kind binds: floats, arrays, xts ===
+[ 1 2 3 ] 2 ' take curry execute .a cr                       \ [ 1 2 ]
+' sqrt ' execute curry constant apply-sqrt
+16 apply-sqrt execute . cr                                   \ 4
+
+clear
+
+\ === a curried quotation survives another word's locals frame ===
+: mapper-word |> items quotation | items quotation map ; internal
+[ 4 9 16 ] ' sqrt [> element xt | element xt execute :] curry mapper-word .a cr  \ [ 2 3 4 ]
+
+clear
+
+\ === capture is by value at curry time ===
+variable bound-source
+7 to bound-source
+bound-source ' negate curry constant negate-seven
+9 to bound-source
+negate-seven execute . cr            \ -7 (rebinding the variable after curry changes nothing)
+
+clear
+
+\ === errors ===
+[: 1 2 curry :] [: . cr :] try-catch          \ (top is not an xt)
+[: 5 curry :] [: . cr :] try-catch            \ (needs two operands)

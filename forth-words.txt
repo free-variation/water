@@ -119,10 +119,17 @@ constant
 continuation?
 continue
 copy
+cor
+correlate-with
+correlation-kendall
+correlation-pearson
+correlation-spearman
 cos
 count-matches
 cr
 create-index
+cumulative-sum
+curry
 cwd
 dataset>matrix
 date-shift
@@ -305,6 +312,7 @@ pmap-reduce-ext
 print
 print-stack
 ptr?
+qnorm
 quantile
 quantity?
 query
@@ -314,6 +322,7 @@ r@
 random
 random-int
 range
+ranks
 read
 read-err
 read-file
@@ -329,6 +338,7 @@ render
 repeat
 replace
 resample-indices
+resample-indices-ext
 reset
 reshape
 resume

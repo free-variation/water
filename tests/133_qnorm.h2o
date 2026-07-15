@@ -1,0 +1,33 @@
+\ qnorm ( p -- z ), the standard normal quantile (inverse CDF): Acklam's
+\ rational approximation, three regions split at 0.02425 and 0.97575;
+\ errors unless p is strictly inside (0, 1).
+
+\ === central region ===
+0.5 qnorm . cr                \ 0
+0.3 qnorm . cr                \ -0.524401
+0.7 qnorm . cr                \ 0.524401
+0.025 qnorm . cr              \ -1.95996
+0.975 qnorm . cr              \ 1.95996
+
+clear
+
+\ === tails (outside the 0.02425 / 0.97575 region breaks) ===
+0.01 qnorm . cr               \ -2.32635
+0.99 qnorm . cr               \ 2.32635
+0.001 qnorm . cr              \ -3.09023
+0.999 qnorm . cr              \ 3.09023
+1e-10 qnorm . cr              \ -6.36134
+
+clear
+
+\ === symmetry: qnorm(p) = -qnorm(1-p) ===
+0.42 qnorm 0.58 qnorm + abs 1e-12 lt . cr    \ 1 (central)
+0.02 qnorm 0.98 qnorm + abs 1e-12 lt . cr    \ 1 (tails)
+
+clear
+
+\ === errors (thrown; caught here to show the message) ===
+[: 0 qnorm :] [: . cr :] try-catch           \ (p = 0)
+[: 1 qnorm :] [: . cr :] try-catch           \ (p = 1)
+[: -0.5 qnorm :] [: . cr :] try-catch        \ (negative)
+[: 2 qnorm :] [: . cr :] try-catch           \ (above 1)

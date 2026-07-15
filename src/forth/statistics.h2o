@@ -1,6 +1,3 @@
-\ ---- statistics, LAPACK-free ----
-\ Wasm-capable; lib/statistics.h2o may mask a word here by redefining it in toto.
-
 ( data n-bins -- table ) \ equal-width bin counts over a vector's value range,
 \ as { :counts (n-bins x 1) :low :bin-width }. NaNs are dropped; the top value
 \ lands in the last bin; a constant vector takes the range value +/- 1.
@@ -52,11 +49,20 @@
 : sample-with-replacement true sample ; inline
 
 ( data fit-xt replications fit-mapper -- [estimates] )
+\ One serial draw sets the run seed; replicate i then draws its indices from
+\ a generator seeded by run-seed + i, so resampling parallelizes and results
+\ are identical regardless of worker scheduling. No resample outlives its fit.
 : bootstrap-with
-	| >data >fit-xt >replications >fit-mapper n resamples |
-	data dim drop to n
-	replications iota [: |> i | data n resample-indices select-rows :] map to resamples
-	resamples fit-xt fit-mapper execute ;
+	| >data >fit-xt >replications >fit-mapper run-seed |
+	2147483647 random-int to run-seed
+
+	replications iota
+	fit-xt [> i run-seed data fit |
+		data  dup dim drop  run-seed i +  resample-indices-ext  select-rows
+		fit execute :] curry
+	data swap curry
+	run-seed swap curry
+	fit-mapper execute ;
 
 : bootstrap ' map bootstrap-with ;
 : pbootstrap ' pmap bootstrap-with ;
@@ -100,3 +106,66 @@
 	data fit execute to beta
 	data fit replications bootstrap to betas
 	0 beta size 1- range [: |> j | beta betas replications j coefficient-summary :] map ;
+
+( xs ys -- r ) \ Pearson correlation coefficient
+: correlation-pearson
+	| >xs >ys centered-xs centered-ys |
+	xs as-column dup mean - to centered-xs 
+	ys as-column dup mean - to centered-ys
+
+	centered-xs centered-xs dot centered-ys centered-ys dot *
+	dup 0 = if 
+		drop null 
+	else
+		centered-xs centered-ys dot swap sqrt / 
+	then ;
+
+( vector -- ranks ) \ 0-based ordinal ranks; ties ranked by sort order
+: ranks as-column argsort argsort ; inline
+
+( xs ys -- rho ) \ Spearman rank correlation: pearson on the ranks
+: correlation-spearman ranks swap ranks correlation-pearson ; inline
+
+( tail-deviate -- z ) \ qnorm tail expansion at sqrt(-2 ln p); signed for the lower tail
+: qnorm-tail
+	|> tail-deviate |
+	-7.784894002430293e-3 tail-deviate * -0.3223964580411365 + tail-deviate * -2.400758277161838 + tail-deviate * -2.549732539343734 + tail-deviate * 4.374664141464968 + tail-deviate * 2.938163982698783 +
+	7.784695709041462e-3 tail-deviate * 0.3224671290700398 + tail-deviate * 2.445134137142996 + tail-deviate * 3.754408661907416 + tail-deviate * 1 +
+	/ ; internal
+
+( probability -- z ) \ standard normal quantile (inverse CDF); Acklam's rational approximation
+: qnorm
+	| >probability median-deviation squared-deviation |
+	probability 0 gt probability 1 lt and not if probability "qnorm: expected a probability in (0, 1); got {0}" format throw then
+	probability 0.02425 lt if probability ln -2 * sqrt qnorm-tail exit then
+	probability 0.97575 gt if 1 probability - ln -2 * sqrt qnorm-tail negate exit then
+
+	probability 0.5 - to median-deviation
+	median-deviation dup * to squared-deviation
+	-39.69683028665376 squared-deviation * 220.9460984245205 + squared-deviation * -275.9285104469687 + squared-deviation * 138.3577518672690 + squared-deviation * -30.66479806614716 + squared-deviation * 2.506628277459239 + median-deviation *
+	-54.47609879822406 squared-deviation * 161.5858368580409 + squared-deviation * -155.6989798598866 + squared-deviation * 66.80131188771972 + squared-deviation * -13.28068155288572 + squared-deviation * 1 +
+	/ ;
+
+(  xs ys correlation-xt replications -- corr-summary ) \ bootstrap CI for a correlation
+: correlate-with
+	| >xs >ys >correlation-xt >replications estimate replicate-estimates low high |
+	xs ys correlation-xt execute to estimate
+	
+	xs as-column ys as-column augment
+	correlation-xt [> resample xt | resample 0 @j resample 1 @j xt execute :] curry
+	replications pbootstrap vector to replicate-estimates
+
+
+	replicate-estimates 0.95 ci to high to low
+	{
+		:estimate estimate
+		:se replicate-estimates std
+		:bias replicate-estimates mean estimate -
+		:ci-low low
+		:ci-high high } ;
+
+( xs ys -- corr-summary ) \ kendall correlation with 500 bootstraps
+: cor ' correlation-kendall 500 correlate-with ; inline
+
+
+

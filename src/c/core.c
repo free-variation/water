@@ -2461,29 +2461,6 @@ int try_fuse_at_i_lit(Interpreter *interp) {
 	return try_fuse_literal_index_op(interp, at_i_lit_cfa);
 }
 
-void p_set(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val count_val = chain_sp[-1];
-	if (VAL_TAG(count_val) != T_FLOAT) {
-		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
-		return;
-	}
-	int count = (int)VAL_NUMBER(count_val);
-	Val *gathered_base = chain_sp - 1 - count;
-	if (count < 0 || gathered_base < interp->data_stack) {
-		fail(interp, "count %d out of range (stack has %d available)", count, (int)(chain_sp - 1 - interp->data_stack));
-		return;
-	}
-
-	int set_handle = build_set_from_values(interp, gathered_base, count);
-	if (interp->error_flag)
-		return;
-
-	gathered_base[0] = make_set(set_handle);
-
-	DISPATCH_REGISTERS(interp, chain_ip, gathered_base + 1);
-}
-
 void inbuf_reset(void) {
 	compiler.input_buffer_len = 0;
 	compiler.input_buffer_pos = 0;
@@ -4132,6 +4109,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "add-last!", p_add_last, 0);
 	define_primitive(interp, "remove-last!", p_remove_last, 0);
 	define_primitive(interp, "execute", p_execute, 0);
+	define_primitive(interp, "curry", p_curry, 0);
 	define_primitive(interp, "(execute-catching)", p_execute_catching, 4);
 	define_primitive(interp, "map", p_map, 0);
 	define_primitive(interp, "mapn", p_mapn, 0);
@@ -4276,10 +4254,12 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "sum", p_sum, 0);
 	define_primitive(interp, "var", p_variance, 0);
 	define_primitive(interp, "quantile", p_quantile, 0);
+	define_primitive(interp, "correlation-kendall", p_correlation_kendall, 0);
 	define_primitive(interp, "norm", p_norm, 0);
 	define_primitive(interp, "frobenius-norm", p_frobenius_norm, 0);
 	define_primitive(interp, "row-sums", p_row_sums, 0);
 	define_primitive(interp, "column-sums", p_column_sums, 0);
+	define_primitive(interp, "cumulative-sum", p_cumulative_sum, 0);
 	define_primitive(interp, "max", p_max, 0);
 	define_primitive(interp, "min", p_min, 0);
 	define_primitive(interp, "argmax", p_argmax, 0);
@@ -4317,6 +4297,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "seed", p_seed, 0);
 	define_primitive(interp, "random", p_random, 0);
 	define_primitive(interp, "random-int", p_random_int, 0);
+	define_primitive(interp, "resample-indices-ext", p_resample_indices_ext, 0);
 	define_primitive(interp, "now", p_now, 0);
 	define_primitive(interp, "(wall-now)", p_wall_now, 4);
 	define_primitive(interp, "(epoch>date)", p_epoch_to_date, 4);
