@@ -27,8 +27,9 @@ Where C work is and is not needed: IRLS needs none — each iteration is dgemm +
 element-wise link/variance words + a LAPACK solve, all C already; `fit-logistic`
 runs the full Firth loop as library code today, and generalized IRLS (§2) only
 swaps the element-wise words in the loop. The small C beyond the kernels:
-`erf`/normal-CDF and its inverse Φ⁻¹ (§2 probit, BCa intervals, QQ plots — a
-few lines alongside `exp`/`tanh`), the empirical-distribution statistics
+`erf`/normal-CDF (§2 probit, BCa intervals — a few lines alongside
+`exp`/`tanh`; the inverse `qnorm` already exists in forth), the
+empirical-distribution statistics
 (§6 — `ks`, `cvm`, `ad`, `wasserstein`: used constantly, each a small
 one-pass kernel), and `row-argmins` / its argmax and column twins
 (index-returning kin of `row-mins`, one pass — k-means' assignment step
@@ -95,8 +96,7 @@ their own files).
   Poisson (log link), probit, negative binomial, multinomial/ordinal
   logistic. One reweighting loop, one linear solver. Library code
   throughout; probit is the one link needing a new C word (element-wise
-  `erf`/normal-CDF, with its inverse Φ⁻¹ alongside — BCa bootstrap
-  intervals and QQ plots want the normal quantile function).
+  `erf`/normal-CDF — the quantile side is covered by `qnorm`).
 - **Ridge** — singular-value filtering σ/(σ²+λ) on the design; λ chosen by
   cross-validation (§3).
 - **LDA** — within-class whitening + SVD of the class means.
@@ -110,19 +110,12 @@ their own files).
 To settle: bandwidth selection (CV vs plug-in rules); whether multinomial
 logistic reuses the Firth machinery or defers it to the binary case.
 
-### 2b. Correlations
+### 2b. Correlations: residuals
 
-The core set, split by the C rule (tight loops that can be large go to C):
-
-- **pearson** — src/forth/statistics.h2o: center both vectors, then
-  `cx cy dot  cx cx dot cy cy dot * sqrt /`; no new C.
-- **spearman** — src/forth/statistics.h2o: ranks are `argsort argsort`,
-  then pearson on the ranks; tie handling via midranks when it matters.
-- **kendall** — the concordant/discordant pair count is the tight loop
-  (merge-sort inversion count, O(n log n)); that kernel goes in
-  statistics.c, the word on top in forth.
-- **qnorm** — src/forth/statistics.h2o (scalar rational approximation,
-  no loop); unblocks the QQ plot and `fit-line` in lib/plot.h2o.
+- Midranks for `ranks` ties: tied values currently take index-order
+  ranks, so `correlation-spearman` drifts on heavily tied data and
+  answers 1 (not null) for a constant vector. Average each tied run's
+  ranks; then spearman's degenerate cases match pearson's.
 
 ### 3. The resampling loop as the inference engine
 
@@ -139,14 +132,16 @@ tables stay out.
   statistic (argsort — Mann–Whitney's twin); ROC and calibration curves
   as cumulative counts over the argsort order; isotonic calibration
   (PAVA) as a library pass.
-- **Rank transform** — sort + inverse permutation; Spearman, Wilcoxon /
+- **Rank statistics** — `ranks` exists (spearman rides it); Wilcoxon /
   Mann–Whitney, Kruskal–Wallis become rank statistics with permutation
-  nulls.
-- Parallel variants ride pmap as pbootstrap does.
+  nulls. Midranks for ties (§2b) feed directly into these.
+- Parallel variants ride pmap as pbootstrap does; per-replicate seeding
+  (`resample-indices-ext` at run-seed + i, as `bootstrap-with` does) is
+  the established reproducibility discipline — reuse it for permutation
+  and jackknife index generators.
 
 To settle: one generic word ( data index-gen-xt statistic-xt n -- dist )
-with bootstrap/permutation/jackknife as instances, or a word per method;
-seeding discipline so parallel resampling stays reproducible per worker.
+with bootstrap/permutation/jackknife as instances, or a word per method.
 
 ### 4. One tree grower, three predictors
 
@@ -254,10 +249,10 @@ lib/plot.h2o draws scatter, series, histogram, and boxplots to SVG with a
 live-reloading browser viewer. Remaining:
 
 - **Chart set** — step (the ecdf as drawn) and bar charts.
-- **Stats consumers** — QQ plots (sort + qnorm, which lands in
-  src/forth/statistics.h2o and brings back plot-side `fit-line` over
-  `abline`), ROC and calibration curves (the model-metrics bullet),
-  residual and fit plots for the regressions.
+- **Stats consumers** — QQ plots (`sort` + `qnorm`, both available now;
+  bring back plot-side `fit-line` over `abline`), ROC and calibration
+  curves (the model-metrics bullet), residual and fit plots for the
+  regressions.
 - **Nice-number tick heuristics** — ticks currently divide the padded
   range evenly; snap them to 1/2/5 steps.
 - **Torn frames on overwrite** — `write-file` truncates in place; either

@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.19.7"
+#define VERSION "0.20.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -334,6 +334,74 @@ typedef enum {
 		(arr) = realloc((arr), sizeof(*(arr)) * (size_t)(cap)); \
 	} \
 } while (0)
+
+#define RADIX_SORT_CUTOFF 8192
+#define RADIX_DIGITS 65536
+
+typedef uint64_t __attribute__((may_alias)) sort_key;
+
+#define RADIX_FORWARD(k) ((k) ^ (-((k) >> 63) | 0x8000000000000000ULL))
+#define RADIX_INVERSE(k) ((k) ^ ((((k) >> 63) - 1) | 0x8000000000000000ULL))
+
+#define RADIX_SORT(suffix, element_type, key) \
+	static void radix_sort_##suffix(element_type *elements, size_t n_elements, \
+			element_type *scratch, size_t *digit_counts) { \
+		element_type *from = elements; \
+		element_type *to = scratch; \
+		int transformed = 0; \
+		for (int pass = 0; pass < 4; pass++) { \
+			int shift = pass * 16; \
+			\
+			memset(digit_counts, 0, RADIX_DIGITS * sizeof(size_t)); \
+			if (transformed) \
+				for (size_t i = 0; i < n_elements; i++) \
+					digit_counts[(key(from[i]) >> shift) & 0xFFFF]++; \
+			else \
+				for (size_t i = 0; i < n_elements; i++) \
+					digit_counts[(RADIX_FORWARD(key(from[i])) >> shift) & 0xFFFF]++; \
+			\
+			sort_key first_key = key(from[0]); \
+			if (!transformed) \
+				first_key = RADIX_FORWARD(first_key); \
+			if (digit_counts[(first_key >> shift) & 0xFFFF] == n_elements) \
+				continue; \
+			\
+			size_t running = 0; \
+			for (int digit = 0; digit < RADIX_DIGITS; digit++) { \
+				size_t digit_count = digit_counts[digit]; \
+				digit_counts[digit] = running; \
+				running += digit_count; \
+			} \
+			\
+			int final_pass = pass == 3; \
+			for (size_t i = 0; i < n_elements; i++) { \
+				element_type element = from[i]; \
+				sort_key sortable_key = key(element); \
+				if (!transformed) \
+					sortable_key = RADIX_FORWARD(sortable_key); \
+				key(element) = final_pass ? RADIX_INVERSE(sortable_key) : sortable_key; \
+				to[digit_counts[(sortable_key >> shift) & 0xFFFF]++] = element; \
+			} \
+			transformed = !final_pass; \
+			\
+			element_type *filled = to; \
+			to = from; \
+			from = filled; \
+		} \
+		\
+		if (from != elements) { \
+			if (transformed) \
+				for (size_t i = 0; i < n_elements; i++) { \
+					element_type element = from[i]; \
+					key(element) = RADIX_INVERSE(key(element)); \
+					elements[i] = element; \
+				} \
+			else \
+				memcpy(elements, from, n_elements * sizeof(element_type)); \
+		} else if (transformed) \
+			for (size_t i = 0; i < n_elements; i++) \
+				key(elements[i]) = RADIX_INVERSE(key(elements[i])); \
+	}
 
 #ifdef GC_DEBUG
 #define GC_ASSERT(cond, msg) do { \
@@ -896,7 +964,6 @@ void p_reload(DISPATCH_ARGS);
 void p_save(DISPATCH_ARGS);
 void p_see_compiled_to_string(DISPATCH_ARGS);
 void p_see_tree_to_string(DISPATCH_ARGS);
-void p_set(DISPATCH_ARGS);
 void p_stop(DISPATCH_ARGS);
 
 void p_abs(DISPATCH_ARGS);
@@ -917,6 +984,7 @@ void p_bye(DISPATCH_ARGS);
 void p_clear(DISPATCH_ARGS);
 void p_cos(DISPATCH_ARGS);
 void p_cr(DISPATCH_ARGS);
+void p_curry(DISPATCH_ARGS);
 void p_dec(DISPATCH_ARGS);
 void p_dec_poly(DISPATCH_ARGS);
 void p_depth(DISPATCH_ARGS);
@@ -990,6 +1058,7 @@ void p_power(DISPATCH_ARGS);
 void p_random(DISPATCH_ARGS);
 void p_random_int(DISPATCH_ARGS);
 void p_render(DISPATCH_ARGS);
+void p_resample_indices_ext(DISPATCH_ARGS);
 void p_reset(DISPATCH_ARGS);
 void p_resume(DISPATCH_ARGS);
 void p_rfetch(DISPATCH_ARGS);
@@ -1131,6 +1200,7 @@ void p_reverse(DISPATCH_ARGS);
 void p_sample(DISPATCH_ARGS);
 void p_select_keys(DISPATCH_ARGS);
 void p_select_values(DISPATCH_ARGS);
+void p_set(DISPATCH_ARGS);
 void p_set_add(DISPATCH_ARGS);
 void p_set_remove(DISPATCH_ARGS);
 void p_setclose(DISPATCH_ARGS);
@@ -1155,6 +1225,7 @@ void p_augment(DISPATCH_ARGS);
 void p_column_maxes(DISPATCH_ARGS);
 void p_column_mins(DISPATCH_ARGS);
 void p_column_sums(DISPATCH_ARGS);
+void p_cumulative_sum(DISPATCH_ARGS);
 void p_dgemm_helper(Interpreter *interp, int transpose_a, int transpose_b);
 void p_dgemm_nn(DISPATCH_ARGS);
 void p_dgemm_nt(DISPATCH_ARGS);
@@ -1186,6 +1257,7 @@ void p_vstack(DISPATCH_ARGS);
 void p_where(DISPATCH_ARGS);
 
 double matrix_variance_overall(Object *source);
+void p_correlation_kendall(DISPATCH_ARGS);
 void p_quantile(DISPATCH_ARGS);
 void p_variance(DISPATCH_ARGS);
 

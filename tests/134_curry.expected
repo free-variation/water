@@ -1,0 +1,16 @@
+15 
+8 
+[ 1 2 ] 
+4 
+[ 2 3 4 ] 
+-7 
+{
+  :message expected an execution token; got a float
+  :trace in curry ← [: 1 2 curry :] ← try-catch
+}
+
+{
+  :message stack underflow
+  :trace in curry ← [: 5 curry :] ← try-catch
+}
+

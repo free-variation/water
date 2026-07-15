@@ -514,76 +514,8 @@ static inline int argsort_pair_before(ArgsortPair left, ArgsortPair right) {
 SORT_KERNELS(doubles, double, DOUBLE_BEFORE)
 SORT_KERNELS(pairs, ArgsortPair, argsort_pair_before)
 
-#define RADIX_SORT_CUTOFF 8192
-#define RADIX_DIGITS 65536
-
-typedef uint64_t __attribute__((may_alias)) sort_key;
-
 #define DOUBLE_KEY(element) (*(sort_key *)&(element))
 #define PAIR_KEY(element) (*(sort_key *)&(element).value)
-
-#define RADIX_FORWARD(k) ((k) ^ (-((k) >> 63) | 0x8000000000000000ULL))
-#define RADIX_INVERSE(k) ((k) ^ ((((k) >> 63) - 1) | 0x8000000000000000ULL))
-
-#define RADIX_SORT(suffix, element_type, key) \
-	static void radix_sort_##suffix(element_type *elements, size_t n_elements, \
-			element_type *scratch, size_t *digit_counts) { \
-		element_type *from = elements; \
-		element_type *to = scratch; \
-		int transformed = 0; \
-		for (int pass = 0; pass < 4; pass++) { \
-			int shift = pass * 16; \
-			\
-			memset(digit_counts, 0, RADIX_DIGITS * sizeof(size_t)); \
-			if (transformed) \
-				for (size_t i = 0; i < n_elements; i++) \
-					digit_counts[(key(from[i]) >> shift) & 0xFFFF]++; \
-			else \
-				for (size_t i = 0; i < n_elements; i++) \
-					digit_counts[(RADIX_FORWARD(key(from[i])) >> shift) & 0xFFFF]++; \
-			\
-			sort_key first_key = key(from[0]); \
-			if (!transformed) \
-				first_key = RADIX_FORWARD(first_key); \
-			if (digit_counts[(first_key >> shift) & 0xFFFF] == n_elements) \
-				continue; \
-			\
-			size_t running = 0; \
-			for (int digit = 0; digit < RADIX_DIGITS; digit++) { \
-				size_t digit_count = digit_counts[digit]; \
-				digit_counts[digit] = running; \
-				running += digit_count; \
-			} \
-			\
-			int final_pass = pass == 3; \
-			for (size_t i = 0; i < n_elements; i++) { \
-				element_type element = from[i]; \
-				sort_key sortable_key = key(element); \
-				if (!transformed) \
-					sortable_key = RADIX_FORWARD(sortable_key); \
-				key(element) = final_pass ? RADIX_INVERSE(sortable_key) : sortable_key; \
-				to[digit_counts[(sortable_key >> shift) & 0xFFFF]++] = element; \
-			} \
-			transformed = !final_pass; \
-			\
-			element_type *filled = to; \
-			to = from; \
-			from = filled; \
-		} \
-		\
-		if (from != elements) { \
-			if (transformed) \
-				for (size_t i = 0; i < n_elements; i++) { \
-					element_type element = from[i]; \
-					key(element) = RADIX_INVERSE(key(element)); \
-					elements[i] = element; \
-				} \
-			else \
-				memcpy(elements, from, n_elements * sizeof(element_type)); \
-		} else if (transformed) \
-			for (size_t i = 0; i < n_elements; i++) \
-				key(elements[i]) = RADIX_INVERSE(key(elements[i])); \
-	}
 
 RADIX_SORT(doubles, double, DOUBLE_KEY)
 RADIX_SORT(pairs, ArgsortPair, PAIR_KEY)
@@ -1097,6 +1029,31 @@ REDUCE_AXIS_HANDLER(p_row_mins, "row-mins", matrix_min_rows)
 REDUCE_AXIS_HANDLER(p_column_sums, "column-sums", matrix_sum_columns)
 REDUCE_AXIS_HANDLER(p_column_maxes, "column-maxes", matrix_max_columns)
 REDUCE_AXIS_HANDLER(p_column_mins, "column-mins", matrix_min_columns)
+
+void p_cumulative_sum(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val source_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "cumulative-sum", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+
+	int n_rows = source->matrix.rows;
+	int n_columns = source->matrix.columns;
+	int n_elements = n_rows * n_columns;
+
+	NEW_MATRIX(running_sums_handle, running_sums, n_rows, n_columns);
+
+	const double *source_elements = source->matrix.elements;
+	double *running_sums_elements = running_sums->matrix.elements;
+	double running_total = 0.0;
+	for (int i = 0; i < n_elements; i++) {
+		running_total += source_elements[i];
+		running_sums_elements[i] = running_total;
+	}
+
+	chain_sp[-1] = make_matrix(running_sums_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
 
 void p_matrix_range(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);

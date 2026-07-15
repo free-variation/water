@@ -47,8 +47,8 @@ in quantile ← percentile
           1          6
           1          7
 
-[ { :estimate 1.08 :se 0.196238 :bias -0.00328513 :ci-low 0.684698 :ci-high 1.46637 } { :estimate 1.97714 :se 0.0507583 :bias 0.00152457 :ci-low 1.89512 :ci-high 2.05 } ] 
-[ { :estimate -0.364017 :se 0.028366 :bias 4.35244e-05 :ci-low -0.419997 :ci-high -0.305073 } { :estimate 0.415932 :se 0.00991935 :bias -6.69154e-05 :ci-low 0.396305 :ci-high 0.435857 } ] 
+[ { :estimate 1.08 :se 0.164099 :bias -0.0121611 :ci-low 0.813572 :ci-high 1.37193 } { :estimate 1.97714 :se 0.0419318 :bias 0.00524679 :ci-low 1.90648 :ci-high 2.05 } ] 
+[ { :estimate -0.364017 :se 0.0275771 :bias -0.00116952 :ci-low -0.421276 :ci-high -0.313402 } { :estimate 0.415932 :se 0.00928508 :bias 0.000324991 :ci-low 0.398229 :ci-high 0.435666 } ] 
 <matrix 1x1>
         0.5
 
@@ -67,4 +67,4 @@ in quantile ← percentile
      -3.275
        1.31
 
-[ { :estimate -12.0436 :se 3.10995 :bias -0.435628 :ci-low -19.7504 :ci-high -7.90512 } { :estimate 1.92813 :se 0.495611 :bias 0.0707124 :ci-low 1.30137 :ci-high 3.10362 } ] 
+[ { :estimate -12.0436 :se 3.00968 :bias -0.303214 :ci-low -19.088 :ci-high -7.43674 } { :estimate 1.92813 :se 0.48135 :bias 0.048784 :ci-low 1.22304 :ci-high 3.10194 } ] 

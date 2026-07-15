@@ -929,6 +929,31 @@ void p_execute(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
+void p_curry(DISPATCH_ARGS) {
+	if (in_parallel) {
+		fail(interp, "cannot curry inside a parallel region");
+		return;
+	}
+
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val xt_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(xt_val, T_XT, "curry", "an execution token");
+	Val bound_value = chain_sp[-2];
+
+	int curried_cfa = create_header(interp, "(curried)", 4);
+	if (interp->error_flag) return;
+
+	emit(interp, (cell)&docol);
+	emit_val_literal(interp, bound_value);
+	emit_call(interp, (int)VAL_DATA(xt_val));
+	emit_call(interp, vocab.exit_cfa);
+	if (interp->error_flag) return;
+
+	chain_sp[-2] = make_xt(curried_cfa);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
 int push_prompt(Interpreter *interp, int kind) {
 	Val mark = make_tagged(T_MARK, (interp->next_mark_id++ << 1) | kind);
 	rpush(interp, mark);
@@ -2041,17 +2066,33 @@ static inline uint64_t random_rotl(uint64_t x, int k) {
 	return (x << k) | (x >> (64 - k));
 }
 
+static uint64_t random_next_in(uint64_t *state) {
+	uint64_t result = random_rotl(state[1] * 5, 7) * 9;
+	uint64_t t = state[1] << 17;
+	state[2] ^= state[0];
+	state[3] ^= state[1];
+	state[1] ^= state[2];
+	state[0] ^= state[3];
+	state[2] ^= t;
+	state[3] = random_rotl(state[3], 45);
+	return result;
+}
+
 static uint64_t random_next(void) {
 	random_ensure_seeded();
-	uint64_t result = random_rotl(random_state[1] * 5, 7) * 9;
-	uint64_t t = random_state[1] << 17;
-	random_state[2] ^= random_state[0];
-	random_state[3] ^= random_state[1];
-	random_state[1] ^= random_state[2];
-	random_state[0] ^= random_state[3];
-	random_state[2] ^= t;
-	random_state[3] = random_rotl(random_state[3], 45);
-	return result;
+	return random_next_in(random_state);
+}
+
+static int random_below_in(uint64_t *state, int bound) {
+	uint64_t range = (uint64_t)bound;
+	uint64_t threshold = (0 - range) % range;
+	uint64_t value;
+
+	do {
+		value = random_next_in(state);
+	} while (value < threshold);
+
+	return (int)(value % range);
 }
 
 void p_seed(DISPATCH_ARGS) {
@@ -2079,15 +2120,8 @@ void p_random(DISPATCH_ARGS) {
 }
 
 int random_below(int bound) {
-	uint64_t range = (uint64_t)bound;
-	uint64_t threshold = (0 - range) % range;
-	uint64_t value;
-
-	do {
-		value = random_next();
-	} while (value < threshold);
-
-	return (int)(value % range);
+	random_ensure_seeded();
+	return random_below_in(random_state, bound);
 }
 
 void p_random_int(DISPATCH_ARGS) {
@@ -2105,6 +2139,38 @@ void p_random_int(DISPATCH_ARGS) {
 	chain_sp[-1] = make_float((double)random_below(bound));
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
+void p_resample_indices_ext(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val seed_val = chain_sp[-1];
+	if (VAL_TAG(seed_val) != T_FLOAT) {
+		fail(interp, "expected a float seed; got %s", tag_name(VAL_TAG(seed_val)));
+		return;
+	}
+	Val count_val = chain_sp[-2];
+	if (VAL_TAG(count_val) != T_FLOAT) {
+		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
+		return;
+	}
+	int n_indices = (int)VAL_NUMBER(count_val);
+	if (n_indices <= 0) {
+		fail(interp, "count must be positive; got %d", n_indices);
+		return;
+	}
+
+	uint64_t expansion = (uint64_t)(int64_t)VAL_NUMBER(seed_val);
+	uint64_t replicate_state[4];
+	for (int i = 0; i < 4; i++)
+		replicate_state[i] = splitmix64(&expansion);
+
+	NEW_ARRAY(indices_handle, indices, n_indices);
+	for (int i = 0; i < n_indices; i++)
+		indices->items[i] = make_float((double)random_below_in(replicate_state, n_indices));
+
+	chain_sp[-2] = make_array(indices_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
 void p_sleep(DISPATCH_ARGS) {

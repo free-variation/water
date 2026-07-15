@@ -369,13 +369,14 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 | `'` | `( "name" -- xt )` | Parse the following word at compile time and push its xt (immediate; folds the xt in as a literal) |
 | `lookup` | `( "name" -- xt )` | Parse the following word at run time and push its xt — the non-immediate counterpart of `'` |
 | `execute` | `( xt -- … )` | Call the word at xt |
+| `curry` | `( value xt -- xt' )` | Bind a value into a new anonymous word: xt' pushes value, then calls xt. Compiles ~10 permanent dictionary cells per call (reclaimed only by `forget`); errors inside a parallel region — curry before `pmap`, execute freely within |
 | `inline` | — | Mark the most recent definition inline; future calls splice its body |
 | `internal` | — | Mark the most recent definition internal: hidden from `words`, `apropos`, and completion (still findable by name and tick) |
 | `forget` | — | Read the following name; truncate the dictionary back to before it |
 
 ### Locals
 
-Declared only at the **head** of a definition or quotation body. Live on the return stack: up to 128 names across up to 16 nested scopes. Quotations close over the enclosing definition's locals.
+Declared only at the **head** of a definition or quotation body. Live on the return stack: up to 128 names across up to 16 nested scopes. Quotations close over the enclosing definition's locals **by frame position, resolved at execution**: run at the depth it was compiled for (passed to a C word like `map`/`execute` called in the defining word itself), the capture works; executed inside another colon word's locals frame, the same reference silently reads that word's slots instead. A quotation that must travel through other words takes its values from the stack (`[>` receive-all) with `curry` binding them in.
 
 | Syntax | Behavior |
 |--------|----------|
@@ -642,8 +643,10 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `submatrix` | `( m rs re cs ce -- m )` | Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end | 5 + r·c | `1m(r×c)` | O(r·c) |
 | `select-rows` | `( m idx -- m )` | New matrix of the rows named by `idx` — a float index array or an index vector (nx1 or 1xn, as `where`/`argsort` return); errors on a non-float or out-of-range index | 2 + k·c | `1m(k×c)` | O(k·c) |
 | `argsort` | `( v -- v' )` | The sorting permutation of a vector, shape preserved: element i is the source index of the i-th smallest value; ties keep index order, NaNs go last in index order; ranks are argsort twice | 1 + n log n | `1m(n)` + `malloc(16n)` | O(n log n); above 8k elements O(n) radix |
+| `ranks` | `( v -- v' )` | statistics.h2o: 0-based ordinal ranks as nx1, `as-column argsort argsort` (inlined); ties ranked in index order, not midranked | 2n log n | `2m(n)` + `malloc(16n)` ×2 | O(n log n) |
 | `where` | `( m -- v )` | Flat row-major indices of the nonzero elements, as a k×1 index vector (1×k for a 1×n mask); composes with the `lt`/`gt` masks and `select-rows` | 1 + n | `1m(k)` | O(n) |
 | `drop-nans` | `( v -- v' )` | matrix.h2o: the finite elements of a vector, NaNs dropped (`dup nan? 0 eq where select-rows`, inlined) | 4n | mask + index + `1m(k)` | O(n) |
+| `cumulative-sum` | `( m -- m' )` | Running sum over the elements in row-major order, shape preserved — a vector's prefix sums (ecdf, ROC, and calibration plumbing) | 1 + n | `1m(r×c)` | O(n) |
 | `var` | `( m -- f )` | Sample variance (÷ n−1) over all elements; errors with fewer than 2 | 1 + n | none | O(n) |
 | `quantile` | `( m p -- f )` | Linearly-interpolated quantile at p ∈ [0,1] over all elements (sorts a copy); errors if p out of range or empty | 2 + n log n | `malloc(n)` | O(n log n) |
 | `histogram-table` | `( v n-bins -- fr )` | statistics.h2o: equal-width bin counts over a vector's value range, as `{ :counts (n-bins×1) :low :bin-width }`. NaNs dropped, the top value lands in the last bin, a constant vector takes the range value ± 1; errors on n-bins < 1 or no finite values | n + n-bins | `1m(n-bins)` + `1fr` | O(n + n-bins) |
@@ -653,10 +656,16 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `percentile` | `( m pct -- f )` | statistics.h2o: `quantile` at pct ∈ [0,100] (inlined) | n log n | `malloc(n)` | O(n log n) |
 | `iqr` | `( m -- f )` | statistics.h2o: interquartile range, Q3 − Q1 | 2n log n | `malloc(n)` ×2 | O(n log n) |
 | `ci` | `( m level -- low high )` | statistics.h2o: percentile confidence interval — level 0.95 gives the 0.025 and 0.975 quantiles | 2n log n | `malloc(n)` ×2 | O(n log n) |
+| `correlation-pearson` | `( xs ys -- f )` | statistics.h2o: Pearson r — center both vectors, then `dot` products for covariance and the two variances; accepts nx1 or 1xn; `null` when either vector is constant (R's NA) | 12n | `6m(n)` | O(n) |
+| `correlation-spearman` | `( xs ys -- f )` | statistics.h2o: Spearman rho — `correlation-pearson` on the `ranks` of both vectors (inlined); tied values take index-order ranks, so heavily tied data drifts from the midrank definition | 2n log n | `4m(n)` + `malloc(16n)` ×2 | O(n log n) |
+| `correlation-kendall` | `( xs ys -- f )` | Kendall tau-b: concordant minus discordant pairs over sqrt of tie-corrected pair counts, via one (x,y) sort and a merge-sort exchange count; NaN when all x or all y are tied; errors on length mismatch or fewer than 2 elements | 2n log n | `malloc(16n)` ×2–3 | O(n log n); above 8k elements the pair sort is O(n) radix |
+| `correlate-with` | `( xs ys xt B -- fr )` | statistics.h2o: bootstrap 95% CI for the correlation word at xt — resamples (x, y) pairs jointly, B refits via a curried fit through `pbootstrap`, as `{ :estimate :se :bias :ci-low :ci-high }`; deterministic under a fixed seed | B·(n + xt) | pairs matrix + per-worker resample + `1fr` | O(B·(n + xt) / cores) |
+| `cor` | `( xs ys -- fr )` | statistics.h2o: `correlation-kendall` with a 500-replicate bootstrap CI — `' correlation-kendall 500 correlate-with` (inlined) | as `correlate-with` | as `correlate-with` | as `correlate-with` |
+| `qnorm` | `( p -- z )` | statistics.h2o: standard normal quantile (inverse CDF), Acklam's rational approximation — relative error below 1.15e-9, matching R's qnorm to 1e-8 over both tails; errors unless p strictly inside (0, 1) | 30 | none | O(1) |
 | `sample-without-replacement` | `( arr n -- arr )` | statistics.h2o: `false sample` (inlined) | n | as `sample` | O(n) |
 | `sample-with-replacement` | `( arr n -- arr )` | statistics.h2o: `true sample` (inlined) | n | as `sample` | O(n) |
-| `bootstrap` | `( data fit-xt B -- arr )` | statistics.h2o: B refits of fit-xt over row-resamples of data; deterministic under a fixed seed | B(n + fit) | B resamples + `1a(B)` | O(B·(n + fit)) |
-| `pbootstrap` | `( data fit-xt B -- arr )` | statistics.h2o: `bootstrap` with the refits run under `pmap` — same distribution (resampling stays serial), parallel fit | as `bootstrap` | as `bootstrap` | O(B·(n + fit) / cores) |
+| `bootstrap` | `( data fit-xt B -- arr )` | statistics.h2o: B refits of fit-xt over row-resamples of data. One serial draw sets the run seed; replicate i draws its indices via `resample-indices-ext` at run-seed + i, so no resample outlives its fit and results don't depend on scheduling — deterministic under a fixed seed | B(n + fit) | per-fit resample + `1a(B)` | O(B·(n + fit)) |
+| `pbootstrap` | `( data fit-xt B -- arr )` | statistics.h2o: `bootstrap` with the fits run under `pmap` — identical results (per-replicate seeding), parallel resample+fit | as `bootstrap` | as `bootstrap` | O(B·(n + fit) / cores) |
 | `bootstrap-with` | `( data fit-xt B mapper-xt -- arr )` | statistics.h2o: the bootstrap skeleton `bootstrap`/`pbootstrap` instantiate; mapper-xt is `map`-shaped | as `bootstrap` | as `bootstrap` | as `bootstrap` |
 | `with-intercept` | `( X -- X' )` | statistics.h2o: prepend a column of ones, so a fit's beta[0] is the intercept | r×c | `1m(r×(c+1))` | O(r×c) |
 | `sigmoid` | `( m -- m' )` | statistics.h2o: elementwise logistic 1/(1+e⁻ˣ), mapping reals to (0,1) | 4n | `1m(r×c)` | O(n) |
@@ -743,7 +752,8 @@ A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a co
 | `rows>dataset` | `( table header? -- dataset )` | datasets.h2o: column-oriented frame from a table; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
 | `rows>relation` | `( table index-cols header? -- relation )` | datasets.h2o: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
 | `dataset>matrix` | `( dataset cols -- m )` | datasets.h2o: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
-| `resample-indices` | `( n -- arr )` | datasets.h2o: n indices drawn from [0,n) with replacement (bootstrap) | 2n | `2×1a(n)` | O(n) |
+| `resample-indices` | `( n -- arr )` | datasets.h2o: n indices drawn from [0,n) with replacement (bootstrap), from the global stream | 2n | `2×1a(n)` | O(n) |
+| `resample-indices-ext` | `( n seed -- arr )` | n indices drawn from [0,n) with replacement by a private generator seeded from `seed` (splitmix64-expanded) — same draw for the same seed regardless of thread or stream position; the bootstrap words seed replicate i at run-seed + i | n | `1a(n)` | O(n)† |
 
 ---
 

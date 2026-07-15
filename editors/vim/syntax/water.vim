@@ -49,33 +49,34 @@ syn keyword waterBuiltin alloc-stats and any? append-file apropos argmax argmin 
 syn keyword waterBuiltin array>set array? as-column asin assert atan augment base basename bit-and bit-not bit-or
 syn keyword waterBuiltin bit-xor bootstrap bootstrap-with bulk-load bye byte-size byte-substring catch cd char-at choose ci
 syn keyword waterBuiltin clear close codepoint-at codepoint>char codepoints>string column-maxes column-means column-mins column-sums concat cons cons>array
-syn keyword waterBuiltin continuation? copy cos count-matches cr create-index cwd dataset>matrix date-shift date>epoch date>epoch-local days-in-month
-syn keyword waterBuiltin db-close db-exec db-open db-query db? delete-at depth destruct destruct-to dgemm-nn dgemm-nt dgemm-tn
-syn keyword waterBuiltin dgemm-tt diagonal diagonal-matrix difference dim dot double-segment drop drop-nans dup each emit
-syn keyword waterBuiltin end-process ensure env env! epoch>date epoch>date-local eq exp f*+ f*- fabs facos
-syn keyword waterBuiltin false fasin fatan fcos feq fexp ffi-free ffi-function ffi-open ffi-variadic fgt filter
-syn keyword waterBuiltin find flat-map flatten flatten-array fln float? flog flt fmod fnegate format format-time
-syn keyword waterBuiltin format-time-local frame frame>array frame>json frame? frobenius-norm fround fround-down fround-up fsin fsq fsqrt
-syn keyword waterBuiltin ftan ftanh ftruncate gc gen-each gen-take group-by group-with gt has? head-tail help
-syn keyword waterBuiltin histogram-table hstack identity-matrix index-of inner-join int-segment intersection iota iqr iso>time join json>frame
-syn keyword waterBuiltin keys last ln load load-bag load-image log lowest-bit lshift lt lvar? man
-syn keyword waterBuiltin map mapn match match-all matches? matrix matrix-range matrix>pointer matrix? max max2 mean
-syn keyword waterBuiltin median member? merge min min2 mod nan? negate nip none? norm not
-syn keyword waterBuiltin now num-cores num-elements or over pair? parallel-run parse-time partition pbootstrap percentile pfilter
-syn keyword waterBuiltin pfilter-ext pi pmap pmap-ext pmap-reduce pmap-reduce-ext print print-stack ptr? quantile quantity? query
-syn keyword waterBuiltin quotient r> r@ random random-int range read read-err read-file read-out read-tsv reduce
-syn keyword waterBuiltin regress-with reify relation reload remove-last! render replace resample-indices reset reshape resume retract
-syn keyword waterBuiltin reverse roll rot round round-down round-up row-maxes row-means row-mins row-sums rows>dataset rows>relation
-syn keyword waterBuiltin rshift run run-result running? sample sample-with-replacement sample-without-replacement save save-image se see see-compiled
-syn keyword waterBuiltin see-compiled>string see-tree see-tree>string see>string seed segment>pointer segment? select-keys select-rows select-values set set-add!
-syn keyword waterBuiltin set-remove! set? shift shift-with shuffle side-depth side-drop sigmoid sin size skip sleep
-syn keyword waterBuiltin slice! sort sort-by split sq sqrt start-generator start-process std stderr stdin stdout
-syn keyword waterBuiltin stop stream? string>chars string>codepoints string>number string>symbol string? submatrix substring sum swap symbol?
-syn keyword waterBuiltin take tan tanh throw time>iso to-slice! transpose trim true truncate try-catch type-of
-syn keyword waterBuiltin union unit update-at values var vector vf* vf+ vf- vf/ vfabs vfcos
-syn keyword waterBuiltin vfexp vflog vfneg vfsin vfsq vfsqrt vftan vftanh vstack vvf* vvf*+ vvf*-
-syn keyword waterBuiltin vvf+ vvf- vvf/ wait wall-now water where wildcard? with-db with-intercept with-stream words
-syn keyword waterBuiltin write write-file write-in write-tsv xml-escape xt? yield
+syn keyword waterBuiltin continuation? copy cor correlate-with correlation-kendall correlation-pearson correlation-spearman cos count-matches cr create-index cumulative-sum
+syn keyword waterBuiltin curry cwd dataset>matrix date-shift date>epoch date>epoch-local days-in-month db-close db-exec db-open db-query db?
+syn keyword waterBuiltin delete-at depth destruct destruct-to dgemm-nn dgemm-nt dgemm-tn dgemm-tt diagonal diagonal-matrix difference dim
+syn keyword waterBuiltin dot double-segment drop drop-nans dup each emit end-process ensure env env! epoch>date
+syn keyword waterBuiltin epoch>date-local eq exp f*+ f*- fabs facos false fasin fatan fcos feq
+syn keyword waterBuiltin fexp ffi-free ffi-function ffi-open ffi-variadic fgt filter find flat-map flatten flatten-array fln
+syn keyword waterBuiltin float? flog flt fmod fnegate format format-time format-time-local frame frame>array frame>json frame?
+syn keyword waterBuiltin frobenius-norm fround fround-down fround-up fsin fsq fsqrt ftan ftanh ftruncate gc gen-each
+syn keyword waterBuiltin gen-take group-by group-with gt has? head-tail help histogram-table hstack identity-matrix index-of inner-join
+syn keyword waterBuiltin int-segment intersection iota iqr iso>time join json>frame keys last ln load load-bag
+syn keyword waterBuiltin load-image log lowest-bit lshift lt lvar? man map mapn match match-all matches?
+syn keyword waterBuiltin matrix matrix-range matrix>pointer matrix? max max2 mean median member? merge min min2
+syn keyword waterBuiltin mod nan? negate nip none? norm not now num-cores num-elements or over
+syn keyword waterBuiltin pair? parallel-run parse-time partition pbootstrap percentile pfilter pfilter-ext pi pmap pmap-ext pmap-reduce
+syn keyword waterBuiltin pmap-reduce-ext print print-stack ptr? qnorm quantile quantity? query quotient r> r@ random
+syn keyword waterBuiltin random-int range ranks read read-err read-file read-out read-tsv reduce regress-with reify relation
+syn keyword waterBuiltin reload remove-last! render replace resample-indices resample-indices-ext reset reshape resume retract reverse roll
+syn keyword waterBuiltin rot round round-down round-up row-maxes row-means row-mins row-sums rows>dataset rows>relation rshift run
+syn keyword waterBuiltin run-result running? sample sample-with-replacement sample-without-replacement save save-image se see see-compiled see-compiled>string see-tree
+syn keyword waterBuiltin see-tree>string see>string seed segment>pointer segment? select-keys select-rows select-values set set-add! set-remove! set?
+syn keyword waterBuiltin shift shift-with shuffle side-depth side-drop sigmoid sin size skip sleep slice! sort
+syn keyword waterBuiltin sort-by split sq sqrt start-generator start-process std stderr stdin stdout stop stream?
+syn keyword waterBuiltin string>chars string>codepoints string>number string>symbol string? submatrix substring sum swap symbol? take tan
+syn keyword waterBuiltin tanh throw time>iso to-slice! transpose trim true truncate try-catch type-of union unit
+syn keyword waterBuiltin update-at values var vector vf* vf+ vf- vf/ vfabs vfcos vfexp vflog
+syn keyword waterBuiltin vfneg vfsin vfsq vfsqrt vftan vftanh vstack vvf* vvf*+ vvf*- vvf+ vvf-
+syn keyword waterBuiltin vvf/ wait wall-now water where wildcard? with-db with-intercept with-stream words write write-file
+syn keyword waterBuiltin write-in write-tsv xml-escape xt? yield
 syn match   waterBuiltin "|>"
 
 hi def link waterComment      Comment

@@ -109,6 +109,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
 - **Colon definitions** — `: name body ;`. The body is captured as source text for `see` and the text-form `save`.
 - **Anonymous quotations** — `[: ... :]` pushes a fresh xt. Works at top level and inside colon defs.
+- **Partial application** — `curry` ( value xt -- xt' ) binds a value into a new anonymous word; the curried xt travels through other words' frames intact.
 - **Control flow** — `if`/`else`/`then`, the `begin`/`until`/`again` and `begin`/`while`/`repeat` loops with `leave` / `continue` for early exit, counted `times` / `i-times`, `exit`, and `>r`/`r>`/`r@` for return-stack access.
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
@@ -126,9 +127,10 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Indexing** — `@i`/`@j`/`@i,j` to read rows, columns, or single cells; `@e` reads by flat row-major index (what `argmax`/`where`/`argsort` produce); `!i,j` and `!e` store a single element in place.
 - **Shape** — `dim`, `reshape`, `flatten`, `transpose`, `diagonal`.
 - **Selection** — `augment`/`hstack` (concatenate two matrices column-wise), `vstack` (row-wise), `submatrix` (copy a half-open row×column block), `select-rows` (gather rows named by a float index array or an index vector).
-- **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `argmax`, `argmin` (flat row-major index of the extreme element), `row-maxes`, `row-mins`, `column-maxes`, `column-mins`. Library `mean`, `row-means`, `column-means` on top.
+- **Reductions** — `sum`, `row-sums`, `column-sums`, `max`, `min`, `argmax`, `argmin` (flat row-major index of the extreme element), `row-maxes`, `row-mins`, `column-maxes`, `column-mins`, `cumulative-sum` (row-major prefix sums, shape preserved). Library `mean`, `row-means`, `column-means` on top.
 - **Norms** — `norm` (Euclidean/L2) and `frobenius-norm`, both √(Σ elements²) over the matrix; `dot` ( v w -- f ) is the inner product.
 - **Descriptive statistics** — `var` (sample variance) and `quantile` (linearly interpolated at p ∈ [0,1]) over all elements; the embedded statistics library layers `std`, `se`, `median`, `percentile`, `iqr`, `ci`, `histogram-table`, and the `bootstrap` family on these — all wasm-capable.
+- **Correlations** — `correlation-pearson`, `correlation-spearman` (pearson on `ranks`), `correlation-kendall` (tau-b, O(n log n) C kernel); `correlate-with` bootstraps a 95% CI for any of them, and `cor` is kendall + 500 replicates in one word; `qnorm` is the standard normal quantile.
 - **SVG plotting** (`lib/plot.h2o`) — scatter, line series, histogram, and Tukey boxplots over a deferred-rendering figure: marks accumulate with the style in effect, the domain resolves at render (pinned or auto from the data), and `show-figure` opens a live-reloading browser view that `save-figure` updates in place.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
 - **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `lt`/`gt`/`eq` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). On scalars, strings, and collections comparison is structural, `eq` agreeing with `=`.

@@ -1,0 +1,16 @@
+0 
+-0.524401 
+0.524401 
+-1.95996 
+1.95996 
+-2.32635 
+2.32635 
+-3.09023 
+3.09023 
+-6.36134 
+1 
+1 
+qnorm: expected a probability in (0, 1); got 0 
+qnorm: expected a probability in (0, 1); got 1 
+qnorm: expected a probability in (0, 1); got -0.5 
+qnorm: expected a probability in (0, 1); got 2 
