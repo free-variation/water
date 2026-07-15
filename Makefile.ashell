@@ -10,14 +10,21 @@ LDFLAGS =
 OBJS = \
 	src/c/core.o \
 	src/c/words.o \
+	src/c/compiler.o \
+	src/c/io.o \
+	src/c/image.o \
 	src/c/collections.o \
 	src/c/matrix.o \
+	src/c/statistics.o \
+	src/c/indexing.o \
 	src/c/functional.o \
 	src/c/superwords.o \
 	src/c/strings.o \
 	src/c/help_table.o \
 	src/c/logic.o \
 	src/c/database.o \
+	src/c/dimension.o \
+	src/c/time.o \
 	src/c/platform_wasi.o \
 	$(SQLITE)/sqlite3.o \
 	$(PCRE2)/pcre2_auto_possess.o \
