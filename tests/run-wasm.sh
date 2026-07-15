@@ -58,7 +58,7 @@ for input in "$here"/*.h2o; do
     # the .expected files were captured by the native harness. Preopen the repo
     # root (guest ".") for relative loads and /tmp for scratch files, so file
     # I/O tests get the same access the native harness has.
-    (cd "$root" && $exec_cmd "$module" < "$input") > "$actual" 2>&1
+    (cd "$root" && $exec_cmd "$module" -b < "$input") > "$actual" 2>&1
     if diff -q "$expected" "$actual" > /dev/null 2>&1; then
         pass=$((pass + 1))
         printf "  ok   %s\n" "$name"
