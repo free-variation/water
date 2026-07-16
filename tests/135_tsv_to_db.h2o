@@ -1,0 +1,38 @@
+\ tsv>db ( tsv-path db table -- info ) — import a TSV into a SQLite table:
+\ the header row names the columns, each column's type is inferred (:real when
+\ every non-empty cell is numeric, else :text), rows insert in one transaction.
+\ info is { :n-rows N :columns [ { :name :type :distinct } .. ] }.
+
+variable db
+":memory:" db-open to db
+
+\ === import: schema-ordered columns, inferred types, distinct counts ===
+[ [ "id" "name" "score" "note" ]
+  [ 1 "alice" 9.5 "hi" ]
+  [ 2 "bob"   8   null ]
+  [ 3 "alice" 7.25 "yo" ] ] "/tmp/lf_tsv2db.tsv" write-tsv
+variable info
+"/tmp/lf_tsv2db.tsv" db "t" tsv>db to info
+info :n-rows @ . cr                          \ 3
+info :columns @ [: :name @ :] map . cr       \ [ :id :name :score :note ]
+info :columns @ [: :type @ :] map . cr       \ [ :real :text :real :text ]
+info :columns @                              \ real columns carry a five-number :summary,
+[: dup :type @ :real = if :summary @ :median @ else :distinct @ then :] map . cr   \ text a :distinct: [ 2 2 8 2 ]
+
+\ === the table queries back typed; the empty cell became NULL ===
+db "SELECT score FROM t WHERE name = ?" [ "alice" ] db-query>dataset :score @ . cr    \ 2x1 grid: 9.5 7.25
+db "SELECT note FROM t WHERE id = ?" [ 2 ] db-query>dataset :note @ 0 @i none? . cr   \ 1
+
+\ === iris: the vendored 150-row fixture ===
+"data/iris.tsv" db "iris" tsv>db to info
+info :n-rows @ . cr                          \ 150
+info :columns @ [: :name @ :] map . cr       \ [ :sepal_length :sepal_width :petal_length :petal_width :species ]
+info :columns @ [: :type @ :] map . cr       \ [ :real :real :real :real :text ]
+db "SELECT COUNT(*) AS c FROM iris WHERE species = ?" [ "Iris-setosa" ] db-query>dataset :c @ 0 @e . cr   \ 50
+
+\ === errors, grouped at the end: each recovers ===
+[ [ "a" "b" ] [ 1 2 ] [ 3 ] ] "/tmp/lf_ragged.tsv" write-tsv
+[: "/tmp/lf_ragged.tsv" db "r" tsv>db :] catch . . cr                     \ 1 then the throw message (ragged rows)
+[: "/tmp/lf_tsv2db.tsv" db "t" tsv>db :] catch swap :message @ . . cr     \ the sqlite message (table exists) then 1
+db db-close
+bye

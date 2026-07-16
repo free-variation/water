@@ -271,6 +271,18 @@ unnamed compound prints its dimensional form with the scale folded into the
 magnitude (`10 m 2 s / → 5 m.s^-1`), positive exponents first. Quantities,
 units, and unit words round-trip through `save-image`/`load-image`.
 
+The matrix statistics accept a dimensioned matrix and keep its unit: `sum`
+`mean` `max` `min` `quantile` (so `median` `percentile` `iqr` `ci`) `row-sums`
+`column-sums` `cumulative-sum` `norm` `reshape` answer in the operand's unit,
+`var` in the unit squared (`std`/`se` return to the unit through `sqrt`), and
+the index and count words (`argsort` `argmax` `argmin` `size` `dim`) and the
+correlations answer bare — correlation is scale-invariant, so dimensioned
+inputs are computed over their magnitudes.
+
+| Word | Stack effect | Behavior | Ops | Alloc | O |
+|------|-------------|----------|-----|-------|---|
+| `magnitude` | `( v -- v' )` | A quantity's bare magnitude (float or matrix, the unit dropped); any other value passes through unchanged | 2 | none | O(1) |
+
 `units.h2o` predeclares a standard set (names spelled out and lowercase):
 length `m` (`km`), time `s` (`minute`, `hour`, `day`, `week`), mass `kg`, current `ampere`,
 temperature `kelvin`, amount `mol`; derived `hertz` `newton` `pascal` `joule`
@@ -633,6 +645,16 @@ Row-major `double` storage. `r` rows, `c` columns.
 
 ### Reshaping, selection, statistics
 
+The statistics treat NaN elements as missing values and skip them: `sum` and
+`norm` count nothing missing as 0; `mean` `var` `std` `se` `min` `max`
+`quantile` `median` `percentile` `iqr` `ci` `argmax` `argmin` error with "all
+elements are NaN (missing)" (`var`: "needs at least 2 non-NaN elements") when
+too little remains; the correlations delete row i from both vectors when
+either element i is NaN, and error below 2 complete pairs; `regress-with`
+deletes incomplete rows of its design matrix before fitting. The positional
+operations (`cumulative-sum`, the row/column reductions, `dot`, `dgemm-*`)
+keep NaN in place.
+
 `c` below is the output column count; `k` the index count; `n = r×c`.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
@@ -655,6 +677,8 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `median` | `( m -- f )` | statistics.h2o: `0.5 quantile` (inlined) | n log n | `malloc(n)` | O(n log n) |
 | `percentile` | `( m pct -- f )` | statistics.h2o: `quantile` at pct ∈ [0,100] (inlined) | n log n | `malloc(n)` | O(n log n) |
 | `iqr` | `( m -- f )` | statistics.h2o: interquartile range, Q3 − Q1 | 2n log n | `malloc(n)` ×2 | O(n log n) |
+| `nonmissing-count` | `( m -- n )` | The number of non-NaN elements — the divisor `mean` and `se` use | 1 + n | none | O(n) |
+| `five-number-summary` | `( v -- fr )` | statistics.h2o: `{ :min :q1 :median :q3 :max }` over a vector's finite elements (NaNs dropped) | 4n log n | `malloc(n)` ×4 + `1fr` | O(n log n) |
 | `ci` | `( m level -- low high )` | statistics.h2o: percentile confidence interval — level 0.95 gives the 0.025 and 0.975 quantiles | 2n log n | `malloc(n)` ×2 | O(n log n) |
 | `correlation-pearson` | `( xs ys -- f )` | statistics.h2o: Pearson r — center both vectors, then `dot` products for covariance and the two variances; accepts nx1 or 1xn; `null` when either vector is constant (R's NA) | 12n | `6m(n)` | O(n) |
 | `correlation-spearman` | `( xs ys -- f )` | statistics.h2o: Spearman rho — `correlation-pearson` on the `ranks` of both vectors (inlined); tied values take index-order ranks, so heavily tied data drifts from the midrank definition | 2n log n | `4m(n)` + `malloc(16n)` ×2 | O(n log n) |
@@ -991,6 +1015,8 @@ Embedded relational storage via the vendored SQLite amalgamation, built into the
 | `db-close` | `( db -- )` | Close the connection and free its registry slot. Idempotent — closing an already-closed handle is a no-op. A handle that is dropped without closing leaks the connection until process exit | 1 syscall | none | O(1) |
 | `db-exec` | `( db statement params -- n )` | Bind `params` to the statement's `?` placeholders and run it with no result set (INSERT / UPDATE / DELETE / CREATE / …); return the affected-row count as a float (0 for DDL). One statement per call. On a bad statement, errors with SQLite's message | per statement | none | O(statement) |
 | `db-query` | `( db query params -- rel )` | Bind `params` to the query's `?` placeholders and run it; return an index-less relation `{ :rows <array of row frames> :index { } }`. Each row is a frame keyed by column-name symbols, with INTEGER/REAL → float, TEXT → string, NULL → `null`, BLOB → string of raw bytes. `:rows` is a **bag** — duplicates kept, in result order. On a bad query, errors with SQLite's message | n·c | `1o` relation + `1a(n)` + `1o`/row + a string per text/blob cell | O(n·c) |
+| `db-query>dataset` | `( db query params -- dataset )` | database.h2o: the same query, returned as a column-oriented dataset with **typed columns**: a column whose every cell is numeric or NULL becomes an n×1 vector (NULL → NaN), a column declared DATE/DATETIME/TIMESTAMP becomes a vector of instants in `s` (numeric cells read as epoch seconds, text cells parsed as ISO Z), and anything else stays an array with `none` for NULL. An empty column declared numeric stays an empty vector, so the type survives an empty result; a repeated column name keeps its last occurrence. The C primitive `(db-query>dataset)` returns the raw columns plus each column's declared type from the same prepared statement | n·c | `1o` frame + `1a`/column + `1m` per numeric column + a string per text cell | O(n·c) |
+| `tsv>db` | `( tsv-path db table -- info )` | database.h2o: import a TSV file into a new table. The header row names the columns (identifiers quoted, so any header text works); a column whose every non-empty cell is numeric is REAL, else TEXT; empty cells insert as NULL; all rows go in one transaction. `info` is `{ :n-rows N :columns [ … ] }` — a `:real` column carries `{ :name :type :summary }` with a five-number `:summary`, a `:text` column `{ :name :type :distinct }` with `COUNT(DISTINCT)` (NULLs uncounted). Errors before creating anything on a missing or ragged file; an existing table errors on the CREATE, leaving it untouched | r·c | rows + dataset + `1s`/statement | O(r·c) |
 
 Using a closed handle errors (`database is closed`). Do selection, projection, and joins in the SQL itself; Water materializes the result. Indexing a result is a separate, explicit step — `create-index` (see Fact database) — because it interns the indexed columns to symbols, which only makes sense for low-cardinality categorical columns you choose.
 

@@ -1,0 +1,38 @@
+100 m 25 m 40 m 10 m 
+166.667 m^2 12.9099 m 6.45497 m 
+25 m 15 m 
+39.25 m 10.75 m 
+54.7723 m 
+<matrix 1x4>
+         10         30         60        100
+
+<matrix 2x2> m
+         10         20
+         30         40
+
+<matrix 1x4>
+          0          1          2          3
+
+3 0 4 
+4 1 
+100 
+5 5 x 
+0.993399 
+1 
+1 
+1 
+2026-01-06T00:00:00Z 
+10 
+4 2 3 1 
+2 3.16228 
+2 2 
+3 
+4 
+1 
+0.998625 
+1 
+1 
+error: needs at least 2 non-NaN elements; got 1
+error: all elements are NaN (missing)
+error: all elements are NaN (missing)
+error: needs at least 2 complete pairs; got 1

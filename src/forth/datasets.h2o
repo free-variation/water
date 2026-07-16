@@ -49,15 +49,14 @@
 
 	index-cols relation rows bulk-load ;
 
-( dataset cols -- matrix ) \ K numeric columns -> NxK matrix, observations are row
+( dataset cols -- matrix ) \ K numeric columns -> NxK matrix, observations are rows;
+\ a column may be an array, an n x 1 vector, or a dimensioned vector (magnitude taken)
 : dataset>matrix
-	| >dataset >cols rows-count |
+	| >dataset >cols |
 
-	dataset cols 0 @i @ size to rows-count \ counts rows from 0th column
-	cols [: |> col | dataset col @ :] map \ K column arrays
-	flatten-array \ one flat array, column-major (K*N)
-	cols size rows-count matrix \ KxN (each row a column)
-	transpose ;
+	cols [: |> col | dataset col @ magnitude dup matrix? if as-column else vector then :] map
+	dup 0 @i swap 1 skip swap
+	[: augment :] reduce ;
 
 ( n -- [indices] ) \ row indices drawn from [0, n) with replacement
 : resample-indices

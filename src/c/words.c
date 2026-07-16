@@ -690,10 +690,7 @@ void p_depth(DISPATCH_ARGS) {
 void p_roll(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val depth_val = chain_sp[-1];
-	if (VAL_TAG(depth_val) != T_FLOAT) {
-		fail(interp, "expected a float depth; got %s", tag_name(VAL_TAG(depth_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(depth_val, T_FLOAT, "roll", "a float depth");
 	int n = (int)VAL_NUMBER(depth_val);
 	Val *rolled_top = chain_sp - 1;
 	if (n < 0 || rolled_top - n < interp->data_stack) {
@@ -810,10 +807,7 @@ void p_cr(DISPATCH_ARGS) {
 void p_emit_(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val code_val = chain_sp[-1];
-	if (VAL_TAG(code_val) != T_FLOAT) {
-		fail(interp, "expected a float character code; got %s", tag_name(VAL_TAG(code_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(code_val, T_FLOAT, "emit", "a float character code");
 	int char_code = (int)VAL_NUMBER(code_val);
 
 	if (char_code < 0 || char_code > 0x10FFFF) {
@@ -1194,7 +1188,9 @@ void p_water(DISPATCH_ARGS) {
 
 void p_size(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val collection = chain_sp[-1];
+	int unit;
+	Val collection = quantity_unwrap(chain_sp[-1], &unit);
+	(void)unit;
 	double elements;
 
 	if (VAL_TAG(collection) == T_STRING) {
@@ -1243,12 +1239,11 @@ void p_sort(DISPATCH_ARGS) {
 
 void p_argsort(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val collection = chain_sp[-1];
+	int unit;
+	Val collection = quantity_unwrap(chain_sp[-1], &unit);
+	(void)unit;
 
-	if (VAL_TAG(collection) != T_MATRIX) {
-		fail(interp, "expected a vector (nx1 or 1xn); got %s", tag_name(VAL_TAG(collection)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(collection, T_MATRIX, "argsort", "a vector (nx1 or 1xn)");
 
 	int permutation_handle = vector_argsort_copy(interp, OBJECT_AT(VAL_DATA(collection)));
 	if (interp->error_flag) return;
@@ -1325,10 +1320,7 @@ static int contains_case_insensitive(const char *haystack, const char *needle) {
 void p_apropos(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val query_val = chain_sp[-1];
-	if (VAL_TAG(query_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(query_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(query_val, T_STRING, "apropos", "a string");
 	const char *query = OBJECT_AT(VAL_DATA(query_val))->bytes;
 
 	for (int i = 0; i < help_entry_count; i++) {
@@ -1388,10 +1380,7 @@ static void see_source_render(FILE *out, Interpreter *interp, int target_cfa) {
 void p_see(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val target_val = chain_sp[-1];
-	if (VAL_TAG(target_val) != T_XT) {
-		fail(interp, "expected %s; got %s", tag_name(T_XT), tag_name(VAL_TAG(target_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(target_val, T_XT, "see", "an execution token");
 	see_source_render(stdout, interp, (int)VAL_DATA(target_val));
 	fflush(stdout);
 
@@ -1401,10 +1390,7 @@ void p_see(DISPATCH_ARGS) {
 void p_see_to_string(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val target_val = chain_sp[-1];
-	if (VAL_TAG(target_val) != T_XT) {
-		fail(interp, "expected %s; got %s", tag_name(T_XT), tag_name(VAL_TAG(target_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(target_val, T_XT, "see>string", "an execution token");
 
 	int handle = capture_render(interp, see_source_render, (int)VAL_DATA(target_val));
 	if (interp->error_flag)
@@ -1425,10 +1411,7 @@ static void help_put(Interpreter *interp, int frame_handle, const char *key, con
 void p_man(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val target_val = chain_sp[-1];
-	if (VAL_TAG(target_val) != T_XT) {
-		fail(interp, "expected %s; got %s", tag_name(T_XT), tag_name(VAL_TAG(target_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(target_val, T_XT, "man", "an execution token");
 	int target_cfa = (int)VAL_DATA(target_val);
 
 	const char *name = name_of(target_cfa);
@@ -1779,10 +1762,7 @@ int interpolate(Interpreter *interp, int template_handle) {
 
 void p_format(DISPATCH_ARGS) {
 	POP(template_val);
-	if (VAL_TAG(template_val) != T_STRING) {
-		fail(interp, "expected a template string; got %s", tag_name(VAL_TAG(template_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(template_val, T_STRING, "format", "a template string");
 	int result = interpolate(interp, (int)VAL_DATA(template_val));
 	if (interp->error_flag)
 		return;
@@ -2098,10 +2078,7 @@ static int random_below_in(uint64_t *state, int bound) {
 void p_seed(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val seed_val = chain_sp[-1];
-	if (VAL_TAG(seed_val) != T_FLOAT) {
-		fail(interp, "expected a float seed; got %s", tag_name(VAL_TAG(seed_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(seed_val, T_FLOAT, "seed", "a float seed");
 	int seed_value = (int)VAL_NUMBER(seed_val);
 	atomic_store(&random_base_seed, (uint64_t)seed_value);
 	atomic_store(&random_stream_counter, 0);
@@ -2127,10 +2104,7 @@ int random_below(int bound) {
 void p_random_int(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val bound_val = chain_sp[-1];
-	if (VAL_TAG(bound_val) != T_FLOAT) {
-		fail(interp, "expected a float bound; got %s", tag_name(VAL_TAG(bound_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(bound_val, T_FLOAT, "random-int", "a float bound");
 	int bound = (int)VAL_NUMBER(bound_val);
 	if (bound <= 0) {
 		fail(interp, "bound must be positive; got %d", bound);
@@ -2144,15 +2118,9 @@ void p_random_int(DISPATCH_ARGS) {
 void p_resample_indices_ext(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val seed_val = chain_sp[-1];
-	if (VAL_TAG(seed_val) != T_FLOAT) {
-		fail(interp, "expected a float seed; got %s", tag_name(VAL_TAG(seed_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(seed_val, T_FLOAT, "resample-indices-ext", "a float seed");
 	Val count_val = chain_sp[-2];
-	if (VAL_TAG(count_val) != T_FLOAT) {
-		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(count_val, T_FLOAT, "resample-indices-ext", "a float count");
 	int n_indices = (int)VAL_NUMBER(count_val);
 	if (n_indices <= 0) {
 		fail(interp, "count must be positive; got %d", n_indices);
@@ -2176,10 +2144,7 @@ void p_resample_indices_ext(DISPATCH_ARGS) {
 void p_sleep(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val seconds_val = chain_sp[-1];
-	if (VAL_TAG(seconds_val) != T_FLOAT) {
-		fail(interp, "expected a float; got %s", tag_name(VAL_TAG(seconds_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(seconds_val, T_FLOAT, "sleep", "a float");
 
 	double seconds = VAL_NUMBER(seconds_val);
 	if (seconds > 0) {

@@ -22,7 +22,7 @@ if exists("loaded_matchit") || exists("g:loaded_matchit")
   let b:match_words =
         \ '\<if\>:\<else\>:\<then\>,' .
         \ '\<begin\>:\<while\>:\<until\>:\<again\>:\<repeat\>,' .
-        \ '\[::\:\]'
+        \ '\%(\[:\|\[|\|\[>\):\:\]'
   let b:match_ignorecase = 0
 endif
 

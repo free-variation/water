@@ -50,12 +50,29 @@ rel { :name :alice } query size . cr
 rel { :name :carol } query size . cr
 rel { :name :alice } query 0 @i :name @ . cr
 
+\ === db-query>dataset: the same rows as a column-oriented dataset ===
+\ table (id order): (1,alice,10.5,hi) (2,o'brien,8.0,NULL) (3,alice,1.0,z) (4,carol,2.0,w)
+variable ds
+db "SELECT id,name,score,note FROM t ORDER BY id" [ ] db-query>dataset to ds
+ds keys . cr
+ds :id @ . cr
+ds :name @ . cr
+ds :score @ . cr
+ds :note @ 1 @i none? . cr
+ds [ :id :score ] dataset>matrix dim swap . . cr
+
+\ === db-query>dataset: empty result keeps its columns; duplicate name keeps one ===
+db "SELECT id,name FROM t WHERE id = ?" [ 99 ] db-query>dataset dup keys . :id @ size . cr
+db "SELECT name, name FROM t" [ ] db-query>dataset dup keys . :name @ size . cr
+
 \ === corner cases: each error recovers and the run continues ===
 db "SELECT * FROM t WHERE id = ?" [ ] db-query drop
 db "SELECT * FROM t" [ 1 ] db-query drop
 db "SELECT ?" [ < 1 2 > ] db-query drop
 42 db-close
 db "SELCT oops" [ ] db-query drop
+db "SELCT oops" [ ] db-query>dataset drop
+42 "SELECT 1" [ ] db-query>dataset drop
 db "INSERT INTO nope VALUES (1)" [ ] db-exec drop
 
 \ === closed database: query errors, re-close is a silent no-op ===

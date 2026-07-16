@@ -418,22 +418,13 @@ void p_replace(DISPATCH_ARGS) {
 void p_substring(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	Val end_val = chain_sp[-1];
-	if (VAL_TAG(end_val) != T_FLOAT) {
-		fail(interp, "expected a float end; got %s", tag_name(VAL_TAG(end_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(end_val, T_FLOAT, "substring", "a float end");
 	int end = (int)VAL_NUMBER(end_val);
 	Val start_val = chain_sp[-2];
-	if (VAL_TAG(start_val) != T_FLOAT) {
-		fail(interp, "expected a float start; got %s", tag_name(VAL_TAG(start_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(start_val, T_FLOAT, "substring", "a float start");
 	int start = (int)VAL_NUMBER(start_val);
 	Val source_val = chain_sp[-3];
-	if (VAL_TAG(source_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(source_val, T_STRING, "substring", "a string");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	int char_count = string_codepoint_count(source);
@@ -453,22 +444,13 @@ void p_substring(DISPATCH_ARGS) {
 void p_byte_substring(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	Val end_val = chain_sp[-1];
-	if (VAL_TAG(end_val) != T_FLOAT) {
-		fail(interp, "expected a float end; got %s", tag_name(VAL_TAG(end_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(end_val, T_FLOAT, "byte-substring", "a float end");
 	int end = (int)VAL_NUMBER(end_val);
 	Val start_val = chain_sp[-2];
-	if (VAL_TAG(start_val) != T_FLOAT) {
-		fail(interp, "expected a float start; got %s", tag_name(VAL_TAG(start_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(start_val, T_FLOAT, "byte-substring", "a float start");
 	int start = (int)VAL_NUMBER(start_val);
 	Val source_val = chain_sp[-3];
-	if (VAL_TAG(source_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(source_val, T_STRING, "byte-substring", "a string");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	if (start < 0 || end > source->len || start > end) {
@@ -511,15 +493,9 @@ static Val char_index_value(Interpreter *interp, Object *source, int index,
 	void c_name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
 		Val index_val = chain_sp[-1]; \
-		if (VAL_TAG(index_val) != T_FLOAT) { \
-			fail(interp, "expected a float index; got %s", tag_name(VAL_TAG(index_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(index_val, T_FLOAT, "char-at", "a float index"); \
 		Val source_val = chain_sp[-2]; \
-		if (VAL_TAG(source_val) != T_STRING) { \
-			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(source_val, T_STRING, "char-at", "a string"); \
 		\
 		Val element = char_index_value(interp, OBJECT_AT(VAL_DATA(source_val)), (int)VAL_NUMBER(index_val), produce); \
 		if (interp->error_flag) \
@@ -562,10 +538,7 @@ static int exploded_array(Interpreter *interp, Object *source,
 	void c_name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1); \
 		Val source_val = chain_sp[-1]; \
-		if (VAL_TAG(source_val) != T_STRING) { \
-			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(source_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(source_val, T_STRING, "string>chars", "a string"); \
 		\
 		int handle = exploded_array(interp, OBJECT_AT(VAL_DATA(source_val)), produce); \
 		if (handle < 0) \
@@ -581,10 +554,7 @@ STRING_EXPLODE_OP(p_string_to_codepoints, produce_codepoint)
 void p_codepoint_to_char(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val code_val = chain_sp[-1];
-	if (VAL_TAG(code_val) != T_FLOAT) {
-		fail(interp, "expected a float codepoint; got %s", tag_name(VAL_TAG(code_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(code_val, T_FLOAT, "codepoint>char", "a float codepoint");
 	int code = (int)VAL_NUMBER(code_val);
 	if (code < 0 || code > 0x10FFFF) {
 		fail(interp, "codepoint %d out of range", code);
@@ -603,10 +573,7 @@ void p_codepoint_to_char(DISPATCH_ARGS) {
 void p_codepoints_to_string(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val codes_val = chain_sp[-1];
-	if (VAL_TAG(codes_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(codes_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(codes_val, T_ARRAY, "codepoints>string", "an array");
 	Object *codes = OBJECT_AT(VAL_DATA(codes_val));
 
 	int codepoint_count = codes->len;
@@ -669,10 +636,7 @@ void p_trim(DISPATCH_ARGS) {
 void p_string_to_number(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val string_val = chain_sp[-1];
-	if (VAL_TAG(string_val) != T_STRING) {
-		fail(interp, "expected a string; got %s", tag_name(VAL_TAG(string_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(string_val, T_STRING, "string>number", "a string");
 	Object *source = OBJECT_AT(VAL_DATA(string_val));
 
 	const char *text = source->bytes;

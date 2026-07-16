@@ -1,0 +1,15 @@
+3 
+[ :id :name :score :note ] 
+[ :real :text :real :text ] 
+[ 2 2 8 2 ] 
+<matrix 2x1>
+        9.5
+       7.25
+
+1 
+150 
+[ :sepal_length :sepal_width :petal_length :petal_width :species ] 
+[ :real :real :real :real :text ] 
+50 
+1 tsv>db: ragged rows in /tmp/lf_ragged.tsv 
+table "t" already exists 1 

@@ -1,6 +1,6 @@
 # Tests skipped under WASM/WASI, one per line: "<name>  <reason>".
 # Only for features WASI lacks (no fork/exec) or features excluded from the
-# wasm build (sqlite, ffi). A test failing for any other reason is a real
+# wasm build (ffi). A test failing for any other reason is a real
 # wasm defect — fix it, do not list it here.
 063_subprocess      start-process / process control: no fork/exec on WASI
 066_env             env!/start-process: not supported on WASI

@@ -140,6 +140,7 @@ db-close
 db-exec
 db-open
 db-query
+db-query>dataset
 db?
 delete-at
 depth
@@ -199,6 +200,7 @@ ffi-variadic
 fgt
 filter
 find
+five-number-summary
 flat-map
 flatten
 flatten-array
@@ -265,6 +267,7 @@ lshift
 lt
 lvar
 lvar?
+magnitude
 man
 map
 mapn
@@ -288,6 +291,7 @@ nan?
 negate
 nip
 none?
+nonmissing-count
 norm
 not
 now
@@ -431,6 +435,7 @@ trim
 true
 truncate
 try-catch
+tsv>db
 type-of
 unify
 union

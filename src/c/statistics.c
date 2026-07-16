@@ -1,32 +1,52 @@
 #include "water.h"
 
-double matrix_variance_overall(Object *source) {
+double matrix_variance_overall(Object *source, size_t *n_nonmissing_out) {
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
 	const double * restrict elements = source->matrix.elements;
 	double sum = 0.0;
 	double sum_of_squares = 0.0;
+	size_t n_nonmissing = 0;
 
 	for (size_t i = 0; i < n; i++) {
 		double value = elements[i];
+		if (value != value)
+			continue;
+		n_nonmissing++;
 		sum += value;
 		sum_of_squares += value * value;
 	}
 
-	return (sum_of_squares - sum * sum/(double)n) / (double)(n - 1);
+	*n_nonmissing_out = n_nonmissing;
+	if (n_nonmissing < 2)
+		return NAN;
+	return (sum_of_squares - sum * sum/(double)n_nonmissing) / (double)(n_nonmissing - 1);
 }
 
 void p_variance(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val source_val = chain_sp[-1];
+	int unit;
+	Val source_val = quantity_unwrap(chain_sp[-1], &unit);
 	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "var", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
-	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
-	if (n < 2) {
-		fail(interp, "needs at least 2 elements; got %zu", n);
+
+	size_t n_nonmissing;
+	double variance = matrix_variance_overall(source, &n_nonmissing);
+	if (n_nonmissing < 2) {
+		fail(interp, "needs at least 2 non-NaN elements; got %zu", n_nonmissing);
 		return;
 	}
 
-	chain_sp[-1] = make_float(matrix_variance_overall(source));
+	if (unit) {
+		int squared_unit = unit_pow(interp, unit, 2, 1);
+		if (interp->error_flag)
+			return;
+
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
+		push_quantity(interp, make_float(variance), squared_unit);
+		DISPATCH(interp);
+	}
+
+	chain_sp[-1] = make_float(variance);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
@@ -41,7 +61,8 @@ void p_quantile(DISPATCH_ARGS) {
 		return;
 	}
 
-	Val source_val = chain_sp[-2];
+	int unit;
+	Val source_val = quantity_unwrap(chain_sp[-2], &unit);
 	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "quantile", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
@@ -55,18 +76,36 @@ void p_quantile(DISPATCH_ARGS) {
 		fail(interp, "out of memory");
 		return;
 	}
-	memcpy(sorted, source->matrix.elements, n * sizeof(double));
-	qsort(sorted, n, sizeof(double), double_cmp);
+	size_t n_nonmissing = 0;
+	for (size_t i = 0; i < n; i++) {
+		double element = source->matrix.elements[i];
+		if (element != element)
+			continue;
+		sorted[n_nonmissing++] = element;
+	}
+	if (n_nonmissing == 0) {
+		free(sorted);
+		fail(interp, "all elements are NaN (missing)");
+		return;
+	}
+	qsort(sorted, n_nonmissing, sizeof(double), double_cmp);
 
-	double rank = probability * (double)(n - 1);
+	double rank = probability * (double)(n_nonmissing - 1);
 	size_t lower = (size_t)rank;
 	double fraction = rank - (double)lower;
 	double value = sorted[lower];
 
-	if (lower + 1 < n)
+	if (lower + 1 < n_nonmissing)
 		value += fraction * (sorted[lower + 1] - sorted[lower]);
 
 	free(sorted);
+
+	if (unit) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
+		push_quantity(interp, make_float(value), unit);
+		DISPATCH(interp);
+	}
+
 	chain_sp[-2] = make_float(value);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
@@ -188,10 +227,14 @@ static int64_t merge_exchange_count(double *values, double *merged_values, int n
 
 void p_correlation_kendall(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
-	Val ys_val = chain_sp[-1];
+	int ys_unit;
+	Val ys_val = quantity_unwrap(chain_sp[-1], &ys_unit);
 	REQUIRE_CHAIN_TAG(ys_val, T_MATRIX, "correlation-kendall", "a matrix");
-	Val xs_val = chain_sp[-2];
+	int xs_unit;
+	Val xs_val = quantity_unwrap(chain_sp[-2], &xs_unit);
 	REQUIRE_CHAIN_TAG(xs_val, T_MATRIX, "correlation-kendall", "a matrix");
+	(void)ys_unit;
+	(void)xs_unit;
 
 	Object *xs = OBJECT_AT(VAL_DATA(xs_val));
 	Object *ys = OBJECT_AT(VAL_DATA(ys_val));
@@ -223,9 +266,21 @@ void p_correlation_kendall(DISPATCH_ARGS) {
 
 	const double *x_elements = xs->matrix.elements;
 	const double *y_elements = ys->matrix.elements;
-	for (int i = 0; i < n_points; i++) {
-		points[i].x = x_elements[i];
-		points[i].y = y_elements[i];
+	n_points = 0;
+	for (int i = 0; i < n_x_elements; i++) {
+		double x = x_elements[i];
+		double y = y_elements[i];
+		if (x != x || y != y)
+			continue;
+		points[n_points].x = x;
+		points[n_points].y = y;
+		n_points++;
+	}
+	if (n_points < 2) {
+		free(points);
+		free(ys_in_x_order);
+		fail(interp, "needs at least 2 complete pairs; got %d", n_points);
+		return;
 	}
 	kendall_points_sort(points, n_points);
 

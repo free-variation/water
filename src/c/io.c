@@ -4,10 +4,7 @@
 void p_env(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val name_val = chain_sp[-1];
-	if (VAL_TAG(name_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(name_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(name_val, T_STRING, "env", "a string");
 
 	const char *value = getenv(OBJECT_AT(VAL_DATA(name_val))->bytes);
 	if (value == NULL)
@@ -25,15 +22,9 @@ void p_env(DISPATCH_ARGS) {
 void p_env_set(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val value_val = chain_sp[-1];
-	if (VAL_TAG(value_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(value_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(value_val, T_STRING, "env!", "a string");
 	Val name_val = chain_sp[-2];
-	if (VAL_TAG(name_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(name_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(name_val, T_STRING, "env!", "a string");
 	Object *name = OBJECT_AT(VAL_DATA(name_val));
 
 	if (setenv(name->bytes, OBJECT_AT(VAL_DATA(value_val))->bytes, 1) != 0) {
@@ -47,10 +38,7 @@ void p_env_set(DISPATCH_ARGS) {
 void p_cd(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val path_val = chain_sp[-1];
-	if (VAL_TAG(path_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "cd", "a string");
 	Object *path = OBJECT_AT(VAL_DATA(path_val));
 
 	if (chdir(path->bytes) != 0) {
@@ -100,10 +88,7 @@ static FILE *open_sized_read(Interpreter *interp, const char *path, long *size_o
 void p_read_file(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val path_val = chain_sp[-1];
-	if (VAL_TAG(path_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "read-file", "a string");
 
 	long size;
 	FILE *file = open_sized_read(interp, OBJECT_AT(VAL_DATA(path_val))->bytes, &size);
@@ -145,15 +130,9 @@ static void write_file(Interpreter *interp, Object *content, Object *path, const
 	void c_name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
 		Val path_val = chain_sp[-1]; \
-		if (VAL_TAG(path_val) != T_STRING) { \
-			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(path_val, T_STRING, "write-file", "a string"); \
 		Val content_val = chain_sp[-2]; \
-		if (VAL_TAG(content_val) != T_STRING) { \
-			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(content_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(content_val, T_STRING, "write-file", "a string"); \
 		\
 		write_file(interp, OBJECT_AT(VAL_DATA(content_val)), OBJECT_AT(VAL_DATA(path_val)), mode); \
 		if (interp->error_flag) \
@@ -212,10 +191,7 @@ static int tsv_row_to_array(Interpreter *interp, char *row, int row_length) {
 void p_read_tsv(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val path_val = chain_sp[-1];
-	if (VAL_TAG(path_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "read-tsv", "a string");
 
 	long size;
 	FILE *file = open_sized_read(interp, OBJECT_AT(VAL_DATA(path_val))->bytes, &size);
@@ -282,15 +258,9 @@ void p_read_tsv(DISPATCH_ARGS) {
 void p_write_tsv(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val path_val = chain_sp[-1];
-	if (VAL_TAG(path_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "write-tsv", "a string");
 	Val rows_val = chain_sp[-2];
-	if (VAL_TAG(rows_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(rows_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(rows_val, T_ARRAY, "write-tsv", "an array");
 	Object *rows = OBJECT_AT(VAL_DATA(rows_val));
 
 	FILE *file = fopen(OBJECT_AT(VAL_DATA(path_val))->bytes, "wb");
@@ -349,10 +319,7 @@ void p_write_tsv(DISPATCH_ARGS) {
 
 void p_write(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "write");
-	if (VAL_TAG(stream_val) != T_STREAM) {
-		fail(interp, "expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(stream_val, T_STREAM, "write", "a stream");
 	PEEK_TYPE_AT(string_val, 1, "write", T_STRING);
 	int file_descriptor = (int)VAL_DATA(stream_val);
 	Object *string = OBJECT_AT(VAL_DATA(string_val));
@@ -374,10 +341,7 @@ void p_write(DISPATCH_ARGS) {
 
 void p_read(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "read");
-	if (VAL_TAG(stream_val) != T_STREAM) {
-		fail(interp, "expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(stream_val, T_STREAM, "read", "a stream");
 	int file_descriptor = (int)VAL_DATA(stream_val);
 
 	int length = 0;
@@ -429,10 +393,7 @@ void p_read(DISPATCH_ARGS) {
 
 void p_close(DISPATCH_ARGS) {
 	PEEK_AT(stream_val, 0, "close");
-	if (VAL_TAG(stream_val) != T_STREAM) {
-		fail(interp, "expected a stream; got %s", tag_name(VAL_TAG(stream_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(stream_val, T_STREAM, "close", "a stream");
 	close((int)VAL_DATA(stream_val));
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);

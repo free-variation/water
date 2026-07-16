@@ -185,6 +185,7 @@ const HelpEntry help_entries[] = {
 	{ "db-exec", "( db statement params -- n )", "Bind params to the statement's ? placeholders and run it with no result set (INSERT / UPDATE / DELETE / CREATE / …); return the affected-row count as a float (0 for DDL). One statement per call. On a bad statement, errors with SQLite's message", "per statement", "none", "O(statement)", 33 },
 	{ "db-open", "( path -- db )", "Open (creating if absent) the database file at path and push a handle; \":memory:\" is a private in-memory database. Errors if it can't be opened", "open", "1 connection (not GC'd)", "O(1)+", 33 },
 	{ "db-query", "( db query params -- rel )", "Bind params to the query's ? placeholders and run it; return an index-less relation { :rows <array of row frames> :index { } }. Each row is a frame keyed by column-name symbols, with INTEGER/REAL → float, TEXT → string, NULL → null, BLOB → string of raw bytes. :rows is a **bag** — duplicates kept, in result order. On a bad query, errors with SQLite's message", "n·c", "1o relation + 1a(n) + 1o/row + a string per text/blob cell", "O(n·c)", 33 },
+	{ "db-query>dataset", "( db query params -- dataset )", "database.h2o: the same query, returned as a column-oriented dataset with **typed columns**: a column whose every cell is numeric or NULL becomes an n×1 vector (NULL → NaN), a column declared DATE/DATETIME/TIMESTAMP becomes a vector of instants in s (numeric cells read as epoch seconds, text cells parsed as ISO Z), and anything else stays an array with none for NULL. An empty column declared numeric stays an empty vector, so the type survives an empty result; a repeated column name keeps its last occurrence. The C primitive (db-query>dataset) returns the raw columns plus each column's declared type from the same prepared statement", "n·c", "1o frame + 1a/column + 1m per numeric column + a string per text cell", "O(n·c)", 33 },
 	{ "db?", "( a -- bool )", "core.h2o: type-of :db = (inlined)", "5", "none", "O(1)", 4 },
 	{ "delete-at", "( fr sym/path -- fr )", "Remove a key (errors if absent or on a search path); mutates fr", "n", "none", "O(n)", 16 },
 	{ "depth", "( -- n )", "Push current depth", "1", "none", "O(1)", 0 },
@@ -244,6 +245,7 @@ const HelpEntry help_entries[] = {
 	{ "fgt", "( a b -- f ) ⚠", "float gt, result 1.0/0.0; no type check", "2", "none", "O(1)", 1 },
 	{ "filter", "( arr/set xt -- arr )", "Keep elements where xt is truthy", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt)", 23 },
 	{ "find", "( items pred -- element )", "arrays.h2o: the first element for which pred is truthy, or the none value; stops at the first hit", "n·xt", "none", "O(n·xt)", 23 },
+	{ "five-number-summary", "( v -- fr )", "statistics.h2o: { :min :q1 :median :q3 :max } over a vector's finite elements (NaNs dropped)", "4n log n", "malloc(n) ×4 + 1fr", "O(n log n)", 18 },
 	{ "flat-map", "( items xt -- arr )", "arrays.h2o: map flatten-array; xt returns an array per element, results concatenated", "n·xt + total", "1a(n) + 1a(total)", "O(n·xt + total)", 23 },
 	{ "flatten", "( m -- m' )", "matrix.h2o: 1×(r·c) reshape", "r×c", "1m(1×r·c)", "O(r×c)", 18 },
 	{ "flatten-array", "( arr -- arr )", "Flatten one level; returns the input unchanged if no element is itself an array", "1 + m", "1a(m)", "O(m)", 14 },
@@ -310,6 +312,7 @@ const HelpEntry help_entries[] = {
 	{ "lt", "( a b -- bool ) or ( m x -- m )", "less-than; element-wise 1/0 matrix on matrix operands (scalar broadcast)", "3 (float)", "matrix 1m(r×c)", "same; matrix O(r×c)", 4 },
 	{ "lvar", "( -- v )", "Push a fresh, unbound logic variable", "2", "1 lvar", "O(1)", 26 },
 	{ "lvar?", "( a -- bool )", "core.h2o: type-of :lvar = (inlined)", "5", "none", "O(1)", 4 },
+	{ "magnitude", "( v -- v' )", "A quantity's bare magnitude (float or matrix, the unit dropped); any other value passes through unchanged", "2", "none", "O(1)", 5 },
 	{ "man", "( xt -- fr )", "Frame of a word's reference entry (:word :effect :summary, plus :ops :alloc :order for runtime words); a unit word synthesizes its entry from the unit's definition (unit: m × 1000); T_NONE if undocumented", "dict scan + log n", "1o + strings", "O(|dict|)", 29 },
 	{ "map", "( arr/set xt -- arr )", "Apply xt to each element; xt must net exactly one value", "2 + n·xt", "1a(n)", "O(n·xt)", 23 },
 	{ "mapn", "( arr₁ … arr_N xt N -- arr )", "N-ary zip-map over equal-length arrays", "rows·(N+xt)", "1a(rows)", "O(rows·xt)", 23 },
@@ -333,6 +336,7 @@ const HelpEntry help_entries[] = {
 	{ "negate", "( a -- -a )", "float or matrix (element-wise)", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)", 1 },
 	{ "nip", "( a b -- b )", "core.h2o: swap drop (inlined)", "5", "none", "O(1)", 0 },
 	{ "none?", "( a -- bool )", "core.h2o: type-of :none = (inlined)", "5", "none", "O(1)", 4 },
+	{ "nonmissing-count", "( m -- n )", "The number of non-NaN elements — the divisor mean and se use", "1 + n", "none", "O(n)", 18 },
 	{ "norm", "( m -- f )", "Euclidean (L2) norm: √(Σ aᵢⱼ²) over all elements — a vector's length; for a matrix the Frobenius (entrywise 2-)norm, not the spectral norm", "1 + n", "none", "O(n)", 18 },
 	{ "not", "( a -- bool )", "logical not of truthiness", "2", "none", "O(1)", 4 },
 	{ "now", "( -- f )", "CLOCK_MONOTONIC seconds as a float", "1", "none", "O(1)", 29 },
@@ -476,6 +480,7 @@ const HelpEntry help_entries[] = {
 	{ "true", "( -- bool )", "core.h2o: pushes 1 (inline)", "1", "none", "O(1)", 4 },
 	{ "truncate", "( a -- trunc a )", "trunc", "2", "matrix 1m(r×c)", "same", 3 },
 	{ "try-catch", "( normal-xt err-xt -- … )", "exceptions.h2o: run normal-xt; on a throw or interpreter error, run err-xt with the exception (the { :message :trace } error frame, for an interpreter error) on the stack", "—", "cont if thrown; 1f + 2s on a caught interpreter error", "O(normal-xt)", 24 },
+	{ "tsv>db", "( tsv-path db table -- info )", "database.h2o: import a TSV file into a new table. The header row names the columns (identifiers quoted, so any header text works); a column whose every non-empty cell is numeric is REAL, else TEXT; empty cells insert as NULL; all rows go in one transaction. info is { :n-rows N :columns [ … ] } — a :real column carries { :name :type :summary } with a five-number :summary, a :text column { :name :type :distinct } with COUNT(DISTINCT) (NULLs uncounted). Errors before creating anything on a missing or ragged file; an existing table errors on the CREATE, leaving it untouched", "r·c", "rows + dataset + 1s/statement", "O(r·c)", 33 },
 	{ "type-of", "( a -- sym )", "The value's type as a symbol: :float :string :symbol :array :set :pair :frame :matrix :quantity :xt :continuation :stream :db :ptr :segment :none :wildcard :lvar. A bound logic var reports its value's type; an unbound one is :lvar", "2", "none", "O(1)", 4 },
 	{ "unify", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A _ on either side matches anything and binds nothing. On a mismatch, fails.", "n", "none", "O(n)", 26 },
 	{ "union", "( s₁ s₂ -- s₃ )", "Union into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)", 13 },
@@ -531,4 +536,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 486;
+const int help_entry_count = 491;

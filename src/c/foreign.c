@@ -87,10 +87,7 @@ static int ffi_type_of(Interpreter *interp, Val symbol, FFITypeTag *tag, ffi_typ
 void p_ffi_open(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val path_val = chain_sp[-1];
-	if (VAL_TAG(path_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(path_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "ffi-open", "a string");
 
 	void *library = dlopen(OBJECT_AT(VAL_DATA(path_val))->bytes, RTLD_NOW | RTLD_GLOBAL);
 	if (!library) {
@@ -164,16 +161,10 @@ void p_ffi_function(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 4);
 	Val return_symbol = chain_sp[-1];
 	Val arg_types_val = chain_sp[-2];
-	if (VAL_TAG(arg_types_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(arg_types_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(arg_types_val, T_ARRAY, "ffi-function", "an array");
 	Object *arg_types = OBJECT_AT(VAL_DATA(arg_types_val));
 	Val function_name_val = chain_sp[-3];
-	if (VAL_TAG(function_name_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(function_name_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(function_name_val, T_STRING, "ffi-function", "a string");
 	Object *function_name = OBJECT_AT(VAL_DATA(function_name_val));
 	Val library_val = chain_sp[-4];
 
@@ -193,23 +184,14 @@ void p_ffi_function(DISPATCH_ARGS) {
 void p_ffi_variadic(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 5);
 	Val fixed_args_val = chain_sp[-1];
-	if (VAL_TAG(fixed_args_val) != T_FLOAT) {
-		fail(interp, "expected a float fixed-argument count; got %s", tag_name(VAL_TAG(fixed_args_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(fixed_args_val, T_FLOAT, "ffi-variadic", "a float fixed-argument count");
 	int fixed_args = (int)VAL_NUMBER(fixed_args_val);
 	Val return_symbol = chain_sp[-2];
 	Val arg_types_val = chain_sp[-3];
-	if (VAL_TAG(arg_types_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(arg_types_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(arg_types_val, T_ARRAY, "ffi-variadic", "an array");
 	Object *arg_types = OBJECT_AT(VAL_DATA(arg_types_val));
 	Val function_name_val = chain_sp[-4];
-	if (VAL_TAG(function_name_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(function_name_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(function_name_val, T_STRING, "ffi-variadic", "a string");
 	Object *function_name = OBJECT_AT(VAL_DATA(function_name_val));
 	Val library_val = chain_sp[-5];
 
@@ -234,10 +216,7 @@ void p_ffi_variadic(DISPATCH_ARGS) {
 void p_ffi_call(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val index_val = chain_sp[-1];
-	if (VAL_TAG(index_val) != T_FLOAT) {
-		fail(interp, "expected a float binding; got %s", tag_name(VAL_TAG(index_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(index_val, T_FLOAT, "(ffi-call)", "a float binding");
 	int index = (int)VAL_NUMBER(index_val);
 	FFIBinding *binding = ffi_bindings[index];
 
@@ -337,10 +316,7 @@ void p_ffi_call(DISPATCH_ARGS) {
 void p_ffi_free(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val pointer_val = chain_sp[-1];
-	if (VAL_TAG(pointer_val) != T_PTR) {
-		fail(interp, "expected %s; got %s", tag_name(T_PTR), tag_name(VAL_TAG(pointer_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(pointer_val, T_PTR, "ffi-free", "a pointer");
 	int index = (int)VAL_DATA(pointer_val);
 	free(ffi_pointers[index]);
 	ffi_pointers[index] = NULL;
@@ -356,10 +332,7 @@ int ffi_register_call_cfa(int cfa) {
 void p_matrix_to_pointer(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val matrix_val = chain_sp[-1];
-	if (VAL_TAG(matrix_val) != T_MATRIX) {
-		fail(interp, "expected %s; got %s", tag_name(T_MATRIX), tag_name(VAL_TAG(matrix_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(matrix_val, T_MATRIX, "matrix>pointer", "a matrix");
 
 	chain_sp[-1] = make_pointer(ffi_pointer_intern(OBJECT_AT(VAL_DATA(matrix_val))->matrix.elements));
 
@@ -369,10 +342,7 @@ void p_matrix_to_pointer(DISPATCH_ARGS) {
 void p_segment_to_pointer(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val segment_val = chain_sp[-1];
-	if (VAL_TAG(segment_val) != T_SEGMENT) {
-		fail(interp, "expected %s; got %s", tag_name(T_SEGMENT), tag_name(VAL_TAG(segment_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(segment_val, T_SEGMENT, "segment>pointer", "a segment");
 
 	chain_sp[-1] = make_pointer(ffi_pointer_intern(OBJECT_AT(VAL_DATA(segment_val))->segment.data));
 

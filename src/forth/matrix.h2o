@@ -15,8 +15,10 @@
 ( m -- 1xN-matrix )
 : flatten dup dim * 1 swap reshape ;
 
-( m -- mean )
-: mean dup size swap sum swap / ;
+( m -- mean ) \ mean of the non-NaN elements
+: mean
+	dup nonmissing-count dup 0= if "all elements are NaN (missing)" throw then
+	swap sum swap / ;
 
 ( m -- row-means )  \ each row's sum divided by the number of columns
 : row-means dup dim swap drop swap row-sums swap / ;

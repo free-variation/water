@@ -21,10 +21,32 @@ o'brien
 2 
 1 
 :alice 
+[ :name :id :score :note ] 
+<matrix 4x1>
+          1
+          2
+          3
+          4
+
+[ "alice" "o'brien" "alice" "carol" ] 
+<matrix 4x1>
+       10.5
+          8
+          1
+          2
+
+1 
+4 2 
+[ :name :id ] 0 
+[ :name ] 4 
 error: query takes 1 parameter(s) 0 given
 error: query takes 0 parameter(s) 1 given
 error: cannot bind a set as a parameter
 error: expected a database; got a float
 error: near "SELCT": syntax error
+error: near "SELCT": syntax error
+in (db-query>dataset) ← db-query>dataset
+error: expected a database; got a float
+in (db-query>dataset) ← db-query>dataset
 error: no such table: nope
 error: database is closed

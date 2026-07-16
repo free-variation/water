@@ -48,10 +48,7 @@ static int date_frame_from_calendar(Interpreter *interp, struct tm *calendar, do
 
 static void epoch_to_date_frame(Interpreter *interp, Val *chain_sp, int wants_local_time) {
 	Val epoch_val = chain_sp[-1];
-	if (VAL_TAG(epoch_val) != T_FLOAT) {
-		fail(interp, "expected a float epoch; got %s", tag_name(VAL_TAG(epoch_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(epoch_val, T_FLOAT, "epoch>date", "a float epoch");
 
 	double epoch = VAL_NUMBER(epoch_val);
 	double whole = floor(epoch);
@@ -243,14 +240,8 @@ void p_parse_time(DISPATCH_ARGS) {
 
 	Val format_val = chain_sp[-1];
 	Val text_val = chain_sp[-2];
-	if (VAL_TAG(format_val) != T_STRING) {
-		fail(interp, "expected a format string; got %s", tag_name(VAL_TAG(format_val)));
-		return;
-	}
-	if (VAL_TAG(text_val) != T_STRING) {
-		fail(interp, "expected a string to parse; got %s", tag_name(VAL_TAG(text_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(format_val, T_STRING, "(parse-time)", "a format string");
+	REQUIRE_CHAIN_TAG(text_val, T_STRING, "(parse-time)", "a string to parse");
 
 	Object *format = OBJECT_AT(VAL_DATA(format_val));
 	Object *text = OBJECT_AT(VAL_DATA(text_val));

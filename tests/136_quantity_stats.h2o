@@ -1,0 +1,59 @@
+\ Quantity-aware statistics: the matrix reductions and statistics accept a
+\ dimensioned matrix, compute over the magnitude, and keep the unit — var in
+\ the unit squared, index/count words and correlations bare. magnitude
+\ ( v -- v' ) strips a quantity; any other value passes through.
+
+[ 10 20 30 40 ] vector m to lengths
+
+\ === reductions keep the unit ===
+lengths sum . lengths mean . lengths max . lengths min . cr    \ 100 m 25 m 40 m 10 m
+lengths var . lengths std . lengths se . cr                    \ 166.667 m^2 12.9099 m 6.45497 m
+lengths median . lengths iqr . cr                              \ 25 m 15 m
+lengths 0.95 ci . . cr                                         \ 39.25 m 10.75 m (high printed first)
+lengths norm . cr                                              \ 54.7723 m
+lengths cumulative-sum magnitude flatten . cr                  \ [ 10 30 60 100 ] as 1x4 grid
+lengths 2 2 reshape . cr                                       \ 2x2 grid, unit m
+
+\ === index and count words answer bare ===
+lengths argsort transpose . cr                                 \ 0 1 2 3 as 1x4 grid
+lengths argmax . lengths argmin . lengths size . cr            \ 3 0 4
+lengths dim swap . . cr                                        \ 4 1
+
+\ === magnitude: strip a quantity, pass anything else through ===
+lengths magnitude sum . cr                                     \ 100 (bare)
+5 m magnitude . 5 magnitude . "x" magnitude . cr               \ 5 5 x
+
+\ === correlations are dimensionless whatever the operand units ===
+[ 1 2 3 ] vector s [ 2 4 7 ] vector m correlation-pearson . cr     \ 0.993399
+[ 1 2 3 4 ] vector s [ 2 4 7 9 ] vector m correlation-spearman . cr  \ 1
+[ 1 2 3 4 ] vector s [ 2 4 7 9 ] vector m correlation-kendall . cr   \ 1
+42 seed
+[ 1 2 3 4 5 ] vector s [ 2 4 7 9 11 ] vector m ' correlation-kendall 50 correlate-with :estimate @ . cr  \ 1
+
+\ === dates: a column of instants is a dimensioned vector in s ===
+"2026-01-01T00:00:00Z" iso>time 1 s / to epoch1
+"2026-01-11T00:00:00Z" iso>time 1 s / to epoch2
+[ epoch1 epoch2 ] vector s to dates
+dates mean time>iso . cr                                       \ 2026-01-06T00:00:00Z
+dates max dates min - 1 day / . cr                             \ 10
+
+\ === missing values: the statistics skip NaN cells ===
+[ 1 null 3 null ] vector to holes
+holes sum . holes mean . holes max . holes min . cr            \ 4 2 3 1
+holes nonmissing-count . holes norm . cr                       \ 2 3.16228
+holes argmax . [ null 1 2 ] vector argmax . cr                 \ 2 1
+[ 1 null 3 null 5 ] vector 0.5 quantile . cr                   \ 3
+[ 1 null 3 null 5 ] vector var . cr                            \ 4
+[ inf -inf ] vector sum none? . cr                             \ 1 (inf - inf is NaN, returned as null, not an error)
+
+\ === correlations and regression drop incomplete pairs/rows ===
+[ 1 2 null 4 ] vector [ 2 4 null 9 ] vector correlation-pearson . cr    \ 0.998625
+[ 1 2 null 4 ] vector [ 2 4 null 9 ] vector correlation-kendall . cr    \ 1
+[ 1 2 null 4 ] vector [ 2 4 null 9 ] vector correlation-spearman . cr   \ 1
+
+\ === errors ===
+[ 10 ] vector m var .                                          \ (needs at least 2 non-NaN elements)
+[ null null ] vector max .                                     \ (all elements are NaN)
+[ null null ] vector 0.5 quantile .                            \ (all elements are NaN)
+[ 1 null ] vector [ 2 3 ] vector correlation-kendall .         \ (needs at least 2 complete pairs)
+bye

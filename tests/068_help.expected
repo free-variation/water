@@ -22,9 +22,9 @@ unit: m × 1000
 unit newton  \ m.kg.s^-2
 1 
 {
+  :summary sine (radians)
   :word sin
   :effect ( a -- sin a )
-  :summary sine (radians)
   :ops 2
   :alloc matrix 1m(r×c)
   :order same

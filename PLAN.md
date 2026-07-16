@@ -569,6 +569,11 @@ live here instead. File and function name each invariant's home.
   non-associative float addition still vectorizes; associative ops
   tolerate it. Collapsing to one accumulator kills the vectorization
   (matrix.c, `MATRIX_REDUCE_OVERALL_OP`).
+- `matrix_sum_dense` must never compile under `float_control(precise,
+  off)`: that pragma marks its instructions no-NaN, the optimizer then
+  folds `matrix_sum_overall`'s `isnan` to false, and the NaN-skipping
+  retry is deleted. `clang fp reassociate contract` gives the vectorizer
+  what it needs without the no-NaN license (matrix.c).
 - The superword fuser rewrites `<arr> <idx> <arr> <idx> @i [<delta>]
   <op> !i drop` into the single `(<op>!i)` ops by matching the compiled
   dict shape; changes to how those idioms compile must update the

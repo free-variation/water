@@ -284,10 +284,7 @@ static char *resolve_program_path(const char *name) {
 void p_start_process(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val argv_val = chain_sp[-1];
-	if (VAL_TAG(argv_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(argv_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(argv_val, T_ARRAY, "start-process", "an array");
 	Object *argv_array = OBJECT_AT(VAL_DATA(argv_val));
 	int argc = argv_array->len;
 	if (argc < 1) {
@@ -371,10 +368,7 @@ void p_start_process(DISPATCH_ARGS) {
 void p_wait(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val pid_val = chain_sp[-1];
-	if (VAL_TAG(pid_val) != T_FLOAT) {
-		fail(interp, "expected a float pid; got %s", tag_name(VAL_TAG(pid_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(pid_val, T_FLOAT, "wait", "a float pid");
 	int pid = (int)VAL_NUMBER(pid_val);
 	if (pid <= 0) {
 		fail(interp, "invalid pid %d (expected a spawned process id)", pid);
@@ -407,10 +401,7 @@ void p_wait(DISPATCH_ARGS) {
 void p_stop_process(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val pid_val = chain_sp[-1];
-	if (VAL_TAG(pid_val) != T_FLOAT) {
-		fail(interp, "expected a float pid; got %s", tag_name(VAL_TAG(pid_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(pid_val, T_FLOAT, "stop", "a float pid");
 	int pid = (int)VAL_NUMBER(pid_val);
 	if (pid <= 0) {
 		fail(interp, "invalid pid %d (expected a spawned process id)", pid);
@@ -445,10 +436,7 @@ void p_stop_process(DISPATCH_ARGS) {
 void p_running(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val pid_val = chain_sp[-1];
-	if (VAL_TAG(pid_val) != T_FLOAT) {
-		fail(interp, "expected a float pid; got %s", tag_name(VAL_TAG(pid_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(pid_val, T_FLOAT, "running?", "a float pid");
 	int pid = (int)VAL_NUMBER(pid_val);
 
 	siginfo_t info;

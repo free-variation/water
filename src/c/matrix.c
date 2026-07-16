@@ -644,10 +644,7 @@ void p_where(DISPATCH_ARGS) {
 	Val mask = chain_sp[-1];
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
 
-	if (VAL_TAG(mask) != T_MATRIX) {
-		fail(interp, "expected a matrix mask; got %s", tag_name(VAL_TAG(mask)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(mask, T_MATRIX, "where", "a matrix mask");
 
 	int indices_handle = matrix_nonzero_indices(interp, OBJECT_AT(VAL_DATA(mask)));
 	if (interp->error_flag) return;
@@ -659,8 +656,40 @@ void p_where(DISPATCH_ARGS) {
 
 #define ADD(a, b) ((a) + (b))
 
-#define MATRIX_REDUCE_OVERALL_OP(name, init_value, combine) \
+static inline int double_is_nan_bits(double element) {
+	sort_key bits;
+	memcpy(&bits, &element, sizeof bits);
+	return (bits & 0x7FFFFFFFFFFFFFFFULL) > 0x7FF0000000000000ULL;
+}
+
+#define NAN_SUBSTITUTED(element, substitute) \
+	((element) != (element) ? (substitute) : (element))
+
+#define MATRIX_REDUCE_OVERALL_OP(name, init_value, combine, nan_substitute) \
 	double name(Object *source) { \
+		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
+		const double * restrict elements = source->matrix.elements; \
+		double accumulator_0 = init_value; \
+		double accumulator_1 = init_value; \
+		double accumulator_2 = init_value; \
+		double accumulator_3 = init_value; \
+		size_t i = 0; \
+		for (; i + 3 < num_elements; i += 4) { \
+			accumulator_0 = combine(accumulator_0, NAN_SUBSTITUTED(elements[i], nan_substitute)); \
+			accumulator_1 = combine(accumulator_1, NAN_SUBSTITUTED(elements[i + 1], nan_substitute)); \
+			accumulator_2 = combine(accumulator_2, NAN_SUBSTITUTED(elements[i + 2], nan_substitute)); \
+			accumulator_3 = combine(accumulator_3, NAN_SUBSTITUTED(elements[i + 3], nan_substitute)); \
+		} \
+		double accumulator = combine(combine(accumulator_0, accumulator_1), \
+							combine(accumulator_2, accumulator_3)); \
+		for (; i < num_elements; i++) \
+			accumulator = combine(accumulator, NAN_SUBSTITUTED(elements[i], nan_substitute)); \
+		return accumulator; \
+	}
+
+#define MATRIX_REDUCE_OVERALL_DENSE(name, init_value, combine) \
+	static double name(Object *source) { \
+		_Pragma("clang fp reassociate(on) contract(fast)") \
 		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
 		const double * restrict elements = source->matrix.elements; \
 		double accumulator_0 = init_value; \
@@ -715,11 +744,12 @@ void p_where(DISPATCH_ARGS) {
 		return target_handle; \
 	}
 
-#pragma float_control(precise, off, push)
-MATRIX_REDUCE_OVERALL_OP(matrix_sum_overall, 0.0, ADD)
-MATRIX_REDUCE_OVERALL_OP(matrix_max_overall, -INFINITY, MAX)
-MATRIX_REDUCE_OVERALL_OP(matrix_min_overall, INFINITY, MIN)
+MATRIX_REDUCE_OVERALL_OP(matrix_max_overall, -INFINITY, MAX, -INFINITY)
+MATRIX_REDUCE_OVERALL_OP(matrix_min_overall, INFINITY, MIN, INFINITY)
 
+MATRIX_REDUCE_OVERALL_DENSE(matrix_sum_dense, 0.0, ADD)
+
+#pragma float_control(precise, off, push)
 MATRIX_REDUCE_ROWS_OP(matrix_sum_rows, 0.0, ADD)
 MATRIX_REDUCE_ROWS_OP(matrix_max_rows, -INFINITY, MAX)
 MATRIX_REDUCE_ROWS_OP(matrix_min_rows, INFINITY, MIN)
@@ -728,29 +758,61 @@ MATRIX_REDUCE_COLUMNS_OP(matrix_sum_columns, 0.0, ADD)
 MATRIX_REDUCE_COLUMNS_OP(matrix_max_columns, -INFINITY, MAX)
 MATRIX_REDUCE_COLUMNS_OP(matrix_min_columns, INFINITY, MIN)
 
-#define MATRIX_ARG_OP(name, cmp) \
-	static int name(Object *source) { \
-		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
-		const double * restrict elements = source->matrix.elements; \
-		size_t best = 0; \
-		for (size_t i = 1; i < num_elements; i++) \
-			if (elements[i] cmp elements[best]) \
-				best = i; \
-		return (int)best; \
-	}
+static double matrix_nonmissing_count(Object *source) {
+	size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns;
+	const double * restrict elements = source->matrix.elements;
+	size_t n_nonmissing = 0;
+	for (size_t i = 0; i < num_elements; i++)
+		n_nonmissing += !double_is_nan_bits(elements[i]);
+	return (double)n_nonmissing;
+}
 
-MATRIX_ARG_OP(matrix_argmax_index, >)
-MATRIX_ARG_OP(matrix_argmin_index, <)
+#pragma float_control(pop)
 
 static double matrix_frobenius_overall(Object *source) {
 	size_t n = (size_t)source->matrix.rows * (size_t)source->matrix.columns;
 	const double * restrict elements = source->matrix.elements;
 	double sum_of_squares = 0.0;
-	for (size_t i = 0; i < n; i++)
-		sum_of_squares += elements[i] * elements[i];
+	for (size_t i = 0; i < n; i++) {
+		double element = NAN_SUBSTITUTED(elements[i], 0.0);
+		sum_of_squares += element * element;
+	}
 	return sqrt(sum_of_squares);
 }
-#pragma float_control(pop)
+
+double matrix_sum_overall(Object *source) {
+	double statistic = matrix_sum_dense(source);
+	if (!isnan(statistic))
+		return statistic;
+
+	size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns;
+	const double * restrict elements = source->matrix.elements;
+	double accumulator = 0.0;
+	for (size_t i = 0; i < num_elements; i++) {
+		double element = elements[i];
+		if (element != element)
+			continue;
+		accumulator += element;
+	}
+	return accumulator;
+}
+
+#define MATRIX_ARG_OP(name, cmp) \
+	static double name(Object *source) { \
+		size_t num_elements = (size_t)source->matrix.rows * (size_t)source->matrix.columns; \
+		const double * restrict elements = source->matrix.elements; \
+		size_t best = num_elements; \
+		for (size_t i = 0; i < num_elements; i++) { \
+			if (double_is_nan_bits(elements[i])) \
+				continue; \
+			if (best == num_elements || elements[i] cmp elements[best]) \
+				best = i; \
+		} \
+		return best == num_elements ? NAN : (double)best; \
+	}
+
+MATRIX_ARG_OP(matrix_argmax_index, >)
+MATRIX_ARG_OP(matrix_argmin_index, <)
 
 int create_matrix(Interpreter *interp) {
 	Val right = pop(interp);
@@ -793,10 +855,7 @@ void p_diagonal_matrix(DISPATCH_ARGS) {
 	if (interp->error_flag) return;
 
 	POP(diag_val);
-	if (VAL_TAG(diag_val) != T_FLOAT) {
-		fail(interp, "expected a float fill value; got %s", tag_name(VAL_TAG(diag_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(diag_val, T_FLOAT, "diagonal-matrix", "a float fill value");
 
 	Object *diag_matrix = OBJECT_AT(diag_matrix_handle);
 	double diag_element = VAL_NUMBER(diag_val);
@@ -834,7 +893,8 @@ void p_reshape(DISPATCH_ARGS) {
 	Val rows_val = chain_sp[-2];
 	REQUIRE_CHAIN_TAG(rows_val, T_FLOAT, "reshape", "a float row count");
 	int new_rows = (int)VAL_NUMBER(rows_val);
-	Val source_val = chain_sp[-3];
+	int unit;
+	Val source_val = quantity_unwrap(chain_sp[-3], &unit);
 	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "reshape", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
@@ -858,6 +918,12 @@ void p_reshape(DISPATCH_ARGS) {
 	memcpy(target->matrix.elements, source->matrix.elements,
 			(size_t)total * sizeof(double));
 
+	if (unit) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 3);
+		push_quantity(interp, make_matrix(target_handle), unit);
+		DISPATCH(interp);
+	}
+
 	chain_sp[-3] = make_matrix(target_handle);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
@@ -870,10 +936,7 @@ void p_matrix(DISPATCH_ARGS) {
 	}
 	Val top = interp->data_stack[interp->dsp - 1];
 	Val below = interp->data_stack[interp->dsp - 2];
-	if (VAL_TAG(top) != T_FLOAT) {
-		fail(interp, "expected a float dimension on top; got %s", tag_name(VAL_TAG(top)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(top, T_FLOAT, "matrix", "a float dimension on top");
 
 	int num_rows, num_cols;
 	Val arr_val;
@@ -883,10 +946,7 @@ void p_matrix(DISPATCH_ARGS) {
 			return;
 		}
 		arr_val = interp->data_stack[interp->dsp - 3];
-		if (VAL_TAG(arr_val) != T_ARRAY) {
-			fail(interp, "expected an array; got %s", tag_name(VAL_TAG(arr_val)));
-			return;
-		}
+		REQUIRE_CHAIN_TAG(arr_val, T_ARRAY, "matrix", "an array");
 		num_rows = (int)VAL_NUMBER(below);
 		num_cols = (int)VAL_NUMBER(top);
 		interp->dsp -= 3;
@@ -922,11 +982,16 @@ void p_matrix(DISPATCH_ARGS) {
 	}
 
 	for (int i = 0; i < num_elements; i++) {
-		if (VAL_TAG(input_array->items[i]) != T_FLOAT) {
-			fail(interp, "element %d is %s, expected a float", i, tag_name(VAL_TAG(input_array->items[i])));
+		Val element = input_array->items[i];
+		if (VAL_TAG(element) == T_NONE) {
+			matrix->matrix.elements[i] = NAN;
+			continue;
+		}
+		if (VAL_TAG(element) != T_FLOAT) {
+			fail(interp, "element %d is %s, expected a float", i, tag_name(VAL_TAG(element)));
 			return;
 		}
-		matrix->matrix.elements[i] = VAL_NUMBER(input_array->items[i]);
+		matrix->matrix.elements[i] = VAL_NUMBER(element);
 	}
 
 	push(interp, make_matrix(matrix_handle));
@@ -937,7 +1002,9 @@ void p_matrix(DISPATCH_ARGS) {
 void p_dim(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
-	Val matrix_val = chain_sp[-1];
+	int unit;
+	Val matrix_val = quantity_unwrap(chain_sp[-1], &unit);
+	(void)unit;
 	REQUIRE_CHAIN_TAG(matrix_val, T_MATRIX, "dim", "a matrix");
 	Object *matrix = OBJECT_AT(VAL_DATA(matrix_val));
 
@@ -1003,26 +1070,58 @@ void p_submatrix(DISPATCH_ARGS) {
 }
 
 
-#define REDUCE_OVERALL_HANDLER(primitive_name, word_name, reduce_fn) \
+#define POP_MATRIX_OR_QUANTITY(name, word_name, unit) \
+	POP(name##_val); \
+	int unit; \
+	name##_val = quantity_unwrap(name##_val, &unit); \
+	if (VAL_TAG(name##_val) != T_MATRIX) { \
+		fail(interp, "expected %s; got %s", tag_name(T_MATRIX), tag_name(VAL_TAG(name##_val))); \
+		return; \
+	} \
+	Object *name = OBJECT_AT(VAL_DATA(name##_val))
+
+#define MISSING_CHECK_NONE ((void)0)
+
+#define MISSING_CHECK_INFINITE \
+	do { \
+		if (isinf(statistic) && matrix_nonmissing_count(source) == 0.0) { \
+			fail(interp, "all elements are NaN (missing)"); \
+			return; \
+		} \
+	} while (0)
+
+#define MISSING_CHECK_NAN \
+	do { \
+		if (isnan(statistic)) { \
+			fail(interp, "all elements are NaN (missing)"); \
+			return; \
+		} \
+	} while (0)
+
+#define REDUCE_OVERALL_HANDLER(primitive_name, word_name, reduce_fn, result_unit, missing_check) \
 	void primitive_name(DISPATCH_ARGS) { \
-		POP_MATRIX(source, word_name); \
-		push(interp, make_float(reduce_fn(source))); \
+		POP_MATRIX_OR_QUANTITY(source, word_name, unit); \
+		(void)unit; \
+		double statistic = reduce_fn(source); \
+		missing_check; \
+		push_quantity(interp, make_float(statistic), (result_unit)); \
 	}
 
 #define REDUCE_AXIS_HANDLER(primitive_name, word_name, reduce_fn) \
 	void primitive_name(DISPATCH_ARGS) { \
-		POP_MATRIX(source, word_name); \
+		POP_MATRIX_OR_QUANTITY(source, word_name, unit); \
 		int target_handle = reduce_fn(interp, source); \
-		if (!interp->error_flag) push(interp, make_matrix(target_handle)); \
+		if (!interp->error_flag) push_quantity(interp, make_matrix(target_handle), unit); \
 	}
 
-REDUCE_OVERALL_HANDLER(p_sum, "sum", matrix_sum_overall)
-REDUCE_OVERALL_HANDLER(p_max, "max", matrix_max_overall)
-REDUCE_OVERALL_HANDLER(p_min, "min", matrix_min_overall)
-REDUCE_OVERALL_HANDLER(p_argmax, "argmax", matrix_argmax_index)
-REDUCE_OVERALL_HANDLER(p_argmin, "argmin", matrix_argmin_index)
-REDUCE_OVERALL_HANDLER(p_norm, "norm", matrix_frobenius_overall)
-REDUCE_OVERALL_HANDLER(p_frobenius_norm, "frobenius-norm", matrix_frobenius_overall)
+REDUCE_OVERALL_HANDLER(p_sum, "sum", matrix_sum_overall, unit, MISSING_CHECK_NONE)
+REDUCE_OVERALL_HANDLER(p_max, "max", matrix_max_overall, unit, MISSING_CHECK_INFINITE)
+REDUCE_OVERALL_HANDLER(p_min, "min", matrix_min_overall, unit, MISSING_CHECK_INFINITE)
+REDUCE_OVERALL_HANDLER(p_argmax, "argmax", matrix_argmax_index, 0, MISSING_CHECK_NAN)
+REDUCE_OVERALL_HANDLER(p_argmin, "argmin", matrix_argmin_index, 0, MISSING_CHECK_NAN)
+REDUCE_OVERALL_HANDLER(p_norm, "norm", matrix_frobenius_overall, unit, MISSING_CHECK_NONE)
+REDUCE_OVERALL_HANDLER(p_frobenius_norm, "frobenius-norm", matrix_frobenius_overall, unit, MISSING_CHECK_NONE)
+REDUCE_OVERALL_HANDLER(p_nonmissing_count, "nonmissing-count", matrix_nonmissing_count, 0, MISSING_CHECK_NONE)
 REDUCE_AXIS_HANDLER(p_row_sums, "row-sums", matrix_sum_rows)
 REDUCE_AXIS_HANDLER(p_row_maxes, "row-maxes", matrix_max_rows)
 REDUCE_AXIS_HANDLER(p_row_mins, "row-mins", matrix_min_rows)
@@ -1032,7 +1131,8 @@ REDUCE_AXIS_HANDLER(p_column_mins, "column-mins", matrix_min_columns)
 
 void p_cumulative_sum(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val source_val = chain_sp[-1];
+	int unit;
+	Val source_val = quantity_unwrap(chain_sp[-1], &unit);
 	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "cumulative-sum", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
@@ -1048,6 +1148,12 @@ void p_cumulative_sum(DISPATCH_ARGS) {
 	for (int i = 0; i < n_elements; i++) {
 		running_total += source_elements[i];
 		running_sums_elements[i] = running_total;
+	}
+
+	if (unit) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
+		push_quantity(interp, make_matrix(running_sums_handle), unit);
+		DISPATCH(interp);
 	}
 
 	chain_sp[-1] = make_matrix(running_sums_handle);
@@ -1132,10 +1238,7 @@ void p_select_rows(DISPATCH_ARGS) {
 		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 	}
 
-	if (VAL_TAG(indices_val) != T_ARRAY) {
-		fail(interp, "expected an index array or vector; got %s", tag_name(VAL_TAG(indices_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(indices_val, T_ARRAY, "select-rows", "an index array or vector");
 	Object *indices = OBJECT_AT(VAL_DATA(indices_val));
 
 	for (int i = 0; i < indices->len; i++) {

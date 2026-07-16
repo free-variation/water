@@ -3743,10 +3743,7 @@ SEE_WORD_PAIR(p_see_tree, p_see_tree_to_string, "see-tree", "see-tree>string", s
 void p_save(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val filename_val = chain_sp[-1];
-	if (VAL_TAG(filename_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(filename_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(filename_val, T_STRING, "save", "a string");
 	const char *filename = OBJECT_AT(VAL_DATA(filename_val))->bytes;
 
 	FILE *file = fopen(filename, "w");
@@ -4206,6 +4203,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "symbol", p_symbol, 0);
 	define_primitive(interp, "base", p_base, 0);
 	define_primitive(interp, "unit", p_unit, 0);
+	define_primitive(interp, "magnitude", p_magnitude, 0);
 	define_primitive(interp, "string>symbol", p_string_to_symbol, 0);
 	define_primitive(interp, "forget", p_forget, 0);
 	define_primitive(interp, "'", p_tick, 1);
@@ -4264,6 +4262,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "min", p_min, 0);
 	define_primitive(interp, "argmax", p_argmax, 0);
 	define_primitive(interp, "argmin", p_argmin, 0);
+	define_primitive(interp, "nonmissing-count", p_nonmissing_count, 0);
 	define_primitive(interp, "where", p_where, 0);
 	define_primitive(interp, "row-maxes", p_row_maxes, 0);
 	define_primitive(interp, "row-mins", p_row_mins, 0);
@@ -4335,6 +4334,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "db-close", p_db_close, 0);
 	define_primitive(interp, "db-exec", p_db_exec, 0);
 	define_primitive(interp, "db-query", p_db_query, 0);
+	define_primitive(interp, "(db-query>dataset)", p_db_query_to_dataset, 4);
 	define_primitive(interp, "wait", p_wait, 0);
 	define_primitive(interp, "stop", p_stop_process, 0);
 	define_primitive(interp, "running?", p_running, 0);

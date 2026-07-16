@@ -562,6 +562,15 @@ void p_base(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
+void p_magnitude(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val value = chain_sp[-1];
+	if (VAL_TAG(value) == T_QUANTITY)
+		chain_sp[-1] = pairs.table[VAL_DATA(value)].head;
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
 void apply_unit(Interpreter *interp, int cfa) {
 	int unit = (int)vocab.dict[cfa + 1];
 
@@ -592,10 +601,7 @@ void p_unit(DISPATCH_ARGS) {
 
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val quantity_val = chain_sp[-1];
-	if (VAL_TAG(quantity_val) != T_QUANTITY) {
-		fail(interp, "expected %s; got %s", tag_name(T_QUANTITY), tag_name(VAL_TAG(quantity_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(quantity_val, T_QUANTITY, "unit", "a quantity");
 	Pair *quantity = &pairs.table[VAL_DATA(quantity_val)];
 	int source_unit = (int)quantity->tail.bits;
 	Val magnitude = quantity->head;

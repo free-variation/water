@@ -83,10 +83,7 @@ static int read_vals(FILE *file, Val *values, int n_values) {
 void p_save_image(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val filename_val = chain_sp[-1];
-	if (VAL_TAG(filename_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(filename_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(filename_val, T_STRING, "save-image", "a string");
 	const char *filename = OBJECT_AT(VAL_DATA(filename_val))->bytes;
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
 

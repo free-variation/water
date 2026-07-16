@@ -233,10 +233,7 @@ void p_list_close(DISPATCH_ARGS) {
 void p_array(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val count_val = chain_sp[-1];
-	if (VAL_TAG(count_val) != T_FLOAT) {
-		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(count_val, T_FLOAT, "array", "a float count");
 	int count = (int)VAL_NUMBER(count_val);
 	Val *gathered_base = chain_sp - 1 - count;
 	if (count < 0 || gathered_base < interp->data_stack) {
@@ -269,10 +266,7 @@ void p_head_tail(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
 	Val pair_val = chain_sp[-1];
-	if (VAL_TAG(pair_val) != T_PAIR) {
-		fail(interp, "expected a pair; got %s", tag_name(VAL_TAG(pair_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(pair_val, T_PAIR, "head-tail", "a pair");
 	Pair *pair = &pairs.table[VAL_DATA(pair_val)];
 	chain_sp[-1] = pair->head;
 	chain_sp[0] = pair->tail;
@@ -283,10 +277,7 @@ void p_head_tail(DISPATCH_ARGS) {
 void p_array_to_cons(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val array_val = chain_sp[-1];
-	if (VAL_TAG(array_val) != T_ARRAY) {
-		fail(interp, "expected an array; got %s", tag_name(VAL_TAG(array_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(array_val, T_ARRAY, "array>cons", "an array");
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
 	int n = array->len;
 
@@ -380,10 +371,7 @@ int build_set_from_values(Interpreter *interp, const Val *values, int count) {
 void p_set(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val count_val = chain_sp[-1];
-	if (VAL_TAG(count_val) != T_FLOAT) {
-		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(count_val, T_FLOAT, "set", "a float count");
 	int count = (int)VAL_NUMBER(count_val);
 	Val *gathered_base = chain_sp - 1 - count;
 	if (count < 0 || gathered_base < interp->data_stack) {
@@ -403,10 +391,7 @@ void p_set(DISPATCH_ARGS) {
 void p_array_to_set(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val array_val = chain_sp[-1];
-	if (VAL_TAG(array_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(array_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(array_val, T_ARRAY, "array>set", "an array");
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
 
 	int set_handle = build_set_from_values(interp, array->items, array->len);
@@ -448,10 +433,7 @@ int array_sorted_copy(Interpreter *interp, Object *source) {
 void p_byte_size(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val string_val = chain_sp[-1];
-	if (VAL_TAG(string_val) != T_STRING) {
-		fail(interp, "expected a string; got %s", tag_name(VAL_TAG(string_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(string_val, T_STRING, "byte-size", "a string");
 
 	chain_sp[-1] = make_float((double)OBJECT_AT(VAL_DATA(string_val))->len);
 
@@ -461,11 +443,7 @@ void p_byte_size(DISPATCH_ARGS) {
 void p_member(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val set_val = chain_sp[-2];
-	if (VAL_TAG(set_val) != T_SET) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "expected a set; got %s", tag_name(VAL_TAG(set_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(set_val, T_SET, "member?", "a set");
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
 	int present = set_member(interp, (int)VAL_DATA(set_val), chain_sp[-1]);
 	if (interp->error_flag)
@@ -480,12 +458,8 @@ void p_member(DISPATCH_ARGS) {
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
 		Val left = chain_sp[-2]; \
 		Val right = chain_sp[-1]; \
-		if (VAL_TAG(left) != T_SET || VAL_TAG(right) != T_SET) { \
-			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
-			Val offender = VAL_TAG(left) != T_SET ? left : right; \
-			fail(interp, "expected %s; got %s", tag_name(T_SET), tag_name(VAL_TAG(offender))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(left, T_SET, "union", "a set"); \
+		REQUIRE_CHAIN_TAG(right, T_SET, "union", "a set"); \
 		\
 		SYNC_REGISTERS(interp, chain_ip, chain_sp); \
 		int combined_handle = combine(interp, (int)VAL_DATA(left), (int)VAL_DATA(right)); \
@@ -503,10 +477,7 @@ BINARY_SET_OP(p_difference, set_difference)
 void p_set_add(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val set_val = chain_sp[-2];
-	if (VAL_TAG(set_val) != T_SET) {
-		fail(interp, "expected a set; got %s", tag_name(VAL_TAG(set_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(set_val, T_SET, "set-add!", "a set");
 
 	set_add(interp, (int)VAL_DATA(set_val), chain_sp[-1]);
 	if (interp->error_flag)
@@ -518,10 +489,7 @@ void p_set_add(DISPATCH_ARGS) {
 void p_set_remove(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val set_val = chain_sp[-2];
-	if (VAL_TAG(set_val) != T_SET) {
-		fail(interp, "expected a set; got %s", tag_name(VAL_TAG(set_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(set_val, T_SET, "set-remove!", "a set");
 
 	set_remove(interp, (int)VAL_DATA(set_val), chain_sp[-1]);
 	if (interp->error_flag)
@@ -533,11 +501,7 @@ void p_set_remove(DISPATCH_ARGS) {
 void p_add_last(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val array_val = chain_sp[-2];
-	if (VAL_TAG(array_val) != T_ARRAY) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "expected an array; got %s", tag_name(VAL_TAG(array_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(array_val, T_ARRAY, "add-last!", "an array");
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
 	GROW_IF_FULL(array->len, array->capacity, array->items);
@@ -549,11 +513,7 @@ void p_add_last(DISPATCH_ARGS) {
 void p_remove_last(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val array_val = chain_sp[-1];
-	if (VAL_TAG(array_val) != T_ARRAY) {
-		SYNC_REGISTERS(interp, chain_ip, chain_sp);
-		fail(interp, "expected an array; got %s", tag_name(VAL_TAG(array_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(array_val, T_ARRAY, "remove-last!", "an array");
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
 	if (array->len == 0) {
 		SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
@@ -572,11 +532,7 @@ void p_remove_last(DISPATCH_ARGS) {
 	void name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1); \
 		Val length_val = chain_sp[-1]; \
-		if (VAL_TAG(length_val) != T_FLOAT) { \
-			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
-			fail(interp, "expected a float length; got %s", tag_name(VAL_TAG(length_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(length_val, T_FLOAT, "int-segment", "a float length"); \
 		int length = (int)VAL_NUMBER(length_val); \
 		if (length < 0) { \
 			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
@@ -607,10 +563,7 @@ NEW_SEGMENT(p_double_segment, "double-segment", SEGMENT_DOUBLE)
 void p_array_of(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val length_val = chain_sp[-1];
-	if (VAL_TAG(length_val) != T_FLOAT) {
-		fail(interp, "expected a float length; got %s", tag_name(VAL_TAG(length_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(length_val, T_FLOAT, "array-of", "a float length");
 	int array_len = (int)VAL_NUMBER(length_val);
 
 	NEW_ARRAY(array_handle, array, array_len);
@@ -625,10 +578,7 @@ void p_array_of(DISPATCH_ARGS) {
 void p_take(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val length_val = chain_sp[-1];
-	if (VAL_TAG(length_val) != T_FLOAT) {
-		fail(interp, "expected a float length; got %s", tag_name(VAL_TAG(length_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(length_val, T_FLOAT, "take", "a float length");
 	int n_items = (int)VAL_NUMBER(length_val);
 	if (n_items < 0) n_items = 0;
 
@@ -718,10 +668,7 @@ for (int i = 0; i < source->len; i++) {
 void p_flatten_array(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val arrays_val = chain_sp[-1];
-	if (VAL_TAG(arrays_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(arrays_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(arrays_val, T_ARRAY, "flatten-array", "an array");
 	Object *arrays = OBJECT_AT(VAL_DATA(arrays_val));
 
 	int has_nested = 0;
@@ -751,10 +698,7 @@ void p_sample(DISPATCH_ARGS) {
 	REQUIRE_CHAIN_SEQUENCE(source_val);
 	Val replacement_val = chain_sp[-1];
 	Val count_val = chain_sp[-2];
-	if (VAL_TAG(count_val) != T_FLOAT) {
-		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(count_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(count_val, T_FLOAT, "sample", "a float count");
 	int count = (int)VAL_NUMBER(count_val);
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	int with_replacement = truthy(replacement_val);
@@ -806,14 +750,8 @@ void p_range(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val to_val = chain_sp[-1];
 	Val from_val = chain_sp[-2];
-	if (VAL_TAG(to_val) != T_FLOAT) {
-		fail(interp, "expected a float to; got %s", tag_name(VAL_TAG(to_val)));
-		return;
-	}
-	if (VAL_TAG(from_val) != T_FLOAT) {
-		fail(interp, "expected a float from; got %s", tag_name(VAL_TAG(from_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(to_val, T_FLOAT, "range", "a float to");
+	REQUIRE_CHAIN_TAG(from_val, T_FLOAT, "range", "a float from");
 	int range_to = (int)VAL_NUMBER(to_val);
 	int range_from = (int)VAL_NUMBER(from_val);
 
@@ -953,10 +891,7 @@ int frame_delete(Object *frame, cell key) {
 void p_array_to_frame(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val source_val = chain_sp[-1];
-	if (VAL_TAG(source_val) != T_ARRAY) {
-		fail(interp, "expected an array; got %s", tag_name(VAL_TAG(source_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(source_val, T_ARRAY, "array>frame", "an array");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	if (source->len % 2 != 0) {
 		fail(interp, "array needs an even number of kv pairs");
@@ -1135,10 +1070,7 @@ void p_frame_set_symbol(DISPATCH_ARGS) {
 void p_frame_get(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val frame_val = chain_sp[-2];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "@", "a frame");
 	Val key_or_path = chain_sp[-1];
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
@@ -1162,10 +1094,7 @@ void p_frame_get(DISPATCH_ARGS) {
 void p_frame_get_or(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	Val frame_val = chain_sp[-3];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "@or", "a frame");
 	Val key_or_path = chain_sp[-2];
 	Val fallback = chain_sp[-1];
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
@@ -1185,10 +1114,7 @@ void p_frame_get_or(DISPATCH_ARGS) {
 void p_frame_set(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	Val frame_val = chain_sp[-3];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "!", "a frame");
 	Val key_or_path = chain_sp[-2];
 	Val value = chain_sp[-1];
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
@@ -1210,10 +1136,7 @@ void p_frame_set(DISPATCH_ARGS) {
 void p_frame_delete_at(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val frame_val = chain_sp[-2];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "delete-at", "a frame");
 	Val key_or_path = chain_sp[-1];
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
@@ -1240,10 +1163,7 @@ void p_frame_delete_at(DISPATCH_ARGS) {
 void p_frame_keys(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val frame_val = chain_sp[-1];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "keys", "a frame");
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	NEW_ARRAY(result_handle, result, frame->len);
@@ -1259,10 +1179,7 @@ void p_frame_keys(DISPATCH_ARGS) {
 void p_frame_values(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val frame_val = chain_sp[-1];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "values", "a frame");
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	NEW_ARRAY(result_handle, result, frame->len);
@@ -1278,10 +1195,7 @@ void p_frame_values(DISPATCH_ARGS) {
 void p_frame_to_array(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val frame_val = chain_sp[-1];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "frame>array", "a frame");
 	Object *frame = OBJECT_AT(VAL_DATA(frame_val));
 
 	NEW_ARRAY(result_handle, result, frame->len * 2);
@@ -1412,15 +1326,9 @@ static void select_walk(Interpreter *interp, Val tree_node, Object *path, int de
 	void c_name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
 		Val path_val = chain_sp[-1]; \
-		if (VAL_TAG(path_val) != T_ARRAY) { \
-			fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(path_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(path_val, T_ARRAY, "select-values", "an array"); \
 		Val frame_val = chain_sp[-2]; \
-		if (VAL_TAG(frame_val) != T_FRAME) { \
-			fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val))); \
-			return; \
-		} \
+		REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "select-values", "a frame"); \
 		Object *path = OBJECT_AT(VAL_DATA(path_val)); \
 		\
 		int matches = object_new_array(interp, 8); \
@@ -1469,11 +1377,8 @@ void p_merge(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val right = chain_sp[-1];
 	Val left = chain_sp[-2];
-	if (VAL_TAG(right) != T_FRAME || VAL_TAG(left) != T_FRAME) {
-		Val offender = VAL_TAG(right) != T_FRAME ? right : left;
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(offender)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(right, T_FRAME, "merge", "a frame");
+	REQUIRE_CHAIN_TAG(left, T_FRAME, "merge", "a frame");
 	Object *right_frame = OBJECT_AT(VAL_DATA(right));
 	Object *left_frame = OBJECT_AT(VAL_DATA(left));
 
@@ -1527,10 +1432,7 @@ void p_merge(DISPATCH_ARGS) {
 void p_frame(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val values_val = chain_sp[-1];
-	if (VAL_TAG(values_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(values_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(values_val, T_ARRAY, "frame", "an array");
 	Val keys_val = chain_sp[-2];
 	REQUIRE_CHAIN_SEQUENCE(keys_val);
 	Object *values = OBJECT_AT(VAL_DATA(values_val));
@@ -1572,10 +1474,7 @@ void p_has(DISPATCH_ARGS) {
 
 	if (VAL_TAG(chain_sp[-2]) == T_STRING) {
 		Val pattern_val = chain_sp[-1];
-		if (VAL_TAG(pattern_val) != T_STRING) {
-			fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(pattern_val)));
-			return;
-		}
+		REQUIRE_CHAIN_TAG(pattern_val, T_STRING, "has?", "a string");
 		Object *pattern = OBJECT_AT(VAL_DATA(pattern_val));
 		Object *subject = OBJECT_AT(VAL_DATA(chain_sp[-2]));
 
@@ -1588,16 +1487,10 @@ void p_has(DISPATCH_ARGS) {
 	}
 
 	Val frame_val = chain_sp[-2];
-	if (VAL_TAG(frame_val) != T_FRAME) {
-		fail(interp, "expected %s; got %s", tag_name(T_FRAME), tag_name(VAL_TAG(frame_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(frame_val, T_FRAME, "has?", "a frame");
 	Val key_or_path = chain_sp[-1];
 
-	if (VAL_TAG(key_or_path) != T_ARRAY) {
-		fail(interp, "expected a symbol or path (array of symbols); got %s", tag_name(VAL_TAG(key_or_path)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(key_or_path, T_ARRAY, "has?", "a symbol or path (array of symbols)");
 
 	int is_search;
 	Object *path = frame_path_resolve(interp, key_or_path, 1, &is_search);
@@ -1683,16 +1576,10 @@ static int row_cmp(void *interp, const void *left, const void *right) {
 void p_group_by(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val col_val = chain_sp[-1];
-	if (VAL_TAG(col_val) != T_SYMBOL) {
-		fail(interp, "expected %s; got %s", tag_name(T_SYMBOL), tag_name(VAL_TAG(col_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(col_val, T_SYMBOL, "group-by", "a symbol");
 	cell col = VAL_DATA(col_val);
 	Val rows_val = chain_sp[-2];
-	if (VAL_TAG(rows_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(rows_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(rows_val, T_ARRAY, "group-by", "an array");
 	int row_count = OBJECT_AT(VAL_DATA(rows_val))->len;
 
 	int frame_handle = object_new_frame(interp);
@@ -1827,22 +1714,13 @@ void p_destruct_to(DISPATCH_ARGS) {
 void p_slice_store(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 6);
 	Val slen_val = chain_sp[-1];
-	if (VAL_TAG(slen_val) != T_FLOAT) {
-		fail(interp, "expected a float length; got %s", tag_name(VAL_TAG(slen_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(slen_val, T_FLOAT, "slice!", "a float length");
 	int slen = (int)VAL_NUMBER(slen_val);
 	Val sstep_val = chain_sp[-2];
-	if (VAL_TAG(sstep_val) != T_FLOAT) {
-		fail(interp, "expected a float step; got %s", tag_name(VAL_TAG(sstep_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(sstep_val, T_FLOAT, "slice!", "a float step");
 	int sstep = (int)VAL_NUMBER(sstep_val);
 	Val sstart_val = chain_sp[-3];
-	if (VAL_TAG(sstart_val) != T_FLOAT) {
-		fail(interp, "expected a float source-start; got %s", tag_name(VAL_TAG(sstart_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(sstart_val, T_FLOAT, "slice!", "a float source-start");
 	int sstart = (int)VAL_NUMBER(sstart_val);
 	Val src_val = chain_sp[-4];
 	if (VAL_TAG(src_val) != T_ARRAY && VAL_TAG(src_val) != T_SET) {
@@ -1850,16 +1728,10 @@ void p_slice_store(DISPATCH_ARGS) {
 		return;
 	}
 	Val tstart_val = chain_sp[-5];
-	if (VAL_TAG(tstart_val) != T_FLOAT) {
-		fail(interp, "expected a float target-start; got %s", tag_name(VAL_TAG(tstart_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(tstart_val, T_FLOAT, "slice!", "a float target-start");
 	int tstart = (int)VAL_NUMBER(tstart_val);
 	Val target_val = chain_sp[-6];
-	if (VAL_TAG(target_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(target_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(target_val, T_ARRAY, "slice!", "an array");
 
 	Object *target = OBJECT_AT(VAL_DATA(target_val));
 	Object *src    = OBJECT_AT(VAL_DATA(src_val));
@@ -1919,22 +1791,13 @@ void p_slice_store(DISPATCH_ARGS) {
 void p_to_slice(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
 	Val n_val = chain_sp[-1];
-	if (VAL_TAG(n_val) != T_FLOAT) {
-		fail(interp, "expected a float count; got %s", tag_name(VAL_TAG(n_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(n_val, T_FLOAT, "to-slice!", "a float count");
 	int n = (int)VAL_NUMBER(n_val);
 	Val offset_val = chain_sp[-2];
-	if (VAL_TAG(offset_val) != T_FLOAT) {
-		fail(interp, "expected a float offset; got %s", tag_name(VAL_TAG(offset_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(offset_val, T_FLOAT, "to-slice!", "a float offset");
 	int offset = (int)VAL_NUMBER(offset_val);
 	Val target_val = chain_sp[-3];
-	if (VAL_TAG(target_val) != T_ARRAY) {
-		fail(interp, "expected %s; got %s", tag_name(T_ARRAY), tag_name(VAL_TAG(target_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(target_val, T_ARRAY, "to-slice!", "an array");
 	Object *target = OBJECT_AT(VAL_DATA(target_val));
 
 	if (n < 0) {
@@ -2294,10 +2157,7 @@ static void json_parse_value(Interpreter *interp, JSONParser *parser, Val *desti
 void p_json_to_frame(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val json_val = chain_sp[-1];
-	if (VAL_TAG(json_val) != T_STRING) {
-		fail(interp, "expected %s; got %s", tag_name(T_STRING), tag_name(VAL_TAG(json_val)));
-		return;
-	}
+	REQUIRE_CHAIN_TAG(json_val, T_STRING, "json>frame", "a string");
 	Object *json = OBJECT_AT(VAL_DATA(json_val));
 
 	JSONParser parser;

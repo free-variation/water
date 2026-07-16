@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.20.0"
+#define VERSION "0.20.1"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1239,6 +1239,7 @@ void p_matrix(DISPATCH_ARGS);
 void p_matrix_range(DISPATCH_ARGS);
 void p_max(DISPATCH_ARGS);
 void p_min(DISPATCH_ARGS);
+void p_nonmissing_count(DISPATCH_ARGS);
 void p_norm(DISPATCH_ARGS);
 void p_reshape(DISPATCH_ARGS);
 void p_row_maxes(DISPATCH_ARGS);
@@ -1256,7 +1257,7 @@ void p_transpose(DISPATCH_ARGS);
 void p_vstack(DISPATCH_ARGS);
 void p_where(DISPATCH_ARGS);
 
-double matrix_variance_overall(Object *source);
+double matrix_variance_overall(Object *source, size_t *n_nonmissing_out);
 void p_correlation_kendall(DISPATCH_ARGS);
 void p_quantile(DISPATCH_ARGS);
 void p_variance(DISPATCH_ARGS);
@@ -1320,6 +1321,7 @@ void p_db_close(DISPATCH_ARGS);
 void p_db_exec(DISPATCH_ARGS);
 void p_db_open(DISPATCH_ARGS);
 void p_db_query(DISPATCH_ARGS);
+void p_db_query_to_dataset(DISPATCH_ARGS);
 
 void p_ffi_call(DISPATCH_ARGS);
 void p_ffi_free(DISPATCH_ARGS);
@@ -1336,6 +1338,7 @@ void p_wait(DISPATCH_ARGS);
 
 void dounit(DISPATCH_ARGS);
 void p_base(DISPATCH_ARGS);
+void p_magnitude(DISPATCH_ARGS);
 void p_unit(DISPATCH_ARGS);
 
 void p_date_to_epoch(DISPATCH_ARGS);
@@ -1354,6 +1357,15 @@ static inline int truthy(Val value) {
 	if (VAL_TAG(value) == T_QUANTITY)
 		return quantity_truthy(value);
 	return VAL_DATA(value) != 0;
+}
+
+static inline Val quantity_unwrap(Val value, int *unit) {
+	if (VAL_TAG(value) == T_QUANTITY) {
+		*unit = (int)pairs.table[VAL_DATA(value)].tail.bits;
+		return pairs.table[VAL_DATA(value)].head;
+	}
+	*unit = 0;
+	return value;
 }
 
 static inline void gc_root_push(Interpreter *interp, Val value) {

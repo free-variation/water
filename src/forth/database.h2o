@@ -1,0 +1,97 @@
+( column -- sym) \ :real when every non-empty cell is a float, else :text
+: column-sql-type
+	[: none? not :] filter
+	dup size 0= if drop :text exit then
+	[: float? :] all? if :real else :text then ; internal
+
+( name -- quoted ) \ sql identifier: embedded quotes doubled, wrapped in quotes
+: sql-identifier
+	"""" """""" replace
+	"""{0}""" format ; internal
+
+( declaration -- flag ) \ is a declared sql type date-like?
+: declared-instant?
+	dup none? if drop false else "(?i)date|time" has? then ; internal
+
+( declaration -- flag ) \ is a declared sql type numeric?
+: declared-numeric?
+	dup none? if drop false else "(?i)int|real|floa|doub|num" has? then ; internal
+
+( column -- instants ) \ an epoch vector takes s directly; ISO text parses per cell
+: column>instants
+	dup matrix? if s exit then
+	[: dup none? if else iso>time 1 s / then :] map vector s ; internal
+
+( db query params -- dataset ) \ typed columns: numeric -> n x 1 vector (NaN for
+\ NULL), declared date/time -> instant vector in s, text -> array; an empty
+\ column declared numeric stays typed as an empty vector
+: db-query>dataset
+	| dataset types |
+	(db-query>dataset) to types to dataset
+	types keys [> column-name |
+		types column-name @ declared-instant? if
+			dataset column-name  dataset column-name @ column>instants  ! drop
+		else
+			dataset column-name @ dup array? swap size 0= and
+			types column-name @ declared-numeric? and if
+				dataset column-name  [ ] vector  ! drop
+			then
+		then
+		0 :] map drop
+	dataset ;
+
+( names types table -- statement ) 
+: create-table-statement
+	>r
+	[> name type | name sql-identifier type :real = if " REAL" else " TEXT" then + :] 2 mapn
+	", " join
+
+	r> sql-identifier "CREATE TABLE {0} ({1})" format ; internal
+
+( n-columns table -- statement )
+: insert-statement
+	sql-identifier swap
+	"?" swap array-of ", " join
+	"INSERT INTO {1} VALUES ({0})" format ; internal
+
+( db table col-name -- num-distinct ) \ COUNT(DISTINCT) over the loaded column; empty cells don't count.
+: column-distinct-count
+	sql-identifier swap sql-identifier
+
+	"SELECT COUNT(DISTINCT {1}) AS ""distinct-count"" FROM {0}" format
+	[ ] db-query>dataset :distinct-count @ 0 @e ; internal
+
+( tsv-path db table -- info ) \ imports a tsv. header row names the columns, types inferred by column
+: tsv>db
+	| >tsv-path >db >table rows names n-columns dataset types statement |
+	tsv-path read-tsv to rows
+	rows size 0= if tsv-path "tsv>db: {0} has no header row" format throw then
+
+	rows 0 @i to names
+	names size to n-columns
+	rows [: size n-columns = not :] filter size 0= not if
+		tsv-path "tsv>db: ragged rows in {0}" format throw
+	then
+
+	rows true rows>dataset to dataset
+	names [: string>symbol dataset swap @ column-sql-type :] map to types
+	db names types table create-table-statement [ ] db-exec drop
+
+	names size table insert-statement to statement
+	db "BEGIN" [ ] db-exec drop
+	[> i | db statement rows i 1 + @i db-exec drop :] rows size 1- i-times
+	db "COMMIT" [ ] db-exec drop
+
+	{ :n-rows rows size 1-
+	  :columns names types
+	  	[> name type |
+	  		type :real = if
+	  			{ :name name string>symbol
+				  :type type
+				  :summary dataset name string>symbol @ vector five-number-summary }
+			else
+				{ :name name string>symbol
+				  :type type
+				  :distinct db table name column-distinct-count }
+			then :] 2 mapn } ;
+	
