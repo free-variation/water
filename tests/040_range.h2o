@@ -32,7 +32,7 @@
 \ failures
 "x" 5 range
 0 "x" range
-5 range
+clear 5 range
 range
 
 \ element count overflows int (M3) — must error, not wrap to a negative len

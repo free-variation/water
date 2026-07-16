@@ -3404,6 +3404,8 @@ static void mark_roots(Interpreter *interp) {
 		mark_value(interp, interp->side_stack[i]);
 	for (i = 0; i < interp->n_gc_roots; i++)
 		mark_value(interp, interp->gc_roots[i]);
+	for (i = 0; i < interp->entry_snapshot_depth; i++)
+		mark_value(interp, interp->entry_snapshot[i]);
 }
 
 void gc(Interpreter *interp) {
@@ -4452,12 +4454,24 @@ int main(int argc, char **argv) {
 	compiler.interactive = interactive;
 
 	for (;;) {
+		int fresh_entry = compiler.input_buffer_len == 0;
 		int chunk = platform_read_chunk(compiler.input_buffer + compiler.input_buffer_len,
 				INPUT_BUFFER_SIZE - compiler.input_buffer_len, interactive);
 		if (chunk == 0)
 			break;
 		if (chunk > 0)
 			compiler.input_buffer_len += chunk;
+
+		if (fresh_entry) {
+			if (interp->dsp > interp->entry_snapshot_cap) {
+				interp->entry_snapshot = realloc(interp->entry_snapshot,
+						sizeof(Val) * (size_t)interp->dsp);
+				interp->entry_snapshot_cap = interp->dsp;
+			}
+			if (interp->dsp > 0)
+				memcpy(interp->entry_snapshot, interp->data_stack, sizeof(Val) * (size_t)interp->dsp);
+			interp->entry_snapshot_depth = interp->dsp;
+		}
 
 		interp->error_flag = 0;
 		interp->unwinding = 0;
@@ -4474,7 +4488,10 @@ int main(int argc, char **argv) {
 			compiler.loop_begin = 0;
 			compiler.leave_chain = 0;
 			compiler.compiling = 0;
-			interp->dsp = 0;
+			if (interp->entry_snapshot_depth > 0)
+				memcpy(interp->data_stack, interp->entry_snapshot,
+						sizeof(Val) * (size_t)interp->entry_snapshot_depth);
+			interp->dsp = interp->entry_snapshot_depth;
 			interp->rsp = 0;
 			interp->side_dsp = 0;
 			interp->local_base = 0;
@@ -4509,6 +4526,7 @@ int main(int argc, char **argv) {
 			fflush(stdout);
 		}
 
+		interp->entry_snapshot_depth = 0;
 		inbuf_reset();
 	}
 	return 0;

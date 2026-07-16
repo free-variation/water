@@ -59,7 +59,7 @@ clear
 
 \ failures
 [ 1 2 3 ] "x" take
-[ 1 2 3 ] take
+clear [ 1 2 3 ] take
 5 3 take
 
 clear
@@ -85,7 +85,7 @@ clear
 \ failures
 5 reverse
 "x" reverse
-reverse
+clear reverse
 
 clear
 \ ---- skip ----
@@ -168,8 +168,8 @@ clear
 \ failures
 [ 1 2 3 ] 5 concat
 5 [ 1 2 3 ] concat
-[ 1 2 3 ] concat
-concat
+clear [ 1 2 3 ] concat
+clear concat
 
 \ flatten-array: deep flatten of nested arrays; a flat array returns unchanged
 [ 1 2 3 ] flatten-array .                      \ already flat -> as-is

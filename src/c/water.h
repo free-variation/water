@@ -508,6 +508,10 @@ typedef struct Interpreter {
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
 
+	Val *entry_snapshot;
+	int entry_snapshot_depth;
+	int entry_snapshot_cap;
+
 	struct {
 		char *pattern;
 		int pattern_len;

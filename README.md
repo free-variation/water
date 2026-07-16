@@ -226,7 +226,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 
 ### I/O and persistence
 
-- **Interactive REPL** with full isocline line editing: theme-adaptive **syntax highlighting**, **matching-brace** highlighting, **inline hints** and **Tab completion** (word names from the live dictionary, filenames inside string literals), persistent history (`.water_history`), and **multi-line editing** — `Ctrl+J` inserts a line, `Enter` submits the whole buffer. A `count|top` prompt shows stack depth and the top value, green on a terminal, red on error. `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
+- **Interactive REPL** with full isocline line editing: theme-adaptive **syntax highlighting**, **matching-brace** highlighting, **inline hints** and **Tab completion** (word names from the live dictionary, filenames inside string literals), persistent history (`.water_history`), and **multi-line editing** — `Ctrl+J` inserts a line, `Enter` submits the whole buffer. A `count|top` prompt shows stack depth and the top value, green on a terminal, red on error. A failed entry leaves the data stack as it was before the entry (the stack is snapshotted per entry and restored on error; in-place mutations of heap objects persist). `.` pretty-prints a nested array across lines with the opening brackets aligned; strings print quoted inside a collection and in `.s`, raw when printed bare.
 - **`load`** runs a source file as if typed.
 - **`save`** writes the user's vocabulary as a re-loadable `.h2o` source file.
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
