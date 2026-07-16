@@ -36,7 +36,7 @@ inline
 : eval_times_u ( u xt -- new-u )
   | >u >xt n |
   u size to n
-  [> i | i u xt execute :] n i-times
+  [: u xt execute :] n i-times
   n array ;
 
 : eval_AtA_times_u ( u -- new-u )

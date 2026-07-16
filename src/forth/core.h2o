@@ -41,6 +41,10 @@ inline
 : nip swap drop ;
 inline
 
+( tos -- tos ) \ prints the top without consuming it
+: peek dup . ;
+inline
+
 \ arithmetic words
 
 ( a b -- remainder )  \ = % drop ; sign follows the dividend
@@ -58,3 +62,4 @@ inline
 ( a b -- larger )  \ the lt-ordered greater of two scalars
 : max2 2dup lt if swap then drop ;
 inline
+

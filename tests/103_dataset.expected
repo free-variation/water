@@ -52,7 +52,33 @@
           4          5
 
 error: array index 5 out of bounds (length 3)
-in (@i.l1l0) ← [> i | column i @i :] ← [> column-name | dataset column-name @ dup matr… :] ← select-rows
+in (@i.swap.l0) ← [: column swap @i :] ← [: dataset swap @ dup matrix? over quantity? or… :] ← select-rows
 error: array index 3 out of bounds (length 2)
-in (@i.l1l0) ← [> i | column i @i :] ← [> column-name | dataset column-name @ dup matr… :] ← select-rows
+in (@i.swap.l0) ← [: column swap @i :] ← [: dataset swap @ dup matrix? over quantity? or… :] ← select-rows
 error: expected a matrix; got a float
+4 3 
+0 0 
+1 0 
+3 2 
+:numeric 
+:quantity 
+:datetime 
+:text 
+:numeric 
+error: no key :missing
+in (@.symbol) ← column-type
+{
+  :name [ "ann" "bob" "cal" ]
+  :score <matrix 3x1:  5 1 4>
+}
+
+{
+  :height <matrix 3x1:  170 180 190> m
+}
+
+{
+}
+
+1 3 
+error: no key :nope
+in (@.symbol) ← [: dataset swap @ :]

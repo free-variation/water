@@ -79,7 +79,7 @@
 
 	names size table insert-statement to statement
 	db "BEGIN" [ ] db-exec drop
-	[> i | db statement rows i 1 + @i db-exec drop :] rows size 1- i-times
+	[: 1 + >r db statement rows r> @i db-exec drop :] rows size 1- i-times
 	db "COMMIT" [ ] db-exec drop
 
 	{ :n-rows rows size 1-

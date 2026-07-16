@@ -94,3 +94,12 @@ uses-qinline . cr
 : uses-plain-inline 5 plain-inline ;
 uses-plain-inline . cr
 ' uses-plain-inline see-compiled
+
+clear
+\ local-array + stack-index fuses: <local> swap @i is one op, at depth 0
+\ and through one enclosing quotation frame at depth 1
+: at-swap-local | arr | to arr [: arr swap @i :] map ;
+' at-swap-local see-compiled
+[ 2 0 ] [ 10 20 30 ] at-swap-local . cr    \ [ 30 10 ]
+: at-swap-nested | arr | to arr [: |> j | [ 0 1 ] [: arr swap @i j + :] map :] ;
+' at-swap-nested see-compiled

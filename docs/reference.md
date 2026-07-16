@@ -283,6 +283,7 @@ inputs are computed over their magnitudes.
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `magnitude` | `( v -- v' )` | A quantity's bare magnitude (float or matrix, the unit dropped); any other value passes through unchanged | 2 | none | O(1) |
+| `unit-of` | `( v -- q\|1 )` | A quantity's unit as the quantity `1` in that unit (`10 km` → `1 km`, a matrix column in `m` → `1 m`, computed units in dimensional form — `1 m.s^-1`); a bare value answers `1.0`. Composes: `x unit-of *` attaches x's unit, `1 s =` tests for a unit | 2 | 1 pair | O(1) |
 
 `units.h2o` predeclares a standard set (names spelled out and lowercase):
 length `m` (`km`), time `s` (`minute`, `hour`, `day`, `week`), mass `kg`, current `ampere`,
@@ -611,7 +612,7 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `@e` | `( m i -- f )` | Element at flat row-major index i as a float — consumes `argmin`/`argmax`/`where` indices; the same access on n×1 and 1×n vectors | 3 | none | O(1) |
 | `!e` | `( m i v -- m )` | Store v (a float, or `null` for NaN) at flat row-major index i, in place | 4 | none | O(1) |
 | `!i,j` | `( m i j v -- m )` | Store v (a float, or `null` for NaN) at row i, column j, in place | 5 | none | O(1) |
-| `dim` | `( m -- r c )` | Push rows then columns | 3 | none | O(1) |
+| `dim` | `( m/dataset -- r c )` | Push rows then columns; datasets.h2o extends it to a dataset — rows from the first column's length, columns from the key count | 3 | none | O(1) |
 | `reshape` | `( m r c -- m' )` | Same elements, new shape (must match); memcpy | 3 + r×c | `1m(r×c)` | O(r×c) |
 | `transpose` | `( m -- m' )` | Rows/columns swapped | 1 + r×c | `1m(c×r)` | O(r×c) |
 | `diagonal` | `( m -- m' )` | Diagonal as a 1×min(r,c) matrix | 1 + min(r,c) | `1m(1×min)` | O(min(r,c)) |
@@ -778,6 +779,8 @@ A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a co
 | `rows>dataset` | `( table header? -- dataset )` | datasets.h2o: column-oriented frame from a table; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
 | `rows>relation` | `( table index-cols header? -- relation )` | datasets.h2o: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
 | `dataset>matrix` | `( dataset cols -- m )` | datasets.h2o: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
+| `column-type` | `( dataset sym -- sym )` | datasets.h2o: the named column's type from its representation — matrix `:numeric`, quantity in exactly `s` `:datetime`, other quantity `:quantity`, array `:text`; a missing key errors through `@` | 5 | 1 pair | O(log c) |
+| `select-columns` | `( dataset cols -- dataset )` | datasets.h2o: the named columns as a new dataset (a fresh frame sharing the column values); a missing name errors through `@` | k log c | `1a(k)` + `1o` | O(k log c) |
 | `resample-indices` | `( n -- arr )` | datasets.h2o: n indices drawn from [0,n) with replacement (bootstrap), from the global stream | 2n | `2×1a(n)` | O(n) |
 | `resample-indices-ext` | `( n seed -- arr )` | n indices drawn from [0,n) with replacement by a private generator seeded from `seed` (splitmix64-expanded) — same draw for the same seed regardless of thread or stream position; the bootstrap words seed replicate i at run-seed + i | n | `1a(n)` | O(n)† |
 

@@ -117,6 +117,39 @@ void p_at_i_local0(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
 }
 
+void p_at_i_swap_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+
+	Val source_val = interp->return_stack[interp->local_base + (int)chain_ip[0]];
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 1, chain_sp - 1, source_val, (int)VAL_NUMBER(index_val));
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
+}
+
+void p_at_i_swap_local1(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+
+	int enclosing = saved_local_base(interp->return_stack[interp->local_base - 1]);
+	Val source_val = interp->return_stack[enclosing + (int)chain_ip[0]];
+	Val *pushed_sp = array_index_fetch(interp, chain_ip + 1, chain_sp - 1, source_val, (int)VAL_NUMBER(index_val));
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
+}
+
 void p_at_i_lit(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
 	Val *pushed_sp = array_index_fetch(interp, chain_ip + 1, chain_sp - 1, chain_sp[-1], (int)chain_ip[0]);

@@ -142,7 +142,7 @@ A magnitude (float or matrix) carrying a unit; arithmetic propagates and checks 
 
 - **`base` / `unit`** — declare dimensions and units. `base unit m`; `1 kg 1 m * 1 s / 1 s / unit newton` (derived); `1 $ 100 / unit ¢` (scaled sub-unit). A unit word is postfix — `10 m`, `3 newton`.
 - **Arithmetic** — `*`/`/` combine unit exponents and scales (a dimensionless result collapses back to a bare float/matrix); `+`/`-` require the same dimension and rescale across scales; `^`/`sqrt` scale the exponents; `= < >` compare by value, normalizing scale within a dimension. Named units print by name, unnamed compounds in base form.
-- **Statistics keep the unit** — the matrix reductions and statistics accept a dimensioned matrix: `sum`/`mean`/`max`/`min`/`quantile`/`median`/`iqr`/`ci` answer in the operand's unit, `var` in the unit squared (`std`/`se` return through `sqrt`), index/count words and the correlations answer bare; `magnitude` strips a quantity to its payload.
+- **Statistics keep the unit** — the matrix reductions and statistics accept a dimensioned matrix: `sum`/`mean`/`max`/`min`/`quantile`/`median`/`iqr`/`ci` answer in the operand's unit, `var` in the unit squared (`std`/`se` return through `sqrt`), index/count words and the correlations answer bare; `magnitude` strips a quantity to its payload, `unit-of` answers its unit as the quantity `1` in that unit.
 - **Standard set** (`units.h2o`) — SI `m s kg ampere kelvin mol`, derived `hertz newton pascal joule watt coulomb volt`, `minute`/`hour`/`day`/`week`/`km`, and currencies `$`/`¢`, `£`/`penny`, `€`/`eurocent`.
 - **Constants** (`constants.h2o`) — capitalized: `PI` `E` `TAU` `PHI`, and the physical set as dimensioned quantities (`C` `G` `H` `HBAR` `KB` `NA` `QE`, SI-2019 exact values) — `C 2 ^ 1 kg *` is E=mc², and prints in joules.
 
@@ -263,6 +263,7 @@ TSV is the one tabular file format (convert other formats to TSV before loading)
 
 - **`read-tsv`** / **`write-tsv`** — read a file into an array of row-arrays (a numeric cell becomes a float, an empty cell `none`, everything else a string) and write one back.
 - **`rows>dataset`** — `( table header? -- frame )` a column-oriented frame, one array per column; **`rows>relation`** — `( table index-cols header? -- relation )` a deduped, indexed fact-database relation; **`dataset>matrix`** — `( dataset cols -- m )` an observations×columns numeric matrix from named columns.
+- **Dataset verbs** — `select-rows`, `select-columns`, `dim`, and `column-type` work on a dataset directly: rows gather by an index array or vector across every column, `select-columns` keeps named columns, `dim` answers rows and columns, `column-type` reads a column's type from its representation (`:numeric` `:datetime` `:quantity` `:text`).
 - **`resample-indices`** — `( n -- arr )` n indices drawn from `[0,n)` with replacement, for bootstrap resampling.
 
 The statistics library (`lib/statistics.h2o`, loaded on demand) builds on the matrix and FFI layers:

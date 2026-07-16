@@ -122,12 +122,12 @@ variable sols   variable done
 : empty-row ( -- row )
   | row |
   0.0 10.0 array-of to row
-  [> pi | row pi [ ] !i drop :] 10 i-times
+  [: row swap [ ] !i drop :] 10 i-times
   row ;
 
 : init-fps
   0.0 50.0 array-of to fps
-  [> ci | fps ci empty-row !i drop :] 50 i-times ;
+  [: fps swap empty-row !i drop :] 50 i-times ;
 
 : get-footprints
   [| >ci c |

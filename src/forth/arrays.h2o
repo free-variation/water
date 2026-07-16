@@ -14,7 +14,7 @@
 ( arr -- permutation ) \ sorting permutation under val_cmp; ties keep index order
 : argsort
 	dup array? if
-		dup size iota [> element index | [ element index ] :] 2 mapn
+		dup size iota [: 2 array :] 2 mapn
 		sort
 		[: 1 @i :] map
 	else

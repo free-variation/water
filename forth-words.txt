@@ -112,6 +112,7 @@ column-maxes
 column-means
 column-mins
 column-sums
+column-type
 concat
 cons
 cons>array
@@ -379,6 +380,7 @@ see>string
 seed
 segment>pointer
 segment?
+select-columns
 select-keys
 select-rows
 select-values
@@ -441,6 +443,7 @@ type-of
 unify
 union
 unit
+unit-of
 until
 update-at
 values

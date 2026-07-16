@@ -24,9 +24,7 @@
 	n-rows 0= if [ ] else start table size 1- range then to row-indices
 	keys size iota
 	[: |> j |
-	   row-indices [: |> i |
-					  table i @i j @i :]
-	   map :]
+	   row-indices [: table swap @i j @i :] map :]
 	map to columns
 
 	keys columns frame ;
@@ -41,11 +39,8 @@
 	table size start - to n-rows
 	n-rows 0= if [ ] else start table size 1- range then to row-indices
 
-	row-indices [: |> i | keys table i @i frame :] map to rows
-	rows [: |> row |
-			index-cols row [: |> acc col |
-							  acc col [: string>symbol :] update-at :]
-			reduce :] map to rows
+	row-indices [: table swap @i keys swap frame :] map to rows
+	rows [: index-cols swap [: [: string>symbol :] update-at :] reduce :] map to rows
 
 	index-cols relation rows bulk-load ;
 
@@ -69,7 +64,7 @@
 ( column indices -- column' ) \ gather array elements by an index vector
 : gather-elements
 	| column | swap to column
-	[> i | column i @i :] map ; internal
+	[: column swap @i :] map ; internal
 
 ' select-rows constant (matrix-select-rows) internal
 
@@ -81,8 +76,7 @@
 	then
 
 	dataset keys dup
-	[> column-name |
-	   dataset column-name @
+	[: dataset swap @
 	   dup matrix? over quantity? or if
 		   indices (matrix-select-rows) execute
 	   else
@@ -98,4 +92,41 @@
 		(matrix-select-rows) execute
 	then ;
 
-		
+' dim constant (matrix-dim) internal 
+
+( dataset -- rows columns ) \ rows from the first columns length, columns from key count
+: dataset-dim 
+	| >dataset n-columns |
+	dataset keys size to n-columns
+	n-columns 0= if 0 0 exit then
+	dataset dup keys 0 @i @ size n-columns ; internal
+
+( dataset/matrix -- rows columns ) \ dimensions of a matrix or dataset
+: dim
+	dup frame? if 
+		dataset-dim
+	else
+		(matrix-dim) execute
+	then ;
+
+( dataset sym -- sym ) \ the named colum's type from its representation
+: column-type
+	@ dup matrix? if
+		drop :numeric exit
+	then
+	
+	dup quantity? if
+		unit-of 1 s = if 
+			:datetime
+		else
+			:quantity
+		then
+	else
+		drop :text
+	then ;
+
+( dataset columns -- dataset ) \ the named columns as a new dataset
+: select-columns
+	| dataset | swap to dataset
+	dup [: dataset swap @ :] map 
+	frame ;

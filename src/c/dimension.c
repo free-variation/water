@@ -577,6 +577,19 @@ void p_magnitude(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
+void p_unit_of(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+
+	int unit;
+	quantity_unwrap(chain_sp[-1], &unit);
+	Val unit_quantity = quantity_of(interp, make_float(1.0), unit);
+	if (interp->error_flag)
+		return;
+
+	chain_sp[-1] = unit_quantity;
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
 void apply_unit(Interpreter *interp, int cfa) {
 	int unit = (int)vocab.dict[cfa + 1];
 

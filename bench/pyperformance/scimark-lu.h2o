@@ -30,11 +30,11 @@ variable rm  variable ri  variable rj
 
 : build-empty ( n -- a )
   | n a | to n  0 n array-of to a
-  [> i | a i  0 n array-of  !i drop :] n i-times  a ;
+  [: a swap 0 n array-of !i drop :] n i-times  a ;
 
 : build-filled ( n -- a )
   | n a | to n  n build-empty to a
-  [> i | [> jj | a i @i jj rng-next !i drop :] n i-times :] n i-times  a ;
+  [> i | [: a i @i swap rng-next !i drop :] n i-times :] n i-times  a ;
 
 : copy-into ( src dst n -- )
   | src dst n | to n to dst to src
@@ -72,7 +72,7 @@ variable rm  variable ri  variable rj
 
 : checksum ( a n -- s )
   | a n s | to n to a  0 to s
-  [> i | [> jj | a i @i jj @i s f+ to s :] n i-times :] n i-times  s ;
+  [> i | [: a i @i swap @i s f+ to s :] n i-times :] n i-times  s ;
 
 : lu-bench ( n cycles -- )
   | n cycles a lu t0 | to cycles to n

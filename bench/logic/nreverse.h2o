@@ -49,7 +49,7 @@
   then then ;
 
 : iota  ( n -- list )                     \ the null-terminated list [n n-1 ... 1]
-  | >n |  null  [> i | i 1+ swap cons :] n i-times ;
+  | >n |  null  [: 1+ swap cons :] n i-times ;
 
 \ --- correctness: reverse a 5-element list -------------------------------
 variable t5   5 iota to t5

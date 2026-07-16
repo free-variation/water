@@ -24,11 +24,11 @@ variable rand-m  variable ri  variable rj
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
   17.0 double-segment to rand-m
-  [> iloop |
+  [:
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     rand-m iloop  j0 65536.0 j1 f* f+  !i drop
+     rand-m swap  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
   4.0 to ri  16.0 to rj ;
 

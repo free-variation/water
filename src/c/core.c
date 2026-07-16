@@ -1332,6 +1332,7 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 	}
 
 	context->fast = 1;
+	context->leave_ip = 0;
 	context->saved_ip = interp->ip;
 	context->saved_running = interp->running;
 	context->saved_slot_0 = vocab.dict[interp->trampoline_base];
@@ -1361,6 +1362,18 @@ void call_open(Interpreter *interp, int cfa, CallContext *context) {
 			n_received = (int)vocab.dict[cfa + 3];
 			slots_ip = cfa + 4;
 			body_start = cfa + 4 + n_received;
+		} else {
+			interp->loop_n = 0;
+			interp->loop_body_start = cfa + 1;
+
+			if (dict_op_is(cfa - 2, (cfa_handler)vocab.dict[vocab.branch_cfa])) {
+				int exit_ip = cfa + (int)vocab.dict[cfa - 1] - 2;
+				if (vocab.dict[exit_ip] == vocab.dict[vocab.exit_cfa]) {
+					context->leave_ip = exit_ip;
+					context->saved_leave = vocab.dict[exit_ip];
+					vocab.dict[exit_ip] = stop_handler;
+				}
+			}
 		}
 
 		if (body_start && interp->rsp + n_locals + 1 <= RETURN_STACK_DEPTH) {
@@ -1490,10 +1503,10 @@ void call_close(Interpreter *interp, CallContext *context) {
 	interp->loop_slots_ip = context->saved_loop_slots_ip;
 
 
-	if (context->reuses_locals) {
-		if (context->leave_ip)
-			vocab.dict[context->leave_ip] = context->saved_leave;
+	if (context->leave_ip)
+		vocab.dict[context->leave_ip] = context->saved_leave;
 
+	if (context->reuses_locals) {
 		Val locals_header = interp->return_stack[interp->loop_local_base - 1];
 		interp->rsp = interp->loop_local_base - 1;
 		interp->local_base = saved_local_base(locals_header);
@@ -2208,6 +2221,8 @@ static int at_e_local0_cfa;
 static int at_e_ll0_cfa;
 static int at_e_l1l0_cfa;
 static int at_i_l1l0_cfa;
+static int at_i_swap_l0_cfa;
+static int at_i_swap_l1_cfa;
 static int load2_cfa, load3_cfa;
 
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot) {
@@ -2365,6 +2380,26 @@ static int try_fuse_two_local_op(Interpreter *interp, int ll0_cfa, int l1l0_cfa)
 
 int try_fuse_at_i_ll(Interpreter *interp) {
 	return try_fuse_two_local_op(interp, at_i_ll0_cfa, at_i_l1l0_cfa);
+}
+
+int try_fuse_at_i_swap_local(Interpreter *interp) {
+	if (!compiler.compiling)
+		return 0;
+
+	cell *dict = vocab.dict;
+	int here = vocab.here;
+	if (here < 3 || here - 3 < compiler.fuse_floor)
+		return 0;
+
+	if (!dict_op_is(here - 1, p_swap))
+		return 0;
+
+	if (dict_op_is(here - 3, p_local_fetch_0depth))
+		return fuse_rewrite(interp, 3, at_i_swap_l0_cfa, dict[here - 2]);
+	if (dict_op_is(here - 3, p_local_fetch_1depth))
+		return fuse_rewrite(interp, 3, at_i_swap_l1_cfa, dict[here - 2]);
+
+	return 0;
 }
 
 int try_fuse_at_e_ll(Interpreter *interp) {
@@ -3304,6 +3339,8 @@ int op_cell_count(int cursor) {
 	    || handler == (cell)p_local_acc_mul_0
 	    || handler == (cell)p_local_acc_div_0
 	    || handler == (cell)p_at_i_local0
+	    || handler == (cell)p_at_i_swap_local0
+	    || handler == (cell)p_at_i_swap_local1
 	    || handler == (cell)p_at_i_lit
 	    || handler == (cell)p_at_e_local0
 	    || handler == (cell)p_at_e_lit
@@ -4167,6 +4204,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	gather_local0_cfa = define_primitive(interp, "(gather.l0)", p_gather_local0, 4);
 	at_i_ll0_cfa = define_primitive(interp, "(@i.ll0)", p_at_i_ll0, 4);
 	at_i_l1l0_cfa = define_primitive(interp, "(@i.l1l0)", p_at_i_l1l0, 4);
+	at_i_swap_l0_cfa = define_primitive(interp, "(@i.swap.l0)", p_at_i_swap_local0, 4);
+	at_i_swap_l1_cfa = define_primitive(interp, "(@i.swap.l1)", p_at_i_swap_local1, 4);
 	define_primitive(interp, "(@i.array)", p_at_i_array, 4);
 	define_primitive(interp, "(@i.segment)", p_at_i_segment, 4);
 	at_e_lit_cfa = define_primitive(interp, "(@e.lit)", p_at_e_lit, 4);
@@ -4210,6 +4249,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "base", p_base, 0);
 	define_primitive(interp, "unit", p_unit, 0);
 	define_primitive(interp, "magnitude", p_magnitude, 0);
+	define_primitive(interp, "unit-of", p_unit_of, 0);
 	define_primitive(interp, "string>symbol", p_string_to_symbol, 0);
 	define_primitive(interp, "forget", p_forget, 0);
 	define_primitive(interp, "'", p_tick, 1);

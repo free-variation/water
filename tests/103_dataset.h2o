@@ -61,3 +61,37 @@ clear
 { :only [ "a" "b" ] } [ 3 ] select-rows         \ (array index 3 out of bounds)
 clear
 5 [ 0 ] select-rows                             \ (neither dataset nor matrix)
+
+clear
+\ dim ( dataset -- r c ): rows from the first column's length, columns from
+\ the key count. column-type ( dataset sym -- sym ): the column's type from
+\ its representation.
+{ :name [ "ann" "bob" "cal" ]
+  :height [ 170 180 190 ] vector m
+  :score [ 5 1 4 ] vector
+  :seen [ 100 200 300 ] vector s } to typed
+
+typed dim . . cr                                \ 4 3  (columns then rows)
+{ } dim . . cr                                  \ 0 0
+{ :a [ ] } dim . . cr                           \ 1 0
+[ 1 2 3 4 5 6 ] 2 3 matrix dim . . cr           \ 3 2  (matrix path intact)
+
+typed :score column-type . cr                   \ :numeric
+typed :height column-type . cr                  \ :quantity
+typed :seen column-type . cr                    \ :datetime
+typed :name column-type . cr                    \ :text
+{ :a [ ] vector } :a column-type . cr           \ :numeric  (empty typed column)
+
+\ errors
+typed :missing column-type                      \ (no key :missing)
+
+clear
+\ select-columns ( dataset cols -- dataset ): the named columns as a new
+\ dataset; the values are shared, the frame is fresh.
+typed [ :name :score ] select-columns . cr      \ two of four columns
+typed [ :height ] select-columns . cr           \ unit kept
+typed [ ] select-columns . cr                   \ { }
+typed [ :name ] select-columns dim . . cr       \ 1 3
+
+\ errors
+typed [ :nope ] select-columns                  \ (no key :nope)

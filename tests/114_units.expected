@@ -56,3 +56,11 @@ error: scale must be a positive simple rational of the base unit; got 0.707107
 1 
 3600 
 error: unit scale or exponent overflow
+1 m 
+1 m 
+1 m.s^-1 
+1 
+1 m 
+1 
+0 
+7 m^2 

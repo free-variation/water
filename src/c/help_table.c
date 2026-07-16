@@ -157,6 +157,7 @@ const HelpEntry help_entries[] = {
 	{ "column-means", "( m -- m' )", "matrix.h2o: column-sums then scalar ÷", "r×c", "2×1m(1×c)", "O(r×c)", 18 },
 	{ "column-mins", "( m -- m' )", "1×c of per-column minima", "1 + r×c", "1m(1×c)", "O(r×c)", 18 },
 	{ "column-sums", "( m -- m' )", "1×c of per-column sums", "1 + r×c", "1m(1×c)", "O(r×c)", 18 },
+	{ "column-type", "( dataset sym -- sym )", "datasets.h2o: the named column's type from its representation — matrix :numeric, quantity in exactly s :datetime, other quantity :quantity, array :text; a missing key errors through @", "5", "1 pair", "O(log c)", 22 },
 	{ "concat", "( arr/set arr/set -- arr )", "Concatenated copy", "2 + m + n", "1a(m+n)", "O(m+n)", 14 },
 	{ "cons", "( head tail -- pair )", "Build a cons cell", "2", "1 pair", "O(1)", 15 },
 	{ "cons>array", "( list -- arr )", "Walk a cons chain into an array, **dereferencing** the spine and each element and including the terminal (works on relational results)", "n", "1a(n)", "O(n)", 15 },
@@ -199,7 +200,7 @@ const HelpEntry help_entries[] = {
 	{ "diagonal", "( m -- m' )", "Diagonal as a 1×min(r,c) matrix", "1 + min(r,c)", "1m(1×min)", "O(min(r,c))", 18 },
 	{ "diagonal-matrix", "( fill n -- m )", "n×n matrix with fill on the diagonal", "2 + n", "1m(n×n)", "O(n)", 18 },
 	{ "difference", "( s₁ s₂ -- s₃ )", "s₁ − s₂ into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)", 13 },
-	{ "dim", "( m -- r c )", "Push rows then columns", "3", "none", "O(1)", 18 },
+	{ "dim", "( m/dataset -- r c )", "Push rows then columns; datasets.h2o extends it to a dataset — rows from the first column's length, columns from the key count", "3", "none", "O(1)", 18 },
 	{ "dot", "( v w -- f )", "matrix.h2o: inner product (* sum, inlined); shapes must broadcast, so match the vectors", "2 + 2n", "1m(n)", "O(n)", 18 },
 	{ "double-segment", "( n -- seg )", "n-element double segment, zero-filled; errors if n < 0", "1", "1seg(n)", "O(n)", 19 },
 	{ "drop", "( a -- )", "Discard top", "1", "none", "O(1)", 0 },
@@ -424,6 +425,7 @@ const HelpEntry help_entries[] = {
 	{ "seed", "( n -- )", "Set the global base seed and reset the stream counter; per-thread streams derive from it", "1", "none", "O(1)", 20 },
 	{ "segment>pointer", "( seg -- ptr )", "Intern the backing buffer and return an FFI pointer handle (no copy; see Foreign function interface)", "1", "none", "O(1)†", 19 },
 	{ "segment?", "( a -- bool )", "core.h2o: type-of :segment = (inlined)", "5", "none", "O(1)", 4 },
+	{ "select-columns", "( dataset cols -- dataset )", "datasets.h2o: the named columns as a new dataset (a fresh frame sharing the column values); a missing name errors through @", "k log c", "1a(k) + 1o", "O(k log c)", 22 },
 	{ "select-keys", "( fr path -- arr )", "The full root-to-match path (a symbol array) for every match, document order; each round-trips through @", "s", "1a + 1a per match", "O(s + total path length)", 16 },
 	{ "select-rows", "( m/dataset idx -- m/dataset )", "New matrix of the rows named by idx — a float index array or an index vector (nx1 or 1xn, as where/argsort return); a dimensioned matrix keeps its unit; errors on a non-float or out-of-range index. datasets.h2o extends it to a dataset: every column gathered by the same indices — matrix and dimensioned columns through the matrix path, array columns element-wise", "2 + k·c", "1m(k×c); dataset one column each", "O(k·c)", 18 },
 	{ "select-values", "( fr path -- arr )", "Every matched value, in document (pre-order) order, duplicates kept; no path built per match", "s", "1a + reallocs", "O(s)", 16 },
@@ -486,6 +488,7 @@ const HelpEntry help_entries[] = {
 	{ "unify", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A _ on either side matches anything and binds nothing. On a mismatch, fails.", "n", "none", "O(n)", 26 },
 	{ "union", "( s₁ s₂ -- s₃ )", "Union into a new set, merging the two sorted arrays", "m+n", "1o + reallocs", "O(m+n)", 13 },
 	{ "unit", "( q -- )", "Read the following name; pop a quantity whose magnitude is a positive whole number, and define a postfix word attaching that unit. The magnitude is the unit's integer scale relative to its dimension's base (100 cent unit dollar). A single unnamed base dimension gets named after the word", NULL, NULL, NULL, 10 },
+	{ "unit-of", "( v -- q|1 )", "A quantity's unit as the quantity 1 in that unit (10 km → 1 km, a matrix column in m → 1 m, computed units in dimensional form — 1 m.s^-1); a bare value answers 1.0. Composes: x unit-of * attaches x's unit, 1 s = tests for a unit", "2", "1 pair", "O(1)", 5 },
 	{ "until", "( flag -- )", "Branch back to begin if flag is falsy", NULL, NULL, NULL, 8 },
 	{ "update-at", "( fr sym/path xt -- fr )", "Apply xt to the value at the key, store the result back; errors on a search path", "d log n + xt", "none", "O(d log n + xt)", 16 },
 	{ "values", "( fr -- arr )", "Values in key order", "1 + n", "1a(n)", "O(n)", 16 },
@@ -537,4 +540,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 492;
+const int help_entry_count = 495;

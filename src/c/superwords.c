@@ -355,6 +355,8 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_cfa == vocab.at_i_cfa) {
 		if (try_fuse_at_i_ll(interp))
 			return 1;
+		if (try_fuse_at_i_swap_local(interp))
+			return 1;
 		if (try_fuse_at_i_local(interp))
 			return 1;
 		if (try_fuse_gather_local(interp))

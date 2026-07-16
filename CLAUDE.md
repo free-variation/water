@@ -170,6 +170,17 @@ new inline that calls functions → the tail.
 - Locals: `>name` receives from the stack at entry, bare names are
   uninitialized scratch; quotations receive with `|> a b |`. Counter
   loops: `0 to i begin i n lt while ... f++ i repeat`.
+- Quotations: write them bare (`[: ... :]`); receive into locals
+  (`[>`/`[|`) when a value is reused past a `dup` or the quotation
+  crosses `curry`. Measured: bare is the fastest form — under
+  map/times/i-times it dispatches straight into the body, and
+  `local swap @i` fuses to one op ((@i.swap.l0)/(@i.swap.l1)) —
+  gather-elements 32%, the rows>dataset inner 15%; frames cost nothing
+  per iteration either (built once per loop, refilled per element), so
+  the choice is brevity, not speed, except where the swap fusions
+  apply. Check fusion with see-compiled; never trust a derived fusion
+  analysis over a timing — frame changes renumber the locals levels
+  ops compile against.
 
 ## Docs and generated files
 - PLAN.md is a focused list of FUTURE WORK, written imperatively: no

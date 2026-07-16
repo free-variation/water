@@ -43,4 +43,10 @@ total . cr                                       \ 10  (no elements, no calls)
 [ ] [: drop :x :] group-with . cr                \ { }
 [ "ant" "bee" "cow" "asp" ] [: 0 1 substring string>symbol :] group-with . cr
 
+\ === exit inside a bare quotation ends the iteration ======================
+\ (the direct-dispatch loop path: exit stops at the run floor, no frame)
+[ 1 2 3 ] [: dup 2 = if drop 99 exit then 1+ :] map . cr   \ [ 2 99 4 ]
+[: 7 :] 2 times . . cr                                     \ 7 7
+[ 1 2 3 ] [| x | to x x 2 = if 0 exit then x :] map . cr   \ [ 1 0 3 ] scratch frame
+
 bye

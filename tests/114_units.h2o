@@ -103,3 +103,14 @@ base unit clobber
 \ ---- scale product that exceeds int range errors instead of wrapping ----
 100000 m unit bigm
 1 bigm 1 bigm *
+
+clear
+\ ---- unit-of: a quantity's unit as the quantity 1 in that unit ----
+10 m unit-of . cr                       \ 1 m
+[ 10 20 ] vector m unit-of . cr         \ 1 m   (matrix magnitude, scalar unit back)
+10 m 2 s / unit-of . cr                 \ 1 m.s^-1 (computed unit)
+5 unit-of . cr                          \ 1     (bare value, dimensionless)
+0 m unit-of . cr                        \ 1 m   (zero magnitude is fine)
+[ ] vector s unit-of 1 s = . cr         \ 1     (empty typed column keeps its unit)
+10 m unit-of 1 s = . cr                 \ 0
+7 m 7 m unit-of * . cr                  \ 7 m^2 (attach a unit by multiplying)

@@ -27,11 +27,11 @@ variable row  variable col  variable val  variable x  variable y
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
   17.0 double-segment to rand-m
-  [> iloop |
+  [:
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     rand-m iloop  j0 65536.0 j1 f* f+  !i drop
+     rand-m swap  j0 65536.0 j1 f* f+  !i drop
   :] 17 i-times
   4.0 to ri  16.0 to rj ;
 
@@ -52,15 +52,15 @@ variable row  variable col  variable val  variable x  variable y
   n double-segment to x
   n double-segment to y
   101.0 rng-init
-  [> i | x i next-double !i drop :] n i-times
-  [> i | val i next-double !i drop :] anz i-times
+  [: x swap next-double !i drop :] n i-times
+  [: val swap next-double !i drop :] anz i-times
   row 0.0 0.0 !i drop
   [| >r rowr step |
      row r @i to rowr
      row r 1.0 f+  rowr nr f+  !i drop
      r nr / ftruncate to step
      step 1.0 lt if 1.0 to step then
-     [> i | col rowr i f+  i step f*  !i drop :] nr i-times
+     [: dup rowr f+  col swap  rot step f*  !i drop :] nr i-times
   :] n i-times ;
 
 : sparse-matmult
@@ -77,7 +77,7 @@ variable row  variable col  variable val  variable x  variable y
 : sparse-checksum ( -- s )
   | s |
   0.0 to s
-  [> r | y r @i s f+ to s :] n i-times
+  [: y swap @i s f+ to s :] n i-times
   s ;
 
 : sparse-bench
