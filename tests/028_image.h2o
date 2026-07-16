@@ -6,6 +6,7 @@
 
 : square dup * ;
 : cube dup square * ;
+: bump-all [> x | x 1 + :] map ;
 variable counter   42 to counter
 symbol red
 variable lst   [( 1 2 3 null )] to lst
@@ -40,6 +41,11 @@ V . cr                   \ 42
 pr . cr                   \ [( 9 9 null )]   shared lvar binding survived
 seg size . cr            \ 3   segment length survived
 seg 1 @i . cr            \ 2.5 segment contents survived
+\ a loaded quotation executes, disassembles (header classified from the
+\ persisted span), and faults with the same trace on native and wasm
+[ 1 2 3 ] bump-all . cr  \ [ 2 3 4 ]
+' bump-all see-compiled
+[ null ] bump-all        \ (error: null 1 + inside the loaded quotation)
 \ stack restored (frame on top): nested frame + set fields
 dup /a @ . cr            \ 1
 dup /b/c @ . cr          \ 2   nested frame survived

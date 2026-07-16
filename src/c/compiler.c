@@ -255,9 +255,11 @@ void p_qcolon(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
-static void record_quotation_span(int anon_cfa, int opener_start) {
-	if (vocab.n_quotation_spans >= MAX_QUOTATION_SPANS)
+static void record_quotation_span(Interpreter *interp, int anon_cfa, int opener_start) {
+	if (vocab.n_quotation_spans >= MAX_QUOTATION_SPANS) {
+		fail(interp, "quotation span table full (max %d)", MAX_QUOTATION_SPANS);
 		return;
+	}
 	int snippet_len = compiler.input_buffer_pos - opener_start;
 	int source_offset = 0;
 	if (snippet_len > 0 && vocab.source_here + snippet_len + 1 <= SOURCE_POOL) {
@@ -299,7 +301,9 @@ void p_qsemi(DISPATCH_ARGS) {
 	int opener_start = (int)VAL_NUMBER(opener_start_val);
 	int branch_slot = (int)VAL_NUMBER(branch_slot_val);
 	int anon_cfa = (int)VAL_NUMBER(anon_cfa_val);
-	record_quotation_span(anon_cfa, opener_start);
+	record_quotation_span(interp, anon_cfa, opener_start);
+	if (interp->error_flag)
+		return;
 	if (branch_slot < 0) {
 		compiler.compiling = 0;
 		push(interp, make_xt(anon_cfa));

@@ -50,3 +50,8 @@ forget f1
 
 \ a caught error prints no trace
 [: 1 0 % :] catch . drop cr
+
+\ a fault inside a quotation names the fused op as its innermost frame,
+\ identically on native and wasm (span-classified body walk)
+: gather-one | >column >indices | indices [> i | column i @i :] map ;
+[ 1 2 ] [ 5 ] gather-one

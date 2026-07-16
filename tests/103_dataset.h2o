@@ -36,3 +36,28 @@ dup keys . cr                           \ [ :col1 :col2 ]
 dup { } query size . cr                 \ 2   duplicate collapsed (relation is a set)
 dup { :id :u2 } query . cr              \ [ { :city "LA" :id :u2 } ]
 { :id :u1 } count-matches . cr          \ 1
+
+clear
+\ select-rows ( dataset indices -- dataset ): every column gathered by the
+\ same row indices — a float array or an index vector (as where/argsort
+\ return). Matrix and dimensioned columns go through the matrix path and
+\ keep their representation; array columns gather element-wise.
+{ :name [ "ann" "bob" "cal" ]
+  :height [ 170 180 190 ] vector m
+  :score [ 5 1 4 ] vector } to selectable
+
+selectable [ 2 0 ] select-rows . cr             \ cal/ann rows; height keeps m
+selectable [ 2 0 ] vector select-rows . cr      \ same rows from an index vector
+selectable selectable :score @ argsort select-rows . cr   \ sorted by score: bob cal ann
+selectable selectable :score @ 3 gt where select-rows . cr \ scores over 3: ann cal
+selectable [ 1 1 ] select-rows . cr             \ bob twice
+selectable [ ] select-rows . cr                 \ zero rows, representations kept
+{ } [ ] select-rows . cr                        \ { }
+[ 5 1 4 ] vector [ 2 0 ] select-rows transpose . cr   \ 4 5 as 1x2 (matrix path intact)
+
+\ errors
+selectable [ 5 ] select-rows                    \ (array index 5 out of bounds; :name gathers first)
+clear
+{ :only [ "a" "b" ] } [ 3 ] select-rows         \ (array index 3 out of bounds)
+clear
+5 [ 0 ] select-rows                             \ (neither dataset nor matrix)

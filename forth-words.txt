@@ -276,6 +276,7 @@ match-all
 matches?
 matrix
 matrix-range
+matrix>array
 matrix>pointer
 matrix?
 max

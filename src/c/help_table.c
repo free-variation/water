@@ -118,7 +118,7 @@ const HelpEntry help_entries[] = {
 	{ "apropos", "( s -- )", "Print every word whose name or reference summary contains s (case-insensitive): name, stack effect, summary per line; session-defined words match by name", "table scan", "none", "O(entries)", 29 },
 	{ "argmax", "( m -- f )", "Flat row-major index of the maximum element (first on ties)", "1 + r×c", "none", "O(r×c)", 18 },
 	{ "argmin", "( m -- f )", "Flat row-major index of the minimum element (first on ties)", "1 + r×c", "none", "O(r×c)", 18 },
-	{ "argsort", "( v -- v' )", "The sorting permutation of a vector, shape preserved: element i is the source index of the i-th smallest value; ties keep index order, NaNs go last in index order; ranks are argsort twice", "1 + n log n", "1m(n) + malloc(16n)", "O(n log n); above 8k elements O(n) radix", 18 },
+	{ "argsort", "( v -- v' ) or ( arr -- arr )", "The sorting permutation of a vector, shape preserved: element i is the source index of the i-th smallest value; ties keep index order, NaNs go last in index order; ranks are argsort twice. arrays.h2o extends it to an array: the permutation under val_cmp (structural, so mixed types order), ties keep index order, returned as a float-index array", "1 + n log n", "1m(n) + malloc(16n); array 3×1a(n) + n×1a(2)", "O(n log n); above 8k elements O(n) radix", 18 },
 	{ "array", "( v₀ … vₙ₋₁ n -- arr )", "Gather the top n values into an array", "2 + n", "1a(n)", "O(n)", 14 },
 	{ "array-of", "( val n -- arr )", "New n-element array, every slot = val", "3 + n", "1a(n)", "O(n)", 14 },
 	{ "array>cons", "( arr -- list )", "Cons chain from an array's elements (last element becomes the tail; [ ] → null)", "n", "n−1 pairs", "O(n)", 15 },
@@ -288,7 +288,7 @@ const HelpEntry help_entries[] = {
 	{ "identity-matrix", "( n -- m )", "matrix.h2o: 1 swap diagonal-matrix", "n", "1m(n×n)", "O(n)", 18 },
 	{ "if", "( flag -- )", "Branch past the then/else if flag is falsy", NULL, NULL, NULL, 8 },
 	{ "index-of", "( s pat -- i )", "strings.h2o: codepoint index of pat's first regex match in s, or -1 if none (split 0 @i size guarded by has?)", "n", "1a + pieces", "O(n)", 12 },
-	{ "inline", "—", "Mark the most recent definition inline; future calls splice its body", NULL, NULL, NULL, 10 },
+	{ "inline", "—", "Mark the most recent definition inline; future calls splice its body. A body containing a quotation is not spliced — such calls compile as plain calls, since a copied quotation header would have no recorded span", NULL, NULL, NULL, 10 },
 	{ "inner-join", "( driver probed col -- [rows] )", "Inner join: each driver row merged (probed columns win collisions) with each probed row sharing col's value; probed must index col", "—", "1a", "O(driver·log probed)", 27 },
 	{ "int-segment", "( n -- seg )", "n-element int segment, zero-filled; errors if n < 0", "1", "1seg(n)", "O(n)", 19 },
 	{ "internal", "—", "Mark the most recent definition internal: hidden from words, apropos, and completion (still findable by name and tick)", NULL, NULL, NULL, 10 },
@@ -321,6 +321,7 @@ const HelpEntry help_entries[] = {
 	{ "matches?", "( a b -- flag )", "Non-destructive unify test: mark the trail, unify a and b, roll the trail back, push whether they unified. Leaves no bindings and never backtracks (so it composes in straight-line code, unlike unify)", "n", "none", "O(n)", 26 },
 	{ "matrix", "( arr r c -- m ) or ( arr r -- m )", "Build from a float array; two-arg form takes r = rows and infers columns", "3 + r×c", "1m(r×c)", "O(r×c)", 18 },
 	{ "matrix-range", "( start end step -- m )", "1×N row of evenly spaced values", "3 + N", "1m(1×N)", "O(N)", 18 },
+	{ "matrix>array", "( m -- arr )", "The elements as an array in row-major order: floats from a bare matrix; a dimensioned matrix yields one quantity per element in its unit; a NaN element becomes null either way", "1 + r×c", "1a(r×c); dimensioned + 1 pair per non-NaN element", "O(r×c)", 18 },
 	{ "matrix>pointer", "( m -- ptr )", "Intern the matrix's row-major element buffer and return a T_PTR handle to pass as a :ptr argument; no copy — aliases the live buffer (amortized intern)", "1", "none", "O(1)", 34 },
 	{ "matrix?", "( a -- bool )", "core.h2o: type-of :matrix = (inlined)", "5", "none", "O(1)", 4 },
 	{ "max", "( m -- f )", "Maximum element", "1 + r×c", "none", "O(r×c)", 18 },
@@ -424,7 +425,7 @@ const HelpEntry help_entries[] = {
 	{ "segment>pointer", "( seg -- ptr )", "Intern the backing buffer and return an FFI pointer handle (no copy; see Foreign function interface)", "1", "none", "O(1)†", 19 },
 	{ "segment?", "( a -- bool )", "core.h2o: type-of :segment = (inlined)", "5", "none", "O(1)", 4 },
 	{ "select-keys", "( fr path -- arr )", "The full root-to-match path (a symbol array) for every match, document order; each round-trips through @", "s", "1a + 1a per match", "O(s + total path length)", 16 },
-	{ "select-rows", "( m idx -- m )", "New matrix of the rows named by idx — a float index array or an index vector (nx1 or 1xn, as where/argsort return); errors on a non-float or out-of-range index", "2 + k·c", "1m(k×c)", "O(k·c)", 18 },
+	{ "select-rows", "( m/dataset idx -- m/dataset )", "New matrix of the rows named by idx — a float index array or an index vector (nx1 or 1xn, as where/argsort return); a dimensioned matrix keeps its unit; errors on a non-float or out-of-range index. datasets.h2o extends it to a dataset: every column gathered by the same indices — matrix and dimensioned columns through the matrix path, array columns element-wise", "2 + k·c", "1m(k×c); dataset one column each", "O(k·c)", 18 },
 	{ "select-values", "( fr path -- arr )", "Every matched value, in document (pre-order) order, duplicates kept; no path built per match", "s", "1a + reallocs", "O(s)", 16 },
 	{ "set", "( v₀ … vₙ₋₁ n -- set )", "Gather the top n values into a new set (the set analog of array)", "2 + n log n", "1o + reallocs", "O(n log n)", 13 },
 	{ "set-add!", "( set v -- set )", "Insert v in sorted position if absent (dedups); leaves set on the stack", "log n + n", "reallocs", "O(n)", 13 },
@@ -536,4 +537,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 491;
+const int help_entry_count = 492;

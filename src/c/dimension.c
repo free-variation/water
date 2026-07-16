@@ -532,21 +532,27 @@ void render_unit_description(FILE *out, Interpreter *interp, int word_cfa) {
 		fprintf(out, "/%d", described->scale.denominator);
 }
 
-void push_quantity(Interpreter *interp, Val magnitude, int unit) {
-	if (unit == 0) {
-		push(interp, magnitude);
-		return;
-	}
+Val quantity_of(Interpreter *interp, Val magnitude, int unit) {
+	if (unit == 0)
+		return magnitude;
 
 	gc_root_push(interp, magnitude);
 	int slot = object_new_pair(interp);
 	gc_root_pop(interp);
-	if (interp->error_flag) return;
+	if (interp->error_flag)
+		return make_tagged(T_NONE, 0);
 
 	pairs.table[slot].head = magnitude;
 	pairs.table[slot].tail.bits = (uint64_t)unit;
+	return make_quantity(slot);
+}
 
-	push(interp, make_quantity(slot));
+void push_quantity(Interpreter *interp, Val magnitude, int unit) {
+	Val quantity = quantity_of(interp, magnitude, unit);
+	if (interp->error_flag)
+		return;
+
+	push(interp, quantity);
 }
 
 int quantity_truthy(Val quantity) {

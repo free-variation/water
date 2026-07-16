@@ -65,3 +65,37 @@
 
 ( arr -- arr ) \ new array, elements uniformly permuted; input untouched
 : shuffle  dup size false sample ;
+
+( column indices -- column' ) \ gather array elements by an index vector
+: gather-elements
+	| column | swap to column
+	[> i | column i @i :] map ; internal
+
+' select-rows constant (matrix-select-rows) internal
+
+( dataset indices -- dataset ) \ every column gathered by the same row indices
+: dataset-select-rows
+	|> dataset indices |
+	indices matrix? if
+		indices matrix>array to indices
+	then
+
+	dataset keys dup
+	[> column-name |
+	   dataset column-name @
+	   dup matrix? over quantity? or if
+		   indices (matrix-select-rows) execute
+	   else
+		   indices gather-elements
+	   then :] map
+	frame ; internal
+
+( dataset/matrix indices -- dataset/matrix )
+: select-rows
+	over frame? if
+		dataset-select-rows
+	else
+		(matrix-select-rows) execute
+	then ;
+
+		

@@ -273,9 +273,10 @@ units, and unit words round-trip through `save-image`/`load-image`.
 
 The matrix statistics accept a dimensioned matrix and keep its unit: `sum`
 `mean` `max` `min` `quantile` (so `median` `percentile` `iqr` `ci`) `row-sums`
-`column-sums` `cumulative-sum` `norm` `reshape` answer in the operand's unit,
-`var` in the unit squared (`std`/`se` return to the unit through `sqrt`), and
-the index and count words (`argsort` `argmax` `argmin` `size` `dim`) and the
+`column-sums` `cumulative-sum` `norm` `reshape` `select-rows` answer in the
+operand's unit, `matrix>array` yields per-element quantities, `var` answers in
+the unit squared (`std`/`se` return to the unit through `sqrt`), and the index
+and count words (`argsort` `argmax` `argmin` `size` `dim`) and the
 correlations answer bare — correlation is scale-invariant, so dimensioned
 inputs are computed over their magnitudes.
 
@@ -382,7 +383,7 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 | `lookup` | `( "name" -- xt )` | Parse the following word at run time and push its xt — the non-immediate counterpart of `'` |
 | `execute` | `( xt -- … )` | Call the word at xt |
 | `curry` | `( value xt -- xt' )` | Bind a value into a new anonymous word: xt' pushes value, then calls xt. Compiles ~10 permanent dictionary cells per call (reclaimed only by `forget`); errors inside a parallel region — curry before `pmap`, execute freely within |
-| `inline` | — | Mark the most recent definition inline; future calls splice its body |
+| `inline` | — | Mark the most recent definition inline; future calls splice its body. A body containing a quotation is not spliced — such calls compile as plain calls, since a copied quotation header would have no recorded span |
 | `internal` | — | Mark the most recent definition internal: hidden from `words`, `apropos`, and completion (still findable by name and tick) |
 | `forget` | — | Read the following name; truncate the dictionary back to before it |
 
@@ -616,6 +617,7 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `diagonal` | `( m -- m' )` | Diagonal as a 1×min(r,c) matrix | 1 + min(r,c) | `1m(1×min)` | O(min(r,c)) |
 | `flatten` | `( m -- m' )` | matrix.h2o: 1×(r·c) reshape | r×c | `1m(1×r·c)` | O(r×c) |
 | `as-column` | `( v -- v' )` | matrix.h2o: any vector shape as n×1 (`dup dim * 1 reshape`, inlined) | r×c | `1m(n×1)` | O(n) |
+| `matrix>array` | `( m -- arr )` | The elements as an array in row-major order: floats from a bare matrix; a dimensioned matrix yields one quantity per element in its unit; a NaN element becomes `null` either way | 1 + r×c | `1a(r×c)`; dimensioned + 1 pair per non-NaN element | O(r×c) |
 | `num-elements` | `( m -- n )` | matrix.h2o: `dim *` (inlined) | 5 | none | O(1) |
 
 ### Multiplication and reductions
@@ -663,8 +665,8 @@ keep NaN in place.
 | `vstack` | `( a b -- m )` | Stack two matrices row-wise (a on top of b); errors unless column counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `hstack` | `( a b -- m )` | matrix.h2o: `augment` under its numpy name (inlined) | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `submatrix` | `( m rs re cs ce -- m )` | Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end | 5 + r·c | `1m(r×c)` | O(r·c) |
-| `select-rows` | `( m idx -- m )` | New matrix of the rows named by `idx` — a float index array or an index vector (nx1 or 1xn, as `where`/`argsort` return); errors on a non-float or out-of-range index | 2 + k·c | `1m(k×c)` | O(k·c) |
-| `argsort` | `( v -- v' )` | The sorting permutation of a vector, shape preserved: element i is the source index of the i-th smallest value; ties keep index order, NaNs go last in index order; ranks are argsort twice | 1 + n log n | `1m(n)` + `malloc(16n)` | O(n log n); above 8k elements O(n) radix |
+| `select-rows` | `( m/dataset idx -- m/dataset )` | New matrix of the rows named by `idx` — a float index array or an index vector (nx1 or 1xn, as `where`/`argsort` return); a dimensioned matrix keeps its unit; errors on a non-float or out-of-range index. datasets.h2o extends it to a dataset: every column gathered by the same indices — matrix and dimensioned columns through the matrix path, array columns element-wise | 2 + k·c | `1m(k×c)`; dataset one column each | O(k·c) |
+| `argsort` | `( v -- v' )` or `( arr -- arr )` | The sorting permutation of a vector, shape preserved: element i is the source index of the i-th smallest value; ties keep index order, NaNs go last in index order; ranks are argsort twice. arrays.h2o extends it to an array: the permutation under `val_cmp` (structural, so mixed types order), ties keep index order, returned as a float-index array | 1 + n log n | `1m(n)` + `malloc(16n)`; array 3×`1a(n)` + n×`1a(2)` | O(n log n); above 8k elements O(n) radix |
 | `ranks` | `( v -- v' )` | statistics.h2o: 0-based ordinal ranks as nx1, `as-column argsort argsort` (inlined); ties ranked in index order, not midranked | 2n log n | `2m(n)` + `malloc(16n)` ×2 | O(n log n) |
 | `where` | `( m -- v )` | Flat row-major indices of the nonzero elements, as a k×1 index vector (1×k for a 1×n mask); composes with the `lt`/`gt` masks and `select-rows` | 1 + n | `1m(k)` | O(n) |
 | `drop-nans` | `( v -- v' )` | matrix.h2o: the finite elements of a vector, NaNs dropped (`dup nan? 0 eq where select-rows`, inlined) | 4n | mask + index + `1m(k)` | O(n) |
@@ -767,7 +769,7 @@ machinery, so there the `-local` words behave as UTC and `parse-time` lacks
 
 ## Datasets and TSV
 
-A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a column-oriented frame; a *relation* is a deduped, indexed fact set (see Fact database). `r`/`c` are rows/columns, `n`/`k` observations/selected columns.
+A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a column-oriented frame; a *relation* is a deduped, indexed fact set (see Fact database). `r`/`c` are rows/columns, `n`/`k` observations/selected columns. `select-rows` (under Matrices) accepts a dataset, gathering every column by one index array or vector — with `where` masks and `argsort` that is filtering and sorting.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|

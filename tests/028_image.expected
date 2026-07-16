@@ -8,6 +8,22 @@ V=42
 [( X=9 X=9 null )] 
 3 
 2.5 
+[ 2 3 4 ] 
+: bump-all   \ 17 cells
+ 0: (branch) 12
+ 2: [:
+ 3: (enter-locals-to) 1
+ 5: (local@0) 0
+ 7: (lit) 1
+ 9: +
+ 10: (leave-locals) 1
+ 12: exit
+ 13: (lit) '?
+ 15: map
+ 16: exit
+;
+error: expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got none and a float
+in + ← [> x | x 1 + :]
 1 
 2 
 2 

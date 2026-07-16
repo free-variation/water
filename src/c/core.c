@@ -1649,6 +1649,13 @@ static const QuotationSpan *quotation_span_containing(int addr) {
 	return innermost;
 }
 
+int quotation_starts_at(int addr) {
+	for (int i = 0; i < vocab.n_quotation_spans; i++)
+		if (vocab.quotation_spans[i].start_cfa == addr)
+			return 1;
+	return 0;
+}
+
 static int word_containing(int addr) {
 	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa))
 		if (cfa <= addr)
@@ -1703,10 +1710,8 @@ typedef struct {
 static const char *handler_word_name(cell handler);
 
 static const char *running_op_name(int fault_cell, int body_start, int body_end) {
-	cell branch_handler = vocab.dict[vocab.branch_cfa];
 	cell exit_handler = vocab.dict[vocab.exit_cfa];
 	int cursor = body_start;
-	int expect_docol = 0;
 
 	while (cursor <= fault_cell && cursor < body_end) {
 		cell handler = vocab.dict[cursor];
@@ -1715,7 +1720,7 @@ static const char *running_op_name(int fault_cell, int body_start, int body_end)
 		int cell_count;
 		if (handler == exit_handler)
 			cell_count = 1;
-		else if (expect_docol && handler == (cell)docol)
+		else if (handler_fn == docol && quotation_starts_at(cursor))
 			cell_count = 1;
 		else if (handler_fn == docol || handler_fn == dovar || handler_fn == dounit || handler_fn == dosym)
 			cell_count = 2;
@@ -1732,7 +1737,6 @@ static const char *running_op_name(int fault_cell, int body_start, int body_end)
 			return handler_word_name(handler);
 		}
 
-		expect_docol = (handler == branch_handler);
 		cursor += cell_count;
 	}
 	return NULL;
@@ -1798,7 +1802,7 @@ static void capture_error_trace(Interpreter *interp) {
 
 	int len = 0;
 	if (n_merged > 0 && frames[0].addr == interp->ip) {
-		int body_start = frames[0].span ? frames[0].span->start_cfa : frames[0].cfa + 1;
+		int body_start = frames[0].span ? frames[0].span->start_cfa + 1 : frames[0].cfa + 1;
 		int body_end = frames[0].span ? frames[0].span->end_cfa : vocab.here;
 		const char *op_name = running_op_name(interp->ip - 1, body_start, body_end);
 		if (op_name && !frames[0].span
@@ -3335,31 +3339,27 @@ int op_cell_count(int cursor) {
 
 void inline_word_body(Interpreter *interp, int target_cfa) {
 	cell exit_handler = vocab.dict[vocab.exit_cfa];
-	cell branch_handler = vocab.dict[vocab.branch_cfa];
-	cell docol_handler = (cell)docol;
 
+	int splice_start = vocab.here;
 	int cursor = target_cfa + 1;
-	int depth = 0;
-	int expect_docol = 0;
 
 	while (1) {
 		cell handler = vocab.dict[cursor];
+		cfa_handler handler_fn = (cfa_handler)handler;
 
-		if (handler == exit_handler) {
-			if (depth == 0)
-				break;
-			depth--;
-			emit(interp, handler);
-			cursor++;
-			expect_docol = 0;
-			continue;
+		if (handler == exit_handler)
+			break;
+
+		if (handler_fn == docol && quotation_starts_at(cursor)) {
+			vocab.here = splice_start;
+			emit_call(interp, target_cfa);
+			return;
 		}
 
-		if (expect_docol && handler == docol_handler) {
-			depth++;
+		if (handler_fn == docol || handler_fn == dovar || handler_fn == dounit || handler_fn == dosym) {
 			emit(interp, handler);
-			cursor++;
-			expect_docol = 0;
+			emit(interp, vocab.dict[cursor + 1]);
+			cursor += 2;
 			continue;
 		}
 
@@ -3367,7 +3367,6 @@ void inline_word_body(Interpreter *interp, int target_cfa) {
 		for (int i = 0; i < n; i++)
 			emit(interp, vocab.dict[cursor + i]);
 		cursor += n;
-		expect_docol = (handler == branch_handler);
 	}
 }
 
@@ -3378,18 +3377,31 @@ void mark_body(Interpreter *interp, int body_start, int body_end) {
 	int cursor = body_start;
 	while (cursor < body_end) {
 		cell handler = vocab.dict[cursor];
-		int n = op_cell_count(cursor);
+		cfa_handler handler_fn = (cfa_handler)handler;
 
 		if (handler == literal_ptr) {
 			Val value;
 			value.bits = (uint64_t)vocab.dict[cursor + 1];
 			mark_value(interp, value);
-		} else if (handler == dostr_ptr) {
+			cursor += 2;
+			continue;
+		}
+		if (handler == dostr_ptr) {
 			Val value = make_string((int)vocab.dict[cursor + 1]);
 			mark_value(interp, value);
+			cursor += 2;
+			continue;
+		}
+		if (handler_fn == docol) {
+			cursor += quotation_starts_at(cursor) ? 1 : 2;
+			continue;
+		}
+		if (handler_fn == dovar || handler_fn == dounit || handler_fn == dosym) {
+			cursor += 2;
+			continue;
 		}
 
-		cursor += n;
+		cursor += op_cell_count(cursor);
 	}
 }
 
@@ -3537,11 +3549,9 @@ static void see_print_op(FILE *out, Interpreter *interp, int cursor, int cell_co
 
 static void see_compiled_body(FILE *out, Interpreter *interp, int body_start, int body_end) {
 	cell exit_handler = vocab.dict[vocab.exit_cfa];
-	cell branch_handler = vocab.dict[vocab.branch_cfa];
 	cell docol_handler = (cell)docol;
 	int cursor = body_start;
 	int depth = 0;
-	int expect_docol = 0;
 
 	while (cursor < body_end) {
 		cell handler = vocab.dict[cursor];
@@ -3555,15 +3565,13 @@ static void see_compiled_body(FILE *out, Interpreter *interp, int body_start, in
 			if (depth == 0)
 				break;
 			depth--;
-			expect_docol = 0;
 			continue;
 		}
 
-		if (expect_docol && handler == docol_handler) {
+		if (handler == docol_handler && quotation_starts_at(cursor)) {
 			fputs("[:\n", out);
 			cursor++;
 			depth++;
-			expect_docol = 0;
 			continue;
 		}
 
@@ -3574,13 +3582,11 @@ static void see_compiled_body(FILE *out, Interpreter *interp, int body_start, in
 			else
 				fputs("?\n", out);
 			cursor += 2;
-			expect_docol = 0;
 			continue;
 		}
 		if (handler_fn == dosym) {
 			fprintf(out, ":%s\n", &vocab.symbol_pool[vocab.dict[cursor + 1]]);
 			cursor += 2;
-			expect_docol = 0;
 			continue;
 		}
 
@@ -3588,7 +3594,6 @@ static void see_compiled_body(FILE *out, Interpreter *interp, int body_start, in
 		see_print_op(out, interp, cursor, cell_count);
 		putc('\n', out);
 		cursor += cell_count;
-		expect_docol = (handler == branch_handler);
 	}
 }
 
@@ -3617,8 +3622,7 @@ static void see_tree_body(FILE *out, Interpreter *interp, int body_start, int in
 
 		if (handler_fn == docol) {
 			int target = (int)vocab.dict[cursor + 1];
-			if (target < 4 || target >= vocab.here) {
-
+			if (quotation_starts_at(cursor) || target < 4 || target >= vocab.here) {
 				fputs("[:\n", out);
 				cursor++;
 				depth++;
@@ -4251,6 +4255,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "diagonal", p_diagonal, 0);
 	define_primitive(interp, "reshape", p_reshape, 0);
 	define_primitive(interp, "matrix-range", p_matrix_range, 0);
+	define_primitive(interp, "matrix>array", p_matrix_to_array, 0);
 	define_primitive(interp, "sum", p_sum, 0);
 	define_primitive(interp, "var", p_variance, 0);
 	define_primitive(interp, "quantile", p_quantile, 0);

@@ -17,3 +17,5 @@ in % ← [: 1 0 % :]
 error: %: division by zero
 in % ← [: 2 0 % :]
 1 
+error: array index 5 out of bounds (length 2)
+in (@i.l1l0) ← [> i | column i @i :]

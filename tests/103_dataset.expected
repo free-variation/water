@@ -9,3 +9,50 @@
 2 
 [ { :city "LA" :id :u2 } ] 
 1 
+{
+  :name [ "cal" "ann" ]
+  :height <matrix 2x1:  190 170> m
+  :score <matrix 2x1:  4 5>
+}
+
+{
+  :name [ "cal" "ann" ]
+  :height <matrix 2x1:  190 170> m
+  :score <matrix 2x1:  4 5>
+}
+
+{
+  :name [ "bob" "cal" "ann" ]
+  :height <matrix 3x1:  180 190 170> m
+  :score <matrix 3x1:  1 4 5>
+}
+
+{
+  :name [ "ann" "cal" ]
+  :height <matrix 2x1:  170 190> m
+  :score <matrix 2x1:  5 4>
+}
+
+{
+  :name [ "bob" "bob" ]
+  :height <matrix 2x1:  180 180> m
+  :score <matrix 2x1:  1 1>
+}
+
+{
+  :name [ ]
+  :height <matrix 0x1: > m
+  :score <matrix 0x1: >
+}
+
+{
+}
+
+<matrix 1x2>
+          4          5
+
+error: array index 5 out of bounds (length 3)
+in (@i.l1l0) ← [> i | column i @i :] ← [> column-name | dataset column-name @ dup matr… :] ← select-rows
+error: array index 3 out of bounds (length 2)
+in (@i.l1l0) ← [> i | column i @i :] ← [> column-name | dataset column-name @ dup matr… :] ← select-rows
+error: expected a matrix; got a float

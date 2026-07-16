@@ -151,7 +151,7 @@ void p_save_image(DISPATCH_ARGS) {
 			}
 			out[c - init_here] = (cell)id;
 			if (handler == (cell)docol)
-				c += (handler_to_id(vocab.dict[c + 1]) >= 0) ? 1 : 2;
+				c += quotation_starts_at(c) ? 1 : 2;
 			else
 				c += image_op_cells(c);
 		}
@@ -399,6 +399,7 @@ void p_load_image(DISPATCH_ARGS) {
 		vocab.dict[vocab.init_here + i] = (cell)c;
 	}
 	vocab.here = vocab.init_here + user_dict_cells;
+	memset(&dict_is_handler[vocab.init_here], 0, (size_t)user_dict_cells);
 
 	int32_t user_word_count;
 	if (!read_i32(file, &user_word_count)) {
@@ -447,8 +448,13 @@ void p_load_image(DISPATCH_ARGS) {
 			}
 			cell next_raw = vocab.dict[c + 1];
 			vocab.dict[c] = (cell)compiler.handler_registry[id];
+			if (vocab.dict[c] == (cell)docol && next_raw >= 0 && next_raw < compiler.n_handlers) {
+				c++;
+				continue;
+			}
+			dict_is_handler[c] = 1;
 			if (vocab.dict[c] == (cell)docol)
-				c += (next_raw >= 0 && next_raw < compiler.n_handlers) ? 1 : 2;
+				c += 2;
 			else
 				c += image_op_cells(c);
 		}

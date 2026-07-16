@@ -563,6 +563,25 @@ live here instead. File and function name each invariant's home.
 - Image op translation: dovar/dosym call cells carry a trailing
   target-cfa operand that `op_cell_count` does not include;
   `image_op_cells` accounts for it (image.c).
+- A `docol` cell is one cell as a quotation header, two as a colon-word
+  call; the only platform-independent discriminator is
+  `quotation_starts_at` (wasm function pointers are small table indices,
+  so "the next cell looks like a handler/cfa" heuristics fail there).
+  Every body walker — `running_op_name`, `see_compiled_body`,
+  `see_tree_body`, `inline_word_body`, `mark_body`, the image saver —
+  classifies through it; new walkers must too. This makes span coverage
+  a correctness invariant: every quotation header must have a recorded
+  span, so `record_quotation_span` fails loudly at the table cap instead
+  of dropping, the image format persists spans, and `inline_word_body`
+  declines to splice a quotation-bearing body (emits a plain call)
+  rather than copy headers to span-less addresses (core.c, compiler.c,
+  image.c).
+- `op_cell_count` must list every op that carries operand cells; the
+  body walkers step by it, so an op missing from the list desyncs them
+  on both platforms — a skipped literal in `mark_body` means premature
+  collection. A new primitive that emits operands after its handler
+  cell gets a matching entry in the same change (core.c,
+  `op_cell_count`; image.c, `image_op_cells` for dovar/dosym/dounit).
 - `save-image`'s per-word cfa array is `static` to keep ~4MB off the
   call stack (image.c, `p_save_image`).
 - The overall matrix reductions unroll into four accumulators so

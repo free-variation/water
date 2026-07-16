@@ -999,6 +999,44 @@ void p_matrix(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
+void p_matrix_to_array(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	int unit;
+	Val source_val = quantity_unwrap(chain_sp[-1], &unit);
+	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "matrix>array", "a matrix");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+
+	int n_elements = source->matrix.rows * source->matrix.columns;
+	NEW_ARRAY(elements_handle, elements, n_elements);
+	const double *matrix_elements = source->matrix.elements;
+
+	if (unit) {
+		memset(elements->items, 0, sizeof(Val) * (size_t)MAX(n_elements, 1));
+		gc_root_push(interp, make_array(elements_handle));
+		for (int i = 0; i < n_elements; i++) {
+			double element = matrix_elements[i];
+			if (element != element) {
+				elements->items[i] = make_tagged(T_NONE, 0);
+				continue;
+			}
+
+			elements->items[i] = quantity_of(interp, make_float(element), unit);
+			if (interp->error_flag) {
+				gc_root_pop(interp);
+				return;
+			}
+		}
+		gc_root_pop(interp);
+	} else {
+		for (int i = 0; i < n_elements; i++)
+			elements->items[i] = make_float(matrix_elements[i]);
+	}
+
+	chain_sp[-1] = make_array(elements_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
 void p_dim(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
@@ -1207,7 +1245,8 @@ void p_matrix_range(DISPATCH_ARGS) {
 void p_select_rows(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val indices_val = chain_sp[-1];
-	Val matrix_val = chain_sp[-2];
+	int unit;
+	Val matrix_val = quantity_unwrap(chain_sp[-2], &unit);
 	REQUIRE_CHAIN_TAG(matrix_val, T_MATRIX, "select-rows", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(matrix_val));
 
@@ -1233,6 +1272,11 @@ void p_select_rows(DISPATCH_ARGS) {
 
 		for (int i = 0; i < n_indices; i++)
 			memcpy(&MAT(vector_selected, i, 0), &MAT(source, (int)elements[i], 0), sizeof(double) * (size_t)n_source_columns);
+		if (unit) {
+			SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
+			push_quantity(interp, make_matrix(vector_selected_handle), unit);
+			DISPATCH(interp);
+		}
 		chain_sp[-2] = make_matrix(vector_selected_handle);
 
 		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
@@ -1258,6 +1302,12 @@ void p_select_rows(DISPATCH_ARGS) {
 	for (int i = 0; i < indices->len; i++) {
 		int row = (int)VAL_NUMBER(indices->items[i]);
 		memcpy(&MAT(selected, i, 0), &MAT(source, row, 0), sizeof(double) * (size_t)n_source_columns);
+	}
+	
+	if (unit) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
+		push_quantity(interp, make_matrix(selected_handle), unit);
+		DISPATCH(interp);
 	}
 
 	chain_sp[-2] = make_matrix(selected_handle);

@@ -9,6 +9,18 @@
 ( n -- [0..n-1] ) \ empty when n <= 0
 : iota dup 0= if drop [ ] else 1- 0 swap range then ;
 
+' argsort constant (matrix-argsort) internal
+
+( arr -- permutation ) \ sorting permutation under val_cmp; ties keep index order
+: argsort
+	dup array? if
+		dup size iota [> element index | [ element index ] :] 2 mapn
+		sort
+		[: 1 @i :] map
+	else
+		(matrix-argsort) execute
+	then ;
+
 ( items pred -- element )  \ first element satisfying pred, or null
 : find
 	| element i >items >pred |

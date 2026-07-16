@@ -71,3 +71,26 @@ clear
 \ non-colon target reports itself
 variable v
 ' v see-tree
+
+clear
+\ a quotation header disassembles as [: (span-classified, identical on
+\ native and wasm); an else-arm beginning with a colon call is a call
+: qmap [ 1 2 3 ] [: 1+ :] map ;
+' qmap see-compiled
+' qmap see-tree
+: helper 1 . ;
+: else-call 0 if 2 . else helper then ;
+' else-call see-compiled
+' else-call see-tree
+
+\ an inline word whose body holds a quotation compiles at call sites as a
+\ plain call (a spliced header would have no span); quotation-free inline
+\ words still splice
+: qinline [ 1 2 3 ] [: 1+ :] map ; inline
+: uses-qinline qinline size ;
+uses-qinline . cr
+' uses-qinline see-compiled
+: plain-inline 1+ 2 * ; inline
+: uses-plain-inline 5 plain-inline ;
+uses-plain-inline . cr
+' uses-plain-inline see-compiled
