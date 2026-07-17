@@ -9,6 +9,11 @@ variable pi
 
 : help lookup man . ;
 
+( name -- ) \ load lib/<name> from beside the water binary; ".h2o" added if absent
+: load-library
+	dup "\.h2o$" has? not if ".h2o" + then
+	binary-dir "/lib/" + swap + load ;
+
 \ type predicates, one per type-of symbol; a bound logic var reports as its value
 : float? type-of :float = ; inline
 : string? type-of :string = ; inline

@@ -22,6 +22,50 @@
 	repeat
 	{ :counts counts :low low :bin-width bin-width } ;
 
+( v -- xs ys ) \ empirical CDF: finite elements sorted ascending, cumulative fractions (i+1)/n
+: ecdf
+	| >v n |
+	v as-column drop-nans to v
+	v num-elements to n
+	n 0= if "ecdf: no finite values" throw then
+	v sort
+	n iota vector 1+ n / ;
+
+( y p -- dev ) \ binomial deviance -2 sum[y ln p + (1-y) ln(1-p)]; p clamped to
+\ [1e-12, 1-1e-12] so overconfidence scores badly instead of dropping ln 0 terms
+: binomial-deviance
+	| >y >p |
+	p dup 1e-12 lt 1e-12 mesh  dup 1 1e-12 - gt 1 1e-12 - mesh to p
+	y p ln *  1 y -  1 p - ln  *  +  sum  -2 * ;
+
+( units n-folds -- folds ) \ round-robin deal in the given order: [ [train test] .. ]
+: cv-folds
+	| >units >n-folds positions |
+	n-folds 2 lt if n-folds "cross-validate: expected at least 2 folds; got {0}" format throw then
+	units size n-folds lt if units size n-folds "cross-validate: {0} folds exceed {1} units" format throw then
+	units size iota to positions
+	n-folds iota
+	[: |> f |
+		positions [: n-folds mod f = not :] filter units swap select-rows
+		positions [: n-folds mod f = :] filter units swap select-rows
+		2 array :]
+	map ; internal
+
+( units n-folds fit-xt score-xt -- loss ) \ k-fold CV: units deal round-robin into
+\ folds in the given order (shuffle first; one shuffle compares configurations on
+\ the same folds); fit ( train-units -- model ), score ( model test-units -- loss ),
+\ both stack-complete; answers the mean fold loss
+: cross-validate
+	| >units >n-folds >fit >score |
+	units n-folds cv-folds
+	0
+	[: |> fold-loss fold |
+		fold 0 @i fit execute
+		fold 1 @i score execute
+		fold-loss + :]
+	reduce
+	n-folds / ;
+
 ( matrix -- float ) \ standard deviation
 : std var sqrt ; inline
 
@@ -37,15 +81,65 @@
 ( matrix -- float ) \ interquartile range, Q3 - Q1
 : iqr dup 0.75 quantile swap 0.25 quantile - ;
 
-( v -- fr ) \ five-number summary of the finite elements
-: five-number-summary
-	| >v |
-	v as-column drop-nans to v
-	{ :min v min
-	  :q1 v 0.25 quantile
-	  :median v median
-	  :q3 v 0.75 quantile
-	  :max v max } ;
+( v -- fr ) \ { :min :q1 :median :mean :q3 :max } of the finite elements; :missing when any
+: vector-summary
+	| >v n-finite n-missing |
+	v nonmissing-count to n-finite
+	v num-elements n-finite - to n-missing
+	n-finite 0 gt if
+		{ :min v min
+		  :q1 v 0.25 quantile
+		  :median v median
+		  :mean v mean
+		  :q3 v 0.75 quantile
+		  :max v max }
+	else
+		{ }
+	then
+	n-missing 0 gt if :missing n-missing ! then ; internal
+
+( v -- fr ) \ the vector summary with each instant statistic rendered through time>iso
+: datetime-summary
+	vector-summary
+	dup keys swap
+	[: [: dup quantity? if time>iso then :] update-at :] reduce ; internal
+
+( v -- fr ) \ numeric summary; an instant vector (unit exactly s) renders as ISO
+: numeric-summary
+	dup unit-of 1 s = if datetime-summary else vector-summary then ; internal
+
+( cells -- fr ) \ distinct non-missing values of a text column; :missing when any
+: text-summary
+	| >cells n-missing |
+	cells size 0= if { } exit then
+	cells nan? sum to n-missing
+	{ :distinct cells [: none? not :] filter array>set size }
+	n-missing 0 gt if :missing n-missing ! then ; internal
+
+( column -- fr ) \ summary by column representation
+: column-summary
+	dup numeric-column? if numeric-summary else text-summary then ; internal
+
+( dataset -- fr ) \ per-column summaries keyed by column name
+: dataset-summary
+	| >dataset unfit-columns |
+	dataset keys
+	[: dataset swap @ dup numeric-column? swap array? or not :] filter to unfit-columns
+	unfit-columns size 0 gt if
+		dataset unfit-columns 0 @i @ type-of
+		unfit-columns 0 @i
+		"summary: column :{0} holds {1}; expected a matrix, quantity, or array" format throw
+	then
+	dataset keys dup
+	[: dataset swap @ column-summary :] map
+	frame ; internal
+
+( v/dataset -- fr ) \ a vector answers { :min :q1 :median :mean :q3 :max } over its
+\ finite elements (dimensioned in its unit, instants as ISO strings), :missing added
+\ when any are NaN; a dataset answers that per numeric column and { :distinct } per
+\ text column, keyed by column name
+: summary
+	dup frame? if dataset-summary else numeric-summary then ;
 
 ( matrix level -- low high ) \ percentile CI: level e.g. 0.95 -> [q(0.025), q(0.975)]
 : ci
@@ -58,6 +152,9 @@
 : sample-without-replacement false sample ; inline
 : sample-with-replacement true sample ; inline
 
+( data -- n ) \ resampling domain size: an array's elements, else rows
+: n-observations dup array? if size else n-rows then ; internal
+
 ( data fit-xt replications fit-mapper -- [estimates] )
 \ One serial draw sets the run seed; replicate i then draws its indices from
 \ a generator seeded by run-seed + i, so resampling parallelizes and results
@@ -68,7 +165,7 @@
 
 	replications iota
 	fit-xt [> i run-seed data fit |
-		data  dup dim drop  run-seed i +  resample-indices-ext  select-rows
+		data  dup n-observations  run-seed i +  resample-indices-ext  select-rows
 		fit execute :] curry
 	data swap curry
 	run-seed swap curry
@@ -77,11 +174,41 @@
 : bootstrap ' map bootstrap-with ;
 : pbootstrap ' pmap bootstrap-with ;
 
-( X -- X' ) \ prepend a column of 1s so beta[0] is the intercept
+( column -- m ) \ one 0/1 indicator column per distinct value above the first
+\ (the reference); levels in val_cmp order, as column>set lists them; a
+\ missing cell lands in no column
+: column>indicators
+	| >column levels |
+	column column>array [: none? not :] filter array>set sort to levels
+	levels size 2 lt if "column>indicators: needs at least 2 distinct values" throw then
+	levels 1 skip
+	[: column swap eq :] map
+	dup 0 @i swap 1 skip swap [: augment :] reduce ;
+
+( design column sym -- design ) \ add one 0/1 column per non-reference level to a
+\ design dataset, keyed sym=level; levels and keys derive from the same data
+: indicators!
+	| >design >column >prefix levels |
+	column column>array [: none? not :] filter array>set sort to levels
+	levels size 2 lt if "indicators!: needs at least 2 distinct values" throw then
+	levels 1 skip
+	[: |> level |
+		design  prefix level "{1}={0}" format string>symbol  column level eq  ! :]
+	map drop
+	design ;
+
+( X/design -- X'/design ) \ matrix: prepend a column of 1s so beta[0] is the
+\ intercept; design dataset: add an :intercept ones column (after at least one
+\ column exists — the rows are read from the design)
 : with-intercept
-	dup dim drop
-	1 0-matrix 1 +    \ rows x 1 column of ones
-	swap augment ;
+	dup frame? if
+		dup keys size 0= if "with-intercept: empty design (add a column first)" throw then
+		:intercept over n-rows 1 0-matrix 1 + !
+	else
+		dup dim drop
+		1 0-matrix 1 +    \ rows x 1 column of ones
+		swap augment
+	then ;
 
 ( values -- probabilities ) \ logistic elementwise: maps reals to (0,1)
 : sigmoid negate exp 1+ 1 swap / ;
@@ -104,7 +231,7 @@
 	  :ci-low low
 	  :ci-high high } ; internal
 
-( dataset predictors response replications fit-augmented-xt -- [records] )
+( dataset predictors response replications fit-augmented-xt -- [coefficient-summaries] )
 \ Shared regression pipeline: build the design matrix (with intercept) and the
 \ response, point-estimate with fit on the full data, then bootstrap-resample
 \ rows and refit for per-coefficient SE/CI/bias. The fit picks linear vs logistic.

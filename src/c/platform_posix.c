@@ -18,6 +18,28 @@ void platform_init(void) {
 	signal(SIGPIPE, SIG_IGN);
 }
 
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+
+int platform_executable_path(char *out, size_t cap) {
+	char invoked[PATH_MAX];
+	uint32_t invoked_cap = sizeof(invoked);
+	if (_NSGetExecutablePath(invoked, &invoked_cap) != 0)
+		return 0;
+	if (cap < PATH_MAX || !realpath(invoked, out))
+		return 0;
+	return 1;
+}
+#else
+int platform_executable_path(char *out, size_t cap) {
+	ssize_t path_len = readlink("/proc/self/exe", out, cap - 1);
+	if (path_len <= 0)
+		return 0;
+	out[path_len] = 0;
+	return 1;
+}
+#endif
+
 #ifdef __GLIBC__
 typedef struct {
 	void *thunk;

@@ -16,7 +16,7 @@ variable info
 info :n-rows @ . cr                          \ 3
 info :columns @ [: :name @ :] map . cr       \ [ :id :name :score :note ]
 info :columns @ [: :type @ :] map . cr       \ [ :real :text :real :text ]
-info :columns @                              \ real columns carry a five-number :summary,
+info :columns @                              \ real columns carry a :summary frame,
 [: dup :type @ :real = if :summary @ :median @ else :distinct @ then :] map . cr   \ text a :distinct: [ 2 2 8 2 ]
 
 \ === the table queries back typed; the empty cell became NULL ===

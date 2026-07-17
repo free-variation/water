@@ -93,6 +93,7 @@ static inline void platform_mutex_unlock(platform_mutex_t *mutex) { pthread_mute
 
 void *platform_reserve(size_t requested, size_t *reserved_out);
 void platform_init(void);
+int platform_executable_path(char *out, size_t cap);
 int platform_repl_begin(struct Interpreter *interp, int want_interactive);
 int platform_read_chunk(char *dst, int dst_avail, int interactive);
 void platform_qsort_r(void *base, size_t n, size_t size, void *thunk,

@@ -1,0 +1,13 @@
+\ load-library ( name -- ) — load lib/<name>[.h2o] from beside the water
+\ binary, symlinks resolved, independent of the process cwd.
+
+\ === a bare name gains .h2o; the plot library defines figure ===
+"plot" load-library
+' figure drop "loaded" . cr                  \ loaded
+
+\ === an explicit extension is used as given ===
+"plot.h2o" load-library
+"again" . cr                                 \ again
+
+\ === a missing library errors (message elided: it carries a machine path) ===
+[: "no-such-library" load-library :] catch nip . cr   \ 1

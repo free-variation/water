@@ -16,6 +16,12 @@ void *platform_reserve(size_t requested, size_t *reserved_out) {
 void platform_init(void) {
 }
 
+int platform_executable_path(char *out, size_t cap) {
+	(void)out;
+	(void)cap;
+	return 0;
+}
+
 int platform_repl_begin(struct Interpreter *interp, int want_interactive) {
 	(void)interp;
 	if (want_interactive)

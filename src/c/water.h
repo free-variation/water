@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.21.0"
+#define VERSION "0.21.1"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -902,6 +902,7 @@ int matrix_sub(Interpreter *interp, Val left_val, Val right_val);
 int matrix_sum_columns(Interpreter *interp, Object *source);
 double matrix_sum_overall(Object *source);
 int matrix_sum_rows(Interpreter *interp, Object *source);
+void sort_doubles(double *elements, size_t n_elements);
 int vector_argsort_copy(Interpreter *interp, Object *source);
 int vector_sorted_copy(Interpreter *interp, Object *source);
 
@@ -1142,6 +1143,7 @@ void p_variable(DISPATCH_ARGS);
 void p_while(DISPATCH_ARGS);
 
 void p_append_file(DISPATCH_ARGS);
+void p_binary_dir(DISPATCH_ARGS);
 void p_cd(DISPATCH_ARGS);
 void p_close(DISPATCH_ARGS);
 void p_cwd(DISPATCH_ARGS);
@@ -1267,6 +1269,7 @@ void p_where(DISPATCH_ARGS);
 
 double matrix_variance_overall(Object *source, size_t *n_nonmissing_out);
 void p_correlation_kendall(DISPATCH_ARGS);
+void p_ks_distance(DISPATCH_ARGS);
 void p_quantile(DISPATCH_ARGS);
 void p_variance(DISPATCH_ARGS);
 

@@ -520,8 +520,8 @@ SORT_KERNELS(pairs, ArgsortPair, argsort_pair_before)
 RADIX_SORT(doubles, double, DOUBLE_KEY)
 RADIX_SORT(pairs, ArgsortPair, PAIR_KEY)
 
-#define SORT_DISPATCH(suffix, element_type) \
-	static void sort_##suffix(element_type *elements, size_t n_elements) { \
+#define SORT_DISPATCH(linkage, suffix, element_type) \
+	linkage void sort_##suffix(element_type *elements, size_t n_elements) { \
 		if (n_elements > RADIX_SORT_CUTOFF) { \
 			element_type *scratch = malloc(n_elements * sizeof(element_type) \
 					+ RADIX_DIGITS * sizeof(size_t)); \
@@ -536,8 +536,8 @@ RADIX_SORT(pairs, ArgsortPair, PAIR_KEY)
 		quicksort_##suffix(elements, n_elements); \
 	}
 
-SORT_DISPATCH(doubles, double)
-SORT_DISPATCH(pairs, ArgsortPair)
+SORT_DISPATCH(, doubles, double)
+SORT_DISPATCH(static, pairs, ArgsortPair)
 
 static int vector_length(Interpreter *interp, Object *vector, const char *noun_phrase) {
 	int n_rows = vector->matrix.rows;

@@ -111,6 +111,83 @@ void p_quantile(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
+static int finite_sorted_copy(Interpreter *interp, const Object *sample, double **elements_out) {
+	int n_cells = sample->matrix.rows * sample->matrix.columns;
+
+	double *elements = malloc(sizeof(double) * (size_t)MAX(n_cells, 1));
+	if (!elements) {
+		fail(interp, "out of memory");
+		return -1;
+	}
+
+	int n_finite = 0;
+	for (int i = 0; i < n_cells; i++) {
+		double value = sample->matrix.elements[i];
+		if (value != value)
+			continue;
+		elements[n_finite++] = value;
+	}
+	sort_doubles(elements, (size_t)n_finite);
+
+	*elements_out = elements;
+	return n_finite;
+}
+
+void p_ks_distance(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	int right_unit;
+	Val right_val = quantity_unwrap(chain_sp[-1], &right_unit);
+	REQUIRE_CHAIN_TAG(right_val, T_MATRIX, "ks-distance", "a matrix");
+	int left_unit;
+	Val left_val = quantity_unwrap(chain_sp[-2], &left_unit);
+	REQUIRE_CHAIN_TAG(left_val, T_MATRIX, "ks-distance", "a matrix");
+	(void)right_unit;
+	(void)left_unit;
+
+	Object *left = OBJECT_AT(VAL_DATA(left_val));
+	Object *right = OBJECT_AT(VAL_DATA(right_val));
+
+	double *left_elements;
+	int n_left = finite_sorted_copy(interp, left, &left_elements);
+	if (n_left < 0)
+		return;
+
+	double *right_elements;
+	int n_right = finite_sorted_copy(interp, right, &right_elements);
+	if (n_right < 0) {
+		free(left_elements);
+		return;
+	}
+
+	if (n_left == 0 || n_right == 0) {
+		free(left_elements);
+		free(right_elements);
+		fail(interp, "a sample has no finite values");
+		return;
+	}
+
+	int i = 0;
+	int j = 0;
+	double distance = 0.0;
+	while (i < n_left && j < n_right) {
+		double pooled = MIN(left_elements[i], right_elements[j]);
+		while (i < n_left && left_elements[i] == pooled)
+			i++;
+		while (j < n_right && right_elements[j] == pooled)
+			j++;
+
+		double gap = fabs((double)i / n_left - (double)j / n_right);
+		if (gap > distance)
+			distance = gap;
+	}
+
+	free(left_elements);
+	free(right_elements);
+	chain_sp[-2] = make_float(distance);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
 typedef struct {
 	double x;
 	double y;

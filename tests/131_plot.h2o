@@ -92,6 +92,39 @@ dup "r='5' fill='tomato'" split size 1 - . cr                \ 2 (first scatter)
 { :point-radius 3 } aes!
 clear
 
+\ === round ticks: a [0,1]-pinned y domain steps by 0.2, no padded endpoints ===
+640 480 figure
+0 :ymin figure! 1 :ymax figure! 0 :xmin figure! 10 :xmax figure!
+axes
+figure>svg
+dup ">0.2</text>" has? . cr                                  \ 1
+dup ">0.8</text>" has? . cr                                  \ 1
+dup ">1</text>" has? . cr                                    \ 1
+dup ">1.05</text>" has? . cr                                 \ 0 (padded endpoint unticked)
+">-0.05</text>" has? . cr                                    \ 0
+clear
+
+\ === axis titles: x centered below, y rotated ===
+640 480 figure
+"bookings" x-label
+"ecdf" y-label
+figure>svg
+dup "x='320' y='472'" has? . cr                              \ 1 (x title placement)
+dup ">bookings</text>" has? . cr                             \ 1
+dup "rotate\(-90 12 240\)" has? . cr                         \ 1 (y title rotated)
+">ecdf</text>" has? . cr                                     \ 1
+clear
+
+\ === panel: filled ground, white grid at the tick steps, no border ===
+640 480 figure
+0 :xmin figure! 10 :xmax figure! 0 :ymin figure! 1 :ymax figure!
+panel
+figure>svg
+dup "fill='gainsboro' stroke='none'" has? . cr               \ 1 (the ground)
+dup "stroke='white'" split size 1 - . cr                     \ 12 (6 x-grid + 6 y-grid)
+"fill='none' stroke='gray'" has? . cr                        \ 0 (no border rect)
+clear
+
 \ === viewer plumbing: paths and the escaped page ===
 "figs/demo.svg" wrapper-path . cr                            \ figs/demo.html
 "demo" wrapper-path . cr                                     \ demo.html

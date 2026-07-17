@@ -65,6 +65,26 @@ void p_cwd(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
+void p_binary_dir(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	char resolved[PATH_MAX];
+	if (!platform_executable_path(resolved, sizeof(resolved))) {
+		fail(interp, "cannot locate the water binary");
+		return;
+	}
+
+	char *last_slash = strrchr(resolved, '/');
+	if (last_slash)
+		*last_slash = 0;
+
+	int handle = object_new_string(interp, resolved, (int)strlen(resolved));
+	if (interp->error_flag)
+		return;
+	*chain_sp = make_string(handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
+}
+
 static FILE *open_sized_read(Interpreter *interp, const char *path, long *size_out) {
 	FILE *file = fopen(path, "rb");
 	if (file == NULL) {

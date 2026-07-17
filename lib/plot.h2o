@@ -19,7 +19,8 @@ variable current-figure
   :series-stroke "steelblue" :series-width 2
   :line-stroke "crimson" :line-width 2
   :bar-fill "steelblue" :bar-stroke "white"
-  :box-stroke "black" :axis-stroke "gray" }
+  :box-stroke "black" :axis-stroke "gray"
+  :panel-fill "gainsboro" :grid-stroke "white" :grid-width 1 }
 to aes
 
 : aes! aes swap merge to aes ;
@@ -44,6 +45,17 @@ to aes
 	high low - to span
 	span 0= if low 1 - high 1 + exit then
 	low span 0.05 * - high span 0.05 * + ; internal
+
+( span n -- step ) \ the {1,2,5}x10^k step giving about n intervals over span
+: nice-step
+	| >span >n raw base ratio |
+	span n / to raw
+	10 raw log round-down ^ to base
+	raw base / to ratio
+	ratio 1.5 lt if base exit then
+	ratio 3.5 lt if base 2 * exit then
+	ratio 7.5 lt if base 5 * exit then
+	base 10 * ; internal
 
 ( x1 y1 x2 y2 stroke width xspace yspace -- )
 : line-mark
@@ -94,6 +106,18 @@ to aes
 	  :font-size :font-size figure@
 	  :x-space xspace
 	  :y-space yspace }
+	add-mark ; internal
+
+( x y label -- ) \ pixel-space text rotated 90° counterclockwise about its anchor
+: rotated-text-mark
+	|> x y label |
+	{ :kind :rotated-text
+	  :xs x 1 array vector
+	  :ys y 1 array vector
+	  :label label "{0}" format xml-escape
+	  :font-size :font-size figure@
+	  :x-space :pixel
+	  :y-space :pixel }
 	add-mark ; internal
 
 ( x1 y1 x2 y2 -- ) \ line segment, current stroke
@@ -154,6 +178,42 @@ to aes
 	border-mark
 	:x-ticks ticks-mark
 	:y-ticks ticks-mark ;
+
+( -- ) \ the plot-area ground rectangle, current :panel-fill
+: panel-mark
+	{ :kind :panel
+	  :fill :panel-fill figure@ }
+	add-mark ; internal
+
+( kind -- ) \ grid directive (:x-grid or :y-grid): style now, layout at render
+: grid-mark
+	|> kind |
+	{ :kind kind
+	  :ticks :ticks figure@
+	  :stroke :grid-stroke figure@
+	  :stroke-width :grid-width figure@ }
+	add-mark ; internal
+
+( -- ) \ axes' themed twin: a filled ground with gridlines as negative space at
+\ the tick steps, labeled ticks, no border; call first so data draws on top
+: panel
+	panel-mark
+	:x-grid grid-mark
+	:y-grid grid-mark
+	:x-ticks ticks-mark
+	:y-ticks ticks-mark ;
+
+( s -- ) \ x-axis title, centered below the tick labels
+: x-label
+	:width figure@ 2 /
+	:height figure@ 8 -
+	rot "middle" :pixel :pixel text-mark ;
+
+( s -- ) \ y-axis title, rotated, centered beside the tick labels
+: y-label
+	12
+	:height figure@ 2 /
+	rot rotated-text-mark ;
 
 ( xs ys -- ) \ scatter markers; aes keys :point-fill :point-stroke :point-radius
 : scatter
@@ -391,6 +451,11 @@ to aes
 	"<text x='{4}' y='{3}' font-size='{2}' text-anchor='{1}' font-family='sans-serif' fill='black'>{0}</text>"
 	format ; internal
 
+( x y font-size label -- svg ) \ one <text> element rotated 90° ccw about its anchor
+: rotated-text-element
+	"<text x='{3}' y='{2}' font-size='{1}' text-anchor='middle' font-family='sans-serif' fill='black' transform='rotate(-90 {3} {2})'>{0}</text>"
+	format ; internal
+
 ( points stroke width -- svg ) \ one <polyline> element from an "x,y x,y ..." string
 : polyline-element
 	"<polyline points='{2}' fill='none' stroke='{1}' stroke-width='{0}' />"
@@ -492,6 +557,14 @@ to aes
 	x nan? y nan? or if "" exit then
 	x y mark :font-size @ mark :anchor @ mark :label @ text-element ; internal
 
+( mark -- svg ) \ rotated text at the mark's point
+: render-rotated-text
+	| >mark x y |
+	mark pixels-xs 0 @e to x
+	mark pixels-ys 0 @e to y
+	x nan? y nan? or if "" exit then
+	x y mark :font-size @ mark :label @ rotated-text-element ; internal
+
 ( mark -- svg ) \ clip y = slope*x + intercept to the domain, then map the endpoints
 : render-abline
 	| >mark slope intercept x1 y1 x2 y2 y-low y-high domain |
@@ -528,17 +601,63 @@ to aes
 	:height figure@ margin 2 * -
 	"none" mark :stroke @ 1 rect-element ; internal
 
-( mark -- svg ) \ bottom-edge ticks and labels over the resolved domain
-: render-x-ticks
-	| >mark n-ticks low step v pixel-x bottom i elements |
-	mark :ticks @ to n-ticks
+( mark -- svg ) \ the plot-area ground
+: render-panel
+	| >mark margin |
+	:margin figure@ to margin
+	margin margin
+	:width figure@ margin 2 * -
+	:height figure@ margin 2 * -
+	mark :fill @ "none" 0 rect-element ; internal
+
+( mark -- svg ) \ vertical gridlines at round x steps across the panel
+: render-x-grid
+	| >mark low high step v pixel-x top bottom elements |
 	:domain figure@ :xmin @ to low
-	:domain figure@ :xmax @ low - n-ticks / to step
+	:domain figure@ :xmax @ to high
+	high low - mark :ticks @ nice-step to step
+	low step / round-up step * 0 + to v
+	:margin figure@ to top
 	:height figure@ :margin figure@ - to bottom
 	[ ] to elements
-	0 to i
-	begin i n-ticks 1+ lt while
-		low i step * + to v
+	begin v high step 1e-9 * + gt not while
+		v x>pixel to pixel-x
+		elements
+		pixel-x top pixel-x bottom mark :stroke @ mark :stroke-width @ line-element
+		add-last! drop
+		v step + to v
+	repeat
+	elements nl join ; internal
+
+( mark -- svg ) \ horizontal gridlines at round y steps across the panel
+: render-y-grid
+	| >mark low high step v pixel-y left right elements |
+	:domain figure@ :ymin @ to low
+	:domain figure@ :ymax @ to high
+	high low - mark :ticks @ nice-step to step
+	low step / round-up step * 0 + to v
+	:margin figure@ to left
+	:width figure@ :margin figure@ - to right
+	[ ] to elements
+	begin v high step 1e-9 * + gt not while
+		v y>pixel to pixel-y
+		elements
+		left pixel-y right pixel-y mark :stroke @ mark :stroke-width @ line-element
+		add-last! drop
+		v step + to v
+	repeat
+	elements nl join ; internal
+
+( mark -- svg ) \ bottom-edge ticks at round multiples inside the resolved domain
+: render-x-ticks
+	| >mark low high step v pixel-x bottom elements |
+	:domain figure@ :xmin @ to low
+	:domain figure@ :xmax @ to high
+	high low - mark :ticks @ nice-step to step
+	low step / round-up step * 0 + to v
+	:height figure@ :margin figure@ - to bottom
+	[ ] to elements
+	begin v high step 1e-9 * + gt not while
 		v x>pixel to pixel-x
 		elements
 		pixel-x bottom pixel-x bottom 5 + mark :stroke @ 1 line-element
@@ -546,21 +665,20 @@ to aes
 		elements
 		pixel-x bottom 16 + mark :font-size @ "middle" v "{0:.3g}" format text-element
 		add-last! drop
-		f++ i
+		v step + to v
 	repeat
 	elements nl join ; internal
 
-( mark -- svg ) \ left-edge ticks and labels over the resolved domain
+( mark -- svg ) \ left-edge ticks at round multiples inside the resolved domain
 : render-y-ticks
-	| >mark n-ticks low step v pixel-y left i elements |
-	mark :ticks @ to n-ticks
+	| >mark low high step v pixel-y left elements |
 	:domain figure@ :ymin @ to low
-	:domain figure@ :ymax @ low - n-ticks / to step
+	:domain figure@ :ymax @ to high
+	high low - mark :ticks @ nice-step to step
+	low step / round-up step * 0 + to v
 	:margin figure@ to left
 	[ ] to elements
-	0 to i
-	begin i n-ticks 1+ lt while
-		low i step * + to v
+	begin v high step 1e-9 * + gt not while
 		v y>pixel to pixel-y
 		elements
 		left pixel-y left 5 - pixel-y mark :stroke @ 1 line-element
@@ -568,7 +686,7 @@ to aes
 		elements
 		left 8 - pixel-y 4 + mark :font-size @ "end" v "{0:.3g}" format text-element
 		add-last! drop
-		f++ i
+		v step + to v
 	repeat
 	elements nl join ; internal
 
@@ -582,8 +700,12 @@ to aes
 	kind :circle = if mark render-circle exit then
 	kind :polyline = if mark render-polyline exit then
 	kind :text = if mark render-text exit then
+	kind :rotated-text = if mark render-rotated-text exit then
 	kind :abline = if mark render-abline exit then
 	kind :border = if mark render-border exit then
+	kind :panel = if mark render-panel exit then
+	kind :x-grid = if mark render-x-grid exit then
+	kind :y-grid = if mark render-y-grid exit then
 	kind :x-ticks = if mark render-x-ticks exit then
 	mark render-y-ticks ; internal
 

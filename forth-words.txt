@@ -90,6 +90,8 @@ augment
 base
 basename
 begin
+binary-dir
+binomial-deviance
 bit-and
 bit-not
 bit-or
@@ -116,6 +118,7 @@ column-mins
 column-sums
 column-type
 column>array
+column>indicators
 column>set
 concat
 cons
@@ -134,6 +137,7 @@ count
 count-matches
 cr
 create-index
+cross-validate
 cumulative-sum
 curry
 cwd
@@ -167,6 +171,7 @@ drop
 drop-nans
 dup
 each
+ecdf
 else
 emit
 end-process
@@ -207,7 +212,6 @@ fgt
 filter
 find
 first
-five-number-summary
 flat-map
 flatten
 flatten-array
@@ -252,6 +256,7 @@ i-times
 identity-matrix
 if
 index-of
+indicators!
 inline
 inner-join
 int-segment
@@ -263,12 +268,14 @@ iso>time
 join
 json>frame
 keys
+ks-distance
 last
 leave
 ln
 load
 load-bag
 load-image
+load-library
 log
 lookup
 lowest-bit
@@ -437,6 +444,7 @@ string?
 submatrix
 substring
 sum
+summary
 swap
 symbol
 symbol?

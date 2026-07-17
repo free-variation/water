@@ -1,0 +1,34 @@
+<matrix 2x1>
+          1
+          2
+
+[ { :estimate 1.08 :se 0.164099 :bias -0.0121611 :ci-low 0.813572 :ci-high 1.37193 } { :estimate 1.97714 :se 0.0419318 :bias 0.00524679 :ci-low 1.90648 :ci-high 2.05 } ] 
+[ { :estimate -0.364017 :se 0.0275771 :bias -0.00116952 :ci-low -0.421276 :ci-high -0.313402 } { :estimate 0.415932 :se 0.00928508 :bias 0.000324991 :ci-low 0.398229 :ci-high 0.435666 } ] 
+<matrix 2x1>
+     -1.833
+     0.4074
+
+<matrix 2x1>
+     -1.833
+     0.4074
+
+<matrix 2x1>
+     -3.275
+       1.31
+
+<matrix 2x1>
+     -2.673
+     0.5941
+
+<matrix 2x1>
+   -0.02227
+   0.004948
+
+{
+  :lambdas [ 1 100 ]
+  :deviances <matrix 2x1:  3.19978 2.21081>
+  :best 100
+}
+
+1 
+[ { :estimate -12.0436 :se 3.00968 :bias -0.303214 :ci-low -19.088 :ci-high -7.43674 } { :estimate 1.92813 :se 0.48135 :bias 0.048784 :ci-low 1.22304 :ci-high 3.10194 } ] 

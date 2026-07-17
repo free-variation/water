@@ -125,8 +125,8 @@ tables stay out.
 
 - **permutation-test** — shuffle one column's indices for the null;
   replaces the t-test, ANOVA, and correlation tests.
-- **jackknife**, **cross-validate** — leave-one-out and k-fold index
-  partitions; CV is the model-selection tool the rest of this plan cites.
+- **jackknife** — leave-one-out index partitions; reuse `cross-validate`'s
+  units/fit-xt/score-xt shape.
 - **Model metrics** — the losses CV selects on: squared/absolute error,
   accuracy, and confusion counts as element-wise ops; AUC as a rank
   statistic (argsort — Mann–Whitney's twin); ROC and calibration curves
@@ -181,20 +181,12 @@ three ops but loses precision on near-duplicate rows).
 
 ### 6. Empirical distributions
 
-The ecdf and distances between empirical distributions. These will be used
-constantly, so the statistics are small C kernels, not library algebra:
-each is one allocation-free pass over the once-sorted pooled sample plus a
-0/1 label vector, so a permutation replicate is shuffle + one C word.
-Library code owns the ecdf representation and the §3 permutation plumbing;
-nulls come from §3, not asymptotic tables.
+Distances between empirical distributions, each one pass over sorted
+samples in the `ks-distance` mold:
 
-- **ecdf** — ( sample -- ecdf ) library: a sorted copy as the
-  representation; **ecdf-at** ( ecdf x -- p ) evaluates by binary search;
-  mapping it over a grid gives the step function.
-- **ks** — C: two-sample Kolmogorov–Smirnov, sup |F₁ − F₂| in one pass.
-  The one-sample form takes a reference CDF as a quotation ( x -- p ); a
-  normal reference is another consumer of the §2 `erf` word.
-- **cvm / ad** — C: Cramér–von Mises and Anderson–Darling, the same pass
+- **one-sample ks** — against a reference CDF as a quotation ( x -- p );
+  a normal reference is another consumer of the §2 `erf` word.
+- **cvm / ad** — C: Cramér–von Mises and Anderson–Darling, the ks pass
   with accumulation; AD is CvM with 1/(F(1−F)) tail weights.
 - **wasserstein** — C: 1-D W₁; equal-n samples pair sorted elements
   directly (mean |gap|), unequal n integrates the quantile difference over
@@ -202,11 +194,9 @@ nulls come from §3, not asymptotic tables.
 - Significance by permutation of pooled labels (§3); energy distance joins
   once §5's pairwise distances land.
 
-To settle: the ecdf representation (bare sorted matrix vs a frame carrying
-n and the sort); tie handling in ks (step both functions at a shared point
-before comparing); whether the replicate loop eventually wants a C null
-driver (in-place byte-label shuffle + statistic in one loop) once profiling
-shows the shuffle dominating — the statistics words stay useful either way.
+To settle: whether the permutation replicate loop wants a C null driver
+(in-place byte-label shuffle + statistic in one loop, skipping the
+per-replicate sort) once profiling shows the sort dominating.
 
 ### Test data
 
@@ -245,16 +235,13 @@ from session definitions, so the undocumented canary reaches them.
 
 ## Basic graphing: residuals
 
-lib/plot.h2o draws scatter, series, histogram, and boxplots to SVG with a
-live-reloading browser viewer. Remaining:
-
 - **Chart set** — step (the ecdf as drawn) and bar charts.
 - **Stats consumers** — QQ plots (`sort` + `qnorm`, both available now;
   bring back plot-side `fit-line` over `abline`), ROC and calibration
   curves (the model-metrics bullet), residual and fit plots for the
   regressions.
-- **Nice-number tick heuristics** — ticks currently divide the padded
-  range evenly; snap them to 1/2/5 steps.
+- **Log axes** — transform at the domain with power-of-ten tick labels,
+  instead of transforming the data and labeling in log units.
 - **Torn frames on overwrite** — `write-file` truncates in place; either
   a `rename-file` word for temp-and-rename atomicity, or accept that
   viewers re-read fast.

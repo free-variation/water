@@ -9,5 +9,6 @@
 098_reload_literals start-process: no fork/exec on WASI
 099_ffi             ffi excluded from the wasm build
 100_ffi_lapacke     ffi/LAPACKE excluded from the wasm build
-107_statistics      needs LAPACKE via ffi (excluded from the wasm build)
+137_regression      needs LAPACKE via ffi (excluded from the wasm build)
+138_load_library    binary-dir: no executable path on WASI
 120_datetime_zones  timezones: no tzset/TZ handling and no strptime %z on WASI

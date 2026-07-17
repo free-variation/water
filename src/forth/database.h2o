@@ -88,7 +88,7 @@
 	  		type :real = if
 	  			{ :name name string>symbol
 				  :type type
-				  :summary dataset name string>symbol @ vector five-number-summary }
+				  :summary dataset name string>symbol @ vector summary }
 			else
 				{ :name name string>symbol
 				  :type type
