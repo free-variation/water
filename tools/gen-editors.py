@@ -40,13 +40,13 @@ KEYWORD = ["exit", "execute"]
 LOGIC = ["lvar", "unify", "~", "deref", "$", "amb", "fail", "_"]
 BOOLEAN = ["null"]
 OPERATORS = [
-    "|>", "+!", "-!", "*!", "/!", "++", "--", "f++", "f--", "f1+", "f1-",
+    "+!", "-!", "*!", "/!", "++", "--", "f++", "f--", "f1+", "f1-",
     "f+", "f-", "f*", "f/", "f^", "1+", "1-", "0=", "+", "-", "*", "/", "%",
     "^", "=", "!i", "!", "@i,j", "@i", "@j", "@", ">r", ">side", "side>",
     "2dup", ".s", ".a", ".",
 ]
 # Handled by regex match rules in the templates, never a keyword.
-DELIMITERS = {"[", "]", "{", "}", "<", ">", "|", "[:", ":]", "[(", ")]", "[|", "[>"}
+DELIMITERS = {"[", "]", "{", "}", "<", ">", "|", "|>", "[:", ":]", "[(", ")]", "[|", "[>"}
 # Documentation pseudo-words (symbol-literal examples), matched by the symbol scope.
 EXCLUDE = {":name"}
 
@@ -144,7 +144,7 @@ def emit_vim(auto):
     L.append('syn match   waterDelimiter "\\%(^\\|\\s\\)\\zs[<>]\\ze\\%(\\s\\|$\\)"')
     L.append('syn match   waterDelimiter "\\[("')
     L.append('syn match   waterDelimiter ")\\]"')
-    L.append('syn match   waterDelimiter "\\%(^\\|\\s\\)\\zs|\\ze\\%(\\s\\|$\\)"')
+    L.append('syn match   waterDelimiter "\\%(^\\|\\s\\)\\zs|>\\=\\ze\\%(\\s\\|$\\)"')
     L.append("")
     # vim folds operators into the builtin group (the broad iskeyword covers them).
     # `|` is a vim command separator and `"` starts a comment, so tokens containing
@@ -232,7 +232,7 @@ def emit_vscode(auto):
             "logicvar": {"name": "variable.other.logicvar.water",
                          "match": BOUNDARY_BEHIND + r"[A-Z][^\s\[\]{};]*" + BOUNDARY_AHEAD},
             "delimiters": {"name": "punctuation.section.water",
-                           "match": r"\[\(|\)\]|[\[\]{}]|" + BOUNDARY_BEHIND + r"[<>]" + BOUNDARY_AHEAD},
+                           "match": r"\[\(|\)\]|[\[\]{}]|" + BOUNDARY_BEHIND + r"(?:[<>]|\|>?)" + BOUNDARY_AHEAD},
         },
     }
     return json.dumps(grammar, indent=2) + "\n"

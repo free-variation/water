@@ -1068,7 +1068,7 @@ void print_val_compact(FILE *out, Interpreter *interp, Val value) {
 		case T_MATRIX: {
 						   Object *m = OBJECT_AT(VAL_DATA(value));
 						   print_depth_enter();
-						   fprintf(out, "M%dx%d", m->matrix.rows, m->matrix.columns);
+						   fprintf(out, "[%dx%d]", m->matrix.rows, m->matrix.columns);
 						   print_depth_leave();
 						   break;
 					   }
@@ -1146,22 +1146,6 @@ void print_frame_pretty(FILE *out, Interpreter *interp, Object *frame, int inden
 	for (int s = 0; s < indent; s++)
 		putc(' ', out);
 	putc('}', out);
-}
-
-void print_prompt_state(Interpreter *interp) {
-	if (stdout_is_tty())
-		fputs("-> ", stdout);
-
-	if (interp->error_flag) {
-		printf("%d|error", interp->dsp);
-	} else if (interp->dsp == 0) {
-		putchar('0');
-	} else {
-		printf("%d|", interp->dsp);
-		print_val_compact(stdout, interp, interp->data_stack[interp->dsp - 1]);
-	}
-
-	putchar(' ');
 }
 
 int find(const char *name) {
@@ -4282,6 +4266,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "transpose", p_transpose, 0);
 	define_primitive(interp, "submatrix", p_submatrix, 0);
 	define_primitive(interp, "select-rows", p_select_rows, 0);
+	define_primitive(interp, "mesh", p_mesh, 0);
 	define_primitive(interp, "augment", p_augment, 0);
 	define_primitive(interp, "vstack", p_vstack, 0);
 	define_primitive(interp, "diagonal-matrix", p_diagonal_matrix, 0);
@@ -4553,15 +4538,29 @@ int main(int argc, char **argv) {
 			continue;
 
 		if (interactive) {
-			print_prompt_state(interp);
 			if (interp->error_flag) {
 				fputs(interp->error_message, stdout);
 				if (interp->error_trace[0]) {
 					putchar('\n');
 					fputs(interp->error_trace, stdout);
 				}
-			} else
+			} else {
+				int tty = stdout_is_tty();
+				if (tty)
+					fputs("\033[1m", stdout);
 				fputs("ok", stdout);
+				if (interp->dsp > 0) {
+					printf(" %d", interp->dsp);
+					if (tty)
+						fputs("\033[0m", stdout);
+					putchar('|');
+					if (tty)
+						fputs("\033[1m", stdout);
+					print_val_compact(stdout, interp, interp->data_stack[interp->dsp - 1]);
+				}
+				if (tty)
+					fputs("\033[0m", stdout);
+			}
 			putchar('\n');
 			fflush(stdout);
 		} else if (interp->error_flag) {

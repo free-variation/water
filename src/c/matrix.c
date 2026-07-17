@@ -1054,7 +1054,8 @@ void p_dim(DISPATCH_ARGS) {
 
 void p_transpose(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val source_val = chain_sp[-1];
+	int unit;
+	Val source_val = quantity_unwrap(chain_sp[-1], &unit);
 	REQUIRE_CHAIN_TAG(source_val, T_MATRIX, "transpose", "a matrix");
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
@@ -1063,9 +1064,136 @@ void p_transpose(DISPATCH_ARGS) {
 		for (int j = 0; j < source->matrix.columns; j++)
 			MAT(target, j, i) = MAT(source, i, j);
 
+	if (unit) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
+		push_quantity(interp, make_matrix(target_handle), unit);
+		DISPATCH(interp);
+	}
+
 	chain_sp[-1] = make_matrix(target_handle);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
+static inline int mesh_replaces(double mask_element) {
+	return !double_is_nan_bits(mask_element) && mask_element != 0.0;
+}
+
+void p_mesh(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+	Val mask_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(mask_val, T_MATRIX, "mesh", "a mask matrix");
+	Object *mask = OBJECT_AT(VAL_DATA(mask_val));
+	const double *mask_elements = mask->matrix.elements;
+	int n_mask = mask->matrix.rows * mask->matrix.columns;
+
+	Val subject_val = chain_sp[-3];
+	Val replacement_val = chain_sp[-1];
+
+	if (VAL_TAG(subject_val) == T_ARRAY) {
+		Object *subject = OBJECT_AT(VAL_DATA(subject_val));
+		int n_elements = subject->len;
+
+		if (n_mask != n_elements) {
+			fail(interp, "mask has %d elements; subject has %d", n_mask, n_elements);
+			return;
+		}
+		if (VAL_TAG(replacement_val) == T_MATRIX) {
+			fail(interp, "expected an array or a single replacement value for an array subject; got a matrix");
+			return;
+		}
+
+		Val *replacement_items = NULL;
+		if (VAL_TAG(replacement_val) == T_ARRAY) {
+			Object *replacement = OBJECT_AT(VAL_DATA(replacement_val));
+			if (replacement->len != n_elements) {
+				fail(interp, "replacement has %d elements; subject has %d", replacement->len, n_elements);
+				return;
+			}
+			replacement_items = replacement->items;
+		}
+
+		NEW_ARRAY(picked_handle, picked, n_elements);
+		Val *subject_items = subject->items;
+		for (int i = 0; i < n_elements; i++) {
+			if (mesh_replaces(mask_elements[i]))
+				picked->items[i] = replacement_items ? replacement_items[i] : replacement_val;
+			else
+				picked->items[i] = subject_items[i];
+		}
+
+		chain_sp[-3] = make_array(picked_handle);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
+	}
+
+	int subject_unit;
+	Val subject_matrix_val = quantity_unwrap(subject_val, &subject_unit);
+	REQUIRE_CHAIN_TAG(subject_matrix_val, T_MATRIX, "mesh", "a matrix or array subject");
+	Object *subject = OBJECT_AT(VAL_DATA(subject_matrix_val));
+
+	if (mask->matrix.rows != subject->matrix.rows || mask->matrix.columns != subject->matrix.columns) {
+		fail(interp, "mask is %dx%d; subject is %dx%d",
+				mask->matrix.rows, mask->matrix.columns,
+				subject->matrix.rows, subject->matrix.columns);
+		return;
+	}
+
+	int replacement_unit;
+	Val replacement_matrix_val = quantity_unwrap(replacement_val, &replacement_unit);
+	double conversion = 1.0;
+	if (VAL_TAG(replacement_matrix_val) != T_NONE) {
+		if ((subject_unit == 0) != (replacement_unit == 0)) {
+			fail(interp, "cannot mesh a quantity and a plain number");
+			return;
+		}
+		if (subject_unit != replacement_unit) {
+			if (!unit_conversion(replacement_unit, subject_unit, &conversion)) {
+				fail(interp, "unit mismatch");
+				return;
+			}
+		}
+	}
+
+	const double *replacement_elements = NULL;
+	double replacement_scalar = 0.0;
+	if (VAL_TAG(replacement_matrix_val) == T_MATRIX) {
+		Object *replacement = OBJECT_AT(VAL_DATA(replacement_matrix_val));
+		if (replacement->matrix.rows != subject->matrix.rows
+				|| replacement->matrix.columns != subject->matrix.columns) {
+			fail(interp, "replacement is %dx%d; subject is %dx%d",
+					replacement->matrix.rows, replacement->matrix.columns,
+					subject->matrix.rows, subject->matrix.columns);
+			return;
+		}
+		replacement_elements = replacement->matrix.elements;
+	} else if (VAL_TAG(replacement_matrix_val) == T_FLOAT) {
+		replacement_scalar = VAL_NUMBER(replacement_matrix_val) * conversion;
+	} else if (VAL_TAG(replacement_matrix_val) == T_NONE) {
+		replacement_scalar = NAN;
+	} else {
+		fail(interp, "expected a float, null, matrix, or quantity replacement; got %s",
+				tag_name(VAL_TAG(replacement_matrix_val)));
+		return;
+	}
+
+	NEW_MATRIX(target_handle, target, subject->matrix.rows, subject->matrix.columns);
+	const double *subject_elements = subject->matrix.elements;
+	double *target_elements = target->matrix.elements;
+	for (int i = 0; i < n_mask; i++) {
+		if (mesh_replaces(mask_elements[i]))
+			target_elements[i] = replacement_elements ? replacement_elements[i] * conversion : replacement_scalar;
+		else
+			target_elements[i] = subject_elements[i];
+	}
+
+	if (subject_unit) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp - 3);
+		push_quantity(interp, make_matrix(target_handle), subject_unit);
+		DISPATCH(interp);
+	}
+
+	chain_sp[-3] = make_matrix(target_handle);
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
 }
 
 void p_submatrix(DISPATCH_ARGS) {

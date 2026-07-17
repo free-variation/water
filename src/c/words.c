@@ -488,6 +488,45 @@ void p_eq_string(DISPATCH_ARGS) {
 }
 
 
+static int quantity_comparison_mask(Interpreter *interp, Val left, Val right,
+		scalar_operator scalar_op, const char *word) {
+	int left_unit;
+	int right_unit;
+	Val left_magnitude = quantity_unwrap(left, &left_unit);
+	Val right_magnitude = quantity_unwrap(right, &right_unit);
+
+	if (VAL_TAG(left_magnitude) != T_MATRIX && VAL_TAG(right_magnitude) != T_MATRIX)
+		return 0;
+
+	if ((left_unit == 0) != (right_unit == 0)) {
+		fail(interp, "cannot compare a quantity and a plain number");
+		return 1;
+	}
+
+	int base = interp->dsp - 2;
+
+	if (left_unit != right_unit) {
+		double conversion;
+		if (!unit_conversion(right_unit, left_unit, &conversion)) {
+			fail(interp, "unit mismatch");
+			return 1;
+		}
+		binary_op(interp, right_magnitude, make_float(conversion), scalar_mul, "*");
+		if (interp->error_flag)
+			return 1;
+		right_magnitude = interp->data_stack[interp->dsp - 1];
+	}
+
+	binary_op(interp, left_magnitude, right_magnitude, scalar_op, word);
+	if (interp->error_flag)
+		return 1;
+
+	Val mask = pop(interp);
+	interp->dsp = base;
+	push(interp, mask);
+	return 1;
+}
+
 #define MATRIX_COMPARISON_OP(name, op, sfn, word) \
 	void name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
@@ -496,6 +535,14 @@ void p_eq_string(DISPATCH_ARGS) {
 		if (VAL_TAG(left) == T_FLOAT && VAL_TAG(right) == T_FLOAT) { \
 			chain_sp[-2] = make_bool(VAL_NUMBER(left) op VAL_NUMBER(right)); \
 			DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1); \
+		} \
+		if (VAL_TAG(left) == T_QUANTITY || VAL_TAG(right) == T_QUANTITY) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
+			if (quantity_comparison_mask(interp, left, right, sfn, word)) { \
+				if (interp->error_flag) \
+					return; \
+				DISPATCH(interp); \
+			} \
 		} \
 		SYNC_REGISTERS(interp, chain_ip, chain_sp - 2); \
 		if (VAL_TAG(left) == T_MATRIX || VAL_TAG(right) == T_MATRIX) { \
@@ -519,6 +566,18 @@ void p_nan(DISPATCH_ARGS) {
 	if (VAL_TAG(chain_sp[-1]) == T_NONE) {
 			chain_sp[-1] = make_bool(1);
 			DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+	}
+
+	if (VAL_TAG(chain_sp[-1]) == T_ARRAY) {
+		Object *source = OBJECT_AT(VAL_DATA(chain_sp[-1]));
+		int n_elements = source->len;
+
+		NEW_MATRIX(mask_handle, mask, n_elements, 1);
+		for (int i = 0; i < n_elements; i++)
+			mask->matrix.elements[i] = VAL_TAG(source->items[i]) == T_NONE ? 1.0 : 0.0;
+
+		chain_sp[-1] = make_matrix(mask_handle);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 	}
 
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);

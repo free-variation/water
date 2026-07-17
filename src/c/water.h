@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.20.1"
+#define VERSION "0.21.0"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -821,7 +821,6 @@ void print_frame_pretty(FILE *out, Interpreter *interp, Object *frame, int inden
 void print_items(FILE *out, Interpreter *interp, Object *collection);
 void print_matrix_cell(FILE *out, double value);
 void print_matrix_grid(FILE *out, Object *m, int unit);
-void print_prompt_state(Interpreter *interp);
 void print_val(FILE *out, Interpreter *interp, Val value);
 void print_val_compact(FILE *out, Interpreter *interp, Val value);
 void print_val_inspect(FILE *out, Interpreter *interp, Val value);
@@ -1245,6 +1244,7 @@ void p_frobenius_norm(DISPATCH_ARGS);
 void p_matrix(DISPATCH_ARGS);
 void p_matrix_range(DISPATCH_ARGS);
 void p_matrix_to_array(DISPATCH_ARGS);
+void p_mesh(DISPATCH_ARGS);
 void p_max(DISPATCH_ARGS);
 void p_min(DISPATCH_ARGS);
 void p_nonmissing_count(DISPATCH_ARGS);

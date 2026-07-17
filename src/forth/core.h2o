@@ -41,9 +41,14 @@ inline
 : nip swap drop ;
 inline
 
-( tos -- tos ) \ prints the top without consuming it
+( val -- val ) \ prints the top without consuming it
 : peek dup . ;
 inline
+
+( val -- bool ) \ is tos 1?
+: 1= 1 = ; inline
+
+: , peek ; inline
 
 \ arithmetic words
 

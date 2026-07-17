@@ -497,6 +497,24 @@ the locals-frame and trail rewind the unwind already carries; whether
 
 ---
 
+## Compile check: locals read but never assigned
+
+Detect at `;`/`:]` any scratch local that is fetched somewhere in its scope
+but stored nowhere in it — such a local holds garbage on every call, and the
+case occurs in practice when a local name shadows a dictionary word the body
+meant to call (frames>dataset's `keys`, 2026-07-17). Semantics: order-
+insensitive within the scope (store-after-fetch stays legal for loop bodies);
+receive markers, `?` lvar markers, and `to` count as stores; `++`/`--`/
+`f++`/`f--` count as reads; captures from quotations count toward the owning
+scope. Error message names the shadowed word when one exists: "local 'keys'
+is read but never assigned (a word of that name exists)". Implementation:
+fetched/stored bit-flags per declared local in compiler.c beside the existing
+scope bookkeeping, checked in `leave_compile_scope`, failing through the
+normal partial-definition rollback. Fix any latent violations the embedded
+library surfaces; golden beside the compile-error tests; both suites.
+
+---
+
 ## Loader dictionary lookup
 
 Token resolution in the outer interpreter is a linear dictionary walk with a

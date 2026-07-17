@@ -61,6 +61,13 @@
 ( arr -- arr ) \ new array, elements uniformly permuted; input untouched
 : shuffle  dup size false sample ;
 
+( v -- bool ) \ matrix-represented column, dimensioned included
+: numeric-column?  dup matrix? swap quantity? or ; internal
+
+( column -- arr ) \ a column in any representation as an array of its values
+: column>array
+	dup numeric-column? if matrix>array then ; internal
+
 ( column indices -- column' ) \ gather array elements by an index vector
 : gather-elements
 	| column | swap to column
@@ -77,20 +84,21 @@
 
 	dataset keys dup
 	[: dataset swap @
-	   dup matrix? over quantity? or if
+	   dup numeric-column? if
 		   indices (matrix-select-rows) execute
 	   else
 		   indices gather-elements
 	   then :] map
 	frame ; internal
 
-( dataset/matrix indices -- dataset/matrix )
+( dataset/matrix/arr indices -- same )
 : select-rows
-	over frame? if
-		dataset-select-rows
-	else
-		(matrix-select-rows) execute
-	then ;
+	over frame? if dataset-select-rows exit then
+	over array? if
+		dup matrix? if matrix>array then
+		gather-elements exit
+	then
+	(matrix-select-rows) execute ;
 
 ' dim constant (matrix-dim) internal 
 
@@ -130,3 +138,116 @@
 	| dataset | swap to dataset
 	dup [: dataset swap @ :] map 
 	frame ;
+
+( sorted -- pairs ) \ [ value n-values ] runs over a val_cmp-sorted array
+: value-runs
+	| >sorted pairs run-value n |
+	[ ] to pairs
+	sorted size 0= if pairs exit then
+
+	sorted 0 @i to run-value
+	1 to n
+	[: 1+ sorted swap @i dup run-value = if
+		drop n 1+ to n
+	else
+		pairs [ run-value n ] add-last! drop
+		to run-value
+		1 to n
+	then :] sorted size 1- i-times
+	
+	pairs [ run-value n ] add-last! ; internal
+
+( dataset -- rows ) \ each row as a frame keyed by column name
+: dataset-rows
+	| >dataset n-columns column-names |
+	dataset keys to column-names
+	column-names size to n-columns
+	n-columns 0= if [ ] exit then
+
+	dataset values ' column>array map destruct
+	[: n-columns array column-names swap frame :] n-columns mapn ; internal
+
+( array/vector/dataset -- pairs ) \ occurrences of distinct values (dataset: whole rows), most frequent first
+: count
+	dup frame? if 
+		dataset-rows
+	else
+		column>array
+	then
+
+	sort value-runs
+	[: 1 @i negate :] sort-by ;
+
+' filter constant (array-filter) internal
+
+( dataset xt -- dataset) \ keep the rows whose filter satisfies xt ( row -- bool)
+: dataset-filter
+	|> dataset predicate |
+	dataset dataset-rows 
+	predicate map vector
+	where
+	dataset swap select-rows ; internal
+
+( array/set/dataset xt -- same ) \ keep elements or rows satisfying xt
+: filter
+	over frame? if 
+		dataset-filter 
+	else
+		(array-filter) execute
+	then ;
+
+( cells -- column ) \ vector when uniformly numeric (none -> NaN) or one-unit quantities
+: column-from-cells
+	|> cells |
+	cells size 0= if 
+		cells exit
+	then
+
+	cells [: dup float? swap none? or :] all? if
+		cells vector exit
+	then
+
+	cells [: quantity? :] all? if
+		cells [: unit-of :] map 
+		array>set size 1= if
+			cells [: magnitude :] 
+			map vector 
+			cells 0 @i unit-of * 
+			exit
+		then
+	then
+
+	cells ; internal
+
+( rows -- dataset ) \ uniform-key row frames as a dataset, keys from row 0
+: frames>dataset
+	| >rows |
+	rows size 0= if { } exit then
+
+	rows [: keys :] map array>set size 1= not if
+		"rows have differing keys" throw
+	then
+
+	rows 0 @i keys
+	dup [: |> key | rows [: key @ :] map column-from-cells :] map
+	frame ;
+
+( dataset xt -- dataset) \ xt maps each row frame to a new row frame
+: map-rows
+	swap dataset-rows
+	swap map
+	frames>dataset ;
+
+( dataset/matrix -- n ) \ number of rows
+: n-rows dim drop ;
+
+( dataset/matrix -- n ) \ number of columns
+: n-columns dim nip ;
+
+( dataset sym pred replacement -- ) \ replaces the column's cells passing pred, in place
+: replace-where
+	|> dataset column-name predicate replacement |
+	dataset column-name [: dup predicate execute replacement mesh :]
+	update-at 
+	drop ;
+

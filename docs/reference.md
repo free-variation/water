@@ -182,7 +182,7 @@ matrix (`@i,j`, `@e`) surfaces as `null` the same way.
 
 ## Comparison and logic
 
-Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_cmp` (structural): matrices compare by shape then row-major contents, so they order for set membership. `lt`/`gt` are structural too, **except on matrices**, where they compare element-wise and return a 1.0/0.0 matrix (same shape, or a scalar broadcasts over the matrix). Directly before `if`/`while`/`until` a comparison fuses into a compare-and-branch, which stays structural — branching on a matrix result isn't meaningful.
+Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_cmp` (structural): matrices compare by shape then row-major contents, so they order for set membership. `lt`/`gt` are structural too, **except on matrices**, where they compare element-wise and return a 1.0/0.0 matrix (same shape, or a scalar broadcasts over the matrix). A dimensioned matrix on either side of `lt`/`gt`/`eq` also masks element-wise: the right operand rescales into the left's unit (`prices 10 $ lt` works whether prices are in `$` or `¢`), the mask comes back bare, and a quantity against a plain number or a different dimension errors. Directly before `if`/`while`/`until` a comparison fuses into a compare-and-branch, which stays structural — branching on a matrix result isn't meaningful.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -192,8 +192,9 @@ Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_c
 | `false` | `( -- bool )` | core.h2o: pushes 0 (inline) | 1 | none | O(1) |
 | `gt` | `( a b -- bool )` or `( m x -- m )` | greater-than; element-wise 1/0 matrix on matrix operands (scalar broadcast) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
 | `eq` | `( a b -- bool )` or `( m x -- m )` | equality; element-wise 1/0 matrix on matrix operands (scalar broadcast) — the mask-producing twin of `=`, which stays structural on matrices; off matrices the two agree. NaN elements equal nothing | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
-| `nan?` | `( v -- bool )` or `( m -- m )` | NaN test: 1/0 mask over a matrix's elements; `1` on `null` itself (a scalar NaN *is* `null`), `0` on any float. The only mask route to NaNs — they compare false under `lt`/`gt`/`eq` | 2 | matrix `1m(r×c)` | O(1); matrix O(r×c) |
+| `nan?` | `( v -- bool )` or `( m/arr -- m )` | NaN test: 1/0 mask over a matrix's elements; an array answers an n×1 mask marking `none` elements (a text column's missing cells), composing with `where`/`select-rows`; `1` on `null` itself (a scalar NaN *is* `null`), `0` on any float. The only mask route to NaNs — they compare false under `lt`/`gt`/`eq` | 2 | `1m(r×c)` | O(1); matrix/array O(n) |
 | `0=` | `( a -- bool )` | `!truthy(a)`; any type | 2 | none | O(1) |
+| `1=` | `( a -- bool )` | core.h2o: `1 =` (inlined) | 5 | none | O(1) |
 | `type-of` | `( a -- sym )` | The value's type as a symbol: `:float` `:string` `:symbol` `:array` `:set` `:pair` `:frame` `:matrix` `:quantity` `:xt` `:continuation` `:stream` `:db` `:ptr` `:segment` `:none` `:wildcard` `:lvar`. A bound logic var reports its value's type; an unbound one is `:lvar` | 2 | none | O(1) |
 | `float?` | `( a -- bool )` | core.h2o: `type-of :float =` (inlined) | 5 | none | O(1) |
 | `string?` | `( a -- bool )` | core.h2o: `type-of :string =` (inlined) | 5 | none | O(1) |
@@ -264,7 +265,7 @@ A unit word is postfix — it attaches its unit to the number before it (`10 m`,
 - `^` — rational exponent only; raises the unit's exponents (`q 2 ^`, `q 0.5 ^`).
 - `sqrt` — halves the unit's exponents (`sqrt(m²) → m`).
 - `negate` / `abs` — keep the unit; transcendentals (`sin`, `log`, …) reject a quantity.
-- `= < >` — compare by value, normalizing scale within a dimension (`100 ¢ 1 $ = → 1`).
+- `=` `lt` `gt` — compare by value, normalizing scale within a dimension (`100 ¢ 1 $ = → 1`). On a dimensioned matrix, `lt`/`gt`/`eq` answer an element-wise bare mask with the same normalization (`prices 10 $ lt`); `=` stays structural everywhere.
 
 Printing shows magnitude then unit: a named unit prints its name (`3 newton`); an
 unnamed compound prints its dimensional form with the scale folded into the
@@ -273,12 +274,12 @@ units, and unit words round-trip through `save-image`/`load-image`.
 
 The matrix statistics accept a dimensioned matrix and keep its unit: `sum`
 `mean` `max` `min` `quantile` (so `median` `percentile` `iqr` `ci`) `row-sums`
-`column-sums` `cumulative-sum` `norm` `reshape` `select-rows` answer in the
-operand's unit, `matrix>array` yields per-element quantities, `var` answers in
-the unit squared (`std`/`se` return to the unit through `sqrt`), and the index
-and count words (`argsort` `argmax` `argmin` `size` `dim`) and the
-correlations answer bare — correlation is scale-invariant, so dimensioned
-inputs are computed over their magnitudes.
+`column-sums` `cumulative-sum` `norm` `reshape` `transpose` `select-rows`
+answer in the operand's unit, `matrix>array` yields per-element quantities,
+`var` answers in the unit squared (`std`/`se` return to the unit through
+`sqrt`), and the index and count words (`argsort` `argmax` `argmin` `size`
+`dim`) and the correlations answer bare — correlation is scale-invariant, so
+dimensioned inputs are computed over their magnitudes.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -420,6 +421,8 @@ These compile-time words read a following local name and emit a single fused dep
 | `.a` | `( a -- )` | Like `.` but disables print truncation (show all elements) | 1 + print | none | O(size printed) |
 | `render` | `( a -- s )` | The text `.` would print, returned as a string instead of printed: no truncation, no trailing separator (a matrix grid's final newline is dropped). Strings render raw, symbols by name, collections/frames/matrices in their laid-out form | 1 + size | `1o` | O(size) |
 | `.s` | `( -- )` | Print every stack value, bottom to top; leaves the stack intact | print | none | O(depth) |
+| `peek` | `( a -- a )` | core.h2o: print the top value then a space without consuming it (`dup .`, inlined) — a stack probe | 1 + print | none | O(size printed) |
+| `,` | `( a -- a )` | core.h2o: `peek` under a one-character name, for splicing probes into a pipeline (inlined) | 1 + print | none | O(size printed) |
 | `print` | `( x -- )` | core.h2o: alias for `.` | 1 + print | none | O(size printed) |
 | `print-stack` | `( -- )` | core.h2o: alias for `.s` | print | none | O(depth) |
 | `cr` | `( -- )` | Print a newline | 1 | none | O(1) |
@@ -620,6 +623,8 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `as-column` | `( v -- v' )` | matrix.h2o: any vector shape as n×1 (`dup dim * 1 reshape`, inlined) | r×c | `1m(n×1)` | O(n) |
 | `matrix>array` | `( m -- arr )` | The elements as an array in row-major order: floats from a bare matrix; a dimensioned matrix yields one quantity per element in its unit; a NaN element becomes `null` either way | 1 + r×c | `1a(r×c)`; dimensioned + 1 pair per non-NaN element | O(r×c) |
 | `num-elements` | `( m -- n )` | matrix.h2o: `dim *` (inlined) | 5 | none | O(1) |
+| `n-rows` | `( m/dataset -- n )` | datasets.h2o: `dim drop` | 6 | none | O(1) |
+| `n-columns` | `( m/dataset -- n )` | datasets.h2o: `dim nip` | 8 | none | O(1) |
 
 ### Multiplication and reductions
 
@@ -666,7 +671,8 @@ keep NaN in place.
 | `vstack` | `( a b -- m )` | Stack two matrices row-wise (a on top of b); errors unless column counts match | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `hstack` | `( a b -- m )` | matrix.h2o: `augment` under its numpy name (inlined) | 2 + r·c | `1m(r×c)` | O(r·c) |
 | `submatrix` | `( m rs re cs ce -- m )` | Copy the half-open block rows [rs,re) × cols [cs,ce); errors out of bounds or start > end | 5 + r·c | `1m(r×c)` | O(r·c) |
-| `select-rows` | `( m/dataset idx -- m/dataset )` | New matrix of the rows named by `idx` — a float index array or an index vector (nx1 or 1xn, as `where`/`argsort` return); a dimensioned matrix keeps its unit; errors on a non-float or out-of-range index. datasets.h2o extends it to a dataset: every column gathered by the same indices — matrix and dimensioned columns through the matrix path, array columns element-wise | 2 + k·c | `1m(k×c)`; dataset one column each | O(k·c) |
+| `select-rows` | `( m/dataset/arr idx -- same )` | New matrix of the rows named by `idx` — a float index array or an index vector (nx1 or 1xn, as `where`/`argsort` return); a dimensioned matrix keeps its unit; errors on a non-float or out-of-range index. datasets.h2o extends it to a dataset (every column gathered by the same indices — matrix and dimensioned columns through the matrix path, array columns element-wise) and to a bare array (elements gathered by index) | 2 + k·c | `1m(k×c)`; dataset one column each; array `1a(k)` | O(k·c) |
+| `mesh` | `( v mask b -- v' )` | Masked substitution: element i of the result is `b`'s where `mask[i]` is a definite nonzero, `v`'s where it is 0 **or NaN** (an unknown mask cell changes nothing). `v` is a matrix, dimensioned matrix, or array; the mask a bare matrix of `v`'s shape (element count, for an array). `b` is shape-matched same-representation, or broadcasts: a float, `null` (→ NaN), a quantity, or — for an array subject — any single value. Units reconcile as `+`: `b` rescales into `v`'s unit, which the result keeps; a quantity against a bare number errors. Conditional-mutate idioms: `dup nan? 0 mesh` fills NaNs, `dup -1 eq null mesh` turns a sentinel into NaN, `dup 100 gt 100 mesh` caps | 3 + n | `1m(r×c)` / `1a(n)` | O(n) |
 | `argsort` | `( v -- v' )` or `( arr -- arr )` | The sorting permutation of a vector, shape preserved: element i is the source index of the i-th smallest value; ties keep index order, NaNs go last in index order; ranks are argsort twice. arrays.h2o extends it to an array: the permutation under `val_cmp` (structural, so mixed types order), ties keep index order, returned as a float-index array | 1 + n log n | `1m(n)` + `malloc(16n)`; array 3×`1a(n)` + n×`1a(2)` | O(n log n); above 8k elements O(n) radix |
 | `ranks` | `( v -- v' )` | statistics.h2o: 0-based ordinal ranks as nx1, `as-column argsort argsort` (inlined); ties ranked in index order, not midranked | 2n log n | `2m(n)` + `malloc(16n)` ×2 | O(n log n) |
 | `where` | `( m -- v )` | Flat row-major indices of the nonzero elements, as a k×1 index vector (1×k for a 1×n mask); composes with the `lt`/`gt` masks and `select-rows` | 1 + n | `1m(k)` | O(n) |
@@ -781,6 +787,10 @@ A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a co
 | `dataset>matrix` | `( dataset cols -- m )` | datasets.h2o: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
 | `column-type` | `( dataset sym -- sym )` | datasets.h2o: the named column's type from its representation — matrix `:numeric`, quantity in exactly `s` `:datetime`, other quantity `:quantity`, array `:text`; a missing key errors through `@` | 5 | 1 pair | O(log c) |
 | `select-columns` | `( dataset cols -- dataset )` | datasets.h2o: the named columns as a new dataset (a fresh frame sharing the column values); a missing name errors through `@` | k log c | `1a(k)` + `1o` | O(k log c) |
+| `count` | `( arr/v/dataset -- pairs )` | datasets.h2o: occurrences of each distinct value as `[ [ value n ] … ]`, most frequent first, ties in value order (`val_cmp`); a vector counts its elements (a dimensioned one counts quantities), a dataset counts whole rows, each a frame keyed by column name | 2n log n | rows + pairs + 3×`1a` | O(n log n) |
+| `map-rows` | `( dataset xt -- dataset )` | datasets.h2o: xt maps each row frame to a new row frame — derive, rename, or drop fields; the returned frames rebuild through `frames>dataset`, so all rows must share keys and columns re-infer their representation | n·xt + n·k log k | rows + new columns | O(n·(xt + k log k)) |
+| `frames>dataset` | `( rows -- dataset )` | datasets.h2o: an array of row frames (as `query`, `db-query` `:rows`, or `map-rows` produce) as a column-oriented dataset, keys from row 0 — differing keys throw. Each column's representation is inferred: all-float cells (`none` → NaN) become an n×1 vector, uniform-unit quantities a dimensioned vector, anything else stays an array | n·k log k | one column per key + `1o` | O(n·k log k) |
+| `replace-where` | `( dataset sym pred replacement -- )` | datasets.h2o: replace the named column's cells passing `pred` `( column -- mask )`, in place — `update-at` around `mesh`, so the replacement broadcasts and units reconcile: `pipeline :rep_touches [: -1 eq :] null replace-where` nulls a sentinel, `[: nan? :] 0` fills missing, `[: 10 $ lt :] 5 $` floors prices | pred + n | mask + one column | O(n) |
 | `resample-indices` | `( n -- arr )` | datasets.h2o: n indices drawn from [0,n) with replacement (bootstrap), from the global stream | 2n | `2×1a(n)` | O(n) |
 | `resample-indices-ext` | `( n seed -- arr )` | n indices drawn from [0,n) with replacement by a private generator seeded from `seed` (splitmix64-expanded) — same draw for the same seed regardless of thread or stream position; the bootstrap words seed replicate i at run-seed + i | n | `1a(n)` | O(n)† |
 
@@ -794,7 +804,7 @@ The quotation/predicate cost dominates; `xt` denotes one call.
 |------|-------------|----------|-----|-------|---|
 | `map` | `( arr/set xt -- arr )` | Apply xt to each element; xt must net exactly one value | 2 + n·xt | `1a(n)` | O(n·xt) |
 | `mapn` | `( arr₁ … arr_N xt N -- arr )` | N-ary zip-map over equal-length arrays | rows·(N+xt) | `1a(rows)` | O(rows·xt) |
-| `filter` | `( arr/set xt -- arr )` | Keep elements where xt is truthy | 2 + n·xt | malloc(n) flags + `1a(k)` | O(n·xt) |
+| `filter` | `( arr/set xt -- arr )` or `( dataset xt -- dataset )` | Keep elements where xt is truthy. datasets.h2o extends it to a dataset: xt sees each row as a frame keyed by column name and answers a bool (1.0/0.0); the kept rows come back through `select-rows`, so every column keeps its representation | 2 + n·xt | malloc(n) flags + `1a(k)`; dataset rows + mask + one column each | O(n·xt) |
 | `reduce` | `( arr/set init xt -- val )` | Left fold; xt is `( acc elem -- acc )` | 3 + n·xt | none | O(n·xt) |
 | `times` | `( xt n -- )` | Run xt n times, no index pushed | 2 + n·xt | none | O(n·xt) |
 | `i-times` | `( xt n -- )` | Run xt n times, pushing index 0..n-1 first | 2 + n·(1+xt) | none | O(n·xt) |

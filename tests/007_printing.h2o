@@ -93,3 +93,11 @@ _ render "_" = . cr
 \ --- the captured text composes with render and format ---
 ' dub see>string render ": dub dup + ;" = . cr
 ' dub see>string "src: {0}" format "src: : dub dup + ;" = . cr
+
+clear
+\ --- peek and , print the top value without consuming it ---
+5 peek 1 + . cr                 \ 5 6
+1 2 , + . cr                    \ 2 3
+"mid" , drop cr                 \ mid
+[ 1 2 ] peek size . cr          \ [ 1 2 ] 2
+depth . cr                      \ 0   nothing left behind

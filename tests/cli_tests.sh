@@ -51,7 +51,7 @@ exact "batch (-b) is quiet"             '2 3 + . cr'  "5 " 0 -b
 exact "piped default is batch"          '2 3 + . cr'  "5 " 0
 # interactive: banner + per-line prompt (banner version not pinned)
 has   "interactive (-i) shows banner"   '2 3 + . cr'  "water " 0 -i
-has   "interactive (-i) shows prompt"   '1 . cr'      "0 ok"          0 -i
+has   "interactive (-i) shows prompt"   '1 2 . cr'    "ok 1|1"        0 -i
 # --max-objects lowers the object ceiling so the limit is reachable cheaply
 has   "--max-objects hits ceiling"      '1 200000 range [: drop < 0 > :] map drop'  "object registry full" 0 -b --max-objects 100000
 # --max-objects argument validation

@@ -10,6 +10,7 @@
 +
 +!
 ++
+,
 -
 -!
 --
@@ -22,6 +23,7 @@
 0=
 1+
 1-
+1=
 2drop
 2dup
 :
@@ -126,6 +128,7 @@ correlation-kendall
 correlation-pearson
 correlation-spearman
 cos
+count
 count-matches
 cr
 create-index
@@ -219,6 +222,7 @@ frame
 frame>array
 frame>json
 frame?
+frames>dataset
 frobenius-norm
 fround
 fround-down
@@ -271,6 +275,7 @@ lvar?
 magnitude
 man
 map
+map-rows
 mapn
 match
 match-all
@@ -286,9 +291,12 @@ mean
 median
 member?
 merge
+mesh
 min
 min2
 mod
+n-columns
+n-rows
 nan?
 negate
 nip
@@ -307,6 +315,7 @@ parallel-run
 parse-time
 partition
 pbootstrap
+peek
 percentile
 pfilter
 pfilter-ext
@@ -343,6 +352,7 @@ remove-last!
 render
 repeat
 replace
+replace-where
 resample-indices
 resample-indices-ext
 reset

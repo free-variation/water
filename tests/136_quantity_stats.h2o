@@ -51,6 +51,23 @@ holes argmax . [ null 1 2 ] vector argmax . cr                 \ 2 1
 [ 1 2 null 4 ] vector [ 2 4 null 9 ] vector correlation-kendall . cr    \ 1
 [ 1 2 null 4 ] vector [ 2 4 null 9 ] vector correlation-spearman . cr   \ 1
 
+\ === transpose keeps the unit ===
+[ 10 20 30 ] vector m transpose . cr                           \ 1x3 grid, unit m
+[ 10 20 ] vector s transpose 1 day + magnitude 0 @e . cr       \ 86410
+
+clear
+\ === mesh reconciles units like + ===
+[ 10 20 ] vector s [ 0 1 ] vector 1 hour mesh transpose . cr   \ 10 3600
+[ 10 20 ] vector s [ 1 0 ] vector null mesh transpose . cr     \ nan 20, unit s kept
+
+clear
+\ === dimensioned comparisons answer element-wise bare masks ===
+[ 12 8 15 ] vector $ 10 $ lt transpose . cr                    \ 0 1 0
+[ 1200 800 ] vector ¢ 10 $ lt transpose . cr                    \ 0 1 (scale normalized)
+[ 12 8 15 ] vector $ dup 10 $ lt 5 $ mesh transpose . cr       \ prices below 10 $ set to 5 $
+1 hour 1 s gt . cr                                             \ 1 (scalars stay structural)
+
+clear
 \ === errors ===
 [ 10 ] vector m var .                                          \ (needs at least 2 non-NaN elements)
 [ null null ] vector max .                                     \ (all elements are NaN)
