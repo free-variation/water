@@ -127,3 +127,16 @@ error: expected a vector (nx1 or 1xn); got 2x2
 error: empty array
 error: expected an array; got a float
 error: empty array
+7 
+8 
+5 
+6 
+1 
+[( 2 3 )] 
+a 
+error: array index 1 out of bounds (length 1)
+in (@i.lit) ← second
+error: array index 0 out of bounds (length 0)
+in (@i.lit) ← first
+error: expected an array or matrix; got a float
+in (@i.lit) ← first

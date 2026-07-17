@@ -115,6 +115,8 @@ column-means
 column-mins
 column-sums
 column-type
+column>array
+column>set
 concat
 cons
 cons>array
@@ -204,6 +206,7 @@ ffi-variadic
 fgt
 filter
 find
+first
 five-number-summary
 flat-map
 flatten
@@ -237,6 +240,7 @@ gc
 gen-each
 gen-take
 group-by
+group-indices
 group-with
 gt
 has?
@@ -353,6 +357,7 @@ render
 repeat
 replace
 replace-where
+resample
 resample-indices
 resample-indices-ext
 reset
@@ -381,6 +386,7 @@ sample-without-replacement
 save
 save-image
 se
+second
 see
 see-compiled
 see-compiled>string

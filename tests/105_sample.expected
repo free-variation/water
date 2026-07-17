@@ -7,6 +7,10 @@
 [ ] 
 [ 3 1 4 5 2 ] 
 [ 1 2 3 4 5 ] 
+[ 30 10 40 10 ] 
+[ 10 20 30 40 ] 
+[ 6 7 5 ] 
+[ ] 
 error: cannot draw 5 without replacement from 2
 error: count must be non-negative; got -1
 error: expected array or set; got a float

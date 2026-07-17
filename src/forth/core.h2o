@@ -50,6 +50,12 @@ inline
 
 : , peek ; inline
 
+( arr/pair -- v ) \ element 0: an array's first element, a cons's head
+: first  dup pair? if head-tail drop else 0 @i then ;
+
+( arr/pair -- v ) \ element 1: an array's second element, a cons's tail
+: second  dup pair? if head-tail nip else 1 @i then ;
+
 \ arithmetic words
 
 ( a b -- remainder )  \ = % drop ; sign follows the dividend

@@ -182,16 +182,16 @@ matrix (`@i,j`, `@e`) surfaces as `null` the same way.
 
 ## Comparison and logic
 
-Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_cmp` (structural): matrices compare by shape then row-major contents, so they order for set membership. `lt`/`gt` are structural too, **except on matrices**, where they compare element-wise and return a 1.0/0.0 matrix (same shape, or a scalar broadcasts over the matrix). A dimensioned matrix on either side of `lt`/`gt`/`eq` also masks element-wise: the right operand rescales into the left's unit (`prices 10 $ lt` works whether prices are in `$` or `¢`), the mask comes back bare, and a quantity against a plain number or a different dimension errors. Directly before `if`/`while`/`until` a comparison fuses into a compare-and-branch, which stays structural — branching on a matrix result isn't meaningful.
+Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_cmp` (structural): matrices compare by shape then row-major contents, so they order for set membership. `lt`/`gt` are structural too, **except on matrices**, where they compare element-wise and return a 1.0/0.0 matrix (same shape, or a scalar broadcasts over the matrix). A dimensioned matrix on either side of `lt`/`gt`/`eq` also masks element-wise: the right operand rescales into the left's unit (`prices 10 $ lt` works whether prices are in `$` or `¢`), the mask comes back bare, and a quantity against a plain number or a different dimension errors. An array operand masks element-wise too: each element compares by `val_cmp` against the other operand (or pairwise against an equal-length array — unequal lengths error), yielding an n×1 mask, so `names "ann" eq where` filters a text column and string order is lexicographic. Directly before `if`/`while`/`until` a comparison fuses into a compare-and-branch, which stays structural — branching on a matrix result isn't meaningful.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `=` | `( a b -- bool )` | structural equality | 3 (float) | none | float O(1); string O(\|s\|); array/set O(n); frame O(n); matrix O(r×c) |
-| `lt` | `( a b -- bool )` or `( m x -- m )` | less-than; element-wise 1/0 matrix on matrix operands (scalar broadcast) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
+| `lt` | `( a b -- bool )` or `( m/arr x -- m )` | less-than; element-wise 1/0 mask on matrix operands (scalar broadcast) and on array operands (`val_cmp` per element, n×1) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
 | `true` | `( -- bool )` | core.h2o: pushes 1 (inline) | 1 | none | O(1) |
 | `false` | `( -- bool )` | core.h2o: pushes 0 (inline) | 1 | none | O(1) |
-| `gt` | `( a b -- bool )` or `( m x -- m )` | greater-than; element-wise 1/0 matrix on matrix operands (scalar broadcast) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
-| `eq` | `( a b -- bool )` or `( m x -- m )` | equality; element-wise 1/0 matrix on matrix operands (scalar broadcast) — the mask-producing twin of `=`, which stays structural on matrices; off matrices the two agree. NaN elements equal nothing | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
+| `gt` | `( a b -- bool )` or `( m/arr x -- m )` | greater-than; element-wise 1/0 mask on matrix operands (scalar broadcast) and on array operands (`val_cmp` per element, n×1) | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
+| `eq` | `( a b -- bool )` or `( m/arr x -- m )` | equality; element-wise 1/0 mask on matrix and array operands (scalar broadcast; `val_cmp` per array element) — the mask-producing twin of `=`, which stays structural on collections. NaN elements equal nothing | 3 (float) | matrix `1m(r×c)` | same; matrix O(r×c) |
 | `nan?` | `( v -- bool )` or `( m/arr -- m )` | NaN test: 1/0 mask over a matrix's elements; an array answers an n×1 mask marking `none` elements (a text column's missing cells), composing with `where`/`select-rows`; `1` on `null` itself (a scalar NaN *is* `null`), `0` on any float. The only mask route to NaNs — they compare false under `lt`/`gt`/`eq` | 2 | `1m(r×c)` | O(1); matrix/array O(n) |
 | `0=` | `( a -- bool )` | `!truthy(a)`; any type | 2 | none | O(1) |
 | `1=` | `( a -- bool )` | core.h2o: `1 =` (inlined) | 5 | none | O(1) |
@@ -513,11 +513,14 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `slice!` | `( arr tstart src sstart sstep slen -- arr )` | Copy `slen` elements `src[sstart], src[sstart+sstep], …` into `arr[tstart…]` in place | 6 + slen | self-overlap may malloc slen | O(slen) |
 | `to-slice!` | `( v₀ … vₙ₋₁ arr offset n -- arr )` | Store the n values just below `arr` into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
 | `last` | `( arr n -- arr )` | arrays.h2o: `swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
+| `first` | `( arr/pair -- v )` | core.h2o: element 0 of an array, or a cons's head — reads pairs-shaped results (`count`, `group-indices`) and logic pairs alike | 4 | none | O(1) |
+| `second` | `( arr/pair -- v )` | core.h2o: element 1 of an array, or a cons's tail (`5 6 cons second` → 6; on a list literal the rest, not the next element) | 4 | none | O(1) |
 | `skip` | `( arr n -- arr )` | arrays.h2o: `over size swap - swap reverse swap take reverse` | 3n | 3×`1a(n)` | O(n) |
 | `sort` | `( arr/set/v -- arr/v )` | Sorted copy: an array orders by `val_cmp`; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error) | 1 + n log n | `1a(n)` / `1m(n)` | O(n log n); vectors above 8k elements O(n) radix |
 | `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
 | `sample` | `( arr/set count repl -- arr )` | Draw `count` elements; `repl` truthy = with replacement, else without (count ≤ len) | 3 + n | `1a(count)` (+ `malloc(n)` without replacement) | O(n) |
 | `shuffle` | `( arr -- arr )` | datasets.h2o: new array, elements uniformly permuted (a full `sample` without replacement); input untouched | 3 + n | as `sample` | O(n) |
+| `resample` | `( arr/set -- arr )` | datasets.h2o: same-size draw with replacement (a full `sample` with replacement, the bootstrap draw); input untouched — the value-space sibling of `resample-indices` | 3 + n | `1a(n)` | O(n) |
 | `iota` | `( n -- arr )` | arrays.h2o: `[0…n−1]`, empty when n ≤ 0 | 3 + n | `1a(n)` | O(n) |
 
 ---
@@ -776,18 +779,21 @@ machinery, so there the `-local` words behave as UTC and `parse-time` lacks
 
 ## Datasets and TSV
 
-A *table* is an array of row-arrays (as `read-tsv` returns). A *dataset* is a column-oriented frame; a *relation* is a deduped, indexed fact set (see Fact database). `r`/`c` are rows/columns, `n`/`k` observations/selected columns. `select-rows` (under Matrices) accepts a dataset, gathering every column by one index array or vector — with `where` masks and `argsort` that is filtering and sorting.
+*Rows* are an array of row-arrays (as `read-tsv` returns) — the raw I/O interchange, the only form preserving a file's physical column order. A *dataset* is a column-oriented frame; a *relation* is a deduped, indexed fact set (see Fact database). `r`/`c` are rows/columns, `n`/`k` observations/selected columns. `select-rows` (under Matrices) accepts a dataset, gathering every column by one index array or vector — with `where` masks and `argsort` that is filtering and sorting.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `read-tsv` | `( path -- rows )` | Read a TSV file into an array of row-arrays; an empty cell → `none`, a numeric cell → float, else a string. No header handling | 1 + bytes | `1a(r)` + one array per row + a string per text cell | O(bytes) |
 | `write-tsv` | `( rows path -- )` | Write an array of row-arrays as TSV; `none` → empty, a whole-number float → integer, strings raw; errors on a tab/newline inside a string or a non-array row | 2 + r·c | none (to file) | O(r·c) |
-| `rows>dataset` | `( table header? -- dataset )` | datasets.h2o: column-oriented frame from a table; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
-| `rows>relation` | `( table index-cols header? -- relation )` | datasets.h2o: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
+| `rows>dataset` | `( rows header? -- dataset )` | datasets.h2o: column-oriented frame from rows; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
+| `rows>relation` | `( rows index-cols header? -- relation )` | datasets.h2o: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
 | `dataset>matrix` | `( dataset cols -- m )` | datasets.h2o: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
 | `column-type` | `( dataset sym -- sym )` | datasets.h2o: the named column's type from its representation — matrix `:numeric`, quantity in exactly `s` `:datetime`, other quantity `:quantity`, array `:text`; a missing key errors through `@` | 5 | 1 pair | O(log c) |
+| `column>array` | `( column -- arr )` | datasets.h2o: a column in any representation as an array of its values — arrays pass through unchanged, matrix/quantity columns go through `matrix>array` (NaN → `null`, dimensioned elements become quantities) | n | `1a(n)` for matrix columns, none for arrays | O(n) |
+| `column>set` | `( column -- set )` | datasets.h2o: the set of the column's distinct values — `column>array array>set` | 2n log n | `1a(n)` + `1o` | O(n log n) |
 | `select-columns` | `( dataset cols -- dataset )` | datasets.h2o: the named columns as a new dataset (a fresh frame sharing the column values); a missing name errors through `@` | k log c | `1a(k)` + `1o` | O(k log c) |
 | `count` | `( arr/v/dataset -- pairs )` | datasets.h2o: occurrences of each distinct value as `[ [ value n ] … ]`, most frequent first, ties in value order (`val_cmp`); a vector counts its elements (a dimensioned one counts quantities), a dataset counts whole rows, each a frame keyed by column name | 2n log n | rows + pairs + 3×`1a` | O(n log n) |
+| `group-indices` | `( column -- pairs )` | datasets.h2o: `[ [ value [indices] ] … ]` per distinct value in `val_cmp` order — each index array holds the value's row positions, ascending (one `argsort`, the permutation cut at run boundaries); `count`'s shape with positions instead of tallies, so one pass replaces a per-value `eq where` scan | 2n log n | permutation + one pair and array per value | O(n log n) |
 | `map-rows` | `( dataset xt -- dataset )` | datasets.h2o: xt maps each row frame to a new row frame — derive, rename, or drop fields; the returned frames rebuild through `frames>dataset`, so all rows must share keys and columns re-infer their representation | n·xt + n·k log k | rows + new columns | O(n·(xt + k log k)) |
 | `frames>dataset` | `( rows -- dataset )` | datasets.h2o: an array of row frames (as `query`, `db-query` `:rows`, or `map-rows` produce) as a column-oriented dataset, keys from row 0 — differing keys throw. Each column's representation is inferred: all-float cells (`none` → NaN) become an n×1 vector, uniform-unit quantities a dimensioned vector, anything else stays an array | n·k log k | one column per key + `1o` | O(n·k log k) |
 | `replace-where` | `( dataset sym pred replacement -- )` | datasets.h2o: replace the named column's cells passing `pred` `( column -- mask )`, in place — `update-at` around `mesh`, so the replacement broadcasts and units reconcile: `pipeline :rep_touches [: -1 eq :] null replace-where` nulls a sentinel, `[: nan? :] 0` fills missing, `[: 10 $ lt :] 5 $` floors prices | pred + n | mask + one column | O(n) |

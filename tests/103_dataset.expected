@@ -69,6 +69,13 @@ error: expected a matrix; got a float
 :numeric 
 error: no key :missing
 in (@.symbol) ← column-type
+[ "ann" "bob" "cal" ] 
+[ 5 1 4 ] 
+[ 170 m 180 m 190 m ] 
+[ 1 null 1 ] 
+< "a" "b" > 
+3 
+< 2 > 
 {
   :name [ "ann" "bob" "cal" ]
   :score <matrix 3x1:  5 1 4>
@@ -100,6 +107,30 @@ in (@.symbol) ← [: dataset swap @ :]
 [ ] 
 error: expected an array, set, or vector; got a float
 in sort ← count
+[ [ "a"
+    [ 1 3 ] ]
+  [ "b"
+    [ 0 2 4 ] ] ] 
+[ [ 1
+    [ 2 ] ]
+  [ 5
+    [ 0 1 ] ] ] 
+[ [ 1
+    [ 0 ] ]
+  [ 2
+    [ 1 ] ]
+  [ 3
+    [ 2 ] ] ] 
+[ [ null
+    [ 1 3 ] ]
+  [ 1
+    [ 0 2 ] ] ] 
+[ ] 
+{
+  :name [ "ann" "ann" ]
+  :score <matrix 2x1:  5 4>
+}
+
 {
   :name [ "ann" "cal" ]
   :height <matrix 2x1:  170 190> m

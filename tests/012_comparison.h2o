@@ -16,3 +16,15 @@
 5 1= . cr
 1.0 1= . cr
 "x" 1= . cr
+
+\ === array operands mask element-wise (val_cmp per element) ===
+[ "a" "b" "a" ] "a" eq . cr                     \ 1 0 1
+[ 1 2 3 ] 2 eq . cr                             \ 0 1 0
+2 [ 1 2 3 ] lt . cr                             \ 0 0 1  (scalar on either side)
+[ 1 2 3 ] [ 3 2 1 ] gt . cr                     \ 0 0 1  (pairwise)
+[ "b" "a" "c" ] "b" lt . cr                     \ 0 1 0  (lexicographic)
+[ 1 null 2 ] null eq . cr                       \ 0 1 0  (null matches null)
+[ "x" "y" "x" ] "x" eq where . cr               \ indices 0 2
+
+\ errors
+[ 1 2 ] [ 1 2 3 ] eq                            \ (length mismatch)

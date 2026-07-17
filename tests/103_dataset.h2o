@@ -88,6 +88,17 @@ typed :name column-type . cr                    \ :text
 typed :missing column-type                      \ (no key :missing)
 
 clear
+\ column>array ( column -- arr ): any representation as an array of values.
+\ column>set ( column -- set ): the column's distinct values.
+typed :name @ column>array . cr                 \ arrays pass through
+typed :score @ column>array . cr                \ floats from a vector
+typed :height @ column>array . cr               \ quantities, unit kept
+[ 1 null 1 ] vector column>array . cr           \ NaN back to null
+[ "b" "a" "b" ] column>set . cr                 \ < a b >
+typed :score @ column>set size . cr             \ 3
+[ 2 2 2 ] vector column>set . cr                \ < 2 >
+
+clear
 \ select-columns ( dataset cols -- dataset ): the named columns as a new
 \ dataset; the values are shared, the frame is fresh.
 typed [ :name :score ] select-columns . cr      \ two of four columns
@@ -112,6 +123,17 @@ clear
 
 \ errors
 5 count                                         \ (not countable, sort rejects)
+
+clear
+\ group-indices ( column -- pairs ): [ value [indices] ] per distinct value
+\ in val_cmp order; each index array ascending.
+[ "b" "a" "b" "a" "b" ] group-indices . cr      \ a: 1 3; b: 0 2 4
+[ 5 5 1 ] vector group-indices . cr             \ 1: 2; 5: 0 1
+[ 1 2 3 ] group-indices . cr                    \ singletons
+[ 1 null 1 null ] vector group-indices . cr     \ nulls group, ordered first
+[ ] group-indices . cr                          \ [ ]
+{ :name [ "ann" "bob" "ann" ] :score [ 5 1 4 ] vector } dup
+:name @ group-indices 0 @i 1 @i select-rows . cr \ the ann rows
 
 clear
 \ filter ( dataset xt -- dataset ): keep the rows whose frame satisfies

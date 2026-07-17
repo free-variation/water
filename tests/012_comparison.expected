@@ -2,3 +2,38 @@
 0 
 1 
 0 
+<matrix 3x1>
+          1
+          0
+          1
+
+<matrix 3x1>
+          0
+          1
+          0
+
+<matrix 3x1>
+          0
+          0
+          1
+
+<matrix 3x1>
+          0
+          0
+          1
+
+<matrix 3x1>
+          0
+          1
+          0
+
+<matrix 3x1>
+          0
+          1
+          0
+
+<matrix 2x1>
+          0
+          2
+
+error: length mismatch (2 vs 3)

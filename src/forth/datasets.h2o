@@ -1,48 +1,48 @@
-\ datasets: tables, column frames, relations, resampling
+\ datasets: rows, column frames, relations, resampling
 
-( table header? -- keys start) \ keys from row 0, or synthesized :col1 ..; start = first data-row index
+( rows header? -- keys start) \ keys from row 0, or synthesized :col1 ..; start = first data-row index
 : tsv-keys
-	| >table >header? keys |
+	| >rows >header? keys |
 
 	header? if
-		table 0 @i [: string>symbol :] map to keys
+		rows 0 @i [: string>symbol :] map to keys
 		keys 1
 	else
-		table 0 @i size 1 swap range [: "col{0}" format string>symbol :] map to keys
+		rows 0 @i size 1 swap range [: "col{0}" format string>symbol :] map to keys
 		keys 0
 	then ; internal
 
-( table header? -- dataset) \ column frame: each key maps to that column's array
+( rows header? -- dataset) \ column frame: each key maps to that column's array
 : rows>dataset
-	| >table >header? keys start n-rows row-indices columns |
+	| >rows >header? keys start n-rows row-indices columns |
 
-	table size 0= if { } exit then
+	rows size 0= if { } exit then
 
-	table header? tsv-keys to start to keys
-	table size start - to n-rows
+	rows header? tsv-keys to start to keys
+	rows size start - to n-rows
 
-	n-rows 0= if [ ] else start table size 1- range then to row-indices
+	n-rows 0= if [ ] else start rows size 1- range then to row-indices
 	keys size iota
 	[: |> j |
-	   row-indices [: table swap @i j @i :] map :]
+	   row-indices [: rows swap @i j @i :] map :]
 	map to columns
 
 	keys columns frame ;
 
-( table index-cols header? -- relation ) \ table to deduped relation, indexed on index-cols
+( rows index-cols header? -- relation ) \ rows to deduped relation, indexed on index-cols
 : rows>relation
-	| >table >index-cols >header? keys start n-rows row-indices rows |
+	| >rows >index-cols >header? keys start n-rows row-indices row-frames |
 
-	table size 0= if index-cols relation exit then
+	rows size 0= if index-cols relation exit then
 
-	table header? tsv-keys to start to keys
-	table size start - to n-rows
-	n-rows 0= if [ ] else start table size 1- range then to row-indices
+	rows header? tsv-keys to start to keys
+	rows size start - to n-rows
+	n-rows 0= if [ ] else start rows size 1- range then to row-indices
 
-	row-indices [: table swap @i keys swap frame :] map to rows
-	rows [: index-cols swap [: [: string>symbol :] update-at :] reduce :] map to rows
+	row-indices [: rows swap @i keys swap frame :] map to row-frames
+	row-frames [: index-cols swap [: [: string>symbol :] update-at :] reduce :] map to row-frames
 
-	index-cols relation rows bulk-load ;
+	index-cols relation row-frames bulk-load ;
 
 ( dataset cols -- matrix ) \ K numeric columns -> NxK matrix, observations are rows;
 \ a column may be an array, an n x 1 vector, or a dimensioned vector (magnitude taken)
@@ -61,12 +61,20 @@
 ( arr -- arr ) \ new array, elements uniformly permuted; input untouched
 : shuffle  dup size false sample ;
 
+( array/set -- array ) \ same-size draw with replacement
+: resample
+	dup size true sample ;
+
 ( v -- bool ) \ matrix-represented column, dimensioned included
 : numeric-column?  dup matrix? swap quantity? or ; internal
 
 ( column -- arr ) \ a column in any representation as an array of its values
 : column>array
-	dup numeric-column? if matrix>array then ; internal
+	dup numeric-column? if matrix>array then ; 
+
+( column -- set ) \ the set of the column's distinct values
+: column>set 
+	column>array array>set ;
 
 ( column indices -- column' ) \ gather array elements by an index vector
 : gather-elements
@@ -156,6 +164,21 @@
 	then :] sorted size 1- i-times
 	
 	pairs [ run-value n ] add-last! ; internal
+
+( column -- arr ) \ [ value [indices] ] per distinct value, in value order
+: group-indices
+	| >column permutation offset |
+	column column>array to column
+	column argsort to permutation
+
+	0 to offset
+	column permutation gather-elements value-runs
+	[: | >value-run run-length |
+	   value-run 1 @i to run-length
+	   value-run 0 @i
+	   null run-length array-of 0 permutation offset 1 run-length slice!
+	   offset run-length + to offset
+	   2 array :] map ;
 
 ( dataset -- rows ) \ each row as a frame keyed by column name
 : dataset-rows

@@ -527,6 +527,32 @@ static int quantity_comparison_mask(Interpreter *interp, Val left, Val right,
 	return 1;
 }
 
+static void array_comparison_mask(Interpreter *interp, Val left, Val right,
+		scalar_operator scalar_op) {
+	Object *left_array = VAL_TAG(left) == T_ARRAY ? OBJECT_AT(VAL_DATA(left)) : NULL;
+	Object *right_array = VAL_TAG(right) == T_ARRAY ? OBJECT_AT(VAL_DATA(right)) : NULL;
+
+	if (left_array && right_array && left_array->len != right_array->len) {
+		fail(interp, "length mismatch (%d vs %d)", left_array->len, right_array->len);
+		return;
+	}
+
+	int n_elements = left_array ? left_array->len : right_array->len;
+
+	NEW_MATRIX(mask_handle, mask, n_elements, 1);
+	for (int i = 0; i < n_elements; i++) {
+		Val left_element = left_array ? left_array->items[i] : left;
+		Val right_element = right_array ? right_array->items[i] : right;
+		int ordering = val_cmp(interp, left_element, right_element);
+		if (interp->error_flag)
+			return;
+		mask->matrix.elements[i] = scalar_op((double)ordering, 0.0);
+	}
+
+	interp->dsp -= 2;
+	push(interp, make_matrix(mask_handle));
+}
+
 #define MATRIX_COMPARISON_OP(name, op, sfn, word) \
 	void name(DISPATCH_ARGS) { \
 		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2); \
@@ -543,6 +569,13 @@ static int quantity_comparison_mask(Interpreter *interp, Val left, Val right,
 					return; \
 				DISPATCH(interp); \
 			} \
+		} \
+		if (VAL_TAG(left) == T_ARRAY || VAL_TAG(right) == T_ARRAY) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
+			array_comparison_mask(interp, left, right, sfn); \
+			if (interp->error_flag) \
+				return; \
+			DISPATCH(interp); \
 		} \
 		SYNC_REGISTERS(interp, chain_ip, chain_sp - 2); \
 		if (VAL_TAG(left) == T_MATRIX || VAL_TAG(right) == T_MATRIX) { \

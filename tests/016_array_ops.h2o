@@ -352,4 +352,20 @@ one-el remove-last!                             \ error: empty array
 5 4 add-last!                                   \ error: not an array
 [ ] remove-last!                                \ error: empty array
 
+clear
+\ first / second ( arr/pair -- v ): element 0/1 of an array; a cons's
+\ head/tail.
+[ 7 8 9 ] first . cr                            \ 7
+[ 7 8 9 ] second . cr                           \ 8
+5 6 cons first . cr                             \ 5
+5 6 cons second . cr                            \ 6
+[( 1 2 3 )] first . cr                          \ 1
+[( 1 2 3 )] second . cr                         \ [( 2 3 )]  (the tail)
+[ "a" ] first . cr                              \ a
+
+\ errors
+[ "a" ] second                                  \ (index out of bounds)
+[ ] first                                       \ (index out of bounds)
+5 first                                         \ (neither array nor pair)
+
 bye

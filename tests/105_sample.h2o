@@ -14,6 +14,12 @@
 [ 1 2 3 4 5 ] dup shuffle . cr
 . cr                                     \ the source array is unchanged
 
+\ resample (lib): a same-size draw with replacement; input untouched
+[ 10 20 30 40 ] dup resample . cr
+. cr                                     \ the source array is unchanged
+< 5 6 7 > resample . cr                  \ from a set -> array of elements
+[ ] resample . cr                        \ empty -> empty
+
 \ error cases
 [ 1 2 ] 5 false sample                   \ more than available, without replacement
 [ 1 2 3 ] -1 true sample                 \ negative count
