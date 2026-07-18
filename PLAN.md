@@ -216,14 +216,6 @@ Three layers, adopted in this order:
 
 ---
 
-## Linux build
-
-Take a first Linux `make` end to end — the binary, the shared library
-against an OpenBLAS carrying LAPACK, both test suites — and fix whatever
-breaks next.
-
----
-
 ## Reference coverage for the loadable libraries
 
 Add a reference.md section for lib/statistics.h2o (`svd`, `fit-linear`,
@@ -388,15 +380,6 @@ builders are library forth.
 
 ---
 
-## Sort with a rule
-
-- `array [ x y -- cmp ] sort-with` — sorted copy under a user comparator
-  quotation that pops two Vals and pushes `-1` / `0` / `1`; input untouched.
-  Algorithm: introsort or libc `qsort` with a comparator thunk. With `sort-by`
-  covering key extraction, this is for orderings that aren't key extractions.
-
----
-
 ## Re-readable repr
 
 `render` produces a value's display form, which is not always re-readable —
@@ -443,8 +426,8 @@ the locals-frame and trail rewind the unwind already carries; whether
 ## Foreign function interface
 
 - **Callbacks** — C → Water function pointers (`qsort` comparators,
-  `CURLOPT_WRITEFUNCTION` to capture a response body into a string). The same
-  re-entry plumbing `sort-with` needs.
+  `CURLOPT_WRITEFUNCTION` to capture a response body into a string). Needs
+  re-entry plumbing: a Water xt invoked from within a C call.
 - **Struct-by-value** arguments and returns.
 - **Per-call varargs** — variadic arg types chosen at the call site rather
   than fixed per declared word.

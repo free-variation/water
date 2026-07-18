@@ -4408,11 +4408,14 @@ int main(int argc, char **argv) {
 	int interactive = isatty(fileno(stdin));
 	int interactive_set = 0;
 	int load_lib = 1;
+	int show_version = 0;
 	long max_objects_arg = 0;
 	const char *program_files[argc];
 	int n_program_files = 0;
 	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
+		if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0)
+			show_version = 1;
+		else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
 			interactive = 1;
 			interactive_set = 1;
 		}
@@ -4467,6 +4470,11 @@ int main(int argc, char **argv) {
 	platform_init();
 	if (construct_vocabulary(interp, load_lib))
 		return 1;
+
+	if (show_version) {
+		execute_cfa(interp, find("water"));
+		return 0;
+	}
 
 	for (int i = 0; i < n_program_files; i++) {
 		load_file(interp, program_files[i]);
