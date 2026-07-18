@@ -58,8 +58,17 @@ has   "--max-objects hits ceiling"      '1 200000 range [: drop < 0 > :] map dro
 has   "--max-objects needs a value"     ''  "needs a value"      2 --max-objects
 has   "--max-objects rejects 0"         ''  "positive integer"   2 --max-objects 0
 has   "--max-objects rejects non-number" '' "positive integer"   2 --max-objects xyz
-# unknown flag is rejected
+# unknown flag is rejected, pointing at --help
 has   "unknown flag rejected"           ''  "unknown option"     2 --bogus
+has   "unknown flag suggests help"      ''  "water --help"       2 --bogus
+
+# -h / --help print usage and exit 0
+has   "--help prints usage"             ''  "usage: water"       0 --help
+has   "-h prints usage"                 ''  "usage: water"       0 -h
+
+# -w / --words print the word listing and exit 0
+has   "--words prints the listing"      ''  "Stack manipulation:" 0 --words
+has   "-w prints the listing"           ''  "Stack manipulation:" 0 -w
 
 # a positional argument runs a program file and exits; stdin is not read
 prog=$(mktemp "${TMPDIR:-/tmp}/lf_prog.XXXXXX")

@@ -4526,17 +4526,40 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	return 0;
 }
 
+static void print_usage(void) {
+	printf("usage: water [options] [file.h2o ...]\n"
+		"\n"
+		"Runs the given program files in order and exits; with no files,\n"
+		"starts the REPL (interactive when stdin is a terminal).\n"
+		"\n"
+		"  -i, --interactive   drop into the REPL after running the files\n"
+		"  -b, --batch         no banner or prompts, even on a terminal\n"
+		"      --no-lib        skip loading the embedded library\n"
+		"      --arena SIZE    reserve SIZE gigabytes of heap (e.g. 32g)\n"
+		"      --max-objects N cap the object table at N entries\n"
+		"  -v, --version       print the logo and version, then exit\n"
+		"  -w, --words         print the word listing, then exit\n"
+		"  -h, --help          print this help, then exit\n");
+}
+
 int main(int argc, char **argv) {
 	int interactive = isatty(fileno(stdin));
 	int interactive_set = 0;
 	int load_lib = 1;
 	int show_version = 0;
+	int show_words = 0;
 	long max_objects_arg = 0;
 	const char *program_files[argc];
 	int n_program_files = 0;
 	for (int i = 1; i < argc; i++) {
-		if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0)
+		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
+			print_usage();
+			return 0;
+		}
+		else if (strcmp(argv[i], "-v") == 0 || strcmp(argv[i], "--version") == 0)
 			show_version = 1;
+		else if (strcmp(argv[i], "-w") == 0 || strcmp(argv[i], "--words") == 0)
+			show_words = 1;
 		else if (strcmp(argv[i], "-i") == 0 || strcmp(argv[i], "--interactive") == 0) {
 			interactive = 1;
 			interactive_set = 1;
@@ -4573,7 +4596,7 @@ int main(int argc, char **argv) {
 			}
 		}
 		else if (argv[i][0] == '-') {
-			fprintf(stderr, "water: unknown option '%s'\n", argv[i]);
+			fprintf(stderr, "water: unknown option '%s' (see water --help)\n", argv[i]);
 			return 2;
 		}
 		else {
@@ -4595,6 +4618,11 @@ int main(int argc, char **argv) {
 
 	if (show_version) {
 		execute_cfa(interp, find("water"));
+		return 0;
+	}
+
+	if (show_words) {
+		execute_cfa(interp, find("words"));
 		return 0;
 	}
 

@@ -149,6 +149,12 @@ editors src/c/repl_highlight_groups.h: docs/reference.md tools/gen-editors.py
 vendor-pcre2:
 	sh tools/vendor-pcre2.sh
 
+vendor-sqlite:
+	sh tools/vendor-sqlite.sh
+
+vendor-isocline:
+	sh tools/vendor-isocline.sh
+
 vendor-lapacke:
 	sh tools/vendor-lapacke.sh
 
@@ -166,4 +172,4 @@ bench:
 clean:
 	rm -f water water.wasm $(PCRE2_OBJS) $(PCRE2_LIB) $(WASM_PCRE2_OBJS) $(WASM_PCRE2_LIB) $(SQLITE_OBJ) $(WASM_SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_SHARED) $(LAPACKE_DIR)/exports.map
 
-.PHONY: all clean test test-wasm bench wasm vendor-pcre2 vendor-lapacke lapacke editors
+.PHONY: all clean test test-wasm bench wasm vendor-pcre2 vendor-sqlite vendor-isocline vendor-lapacke lapacke editors

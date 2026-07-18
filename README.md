@@ -23,8 +23,8 @@ make bench     # runs the benchmark suite (Water vs CPython)
 Self-contained: its vendored dependencies — PCRE2 (regex), isocline (REPL line
 editing), and SQLite (embedded SQL) — live under `external/` and are built from
 source into the binary, so `make` needs only a C compiler and the system
-`libffi`. Refresh them with `make vendor-pcre2`, `sh tools/vendor-isocline.sh`,
-and `sh tools/vendor-sqlite.sh` (see each directory's `PROVENANCE`).
+`libffi`. Refresh them with `make vendor-pcre2`, `make vendor-sqlite`, and
+`make vendor-isocline` (see each directory's `PROVENANCE`).
 
 `make` also builds `liblapacke_water.so`, a thin shared library that wraps
 the platform BLAS/LAPACK (Accelerate on macOS, OpenBLAS on Linux) behind
@@ -32,11 +32,28 @@ the LAPACKE C interface. The statistics library `dlopen`s it through the
 FFI and requires it — the stats module is native-only; the wasm build
 excludes the FFI. Re-vendor with `make vendor-lapacke`.
 
+```
+make wasm        # cross-builds water.wasm (needs wasi-sdk in ~/wasi-sdk, or set WASI_SDK)
+make test-wasm   # runs the golden suite against water.wasm under wasmtime
+```
+
+The wasm build targets WASI (a-shell, standalone runtimes, the browser via a
+WASI shim): PCRE2 compiles without JIT, SQLite single-threaded, and the
+platform layer stubs what WASI lacks — no isocline line editing, FFI,
+subprocesses, or threads; the loadable statistics library is native-only.
+`make test-wasm` finds `wasmtime` on `PATH` or `~/.wasmtime/bin`, or set
+`WASMTIME=<path>`; tests exercising the stubbed words are skipped via
+`tests/wasm-skip.txt`.
+
 ## A taste
 
 ```forth
 \ Arithmetic
 3 4 + .                                 \ 7
+
+\ Anaphora: it names the top of the stack as the line began — pinned, non-consuming
+5
+it it * .                               \ 25
 
 \ Matrices: * is element-wise; matrix multiply is dgemm (αAB + βC)
 [ 1 2 3 4 ] 2 2 matrix dup transpose *  \ element-wise product of M and Mᵀ
@@ -60,12 +77,14 @@ wall-now 2 week + time>iso .            \ the ISO timestamp two weeks from now
 
 \ Path queries — * (any child), // (any depth), [pred] filters
 { :a { :n 1 } :b { :n 2 } } /*/n select-values .   \ [ 1 2 ]
+{ :ann { :age 34 } :bo { :age 25 } } /*[age>30]/age select-values .   \ [ 34 ]
 
 \ JSON: parse to frames/arrays, serialize back
 "[1, 2, 3]" json>frame frame>json .     \ [1, 2, 3]
 
 \ Higher-order operations
 [ 1 2 3 4 5 ] [: dup * :] map .         \ [ 1 4 9 16 25 ]
+[ "bb" "a" "ccc" ] [: size :] sort-by . \ [ "a" "bb" "ccc" ]
 
 \ Strings and regex (PCRE2)
 "x=42" "(\w+)=(\d+)" match .            \ [ "x=42" "x" "42" ]
@@ -75,10 +94,12 @@ wall-now 2 week + time>iso .            \ the ISO timestamp two weeks from now
 [: "missing" throw :]
 [: "got " . . cr :] try-catch           \ prints "got missing"
 
-\ Coroutines via delimited continuations
-: yield shift ;
-: producer 1 yield 2 yield 3 ;
-reset producer                          \ leaves (1, k) — next value via resume
+\ Generators — coroutines on the delimited-continuation primitives
+: primes 2 yield 3 yield 5 yield 7 yield ;
+' primes 4 gen-take .                   \ [ 2 3 5 7 ]
+
+\ Subprocesses over pipes
+"echo hi" run read-out .                \ hi
 
 \ Logic: unify binds variables; amb is a committed choice
 lvar to X  lvar to Y  lvar to Z
@@ -87,6 +108,15 @@ lvar to X  lvar to Y  lvar to Z
 
 \ Multi-core: run a quotation across the array on every core
 [ 1 2 3 4 5 6 7 8 ] [: dup * :] pmap .  \ [ 1 4 9 16 25 36 49 64 ]
+
+\ Datasets: column-oriented tables with verbs
+[ [ "name" "age" ] [ "ann" 34 ] [ "bo" 25 ] [ "cy" 61 ] ] true rows>dataset
+dup :age @ vector mean .                \ 40
+[: :age @ 30 gt :] filter :name @ .     \ [ "ann" "cy" ]
+
+\ Count distinct values, most frequent first; masks alter as well as select
+[ :b :a :b :c :b ] count first .        \ [ :b 3 ]
+[ 1 2 999 4 ] vector dup 999 eq null mesh matrix>array .   \ [ 1 2 null 4 ]
 
 \ Statistics over a matrix column: mean and the median (0.5 quantile)
 [ 2 4 4 4 5 5 7 9 ] 8 1 matrix dup mean . 0.5 quantile .  \ 5  4.5
