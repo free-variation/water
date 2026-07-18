@@ -209,8 +209,10 @@ ffi-function
 ffi-open
 ffi-variadic
 fgt
+file-exists?
 filter
 find
+find-executable
 first
 flat-map
 flatten

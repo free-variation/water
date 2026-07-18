@@ -6,6 +6,10 @@ hi there
 8 
 3 
 0 
+1 
+0 
+1 
 error: cannot open /tmp/lf_no_such_dir_zzz/nope
+error: expected a string; got a float
 error: expected a string; got a float
 error: expected a string; got a float

@@ -7,7 +7,7 @@
 \ drawing. Statistical plots read named aes keys (:point-fill, :bar-fill, ...),
 \ settable globally with aes! or per figure with figure!. NaN coordinates are
 \ skipped; text is XML-escaped. Render with figure>svg or save-figure;
-\ show-figure opens a browser view that live-reloads on each save.
+\ show-figure opens an app-window view (browser.h2o) that live-reloads on each save.
 
 variable current-figure
 
@@ -741,16 +741,14 @@ setInterval(function () {
 ( path -- ) \ render the current figure and write it as svg
 : save-figure figure>svg swap write-file ;
 
-( path -- ) \ save, write the sibling viewer page, and open it in a browser
+( path -- ) \ save, write the sibling viewer page, and open it in an app window
+\ (a frameless browser window when one is found, else a tab); it live-reloads on save
 : show-figure
 	| >path html-path |
 	path save-figure
 	path wrapper-path to html-path
 	path basename wrapper-page html-path write-file
-
-	[ "open" html-path ] run-result :status @ 0 = not if
-		[ "xdg-open" html-path ] run-result drop
-	then ;
+	html-path open-app-window ;
 
 \ === convenience: open, draw, render in one call ===
 

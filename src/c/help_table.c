@@ -254,8 +254,10 @@ const HelpEntry help_entries[] = {
 	{ "ffi-open", "( path -- lib )", "dlopen the library at path and push a T_PTR handle; \"\" opens the running process itself (dlopen(NULL)) for already-linked symbols. Errors if not found", "dlopen", "1 handle (not GC'd)", "O(1)", 34 },
 	{ "ffi-variadic", "( lib symbol arg-types ret-type n-fixed -- ) <name>", "Like ffi-function for a variadic C function: n-fixed leading arguments use the fixed convention, the rest the variadic one (ffi_prep_cif_var). Variadic argument types are fixed per binding, so declare one word per type combination (e.g. a :string setopt and a :long setopt)", "dlsym + prep_cif_var", "1 binding", "O(argc)", 34 },
 	{ "fgt", "( a b -- f ) ⚠", "float gt, result 1.0/0.0; no type check", "2", "none", "O(1)", 1 },
+	{ "file-exists?", "( path -- bool )", "Whether the path exists (access with F_OK); follows symlinks, tests any file type, not just regular files", "1", "none", "O(1)", 31 },
 	{ "filter", "( arr/set xt -- arr ) or ( dataset xt -- dataset )", "Keep elements where xt is truthy. datasets.h2o extends it to a dataset: xt sees each row as a frame keyed by column name and answers a bool (1.0/0.0); the kept rows come back through select-rows, so every column keeps its representation", "2 + n·xt", "malloc(n) flags + 1a(k); dataset rows + mask + one column each", "O(n·xt)", 23 },
 	{ "find", "( items pred -- element )", "arrays.h2o: the first element for which pred is truthy, or the none value; stops at the first hit", "n·xt", "none", "O(n·xt)", 23 },
+	{ "find-executable", "( name -- path|none )", "io.h2o: the absolute path of name on $PATH (first directory holding it), or the none value if unset or not found; a name containing / is not special-cased (it just won't match a bare PATH entry)", "split + probe", "1o per candidate", "O(dirs)", 31 },
 	{ "first", "( arr/pair -- v )", "core.h2o: element 0 of an array, or a cons's head — reads pairs-shaped results (count, group-indices) and logic pairs alike", "4", "none", "O(1)", 14 },
 	{ "flat-map", "( items xt -- arr )", "arrays.h2o: map flatten-array; xt returns an array per element, results concatenated", "n·xt + total", "1a(n) + 1a(total)", "O(n·xt + total)", 23 },
 	{ "flatten", "( m -- m' )", "matrix.h2o: 1×(r·c) reshape", "r×c", "1m(1×r·c)", "O(r×c)", 18 },
@@ -564,4 +566,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 519;
+const int help_entry_count = 521;

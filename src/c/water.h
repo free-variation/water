@@ -1149,6 +1149,7 @@ void p_close(DISPATCH_ARGS);
 void p_cwd(DISPATCH_ARGS);
 void p_env(DISPATCH_ARGS);
 void p_env_set(DISPATCH_ARGS);
+void p_file_exists(DISPATCH_ARGS);
 void p_read(DISPATCH_ARGS);
 void p_read_file(DISPATCH_ARGS);
 void p_read_tsv(DISPATCH_ARGS);

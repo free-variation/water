@@ -85,6 +85,16 @@ void p_binary_dir(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
+void p_file_exists(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val path_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "file-exists?", "a string");
+
+	chain_sp[-1] = make_bool(access(OBJECT_AT(VAL_DATA(path_val))->bytes, F_OK) == 0);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
 static FILE *open_sized_read(Interpreter *interp, const char *path, long *size_out) {
 	FILE *file = fopen(path, "rb");
 	if (file == NULL) {

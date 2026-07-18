@@ -1,0 +1,12 @@
+\ filesystem and environment helpers
+
+( name -- path|none ) \ absolute path of name on $PATH, or none if not found
+: find-executable
+	|> name |
+	"PATH" env dup none? if 
+		drop null exit 
+	then
+
+	":" split
+	[: "/" + name + :] map
+	[: file-exists? :] find ;

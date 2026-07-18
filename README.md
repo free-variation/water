@@ -232,6 +232,8 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 - **`save-image`** / **`load-image`** — binary image with full state preservation (dictionary, objects, stacks, continuations).
 - **`reload`** truncates user state and re-runs every file `load`ed this session, in order.
 - **`read-file`** / **`write-file`** / **`append-file`** — read a whole file as one (byte-safe) string; write or append a string's bytes to a path.
+- **`file-exists?`** — whether a path exists (`access`, `F_OK`); follows symlinks, any file type.
+- **`find-executable`** — `( name -- path/none )` the absolute path of `name` on `$PATH`, or the none value if not found.
 - **`load-library`** — `"plot" load-library` loads `lib/plot.h2o` from beside the water binary (`binary-dir`, symlinks resolved), from any cwd; the statistics library locates its LAPACK shared library the same way.
 - **`env`** / **`env!`** — read an environment variable as a string (the none value if unset) and set one (process-wide, so `start-process` children inherit it).
 - **`stdin`** / **`stdout`** / **`stderr`** — the standard streams as `T_STREAM` values (fds 0/1/2), composing with `read`/`write`/`close` — `s stdout write` emits, `stdin read` slurps input.

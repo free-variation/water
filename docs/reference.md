@@ -998,11 +998,13 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 | `read-file` | `( path -- s )` | Read a whole file as one string (byte-safe); errors if it can't be opened | file read | `1o` + buffer | O(file) |
 | `write-file` | `( s path -- )` | Create or truncate the file, then write the string's bytes | file write | none | O(\|s\|) |
 | `append-file` | `( s path -- )` | Open in append mode, write the string's bytes | file write | none | O(\|s\|) |
+| `file-exists?` | `( path -- bool )` | Whether the path exists (`access` with `F_OK`); follows symlinks, tests any file type, not just regular files | 1 | none | O(1) |
 | `env` | `( name -- val )` | Environment variable as a string, or the none value if unset (so set-empty `""` and unset stay distinct) | 1 | `1o` on hit | O(\|val\|) |
 | `env!` | `( name value -- )` | Set an environment variable (overwriting); process-wide, so subsequent `start-process` children inherit it | 1 | none | O(1) |
 | `cwd` | `( -- path )` | The interpreter's current working directory as a string (`getcwd`) | 1 | `1o` | O(\|path\|) |
 | `binary-dir` | `( -- s )` | The directory holding the running water binary, symlinks resolved (`realpath`), so an installation's resources are reachable from any cwd; errors on the wasm build (no executable path) | 1 | `1o` | O(\|path\|) |
 | `cd` | `( path -- )` | Change the interpreter's working directory (`chdir`); process-wide, so it moves the base for relative file I/O and is inherited by subsequent `start-process` children | 1 | none | O(1) |
+| `find-executable` | `( name -- path\|none )` | `io.h2o`: the absolute path of `name` on `$PATH` (first directory holding it), or the none value if unset or not found; a name containing `/` is not special-cased (it just won't match a bare `PATH` entry) | split + probe | `1o` per candidate | O(dirs) |
 
 ---
 

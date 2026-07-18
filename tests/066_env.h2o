@@ -27,6 +27,14 @@
 "printenv LF_CHILD" run read-out "changed
 " = . cr                               \ 1
 
+\ find-executable ( name -- path|none ): first $PATH dir holding name
+"" "/tmp/lf_findexec_tool" write-file
+"PATH" "/tmp" env!
+"lf_findexec_tool" find-executable . cr          \ /tmp/lf_findexec_tool
+"lf_no_such_tool_zzz" find-executable none? . cr \ 1
+"PATH" "/nonexistent_zzz:/tmp" env!
+"lf_findexec_tool" find-executable . cr          \ /tmp/lf_findexec_tool (skips missing dirs)
+
 \ errors: name / value must be strings
 42 env                                 \ env: expected a string
 "LF_K" 42 env!                         \ env!: expected a string

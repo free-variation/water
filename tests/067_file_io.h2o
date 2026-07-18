@@ -1,4 +1,4 @@
-\ read-file / write-file / append-file — whole-file, no handles.
+\ read-file / write-file / append-file / file-exists? — whole-file, no handles.
 
 \ write then read round-trips
 "hello" "/tmp/lf_fileio.txt" write-file
@@ -24,7 +24,13 @@ b" "/tmp/lf_fileio.txt" write-file
 "" "/tmp/lf_fileio.txt" write-file
 "/tmp/lf_fileio.txt" read-file size . cr       \ 0
 
+\ file-exists? — access(F_OK); follows symlinks, any file type
+"/tmp/lf_fileio.txt" file-exists? . cr         \ 1
+"/tmp/lf_no_such_file_zzz" file-exists? . cr   \ 0
+"/tmp" file-exists? . cr                       \ 1  (a directory exists)
+
 \ errors
 "/tmp/lf_no_such_dir_zzz/nope" read-file       \ cannot open
 42 "/tmp/lf_fileio.txt" write-file             \ content not a string
 "/tmp/lf_fileio.txt" 42 append-file            \ path not a string
+42 file-exists?                                \ path not a string

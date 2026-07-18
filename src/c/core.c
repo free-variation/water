@@ -4345,6 +4345,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "cd", p_cd, 0);
 	define_primitive(interp, "cwd", p_cwd, 0);
 	define_primitive(interp, "binary-dir", p_binary_dir, 0);
+	define_primitive(interp, "file-exists?", p_file_exists, 0);
 	define_primitive(interp, "read-file", p_read_file, 0);
 	define_primitive(interp, "write-file", p_write_file, 0);
 	define_primitive(interp, "append-file", p_append_file, 0);

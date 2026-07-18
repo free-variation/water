@@ -12,7 +12,7 @@ HDRS = src/c/water.h src/c/platform.h src/c/lib_embed.h src/c/logo_embed.h src/c
 # Embedded library, concatenated in this order. Binding is early: a word must
 # be defined in an earlier file than every file that uses it (units before the
 # constants that use joule, predicates before the words that call them).
-FORTH_SRCS = src/forth/core.h2o src/forth/arrays.h2o src/forth/strings.h2o src/forth/exceptions.h2o src/forth/matrix.h2o src/forth/subprocess.h2o src/forth/logic.h2o src/forth/generators.h2o src/forth/units.h2o src/forth/datasets.h2o src/forth/statistics.h2o src/forth/constants.h2o src/forth/database.h2o
+FORTH_SRCS = src/forth/core.h2o src/forth/arrays.h2o src/forth/io.h2o src/forth/strings.h2o src/forth/exceptions.h2o src/forth/matrix.h2o src/forth/subprocess.h2o src/forth/browser.h2o src/forth/logic.h2o src/forth/generators.h2o src/forth/units.h2o src/forth/datasets.h2o src/forth/statistics.h2o src/forth/constants.h2o src/forth/database.h2o
 
 # Vendored PCRE2 (see external/pcre2/PROVENANCE; refresh with tools/vendor-pcre2.sh).
 PCRE2_DIR    = external/pcre2
