@@ -312,6 +312,7 @@ const HelpEntry help_entries[] = {
 	{ "iota", "( n -- arr )", "arrays.h2o: [0…n−1], empty when n ≤ 0", "3 + n", "1a(n)", "O(n)", 14 },
 	{ "iqr", "( m -- f )", "statistics.h2o: interquartile range, Q3 − Q1", "2n log n", "malloc(n) ×2", "O(n log n)", 18 },
 	{ "iso>time", "( string -- instant )", "units.h2o: parse the Z form time>iso emits", "len", "1 pair", "O(1)", 21 },
+	{ "it", "( -- v )", "Push the value that was on top of the stack when the current scope began — the line at top level, the word's activation inside a colon definition. Pinned per scope: non-consuming, repeatable (it it +), and it survives the scope consuming the operand (: f 2 * it + ; — it is still the argument). In a definition it compiles to a hidden entry-bound local (see-compiled shows the (enter-anaphors) frame; fetches fuse like any local), so using it makes stack depth 1 an entry requirement of the word; quotations inside the definition inherit the binding. At top level it reads the entry snapshot and errors at use when the line began with an empty stack; a failed line restores the stack, so it is unchanged after an error, and clear it recovers the pre-line top. this is an alias", "2", "none", "O(1)", 0 },
 	{ "join", "( arr sep -- s )", "Concatenate the string elements of arr separated by sep; errors on a non-string element", "2 + total", "1o", "O(total)", 12 },
 	{ "json>frame", "( s -- val )", "Parse a JSON string. Escapes and \\uXXXX (with surrogate pairs) decode to UTF-8; recursive-descent, depth-guarded; rejects trailing non-whitespace. Each object's keys are sorted after collection", "scan + build", "one object per node", "O(|s| log |s|)", 17 },
 	{ "keys", "( fr -- arr )", "Keys (symbols) in sorted order", "1 + n", "1a(n)", "O(n)", 16 },
@@ -367,6 +368,7 @@ const HelpEntry help_entries[] = {
 	{ "num-cores", "( -- n )", "Online CPU count (sysconf)", "1", "none", "O(1)", 23 },
 	{ "num-elements", "( m -- n )", "matrix.h2o: dim * (inlined)", "5", "none", "O(1)", 18 },
 	{ "or", "( a b -- bool )", "logical or of truthiness", "3", "none", "O(1)", 4 },
+	{ "other", "( -- v )", "Push the second value (under the top) as it stood when the current scope began; the companion of it for two-antecedent lines and words. Same binding rules as it; requires two values at scope entry. that is an alias", "2", "none", "O(1)", 0 },
 	{ "over", "( a b -- a b a )", "Copy second over top", "5", "none", "O(1)", 0 },
 	{ "pair?", "( a -- bool )", "core.h2o: type-of :pair = (inlined)", "5", "none", "O(1)", 4 },
 	{ "parallel-run", "( commands width -- results )", "subprocess.h2o: run each argv array in commands as a subprocess, at most width at once; collect { :out :err :status } per command in input order, refilling a slot as each child finishes", "fork per command + poll", "1a + per-child frames/streams", "O(critical path)", 32 },
@@ -498,7 +500,10 @@ const HelpEntry help_entries[] = {
 	{ "take", "( arr/set n -- arr )", "First n elements (clamped)", "2 + n", "1a(n)", "O(n)", 14 },
 	{ "tan", "( a -- tan a )", "tangent (radians)", "2", "matrix 1m(r×c)", "same", 3 },
 	{ "tanh", "( a -- tanh a )", "hyperbolic tangent", "2", "matrix 1m(r×c)", "same", 3 },
+	{ "that", "( -- v )", "Alias of other", "2", "none", "O(1)", 0 },
+	{ "them", "( -- v₁ v₀ )", "Push the top two values as they stood at scope entry, in their original order (them + adds them as they lay) — equivalent to other it. Requires two values at scope entry", "3", "none", "O(1)", 0 },
 	{ "then", "—", "Close an if/if…else; patches the forward branch", NULL, NULL, NULL, 8 },
+	{ "this", "( -- v )", "Alias of it", "2", "none", "O(1)", 0 },
 	{ "throw", "( exc -- )", "exceptions.h2o: [: drop 1 :] shift-with", "—", "1o (cont)", "O(stack depth)", 24 },
 	{ "time>iso", "( instant -- string )", "units.h2o: \"%Y-%m-%dT%H:%M:%SZ\" format-time", "len", "1s", "O(1)", 21 },
 	{ "times", "( xt n -- )", "Run xt n times, no index pushed", "2 + n·xt", "none", "O(n·xt)", 23 },
@@ -566,4 +571,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 521;
+const int help_entry_count = 526;

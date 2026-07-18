@@ -345,6 +345,7 @@ Unification and committed choice, on the trail and the continuation machinery:
 ### Other
 
 - **`dup`**, **`drop`**, **`swap`**, **`over`**, **`rot`**, **`depth`**, **`roll`**, **`clear`** — stack-manipulation primitives.
+- **`it`** / **`other`** / **`them`** — anaphora: push the top of the stack (`it`), the value under it (`other`), or both in order (`them`) as they stood when the current scope began — the line at top level, the word's activation in a colon definition. Pinned per scope, non-consuming, repeatable (`it it +`); in definitions they compile to hidden entry-bound locals, so `: f 2 * it + ;` still sees the argument after consuming it. `this`/`that` alias `it`/`other`.
 - **`copy`** / **`reify`** — deep copy of a value (strings, arrays, sets, frames, matrices); `reify` additionally renames unbound logic vars to canonical `:_0`/`:_1`/… for a ground, storable, comparable snapshot.
 - **`type-of`** — `( a -- sym )` the value's type as a symbol (`:float`, `:frame`, `:lvar`, …), with a lib predicate per type (`float?` … `lvar?`); a bound logic var answers as its value.
 - **`now`** — monotonic seconds as a float, for timing intervals (`wall-now`, under Time and dates, is the absolute clock).

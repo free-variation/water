@@ -1,0 +1,133 @@
+\ it ( -- v ) / other ( -- v ) / them ( -- v1 v0 ) — anaphora, with aliases
+\ this = it, that = other: the stack top (top two) as the current scope began.
+\ At top level the scope is the line (the entry snapshot); inside a colon
+\ definition it is the word's activation, bound at entry as hidden locals
+\ ((enter-anaphors) frame). Pinned per scope, non-consuming, repeatable,
+\ value capture (survives the scope consuming the operand).
+
+\ === it: pinned at line start ===
+5
+it . cr                \ 5
+it it + . cr           \ 10
+1 + it + . cr          \ 11 (the line consumed the 5; it still names it)
+clear
+
+\ === them: the top two, original order ===
+3 4
+them + . cr            \ 7
+them - . cr            \ -1
+them swap - . cr       \ 1
+clear
+
+\ === pushes during the line don't move it ===
+9
+100 it + . cr          \ 109
+clear
+
+\ === clear then it recovers the pre-line top ===
+1 2
+clear it . cr          \ 2
+clear
+
+\ === a failed line restores the stack; it is unchanged after ===
+8
+1 0 %
+it . cr                \ 8
+clear
+
+\ === heap values alias, like dup ===
+[ 1 2 3 ]
+it size . cr           \ 3
+it 0 @i . cr           \ 1
+clear
+
+\ === other: the second entry value; this/that alias it/other ===
+3 4
+other . cr             \ 3
+this . cr              \ 4
+that . cr              \ 3
+this that - . cr       \ 1
+clear
+
+\ === definitions: it is the entry TOS, pinned per activation ===
+: square it it * ;
+5 square . cr          \ 25
+: late 2 * it + ;
+10 late . cr           \ 30 (the body consumed the 10; it still names it)
+clear
+
+\ === definitions: them / other / aliases ===
+: diff them - ;
+3 4 diff . cr          \ -1
+: under other ;
+7 8 under . cr         \ 7
+: aliased this that + ;
+1 2 aliased . cr       \ 3
+clear
+
+\ === it then them in one body (three compile passes) ===
+: upgrade it them + + ;
+3 4 upgrade . cr       \ 11
+clear
+
+\ === peek before receive: it and a receive see the same value ===
+: mixed | >x | it x + ;
+6 mixed . cr           \ 12
+: allrec |> x y | it x + y - ;
+10 3 4 allrec . cr     \ 3 (it = y = 4)
+clear
+
+\ === quotations inherit the definition's binding ===
+: quoted [ 1 2 3 ] [: drop it :] map ;
+9 quoted . cr          \ [ 9 9 9 ]
+clear
+
+\ === early exit unwinds the anaphor frame ===
+: early it 5 gt if "big" exit then it 2 * ;
+9 early . cr           \ big
+3 early . cr           \ 6
+clear
+
+\ === recursion rebinds per activation ===
+: countdown it 0 gt if it 1 - countdown then ;
+3 countdown .s cr      \ 3 2 1 0 (it is non-consuming; one entry value per activation)
+clear
+
+\ === inline splice captures at the call site ===
+: sq it it * ; inline
+: user 1 + sq ;
+4 user . cr            \ 25
+clear
+
+\ === see shows the typed source; see-compiled shows the frame ===
+' square see
+' square see-compiled
+
+\ === with user locals: one fused frame, anaphors and locals all level 0 ===
+: mixed | >x | it it * x + ;
+5 3 mixed . cr         \ 12 (it = 3 = x; 9 + 3)
+drop
+' mixed see-compiled
+clear
+
+\ === a local named it shadows the anaphor ===
+: shadowed | >it | it 100 + ;
+1 shadowed . cr        \ 101
+clear
+
+\ === top-level quotations keep the dynamic entry meaning ===
+5
+[: it :] execute . cr  \ 5
+clear
+
+\ === errors (too few values at scope entry) ===
+it                     \ (empty at line start)
+them                   \ (empty at line start)
+7
+them                   \ (one value at line start; them needs 2)
+other                  \ (one value at line start; other needs 2)
+clear
+: strict it ;
+strict                 \ (empty stack at word entry)
+: strict2 them + ;
+9 strict2              \ (one value at word entry; them needs 2)

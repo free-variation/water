@@ -777,6 +777,45 @@ void p_depth(DISPATCH_ARGS) {
 	*chain_sp = make_float((double)(chain_sp - interp->data_stack));
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
+
+}
+
+#define REQUIRE_ENTRY_VALUES(interp, needed) do { \
+	if ((interp)->entry_snapshot_depth < (needed)) { \
+		fail(interp, "%d value(s) on the stack at the start of the line (need %d)", \
+				(interp)->entry_snapshot_depth, (needed)); \
+		return; \
+	} \
+} while (0)
+
+void p_it(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	REQUIRE_ENTRY_VALUES(interp, 1);
+	
+	*chain_sp = interp->entry_snapshot[interp->entry_snapshot_depth - 1];
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
+}
+
+void p_them(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 2);
+	REQUIRE_ENTRY_VALUES(interp, 2);
+
+	Val *snapshot_top = interp->entry_snapshot + interp->entry_snapshot_depth;
+	chain_sp[0] = snapshot_top[-2];
+	chain_sp[1] = snapshot_top[-1];
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 2);
+}
+
+void p_other(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	REQUIRE_ENTRY_VALUES(interp, 2);
+
+	Val *snapshot_top = interp->entry_snapshot + interp->entry_snapshot_depth;
+	*chain_sp = snapshot_top[-2];
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
 void p_roll(DISPATCH_ARGS) {

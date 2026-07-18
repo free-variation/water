@@ -49,6 +49,11 @@ incremental collection.
 | `depth` | `( -- n )` | Push current depth | 1 | none | O(1) |
 | `roll` | `( xₙ … x₀ n -- xₙ₋₁ … x₀ xₙ )` | Move the item n deep to the top; memmoves the n above it down | 2 + n | none | O(n) |
 | `clear` | `( … -- )` | Reset data stack depth to 0 | 1 | none | O(1) |
+| `it` | `( -- v )` | Push the value that was on top of the stack when the current scope began — the line at top level, the word's activation inside a colon definition. Pinned per scope: non-consuming, repeatable (`it it +`), and it survives the scope consuming the operand (`: f 2 * it + ;` — `it` is still the argument). In a definition it compiles to a hidden entry-bound local (`see-compiled` shows the `(enter-anaphors)` frame; fetches fuse like any local), so using it makes stack depth 1 an entry requirement of the word; quotations inside the definition inherit the binding. At top level it reads the entry snapshot and errors at use when the line began with an empty stack; a failed line restores the stack, so `it` is unchanged after an error, and `clear it` recovers the pre-line top. `this` is an alias | 2 | none | O(1) |
+| `other` | `( -- v )` | Push the second value (under the top) as it stood when the current scope began; the companion of `it` for two-antecedent lines and words. Same binding rules as `it`; requires two values at scope entry. `that` is an alias | 2 | none | O(1) |
+| `them` | `( -- v₁ v₀ )` | Push the top two values as they stood at scope entry, in their original order (`them +` adds them as they lay) — equivalent to `other it`. Requires two values at scope entry | 3 | none | O(1) |
+| `this` | `( -- v )` | Alias of `it` | 2 | none | O(1) |
+| `that` | `( -- v )` | Alias of `other` | 2 | none | O(1) |
 | `2dup` | `( a b -- a b a b )` | core.h2o: `over over` (inlined) | 10 | none | O(1) |
 | `2drop` | `( a b -- )` | core.h2o: `drop drop` (inlined) | 6 | none | O(1) |
 | `nip` | `( a b -- b )` | core.h2o: `swap drop` (inlined) | 5 | none | O(1) |

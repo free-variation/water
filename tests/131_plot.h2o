@@ -125,9 +125,17 @@ dup "stroke='white'" split size 1 - . cr                     \ 12 (6 x-grid + 6 
 "fill='none' stroke='gray'" has? . cr                        \ 0 (no border rect)
 clear
 
-\ === viewer plumbing: paths and the escaped page ===
-"figs/demo.svg" wrapper-path . cr                            \ figs/demo.html
-"demo" wrapper-path . cr                                     \ demo.html
+\ === versioned figures: next free slot, numbered saves ===
+[ "rm" "-rf" "/tmp/images-lf131" ] run-result drop
+"/tmp" cd
+"/tmp/images-lf131" next-svg-index . cr                      \ 1 (no directory yet)
+640 480 figure [ 1 2 ] vector [ 3 4 ] vector scatter
+"lf131" save-figure
+"/tmp/images-lf131" next-svg-index . cr                      \ 2
+"lf131" save-figure
+"/tmp/images-lf131" next-svg-index . cr                      \ 3
+"/tmp/images-lf131/1.svg" file-exists? . cr                  \ 1
+"/tmp/images-lf131/2.svg" file-exists? . cr                  \ 1
 clear
 
 \ === errors (thrown; caught here to show the message) ===

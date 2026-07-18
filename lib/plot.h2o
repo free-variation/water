@@ -7,7 +7,8 @@
 \ drawing. Statistical plots read named aes keys (:point-fill, :bar-fill, ...),
 \ settable globally with aes! or per figure with figure!. NaN coordinates are
 \ skipped; text is XML-escaped. Render with figure>svg or save-figure;
-\ show-figure opens an app-window view (browser.h2o) that live-reloads on each save.
+\ show-figure opens a versioned carousel viewer (browser.h2o app window); each
+\ save-figure adds images-<name>/N.svg, which the open viewer picks up.
 
 variable current-figure
 
@@ -717,38 +718,78 @@ to aes
 	:parts figure@ [: render-mark :] map [: size 0 gt :] filter nl join +
 	"{nl}</svg>{nl}" format + ;
 
-( svg-path -- html-path ) \ swap a .svg suffix for .html; otherwise append it
-: wrapper-path
-	dup "\.svg$" ".html" replace
-	2dup = if drop ".html" + else nip then ; internal
-
-( svg-filename -- html ) \ auto-refreshing viewer: reload the image twice a second,
-\ swap only after the new one decodes
-: wrapper-page
+( title -- html ) \ carousel viewer: discover N.svg by probing, < > navigate, delete hides from view
+: carousel-page
 	xml-escape
 "<!doctype html>
 <html><head><meta charset='utf-8'><title>{0}</title>
-<style>body { margin: 0 } img { width: 100vw; height: 100vh; object-fit: contain }</style></head>
-<body><img id='figure' src='{0}'>
+<style>
+ html,body{margin:0;height:100%;background:#111}
+ #view{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+ #view img{max-width:100vw;max-height:100vh;object-fit:contain}
+ #bar{position:fixed;left:50%;bottom:12px;transform:translateX(-50%);display:flex;gap:8px;align-items:center;font:14px system-ui,sans-serif;background:rgba(0,0,0,.6);color:#eee;padding:6px 10px;border-radius:8px}
+ #bar button{font:inherit;cursor:pointer;border:0;border-radius:5px;padding:3px 10px}
+ #count{min-width:80px;text-align:center}
+</style></head>
+<body>
+<div id='view'><img id='img'></div>
+<div id='bar'>
+ <button id='prev'>&lt;</button>
+ <span id='count'>0 / 0</span>
+ <button id='next'>&gt;</button>
+ <button id='del'>delete</button>
+</div>
 <script>
-setInterval(function () {
-  var probe = new Image();
-  probe.onload = function () { document.getElementById('figure').src = probe.src; };
-  probe.src = '{0}?' + Date.now();
-}, 500);
-</script></body></html>" format ; internal
+var versions=[],probed=0,cur=0,probing=false;
+function show(){
+ var img=document.getElementById('img');
+ if(versions.length===0){img.removeAttribute('src');document.getElementById('count').textContent='0 / 0';return;}
+ if(cur<0)cur=0;if(cur>=versions.length)cur=versions.length-1;
+ img.src=versions[cur]+'.svg';
+ document.getElementById('count').textContent=(cur+1)+' / '+versions.length+'  (#'+versions[cur]+')';
+}
+function probeNext(){
+ if(probing)return;probing=true;
+ var n=probed+1,im=new Image();
+ im.onload=function(){probing=false;probed=n;if(versions.indexOf(n)<0){versions.push(n);cur=versions.length-1;show();}probeNext();};
+ im.onerror=function(){probing=false;};
+ im.src=n+'.svg?'+Date.now();
+}
+document.getElementById('prev').onclick=function(){cur--;show();};
+document.getElementById('next').onclick=function(){cur++;show();};
+document.getElementById('del').onclick=function(){if(versions.length){versions.splice(cur,1);show();}};
+probeNext();setInterval(probeNext,500);
+</script>
+</body></html>" format ; internal
 
-( path -- ) \ render the current figure and write it as svg
-: save-figure figure>svg swap write-file ;
+( dir -- n ) \ smallest N >=1 with dir/N.svg absent, the next free version slot
+: next-svg-index
+	| n |
+	1 to n
+	begin dup n "{1}/{0}.svg" format file-exists? while
+	   ++ n
+	repeat
+	drop n ; internal
 
-( path -- ) \ save, write the sibling viewer page, and open it in an app window
-\ (a frameless browser window when one is found, else a tab); it live-reloads on save
+( name -- ) \ render the current figure as the next version in images-<name>/
+: save-figure
+	| dir |
+	"images-" swap + to dir
+	[ "mkdir" "-p" dir ] run-result drop
+	figure>svg dir dir next-svg-index "{1}/{0}.svg" format write-file ;
+
+( name -- ) \ open the versioned viewer for images-<name>/ (a frameless app window when a
+\ browser is found, else a tab); saves a first version if the dir is empty, and each later
+\ save-figure appears in the < > carousel
 : show-figure
-	| >path html-path |
-	path save-figure
-	path wrapper-path to html-path
-	path basename wrapper-page html-path write-file
-	html-path open-app-window ;
+	| >name dir html |
+	"images-" name + to dir
+	dir "/index.html" + to html
+	dir next-svg-index 1 = if name save-figure then
+	html file-exists? not if
+		name carousel-page html write-file
+	then
+	html open-app-window ;
 
 \ === convenience: open, draw, render in one call ===
 

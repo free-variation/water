@@ -14,11 +14,92 @@ void rollback_partial_definition(void) {
 	truncate_quotation_spans();
 	compiler.compiling = 0;
 	compiler.compiling_src_start = 0;
+	compiler.anaphor_slots = 0;
 	compiler.n_local_scopes = 0;
 	compiler.n_local_names = 0;
 	compiler.local_names_pool_here = 0;
 	compiler.loop_begin = 0;
 	compiler.leave_chain = 0;
+}
+
+static void anaphor_register_name(const char *name) {
+	int name_len = (int)strlen(name);
+	int offset = compiler.local_names_pool_here;
+
+	memcpy(&compiler.local_names_pool[offset], name, (size_t)name_len + 1);
+	compiler.local_names_pool_here += name_len + 1;
+	compiler.local_name_offsets[compiler.n_local_names++] = offset;
+}
+
+static void restart_definition_body(Interpreter *interp) {
+	vocab.here = compiler.local_scope_dict_starts[0];
+	truncate_quotation_spans();
+
+	compiler.n_local_scopes = 1;
+	int definition_names_start = compiler.local_scope_starts[0];
+	compiler.n_local_names = definition_names_start;
+	if (definition_names_start == 0) {
+		compiler.local_names_pool_here = 0;
+	} else {
+		int last_offset = compiler.local_name_offsets[definition_names_start - 1];
+		compiler.local_names_pool_here = last_offset +
+			(int)strlen(&compiler.local_names_pool[last_offset]) + 1;
+	}
+
+	interp->dsp = compiler.colon_dsp;
+	compiler.loop_begin = 0;
+	compiler.leave_chain = 0;
+	compiler.fuse_prev_var = 0;
+	compiler.fuse_prev2_var = 0;
+	compiler.fuse_prev_cmp = 0;
+
+	if (compiler.anaphor_slots == 2)
+		anaphor_register_name("other");
+	anaphor_register_name("it");
+	emit_call(interp, vocab.enter_anaphors_cfa);
+	emit(interp, (cell)compiler.anaphor_slots);
+	compiler.fuse_floor = vocab.here;
+	compiler.loadn_at = -1;
+
+	compiler.input_buffer_pos = compiler.compiling_src_start;
+}
+
+int try_anaphor(Interpreter *interp, const char *token) {
+	if (!compiler.compiling || compiler.compiling_src_start <= 0)
+		return 0;
+
+	int slots_wanted;
+	const char *slot_name;
+	if (strcmp(token, "it") == 0 || strcmp(token, "this") == 0) {
+		slots_wanted = 1;
+		slot_name = "it";
+	} else if (strcmp(token, "other") == 0 || strcmp(token, "that") == 0) {
+		slots_wanted = 2;
+		slot_name = "other";
+	} else if (strcmp(token, "them") == 0) {
+		slots_wanted = 2;
+		slot_name = NULL;
+	} else {
+		return 0;
+	}
+
+	if (compiler.anaphor_slots < slots_wanted) {
+		compiler.anaphor_slots = slots_wanted;
+		restart_definition_body(interp);
+		return 1;
+	}
+
+	int local_depth, local_slot_idx;
+	if (slot_name == NULL) {
+		find_local("other", &local_depth, &local_slot_idx);
+		emit_local_fetch(interp, local_depth, local_slot_idx);
+		find_local("it", &local_depth, &local_slot_idx);
+		emit_local_fetch(interp, local_depth, local_slot_idx);
+	} else {
+		find_local(slot_name, &local_depth, &local_slot_idx);
+		emit_local_fetch(interp, local_depth, local_slot_idx);
+	}
+	return 1;
 }
 
 void p_semicolon(DISPATCH_ARGS) {
@@ -52,6 +133,7 @@ void p_semicolon(DISPATCH_ARGS) {
 	}
 	compiler.compiling = 0;
 	compiler.compiling_src_start = 0;
+	compiler.anaphor_slots = 0;
 
 	DISPATCH(interp);
 }
@@ -407,6 +489,9 @@ void p_colon(DISPATCH_ARGS) {
 
 	compiler.compiling_src_start = compiler.input_buffer_pos;
 
+	compiler.anaphor_slots = 0;
+	compiler.colon_dsp = interp->dsp;
+
 	DISPATCH(interp);
 }
 
@@ -452,9 +537,18 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 	}
 
 	int scope_idx = compiler.n_local_scopes - 1;
-	if (vocab.here != compiler.local_scope_dict_starts[scope_idx]) {
-		fail(interp, "%s: locals must be declared at the head of the body", opener);
-		return;
+	int scope_dict_start = compiler.local_scope_dict_starts[scope_idx];
+	int merged_anaphors = 0;
+	if (vocab.here != scope_dict_start) {
+		if (compiler.anaphor_slots > 0 && scope_idx == 0
+		    && vocab.here == scope_dict_start + 2
+		    && dict_op_is(scope_dict_start, p_enter_anaphors)) {
+			vocab.here = scope_dict_start;
+			merged_anaphors = 1;
+		} else {
+			fail(interp, "%s: locals must be declared at the head of the body", opener);
+			return;
+		}
 	}
 
 	int scope_start = compiler.local_scope_starts[scope_idx];
@@ -534,7 +628,29 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 		return;
 	}
 
-	if (force_all_receive || n_received == n_declared) {
+	if (merged_anaphors) {
+		int n_anaphors = compiler.anaphor_slots;
+		int n_user = n_declared - n_anaphors;
+
+		if (n_user == 0) {
+			emit_call(interp, vocab.enter_anaphors_cfa);
+			emit(interp, (cell)n_anaphors);
+		} else {
+			if (force_all_receive) {
+				n_received = n_user;
+				for (int i = 0; i < n_received; i++)
+					receive_slots[i] = n_anaphors + i;
+			}
+			emit_call(interp, vocab.enter_anaphors_mixed_cfa);
+			emit(interp, (cell)n_declared);
+			emit(interp, (cell)n_anaphors);
+			emit(interp, (cell)n_received);
+			for (int i = 0; i < n_received; i++)
+				emit(interp, (cell)receive_slots[i]);
+		}
+		compiler.fuse_floor = vocab.here;
+		compiler.loadn_at = -1;
+	} else if (force_all_receive || n_received == n_declared) {
 		emit_call(interp, vocab.enter_locals_to_cfa);
 		emit(interp, (cell)n_declared);
 	} else if (n_received == 0) {

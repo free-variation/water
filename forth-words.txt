@@ -267,6 +267,7 @@ intersection
 iota
 iqr
 iso>time
+it
 join
 json>frame
 keys
@@ -322,6 +323,7 @@ null
 num-cores
 num-elements
 or
+other
 over
 pair?
 parallel-run
@@ -453,7 +455,10 @@ symbol?
 take
 tan
 tanh
+that
+them
 then
+this
 throw
 time>iso
 times

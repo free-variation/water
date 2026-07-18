@@ -1,0 +1,36 @@
+\ plot-carousel.h2o — the versioned figure carousel (lib/plot).
+\ Opens a live browser window showing a scatter plot, then writes several
+\ more versions of the figure. Use the < and > buttons in the window to
+\ browse the versions and delete to drop one from the view. Each version is
+\ saved as images-carousel-demo/N.svg in the current directory.
+\ exercises: lib/plot (figure, axes, scatter, series, x-label, show-figure,
+\ save-figure) and element-wise matrix arithmetic.
+\
+\ Opens a Chromium-family browser if one is installed (or the one named by
+\ $WATER_BROWSER); otherwise it falls back to the default browser as a tab.
+
+"plot" load-library
+
+variable xs
+[ 1 2 3 4 5 6 7 8 ] vector to xs
+
+\ version 1: y = x  — show-figure opens the viewer and saves this as version 1
+640 480 figure axes  xs xs scatter  "y = x" x-label
+"carousel-demo" show-figure
+
+\ version 2: y = x^2  ( * is element-wise on vectors )
+640 480 figure axes  xs  xs dup *  scatter  "y = x^2" x-label
+"carousel-demo" save-figure
+
+\ version 3: y = x^3
+640 480 figure axes  xs  xs dup dup * *  scatter  "y = x^3" x-label
+"carousel-demo" save-figure
+
+\ version 4: the parabola as points and a connecting line
+640 480 figure axes
+xs  xs dup *  scatter
+xs  xs dup *  series
+"y = x^2 (points + line)" x-label
+"carousel-demo" save-figure
+
+"images-carousel-demo/ now holds 4 versions — use < and > in the window to browse them" . cr

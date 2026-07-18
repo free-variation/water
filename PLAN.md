@@ -380,6 +380,14 @@ builders are library forth.
 
 ---
 
+## Anaphora: residuals
+
+- **wasm suite run** — the anaphora goldens (139) have not run against the
+  wasm build (no toolchain on the dev machine); nothing platform-specific
+  is involved, but the suite must confirm it.
+
+---
+
 ## Re-readable repr
 
 `render` produces a value's display form, which is not always re-readable —

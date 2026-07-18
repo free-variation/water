@@ -9,4 +9,4 @@
 
 	":" split
 	[: "/" + name + :] map
-	[: file-exists? :] find ;
+	' file-exists? find ;

@@ -47,8 +47,11 @@
 1 
 12 
 0 
-figs/demo.html 
-demo.html 
+1 
+2 
+3 
+1 
+1 
 scatter: expected equal-length vectors; got 2 and 3 
 series: expected equal-length vectors; got 2 and 1 
 histogram-table: expected at least 1 bin; got 0 

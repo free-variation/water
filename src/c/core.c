@@ -2022,6 +2022,31 @@ void p_enter_locals_mixed(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip + 2 + n_received, incoming);
 }
 
+void p_enter_anaphors(DISPATCH_ARGS) {
+	int n_locals = (int)chain_ip[0];
+
+	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "return stack overflow");
+		return;
+	}
+	if (chain_sp - n_locals < interp->data_stack) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "%d value(s) on the stack at entry (need %d)",
+				(int)(chain_sp - interp->data_stack), n_locals);
+		return;
+	}
+
+	interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
+	interp->local_base = interp->rsp;
+	interp->rsp += n_locals;
+
+	for (int i = 0; i < n_locals; i++)
+		interp->return_stack[interp->local_base + i] = chain_sp[-n_locals + i];
+
+	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp);
+}
+
 void p_leave_locals(DISPATCH_ARGS) {
 	int n_locals = (int)chain_ip[0];
 
@@ -2095,6 +2120,61 @@ void p_load2(DISPATCH_ARGS) {
 void p_load3(DISPATCH_ARGS) {
 	REQUIRE_STACK_ROOM(interp, chain_ip + 3, chain_sp, 3);
 	Val *locals = interp->return_stack + interp->local_base;
+	chain_sp[0] = locals[(int)chain_ip[0]];
+	chain_sp[1] = locals[(int)chain_ip[1]];
+	chain_sp[2] = locals[(int)chain_ip[2]];
+
+	DISPATCH_REGISTERS(interp, chain_ip + 3, chain_sp + 3);
+}
+
+void p_enter_anaphors_mixed(DISPATCH_ARGS) {
+	int n_locals = (int)chain_ip[0];
+	int n_anaphors = (int)chain_ip[1];
+	int n_received = (int)chain_ip[2];
+	int needed = n_anaphors > n_received ? n_anaphors : n_received;
+
+	if (interp->rsp + n_locals + 1 > RETURN_STACK_DEPTH) {
+		SYNC_REGISTERS(interp, chain_ip + 3 + n_received, chain_sp);
+		fail(interp, "return stack overflow");
+		return;
+	}
+	if (chain_sp - needed < interp->data_stack) {
+		SYNC_REGISTERS(interp, chain_ip + 3 + n_received, chain_sp);
+		fail(interp, "%d value(s) on the stack at entry (need %d)",
+				(int)(chain_sp - interp->data_stack), needed);
+		return;
+	}
+
+	interp->return_stack[interp->rsp++] = make_locals_header(interp->local_base, n_locals);
+	interp->local_base = interp->rsp;
+	interp->rsp += n_locals;
+
+	for (int i = 0; i < n_anaphors; i++)
+		interp->return_stack[interp->local_base + i] = chain_sp[-n_anaphors + i];
+
+	Val *incoming = chain_sp - n_received;
+	for (int i = 0; i < n_received; i++)
+		interp->return_stack[interp->local_base + (int)chain_ip[3 + i]] = incoming[i];
+
+	DISPATCH_REGISTERS(interp, chain_ip + 3 + n_received, incoming);
+}
+
+void p_load2_1depth(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 2);
+
+	Val *locals = interp->return_stack
+		+ saved_local_base(interp->return_stack[interp->local_base - 1]);
+	chain_sp[0] = locals[(int)chain_ip[0]];
+	chain_sp[1] = locals[(int)chain_ip[1]];
+
+	DISPATCH_REGISTERS(interp, chain_ip + 2, chain_sp + 2);
+}
+
+void p_load3_1depth(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 3, chain_sp, 3);
+
+	Val *locals = interp->return_stack
+		+ saved_local_base(interp->return_stack[interp->local_base - 1]);
 	chain_sp[0] = locals[(int)chain_ip[0]];
 	chain_sp[1] = locals[(int)chain_ip[1]];
 	chain_sp[2] = locals[(int)chain_ip[2]];
@@ -2208,6 +2288,7 @@ static int at_i_l1l0_cfa;
 static int at_i_swap_l0_cfa;
 static int at_i_swap_l1_cfa;
 static int load2_cfa, load3_cfa;
+static int load2_1depth_cfa;
 
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot) {
 	cell *dict = vocab.dict;
@@ -2503,6 +2584,7 @@ int refill_input(void) {
 	return 1;
 }
 
+
 char *next_token(void) {
 	while (compiler.input_buffer_pos < compiler.input_buffer_len
 	       && isspace((unsigned char)compiler.input_buffer[compiler.input_buffer_pos]))
@@ -2737,6 +2819,54 @@ int find_local(const char *token, int *depth_out, int *slot_out) {
 	return 0;
 }
 
+void emit_local_fetch(Interpreter *interp, int local_depth, int local_slot_idx) {
+	if (local_depth == 0) {
+		int la = compiler.loadn_at;
+		if (la >= compiler.fuse_floor
+		    && dict_op_is(la, p_load2)
+		    && la + 3 == vocab.here) {
+			vocab.dict[la] = (cell)p_load3;
+			emit(interp, (cell)local_slot_idx);
+		} else if (vocab.here - 2 >= compiler.fuse_floor
+		           && dict_op_is(vocab.here - 2, p_local_fetch_0depth)) {
+			int prev_slot = (int)vocab.dict[vocab.here - 1];
+			vocab.here -= 2;
+			compiler.loadn_at = vocab.here;
+			emit_call(interp, load2_cfa);
+			emit(interp, (cell)prev_slot);
+			emit(interp, (cell)local_slot_idx);
+		} else {
+			emit_call(interp, vocab.local_fetch_0depth_cfa);
+			emit(interp, (cell)local_slot_idx);
+		}
+	} else if (local_depth == 1) {
+		int la = compiler.loadn_at;
+		if (la >= compiler.fuse_floor
+		    && dict_op_is(la, p_load2_1depth)
+		    && la + 3 == vocab.here) {
+			vocab.dict[la] = (cell)p_load3_1depth;
+			emit(interp, (cell)local_slot_idx);
+		} else if (vocab.here - 2 >= compiler.fuse_floor
+		           && dict_op_is(vocab.here - 2, p_local_fetch_1depth)) {
+			int prev_slot = (int)vocab.dict[vocab.here - 1];
+			vocab.here -= 2;
+			compiler.loadn_at = vocab.here;
+			emit_call(interp, load2_1depth_cfa);
+			emit(interp, (cell)prev_slot);
+			emit(interp, (cell)local_slot_idx);
+		} else {
+			emit_call(interp, vocab.local_fetch_1depth_cfa);
+			emit(interp, (cell)local_slot_idx);
+		}
+	} else {
+		emit_call(interp, vocab.local_fetch_cfa);
+		emit(interp, (cell)local_depth);
+		emit(interp, (cell)local_slot_idx);
+	}
+	compiler.fuse_prev_var = 0;
+	compiler.fuse_prev2_var = 0;
+}
+
 void run_outer(Interpreter *interp) {
 	while (!interp->error_flag) {
 		skip_whitespace();
@@ -2776,37 +2906,11 @@ void run_outer(Interpreter *interp) {
 		if (compiler.compiling) {
 			int local_depth, local_slot_idx;
 			if (find_local(tok, &local_depth, &local_slot_idx)) {
-				if (local_depth == 0) {
-					int la = compiler.loadn_at;
-					if (la >= compiler.fuse_floor
-					    && dict_op_is(la, p_load2)
-					    && la + 3 == vocab.here) {
-						vocab.dict[la] = (cell)p_load3;
-						emit(interp, (cell)local_slot_idx);
-					} else if (vocab.here - 2 >= compiler.fuse_floor
-					           && dict_op_is(vocab.here - 2, p_local_fetch_0depth)) {
-						int prev_slot = (int)vocab.dict[vocab.here - 1];
-						vocab.here -= 2;
-						compiler.loadn_at = vocab.here;
-						emit_call(interp, load2_cfa);
-						emit(interp, (cell)prev_slot);
-						emit(interp, (cell)local_slot_idx);
-					} else {
-						emit_call(interp, vocab.local_fetch_0depth_cfa);
-						emit(interp, (cell)local_slot_idx);
-					}
-				} else if (local_depth == 1) {
-					emit_call(interp, vocab.local_fetch_1depth_cfa);
-					emit(interp, (cell)local_slot_idx);
-				} else {
-					emit_call(interp, vocab.local_fetch_cfa);
-					emit(interp, (cell)local_depth);
-					emit(interp, (cell)local_slot_idx);
-				}
-				compiler.fuse_prev_var = 0;
-				compiler.fuse_prev2_var = 0;
+				emit_local_fetch(interp, local_depth, local_slot_idx);
 				continue;
 			}
+			if (try_anaphor(interp, tok))
+				continue;
 		}
 
 		int cf = find(tok);
@@ -3290,9 +3394,16 @@ int op_cell_count(int cursor) {
 	if (handler == vocab.dict[vocab.enter_locals_mixed_cfa])
 		return 3 + (int)dict[cursor + 2];
 
+	if (handler == vocab.dict[vocab.enter_anaphors_mixed_cfa])
+		return 4 + (int)dict[cursor + 3];
+
 	if (handler == (cell)p_load2)
 		return 3;
 	if (handler == (cell)p_load3)
+		return 4;
+	if (handler == (cell)p_load2_1depth)
+		return 3;
+	if (handler == (cell)p_load3_1depth)
 		return 4;
 	if (handler == (cell)p_store_e_lll0)
 		return 4;
@@ -3345,6 +3456,7 @@ int op_cell_count(int cursor) {
 	    || handler == vocab.dict[vocab.to_var_cfa]
 	    || handler == vocab.dict[vocab.enter_locals_cfa]
 	    || handler == vocab.dict[vocab.enter_locals_to_cfa]
+	    || handler == vocab.dict[vocab.enter_anaphors_cfa]
 	    || handler == vocab.dict[vocab.leave_locals_cfa]
 	    || handler == vocab.dict[vocab.local_fetch_0depth_cfa]
 	    || handler == vocab.dict[vocab.local_fetch_1depth_cfa]
@@ -4006,6 +4118,11 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "rot", p_rot, 0);
 	define_primitive(interp, "depth", p_depth, 0);
 	define_primitive(interp, "roll", p_roll, 0);
+	define_primitive(interp, "it", p_it, 0);
+	define_primitive(interp, "them", p_them, 0);
+	define_primitive(interp, "other", p_other, 0);
+	define_primitive(interp, "this", p_it, 0);
+	define_primitive(interp, "that", p_other, 0);
 	vocab.eq_cfa = define_primitive(interp, "=", p_eq, 0);
 	vocab.lt_cfa = define_primitive(interp, "lt", p_lt, 0);
 	vocab.gt_cfa = define_primitive(interp, "gt", p_gt, 0);
@@ -4175,6 +4292,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.enter_locals_cfa = define_primitive(interp, "(enter-locals)", p_enter_locals, 4);
 	vocab.enter_locals_to_cfa = define_primitive(interp, "(enter-locals-to)", p_enter_locals_to, 4);
 	vocab.enter_locals_mixed_cfa = define_primitive(interp, "(enter-locals-mixed)", p_enter_locals_mixed, 4);
+	vocab.enter_anaphors_cfa = define_primitive(interp, "(enter-anaphors)", p_enter_anaphors, 4);
+	vocab.enter_anaphors_mixed_cfa = define_primitive(interp, "(enter-anaphors-mixed)", p_enter_anaphors_mixed, 4);
 	vocab.leave_locals_cfa = define_primitive(interp, "(leave-locals)", p_leave_locals, 4);
 	vocab.local_fetch_cfa = define_primitive(interp, "(local@)", p_local_fetch, 4);
 	vocab.local_store_cfa = define_primitive(interp, "(local!)", p_local_store, 4);
@@ -4182,6 +4301,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.local_fetch_1depth_cfa = define_primitive(interp, "(local@1)", p_local_fetch_1depth, 4);
 	load2_cfa = define_primitive(interp, "(load2)", p_load2, 4);
 	load3_cfa = define_primitive(interp, "(load3)", p_load3, 4);
+	load2_1depth_cfa = define_primitive(interp, "(load2.l1)", p_load2_1depth, 4);
+	define_primitive(interp, "(load3.l1)", p_load3_1depth, 4);
 	at_i_local0_cfa = define_primitive(interp, "(@i.l0)", p_at_i_local0, 4);
 	at_i_lit_cfa = define_primitive(interp, "(@i.lit)", p_at_i_lit, 4);
 	at_i_lit_local0_cfa = define_primitive(interp, "(@i.lit.l0)", p_at_i_lit_local0, 4);
