@@ -243,9 +243,9 @@ dup "LAPACKE_dgelsd" [
 	X with-intercept y augment to xy
 	units n-folds cv-folds to folds
 	lambdas
-	[: |> lambda |
+	[|> lambda |
 		folds
-		[: |> fold |
+		[|> fold |
 			fold 0 @i  fold 1 @i  xy lambda
 			' cv-ridge-cell curry curry curry curry :]
 		map :]

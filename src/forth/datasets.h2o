@@ -23,7 +23,7 @@
 
 	n-rows 0= if [ ] else start rows size 1- range then to row-indices
 	keys size iota
-	[: |> j |
+	[> j |
 	   row-indices [: rows swap @i j @i :] map :]
 	map to columns
 
@@ -49,9 +49,9 @@
 : dataset>matrix
 	| >dataset >cols |
 
-	cols [: |> col | dataset col @ magnitude dup matrix? if as-column else vector then :] map
+	cols [> col | dataset col @ magnitude dup matrix? if as-column else vector then :] map
 	dup 0 @i swap 1 skip swap
-	[: augment :] reduce ;
+	' augment reduce ;
 
 ( n -- [indices] ) \ row indices drawn from [0, n) with replacement
 : resample-indices
@@ -173,7 +173,7 @@
 
 	0 to offset
 	column permutation gather-elements value-runs
-	[: | >value-run run-length |
+	[| >value-run run-length |
 	   value-run 1 @i to run-length
 	   value-run 0 @i
 	   null run-length array-of 0 permutation offset 1 run-length slice!
@@ -230,10 +230,10 @@
 		cells vector exit
 	then
 
-	cells [: quantity? :] all? if
-		cells [: unit-of :] map 
+	cells ' quantity? all? if
+		cells ' unit-of map 
 		array>set size 1= if
-			cells [: magnitude :] 
+			cells ' magnitude  
 			map vector 
 			cells 0 @i unit-of * 
 			exit
@@ -247,12 +247,12 @@
 	| >rows |
 	rows size 0= if { } exit then
 
-	rows [: keys :] map array>set size 1= not if
+	rows ' keys map array>set size 1= not if
 		"rows have differing keys" throw
 	then
 
 	rows 0 @i keys
-	dup [: |> key | rows [: key @ :] map column-from-cells :] map
+	dup [> key | rows [: key @ :] map column-from-cells :] map
 	frame ;
 
 ( dataset xt -- dataset) \ xt maps each row frame to a new row frame

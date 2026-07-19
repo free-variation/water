@@ -19,7 +19,7 @@ inline
 \ Fact database
 ( [cols] -- rel ) \ empty relation; cols is an array of symbols to index
 : relation
-	{ } [: |> index col | index col { } ! :] reduce
+	{ } [> index col | index col { } ! :] reduce
 	>side
 	{ :rows < > :index side> } ;
 
@@ -43,7 +43,7 @@ inline
 	|> row set-op bucket-op |
 	dup :rows @ row set-op execute drop
 	dup :index @ keys swap
-	[: |> rel col | rel :index @ col @ row col @ row bucket-op execute rel :] reduce ; internal
+	[> rel col | rel :index @ col @ row col @ row bucket-op execute rel :] reduce ; internal
 
 ( rel row -- rel ) \ add row to :rows and to each indexed column's bucket
 : assert ' set-add! ' bucket-add! update-row! ;
@@ -62,25 +62,25 @@ inline internal
 ( [sets] -- set ) \ the smallest set in a non-empty array
 : smallest-set
 	dup 0 @i
-	[: |> smallest candidate | smallest size candidate size lt if smallest else candidate then :] reduce ; internal
+	[> smallest candidate | smallest size candidate size lt if smallest else candidate then :] reduce ; internal
 
 ( rel pattern -- candidate-rows ) \ :rows narrowed by the grounded indexed columns, intersected smallest-first
 : candidates
 	|> rel pattern |
 	rel :index @ keys
-	[: |> col | pattern col has? if pattern col @ ? symbol? else 0 then :] filter
-	[: |> col | rel pattern col bucket-of :] map
+	[> col | pattern col has? if pattern col @ ? symbol? else 0 then :] filter
+	[> col | rel pattern col bucket-of :] map
 	dup size 0 = if
 		drop rel :rows @
 	else
-		dup smallest-set [: |> narrowed bucket | narrowed bucket intersection :] reduce
+		dup smallest-set [> narrowed bucket | narrowed bucket intersection :] reduce
 	then ; internal
 
 ( rel pattern -- flag) \ true when every pattern column is a ground-symbol indexed column -- so the index alone answers the query
 : covering?
 	|> rel pattern |
 	pattern keys 1
-	[: |> covered? col | covered? rel :index @ col has? and pattern col @ ? symbol? and :] reduce ; internal
+	[> covered? col | covered? rel :index @ col has? and pattern col @ ? symbol? and :] reduce ; internal
 
 ( rel pattern -- [rows] ) \ rows matching pattern; scans :rows
 : query
@@ -89,7 +89,7 @@ inline internal
 	rel pattern covering? if
 		dup size take
 	else
-		[: |> row | pattern row matches? :] filter
+		[> row | pattern row matches? :] filter
 	then ;
 
 ( rel row -- rel ) \ remove every row matching pattern
@@ -110,9 +110,9 @@ inline internal
 : inner-join
 	|> driver probed col |
 	driver :rows @ null
-	[: |> joined driver-row |
+	[> joined driver-row |
 		probed driver-row col bucket-of joined
-		[: |> joined probed-row | driver-row probed-row merge joined cons :] reduce
+		[> joined probed-row | driver-row probed-row merge joined cons :] reduce
 	:] reduce
 	cons>array dup size 1- take ;
 
@@ -120,17 +120,18 @@ inline internal
 : bulk-load
 	|> rel rows-array |
 	rel :rows rows-array array>set !
-	dup :index @ keys [: |> col | rel :index @ col  rows-array col group-by  ! :] map drop ;
+	dup :index @ keys [> col | rel :index @ col  rows-array col group-by  ! :] map drop ;
 
 ( rel rows-array -- rel ) \ like bulk-load, but :rows stays a bag (array); only the index is built
 : load-bag
 	|> rel rows-array |
 	rel :rows rows-array !
-	dup :index @ keys [: |> col | rel :index @ col  rows-array col group-by  ! :] map drop ;
+	dup :index @ keys [> col | rel :index @ col  rows-array col group-by  ! :] map drop ;
 
 ( rel cols -- rel ) \ index rel on cols: intern each indexed column's value to a symbol, then build the index
 : create-index
 	|> rel cols |
 	rel :rows @
-	[: |> row | cols row [: |> acc col | acc col [: string>symbol :] update-at :] reduce :] map
+	[> row | cols row [> acc col | acc col [: string>symbol :] update-at :] reduce :] map
+
 	cols relation swap load-bag ;

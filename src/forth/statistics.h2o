@@ -45,7 +45,7 @@
 	units size n-folds lt if units size n-folds "cross-validate: {0} folds exceed {1} units" format throw then
 	units size iota to positions
 	n-folds iota
-	[: |> f |
+	[> f |
 		positions [: n-folds mod f = not :] filter units swap select-rows
 		positions [: n-folds mod f = :] filter units swap select-rows
 		2 array :]
@@ -59,7 +59,7 @@
 	| >units >n-folds >fit >score |
 	units n-folds cv-folds
 	0
-	[: |> fold-loss fold |
+	[> fold-loss fold |
 		fold 0 @i fit execute
 		fold 1 @i score execute
 		fold-loss + :]
@@ -192,7 +192,7 @@
 	column column>array [: none? not :] filter array>set sort to levels
 	levels size 2 lt if "indicators!: needs at least 2 distinct values" throw then
 	levels 1 skip
-	[: |> level |
+	[> level |
 		design  prefix level "{1}={0}" format string>symbol  column level eq  ! :]
 	map drop
 	design ;
@@ -217,7 +217,7 @@
 : coefficient-column
 	|> betas replications j |
 
-	betas [: |> b | b j 0 @i,j :] map replications 1 matrix ; internal
+	betas [> b | b j 0 @i,j :] map replications 1 matrix ; internal
 
 ( beta betas replications j -- frame )
 : coefficient-summary
@@ -243,7 +243,7 @@
 	data dup nan? row-sums 0 eq where select-rows to data
 	data fit execute to beta
 	data fit replications bootstrap to betas
-	0 beta size 1- range [: |> j | beta betas replications j coefficient-summary :] map ;
+	0 beta size 1- range [> j | beta betas replications j coefficient-summary :] map ;
 
 ( xs ys -- xs' ys' ) \ drop pairs where either element is NaN; magnitudes taken
 : complete-cases
