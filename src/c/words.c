@@ -1433,6 +1433,48 @@ void p_size_len(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
+void p_globals(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+
+	int n_globals = 0;
+	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa))
+		if ((cfa_handler)vocab.dict[cfa] == dovar && !WORD_IS_INTERNAL(cfa))
+			n_globals++;
+
+	NEW_ARRAY(bindings_handle, bindings, n_globals);
+	memset(bindings->items, 0, sizeof(Val) * (size_t)n_globals);
+	gc_root_push(interp, make_array(bindings_handle));
+
+	int slot = n_globals;
+	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
+		if ((cfa_handler)vocab.dict[cfa] != dovar || WORD_IS_INTERNAL(cfa))
+			continue;
+
+		int symbol_cfa = intern_symbol(interp, &vocab.name_pool[WORD_NAME(cfa)]);
+		if (interp->error_flag) {
+			gc_root_pop(interp);
+			return;
+		}
+
+		int binding_handle = object_new_array(interp, 2);
+		if (interp->error_flag) {
+			gc_root_pop(interp);
+			return;
+		}
+		Object *binding = OBJECT_AT(binding_handle);
+		binding->items[0] = make_symbol(symbol_cfa);
+		binding->items[1].bits = (uint64_t)vocab.dict[cfa + 1];
+
+		slot--;
+		bindings->items[slot] = make_array(binding_handle);
+	}
+
+	gc_root_pop(interp);
+	chain_sp[0] = make_array(bindings_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
+}
+
 void p_words(DISPATCH_ARGS) {
 	int word_count = 0;
 	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa))

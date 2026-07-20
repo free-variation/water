@@ -217,7 +217,7 @@ variable pixw variable pixh
   0.0 0.0 f-  3.0 1.8 f-  0.0 10.0 f-  vnorm to evz to evy to evx
   evx evy evz 0.0 1.0 0.0 vcross vnorm to rz to ry to rx
   rx ry rz evx evy evz vcross vnorm to uz to uy to ux
-  pi 45.0 2.0 f/ f* 180.0 f/ to fovr
+  PI 45.0 2.0 f/ f* 180.0 f/ to fovr
   fovr ftan to halfw
   0.75 halfw f* to halfh
   halfw 2.0 f* width 1.0 f- f/ to pixw

@@ -294,3 +294,33 @@
 	update-at 
 	drop ;
 
+
+( dataset key -- strings right? ) \ header + rendered cells; numeric columns align right
+: column-cells
+	| >dataset >key column-kind |
+	dataset key column-type to column-kind
+	dataset key @ column>array
+	column-kind :datetime = if [: time>iso :] map else [: render :] map then
+	[ key "{0}" format ] swap concat
+	column-kind :text = not ; internal
+
+( dataset n -- ) \ print the first n rows as an aligned table, column names as the header
+: headn
+	| >dataset >n columns |
+	dataset keys size 0= if exit then
+	dataset n-rows n min2 to n
+	dataset n iota select-rows to dataset
+
+	dataset keys
+	[| >key strings right? width |
+	   dataset key column-cells to right? to strings
+	   strings [: size :] map 0 ' max2 reduce to width
+	   strings [: width right? if pad-left else pad-right then :] map :]
+	map to columns
+
+	[> row-index |
+	   columns [: row-index @i :] map "  " join . cr :]
+	n 1+ i-times ;
+
+( dataset -- ) \ print the first 10 rows as an aligned table
+: head 10 headn ;

@@ -28,3 +28,7 @@
 			"^\w+ : " "" replace . cr
 		then
 	then ;
+
+
+( -- ) \ pretty prints all current globals
+: vars variables ' print each ;

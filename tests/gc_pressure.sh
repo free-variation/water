@@ -42,25 +42,25 @@ printf "GC-rooting-under-pressure tests:\n"
 # (verified to fail without the roots: binary case yielded 99144).
 exact "binary_op operands stay rooted" \
   ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 4 5 6 7 8 ] vector 2 ^ sum acc + to acc f++ i repeat acc ; pressure . cr' \
-  "102000 " 84
+  "102000 " 96
 exact "unary_op operand stays rooted" \
   ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 ] vector exp sum acc + to acc f++ i repeat acc round ; pressure . cr' \
-  "15096 " 84
+  "15096 " 96
 exact "unify-cons values stay rooted" \
   ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [( 1 2 3 )] _ ~ drop acc 1 + to acc f++ i repeat acc ; pressure . cr' \
-  "500 " 84
+  "500 " 96
 
 # matrix row/column/where words allocate their result while the source matrix
 # is the only reference; the source must stay rooted across that allocation.
 exact "@j source matrix stays rooted" \
   ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 4 ] 2 2 matrix 0 @j sum acc + to acc f++ i repeat acc ; pressure . cr' \
-  "2000 " 84
+  "2000 " 96
 exact "@i row matrix stays rooted" \
   ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 4 ] 2 2 matrix 0 @i sum acc + to acc f++ i repeat acc ; pressure . cr' \
-  "1500 " 84
+  "1500 " 96
 exact "where source mask stays rooted" \
   ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 0 1 0 1 1 ] vector where sum acc + to acc f++ i repeat acc ; pressure . cr' \
-  "4000 " 84
+  "4000 " 96
 
 printf "%d passed, %d failed\n" "$pass" "$fail"
 [ "$fail" -eq 0 ]

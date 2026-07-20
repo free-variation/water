@@ -1,3 +1,9 @@
+\ globals: `variable` declares (value 0), `to` assigns and auto-creates at the
+\ REPL; `variables` ( -- arr ) answers one { :name :value :type } frame per
+\ global, oldest first, live values; `vars` pretty-prints them.
+
+variables . cr                          \ [ ] (no globals at startup)
+
 variable x
 x .
 42 to x
@@ -9,3 +15,20 @@ variable y
 y .
 < 1 2 3 > to y
 y .
+cr
+
+\ === variables: one frame per global, oldest first, live values ===
+variables .
+variables [: :name @ :] map . cr        \ [ :x :y ]
+
+\ constants, symbols, and colon words are not globals
+symbol marker
+variables size . cr                     \ 2 still (PI, E, TAU never appear)
+
+\ composes with the dataset machinery
+[ 1 2 3 ] to z
+:blue to hue
+variables frames>dataset 3 headn
+
+\ === vars pretty-prints each frame ===
+vars

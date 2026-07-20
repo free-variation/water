@@ -4,9 +4,9 @@
 \ one measured value); the dimensioned ones are quantities, so unit algebra
 \ applies — KB 300 kelvin * is an energy.
 
-pi constant PI
+-1 acos constant PI
 1 exp constant E
-pi 2 * constant TAU
+PI 2 * constant TAU
 5 sqrt 1 + 2 / constant PHI
 
 299792458 m 1 s / constant C

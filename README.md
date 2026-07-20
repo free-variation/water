@@ -18,6 +18,7 @@ make test      # runs the golden-output test suite
 make bench     # runs the benchmark suite (Water vs CPython)
 ./water              # REPL
 ./water prog.h2o     # run program files and exit (repeatable, in order; -i to drop into the REPL after)
+./water -e '3 4 + .' # run a code string and exit (repeatable, in argument order with files; implies -b)
 ```
 
 Self-contained: its vendored dependencies — PCRE2 (regex), isocline (REPL line
@@ -111,7 +112,7 @@ lvar to X  lvar to Y  lvar to Z
 
 \ Datasets: column-oriented tables with verbs
 [ [ "name" "age" ] [ "ann" 34 ] [ "bo" 25 ] [ "cy" 61 ] ] true rows>dataset
-dup :age @ vector mean .                \ 40
+dup :age @ mean .                       \ 40  (a numeric column is already a vector)
 [: :age @ 30 gt :] filter :name @ .     \ [ "ann" "cy" ]
 
 \ Count distinct values, most frequent first; masks alter as well as select
@@ -144,7 +145,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Tick and execute** — `' word execute` for first-class invocation by name.
 - **`forget`** — truncate the dictionary back to a named word; symbol identities survive.
 - **Variables and symbols** — `variable foo` declares a global; read it by bare name, assign with `42 to foo` (`to` also auto-creates a global on first assignment at the REPL). `symbol bar` defines a symbol; `:foo` is a symbol literal interned on use; `string>symbol` interns a computed string.
-- **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (uninitialized — assign before reading); read by bare name, assign with `to name`. A `>` prefix receives a slot from the stack, a `?` prefix fills it with a fresh logic variable per call. `++ name` / `-- name` increment/decrement a local in place (`f++` / `f--` the unsafe float-only forms). Locals nest through quotations and survive continuation capture.
+- **Word-local variables** — `| x y |` at the head of a colon definition or quotation declares scoped slots (uninitialized — assign before reading; the compiler rejects a scope that reads a slot it stores nowhere, which also catches a local name shadowing a word the body meant to call); read by bare name, assign with `to name`. A `>` prefix receives a slot from the stack, a `?` prefix fills it with a fresh logic variable per call. `++ name` / `-- name` increment/decrement a local in place (`f++` / `f--` the unsafe float-only forms). Locals nest through quotations and survive continuation capture.
 - **Mark-and-sweep GC** — walks data/return/side stacks, dictionary, and a small `gc_roots` array for in-flight C-level temporaries. It triggers on object-table pressure and on live-byte pressure, and runs at a safepoint between words so popped C-level operands stay live.
 
 ### Numeric / matrix
@@ -248,6 +249,7 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 - **Regex** on PCRE2 (Perl-compatible, JIT-compiled): `match` (first match as a flat `[ whole cap… ]`), `match-all` (all matches, nested), `replace` (replace-all, with `&` / `\1`–`\9` backrefs), and the `has?` string overload (does the pattern match?). Patterns are plain `"..."` literals — PCRE2 reads `\d`, `\w`, `\n`, lookaround, `\p{...}`.
 - **Slicing / building** — `substring` (half-open codepoint range), `char-at` (the one-character string at a codepoint index), `split` (split at each non-overlapping match of a pattern, empty fields kept), `join` (concatenate an array of strings with a separator).
 - **Unicode** — strings are UTF-8 and the bare words work in *codepoints*: `size`/`substring`/`char-at`/`codepoint-at` count and index by codepoint, with byte-level forms (`byte-size`, `byte-substring`) for the raw layer and to pair with regex byte offsets. `string>chars`/`string>codepoints` decompose a string, `codepoint>char`/`codepoints>string` rebuild one, and `emit` UTF-8-encodes a codepoint. Regex runs in UTF + UCP mode: `.` matches a codepoint, `\w`/`\d`/`\b` are Unicode-aware, and invalid byte sequences are tolerated rather than erroring.
+- **`edit-distance`** — `( a b -- n )` edit distance between two strings over codepoints; insertions, deletions, substitutions, and adjacent transpositions each cost one edit.
 
 ### JSON
 
@@ -294,10 +296,12 @@ Embedded relational storage via the vendored SQLite amalgamation — built into 
 
 TSV is the one tabular file format (convert other formats to TSV before loading).
 
-- **`read-tsv`** / **`write-tsv`** — read a file into an array of row-arrays (a numeric cell becomes a float, an empty cell `none`, everything else a string) and write one back.
-- **`rows>dataset`** — `( rows header? -- frame )` a column-oriented frame, one array per column; **`rows>relation`** — `( rows index-cols header? -- relation )` a deduped, indexed fact-database relation; **`dataset>matrix`** — `( dataset cols -- m )` an observations×columns numeric matrix from named columns.
+- **`read-tsv`** / **`write-tsv`** — a TSV file with a header row as a column-oriented dataset with typed columns (a uniformly numeric column becomes a vector, empty cells NaN), and a dataset back to a header TSV, one word each.
+- **`load-tsv`** / **`save-tsv`** — read a file into an array of row-arrays (a numeric cell becomes a float, an empty cell `none`, everything else a string) and write one back.
+- **`rows>dataset`** — `( rows header? -- frame )` a column-oriented frame with typed columns (a uniformly numeric column becomes an n×1 vector, `none` → NaN; anything else stays an array); **`rows>relation`** — `( rows index-cols header? -- relation )` a deduped, indexed fact-database relation; **`dataset>rows`** — `( dataset -- rows )` the inverse of `true rows>dataset` (header row + row-arrays, ready for `save-tsv`); **`dataset>matrix`** — `( dataset cols -- m )` an observations×columns numeric matrix from named columns.
 - **Dataset verbs** — `select-rows`, `select-columns`, `filter`, `map-rows`, `dim`, `column-type`, and `count` work on a dataset directly: rows gather by an index array or vector across every column, `select-columns` keeps named columns, `filter` keeps the rows whose frame satisfies a predicate, `map-rows` transforms each row frame to a new one (columns re-infer their representation), `dim` answers rows and columns, `column-type` reads a column's type from its representation (`:numeric` `:datetime` `:quantity` `:text`), and `count` tallies distinct values — or whole rows — most frequent first. `column>array` reads any column as an array of its values; `column>set` is its distinct-value set; `group-indices` maps each distinct value to its row positions (`[ [ value [indices] ] … ]`, one sort instead of a scan per value).
 - **`frames>dataset`** — `( rows -- dataset )` an array of row frames (a `query` or `db-query` result, `map-rows` output) as a column-oriented dataset with inferred column representations.
+- **`head`** / **`headn`** — `( dataset -- )` / `( dataset n -- )` print the first 10 / n rows as an aligned table: column names as the header, numeric and quantity columns right-aligned, text left, datetime cells as ISO timestamps.
 - **`replace-where`** — `( dataset sym pred replacement -- )` conditionally edit one column in place: `pipeline :rep_touches [: -1 eq :] null replace-where` turns a sentinel into missing.
 - **`resample-indices`** — `( n -- arr )` n indices drawn from `[0,n)` with replacement, for bootstrap resampling.
 
@@ -344,7 +348,7 @@ A third stack for stashing arbitrary Vals without disturbing the data or return 
 
 Built in `generators.h2o` on top of the continuation primitives:
 
-- **`throw`** — non-local exit with a value.
+- **`throw`** — non-local exit with a value; uncaught, it is an interpreter error naming the value (`uncaught exception: "boom"`) with a trace from the throw site.
 - **`catch`** — wraps an xt; returns `(result 0)` on success, `(exc 1)` on a throw. It also intercepts **interpreter errors** — division by zero, out-of-bounds, type mismatch, and the like — delivering a `{ :message :trace }` frame (the trace names the failing word innermost-first) as the exception value, so a runtime fault is recoverable, not just a user `throw`. A `throw`n value passes through raw.
 - **`try-catch`** — wraps an xt with a recovery handler that runs on either kind of failure. Arity-agnostic.
 - **`ensure`** — `( body-xt cleanup-xt -- … )` runs cleanup on both the normal and the throw/error path, then re-raises on throw. **`with-db`** / **`with-stream`** build on it to open (or take) a resource, run a body with it, and release it however the body exits.
@@ -359,6 +363,12 @@ elide the middle (`… ← …+3 ← …`). A caught error prints none. The trac
 nothing until an error happens — capture is a return-stack walk at failure
 time — and quotation spans ride along in `save-image`, so frames resolve across
 a `load-image`.
+
+An unknown word names the nearest dictionary word or in-scope local when one is
+within edit distance 2 — `unknown word: filtr (did you mean filter?)`. Distance
+ties break toward the more-used word (every compiled token counts toward its
+word's frequency, so the embedded library seeds the counts at startup), then
+toward the longer shared prefix.
 
 ### Logic
 
@@ -378,10 +388,11 @@ Unification and committed choice, on the trail and the continuation machinery:
 - **`it`** / **`other`** / **`them`** — anaphora: push the top of the stack (`it`), the value under it (`other`), or both in order (`them`) as they stood when the current scope began — the line at top level, the word's activation in a colon definition. Pinned per scope, non-consuming, repeatable (`it it +`); in definitions they compile to hidden entry-bound locals, so `: f 2 * it + ;` still sees the argument after consuming it. `this`/`that` alias `it`/`other`.
 - **`copy`** / **`reify`** — deep copy of a value (strings, arrays, sets, frames, matrices); `reify` additionally renames unbound logic vars to canonical `:_0`/`:_1`/… for a ground, storable, comparable snapshot.
 - **`type-of`** — `( a -- sym )` the value's type as a symbol (`:float`, `:frame`, `:lvar`, …), with a lib predicate per type (`float?` … `lvar?`); a bound logic var answers as its value.
-- **`now`** — monotonic seconds as a float, for timing intervals (`wall-now`, under Time and dates, is the absolute clock).
+- **`now`** — monotonic seconds as a float, for timing intervals (`wall-now`, under Time and dates, is the absolute clock). **`timed`** — `( xt -- … )` runs xt, prints its elapsed `now` seconds, and passes its results through.
 - **`see`** — prints a word's source definition; **`see-compiled`** disassembles its threaded body.
 - **`man`** — `( xt -- fr )`, returns a frame of a word's reference entry (stack effect, one-line summary, cost notes). **`help name`** prints it for the named word.
 - **`words`** — the dictionary grouped by reference section (session-defined words first, alphabetical, aligned columns); **`apropos`** — `( s -- )` every word whose name or reference summary matches, with stack effect and summary.
+- **`variables`** — `( -- arr )` the current globals as `{ :name :value :type }` frames, oldest first: `variables [: :name @ :] map` lists the names, `variables frames>dataset head` prints a table; **`vars`** pretty-prints them.
 - **`forget`**, **`bye`**, **`gc`**, **`clear`**, **`.s`**, **`.a`** — interpreter utilities.
 
 ## Future work

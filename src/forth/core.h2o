@@ -1,6 +1,3 @@
-variable pi
-3.141592653589793 to pi
-
 \ aliases
 : true 1 ; inline
 : false 0 ; inline
@@ -80,3 +77,11 @@ inline
 ( xt -- ... )  \ run xt, print elapsed CLOCK_MONOTONIC seconds, pass its results through
 : timed now >r execute now r> - . cr ;
 
+
+( -- arr ) \ one { :name :value :type } frame per global, oldest first
+: variables
+	(globals)
+	[| >binding value |
+	   binding 1 @i to value
+	   { :name binding 0 @i :value value :type value type-of } :]
+	map ;

@@ -252,7 +252,9 @@ group-indices
 group-with
 gt
 has?
+head
 head-tail
+headn
 help
 histogram-table
 hstack
@@ -328,6 +330,8 @@ num-elements
 or
 other
 over
+pad-left
+pad-right
 pair?
 parallel-run
 parse-time
@@ -337,7 +341,6 @@ peek
 percentile
 pfilter
 pfilter-ext
-pi
 pmap
 pmap-ext
 pmap-reduce
@@ -433,6 +436,7 @@ sleep
 slice!
 sort
 sort-by
+spaces
 split
 sq
 sqrt
@@ -485,6 +489,8 @@ update-at
 values
 var
 variable
+variables
+vars
 vector
 vf*
 vf+

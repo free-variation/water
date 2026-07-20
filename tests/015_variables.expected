@@ -1,1 +1,28 @@
+[ ] 
 0 42 99 hello < 1 2 3 > 
+[ { :name :x :value 99 :type :float } { :name :y :value < 1 2 3 > :type :set } ] [ :x :y ] 
+2 
+name  value      type   
+:x    99         :float 
+:y    < 1 2 3 >  :set   
+:z    [ 1 2 3 ]  :array 
+{
+  :name :x
+  :value 99
+  :type :float
+}
+{
+  :name :y
+  :value < 1 2 3 >
+  :type :set
+}
+{
+  :name :z
+  :value [ 1 2 3 ]
+  :type :array
+}
+{
+  :name :hue
+  :value :blue
+  :type :symbol
+}

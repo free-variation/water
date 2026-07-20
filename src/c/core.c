@@ -4387,6 +4387,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "num-cores", p_num_cores, 0);
 
 	define_primitive(interp, "words", p_words, 0);
+	define_primitive(interp, "(globals)", p_globals, 4);
 	define_primitive(interp, "apropos", p_apropos, 0);
 	define_primitive(interp, "water", p_water, 0);
 	define_primitive(interp, "see", p_see, 0);

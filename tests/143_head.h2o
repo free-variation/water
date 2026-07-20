@@ -1,0 +1,30 @@
+\ headn ( dataset n -- ), head ( dataset -- = 10 headn ): print the first
+\ min(n, rows) rows as an aligned table — column names as the header line,
+\ two-space gutter, numeric/quantity right-aligned, text left-aligned,
+\ :datetime columns rendered by time>iso, other cells by render.
+
+\ === typed TSV dataset: text + numeric columns ===
+"name	weight	note
+fern	1.5	shade plant
+oak	120	tall
+moss	0.02	ground cover
+ivy	3	climbs walls
+" "/tmp/lf143.tsv" write-file
+"/tmp/lf143.tsv" read-tsv to plants
+
+plants 2 headn
+clear cr
+
+\ n beyond the row count prints every row; head defaults n to 10
+plants head
+clear cr
+
+\ === quantity and datetime columns ===
+{ :when [ 1752000000 1752086400 ] vector 1 s *
+  :dose [ 0.5 12 ] vector 1 kg *
+  :tag [ "first" "second" ] } 5 headn
+clear cr
+
+\ === empty dataset: prints nothing, consumes its arguments ===
+{ } 5 headn
+99 . cr

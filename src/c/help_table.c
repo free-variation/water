@@ -297,7 +297,9 @@ const HelpEntry help_entries[] = {
 	{ "group-with", "( items xt -- fr )", "arrays.h2o: group elements into { key → set } by the symbol key xt ( element -- sym ) computes — the quotation-keyed kin of group-by", "n·(xt + log n)", "frame + sets", "O(n·xt + n log n)", 23 },
 	{ "gt", "( a b -- bool ) or ( m/arr x -- m )", "greater-than; element-wise 1/0 mask on matrix operands (scalar broadcast) and on array operands (val_cmp per element, n×1)", "3 (float)", "matrix 1m(r×c)", "same; matrix O(r×c)", 4 },
 	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string ( s pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)", 16 },
+	{ "head", "( dataset -- )", "datasets.h2o: 10 headn", "r·c", "rendered cells", "O(r·c)", 22 },
 	{ "head-tail", "( pair -- head tail )", "Split a pair — head under, tail on top; no auto-deref; errors on a non-pair", "1", "none", "O(1)", 15 },
+	{ "headn", "( dataset n -- )", "datasets.h2o: print the first min(n, rows) rows as an aligned table — column names as the header line, two-space gutter, numeric/quantity columns right-aligned, text left, :datetime columns through time>iso, other cells through render; empty dataset prints nothing", "r·c", "rendered cells", "O(r·c)", 22 },
 	{ "help", "( \"name\" -- )", "repl.h2o: parse the next word and print its man frame; bare help (no name on the line) prints a starter cheat sheet, and an unknown name prints unknown word: <name> without erroring. Distinguishes the three cases by catching lookup's message", "dict scan + log n", "1o + strings + print", "O(|dict|)", 29 },
 	{ "histogram-table", "( v n-bins -- fr )", "statistics.h2o: equal-width bin counts over a vector's value range, as { :counts (n-bins×1) :low :bin-width }. NaNs dropped, the top value lands in the last bin, a constant vector takes the range value ± 1; errors on n-bins < 1 or no finite values", "n + n-bins", "1m(n-bins) + 1fr", "O(n + n-bins)", 18 },
 	{ "hstack", "( a b -- m )", "matrix.h2o: augment under its numpy name (inlined)", "2 + r·c", "1m(r×c)", "O(r·c)", 18 },
@@ -373,6 +375,8 @@ const HelpEntry help_entries[] = {
 	{ "or", "( a b -- bool )", "logical or of truthiness", "3", "none", "O(1)", 4 },
 	{ "other", "( -- v )", "Push the second value (under the top) as it stood when the current scope began; the companion of it for two-antecedent lines and words. Same binding rules as it; requires two values at scope entry. that is an alias", "2", "none", "O(1)", 0 },
 	{ "over", "( a b -- a b a )", "Copy second over top", "5", "none", "O(1)", 0 },
+	{ "pad-left", "( s width -- s' )", "strings.h2o: s left-padded with spaces to width (unchanged when already that wide; codepoint widths)", "n", "1a + 1o", "O(n)", 12 },
+	{ "pad-right", "( s width -- s' )", "strings.h2o: s right-padded with spaces to width (unchanged when already that wide; codepoint widths)", "n", "1a + 1o", "O(n)", 12 },
 	{ "pair?", "( a -- bool )", "core.h2o: type-of :pair = (inlined)", "5", "none", "O(1)", 4 },
 	{ "parallel-run", "( commands width -- results )", "subprocess.h2o: run each argv array in commands as a subprocess, at most width at once; collect { :out :err :status } per command in input order, refilling a slot as each child finishes", "fork per command + poll", "1a + per-child frames/streams", "O(critical path)", 32 },
 	{ "parse-time", "( string format -- instant )", "Parse with strptime; uncaptured fields default to 1970-01-01 00:00:00, read as UTC unless the format captures an offset with %z; errors on a mismatch", "len", "1 pair", "O(len)", 21 },
@@ -382,7 +386,6 @@ const HelpEntry help_entries[] = {
 	{ "percentile", "( m pct -- f )", "statistics.h2o: quantile at pct ∈ [0,100] (inlined)", "n log n", "malloc(n)", "O(n log n)", 18 },
 	{ "pfilter", "( arr pred -- arr )", "Parallel filter, order preserved", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt / w)", 23 },
 	{ "pfilter-ext", "( arr w c pred -- arr )", "pfilter with explicit worker count and items-per-claim", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt / w)", 23 },
-	{ "pi", "( -- f )", "core.h2o: variable initialized to π (3.141592653589793); invoking it pushes the stored float", "1", "none", "O(1)", 1 },
 	{ "pmap", "( arr xt -- arr )", "Parallel map (num-cores workers, claim 1)", "2 + n·xt", "1a(n)", "O(n·xt / w)", 23 },
 	{ "pmap-ext", "( arr w c xt -- arr )", "pmap with explicit worker count and items-per-claim", "2 + n·xt", "1a(n)", "O(n·xt / w)", 23 },
 	{ "pmap-reduce", "( arr id map-xt combine-xt -- val )", "Fused parallel map+fold; combine-xt must be associative with id as neutral element", "2 + n·xt", "per-worker partials", "O(n·xt / w)", 23 },
@@ -478,6 +481,7 @@ const HelpEntry help_entries[] = {
 	{ "slice!", "( arr tstart src sstart sstep slen -- arr )", "Copy slen elements src[sstart], src[sstart+sstep], … into arr[tstart…] in place", "6 + slen", "self-overlap may malloc slen", "O(slen)", 14 },
 	{ "sort", "( arr/set/v -- arr/v )", "Sorted copy: an array orders by val_cmp; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error)", "1 + n log n", "1a(n) / 1m(n)", "O(n log n); vectors above 8k elements O(n) radix", 14 },
 	{ "sort-by", "( items xt -- arr )", "arrays.h2o: sorted by the key xt ( element -- key ) extracts — decorate-sort-undecorate over [ key element ] pairs, so n key evaluations", "n·xt + n log n", "3×1a(n) + n×1a(2)", "O(n·xt + n log n)", 23 },
+	{ "spaces", "( k -- s )", "strings.h2o: a string of k spaces (\" \" swap array-of \"\" join)", "k", "1a + 1o", "O(k)", 12 },
 	{ "split", "( s pat -- [ piece… ] )", "Split s at each non-overlapping match of pat; the pieces are the gaps between matches, empty fields kept; no match → [ s ]", "n", "1a + pieces", "O(n)", 12 },
 	{ "sq", "( a -- a² )", "float or matrix", "2 (float)", "matrix 1m(r×c)", "float O(1); matrix O(r×c)", 1 },
 	{ "sqrt", "( a -- √a )", "sqrt", "2", "matrix 1m(r×c)", "same", 3 },
@@ -530,6 +534,8 @@ const HelpEntry help_entries[] = {
 	{ "values", "( fr -- arr )", "Values in key order", "1 + n", "1a(n)", "O(n)", 16 },
 	{ "var", "( m -- f )", "Sample variance (÷ n−1) over all elements; errors with fewer than 2", "1 + n", "none", "O(n)", 18 },
 	{ "variable", "—", "Read the following name; declare a global variable initialized to 0.0", NULL, NULL, NULL, 10 },
+	{ "variables", "( -- arr )", "core.h2o: one { :name :value :type } frame per global (variable-declared or to-auto-created), oldest first — the name symbol, the live value (shared reference for collections), and its type-of symbol. variables [: :name @ :] map is the name list; variables frames>dataset head a table", "dict scan", "1a + one frame per global", "O(|dict|)", 29 },
+	{ "vars", "( -- )", "repl.h2o: pretty-print every global, one variables frame per block (variables ' print each)", "dict scan + print", "1a + frames", "O(|dict|)", 29 },
 	{ "vector", "( arr -- v )", "matrix.h2o: the array as an nx1 matrix, length inferred (dup size 1 matrix, inlined)", "3 + n", "1m(n)", "O(n)", 18 },
 	{ "vf*", "vf* a", "Multiply the stack top by variable a, in place", NULL, NULL, NULL, 28 },
 	{ "vf+", "vf+ a", "Add variable a to the stack top, in place", NULL, NULL, NULL, 28 },
@@ -576,4 +582,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 531;
+const int help_entry_count = 537;

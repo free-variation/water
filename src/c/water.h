@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.22.1"
+#define VERSION "0.22.2"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -1061,6 +1061,7 @@ void p_ftan(DISPATCH_ARGS);
 void p_ftanh(DISPATCH_ARGS);
 void p_ftruncate(DISPATCH_ARGS);
 void p_gc(DISPATCH_ARGS);
+void p_globals(DISPATCH_ARGS);
 void p_gt(DISPATCH_ARGS);
 void p_gt_f(DISPATCH_ARGS);
 void p_gt_f_zbranch(DISPATCH_ARGS);

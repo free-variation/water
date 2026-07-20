@@ -12,3 +12,16 @@
 
 ( path -- filename )  \ the path's last component
 : basename "^.*/" "" replace ; inline
+
+( k -- s )  \ a string of k spaces
+: spaces " " swap array-of "" join ;
+
+( s width -- s' )  \ s left-padded with spaces to width
+: pad-left
+	|> text width |
+	[ width text size - 0 max2 spaces text ] "" join ;
+
+( s width -- s' )  \ s right-padded with spaces to width
+: pad-right
+	|> text width |
+	[ text width text size - 0 max2 spaces ] "" join ;

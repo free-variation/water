@@ -79,7 +79,6 @@ float fast path first; the heavy cases are captured by the O column.
 | `sq` | `( a -- a² )` | float or matrix | 2 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
 | `min2` | `( a b -- smaller )` | core.h2o: the `lt`-ordered lesser of two scalars (`2dup gt if swap then drop`, inlined); `min`/`max` reduce a matrix, these order a pair | 5 | none | O(1) |
 | `max2` | `( a b -- larger )` | core.h2o: the `lt`-ordered greater of two scalars, `min2`'s twin | 5 | none | O(1) |
-| `pi` | `( -- f )` | core.h2o: `variable` initialized to π (3.141592653589793); invoking it pushes the stored float | 1 | none | O(1) |
 
 ### In-place matrix arithmetic
 
@@ -460,6 +459,9 @@ Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is co
 | `trim` | `( s -- s' )` | Strip leading and trailing ASCII whitespace (`' ' \t \n \v \f \r`); a backward/forward byte-scan, one allocation of the surviving span | n | `1o` | O(n) |
 | `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
 | `index-of` | `( s pat -- i )` | strings.h2o: codepoint index of `pat`'s first regex match in `s`, or `-1` if none (`split 0 @i size` guarded by `has?`) | n | `1a` + pieces | O(n) |
+| `spaces` | `( k -- s )` | strings.h2o: a string of k spaces (`" " swap array-of "" join`) | k | `1a` + `1o` | O(k) |
+| `pad-left` | `( s width -- s' )` | strings.h2o: s left-padded with spaces to width (unchanged when already that wide; codepoint widths) | n | `1a` + `1o` | O(n) |
+| `pad-right` | `( s width -- s' )` | strings.h2o: s right-padded with spaces to width (unchanged when already that wide; codepoint widths) | n | `1a` + `1o` | O(n) |
 | `string>number` | `( s -- n \| none )` | Parse a decimal/float string (via `strtod`, like a numeric literal) to a float, ignoring surrounding whitespace; the none value if `s` is not entirely a number | n | none | O(n) |
 | `edit-distance` | `( a b -- n )` | Edit distance between two strings over codepoints: insertions, deletions, substitutions, and adjacent transpositions each cost 1 (Levenshtein with transpositions — optimal string alignment); symmetric | n·m | none | O(n·m) |
 | `format` | `( … template -- s )` | Fill `template`'s `{n}` (or `{n:spec}`) placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. `{nl}` and `{tab}` emit a newline and a tab — string literals have no escapes, so format is where control characters come from. Only these directives substitute; other brace content is left literal | len + refs | `1o` | O(len) |
@@ -802,6 +804,8 @@ machinery, so there the `-local` words behave as UTC and `parse-time` lacks
 | `rows>dataset` | `( rows header? -- dataset )` | datasets.h2o: column-oriented frame from rows with typed columns — uniformly float-or-`none` cells become an n×1 vector (`none` → NaN), uniform-unit quantity cells a dimensioned vector, anything else stays the cell array; keys come from row 0 when header? is true, else `:col1…` are synthesized | 2·r·c | `k×1a(r)` + `1m` per numeric column + `1fr` | O(r·c) |
 | `rows>relation` | `( rows index-cols header? -- relation )` | datasets.h2o: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
 | `dataset>rows` | `( dataset -- rows )` | datasets.h2o: the inverse of `true rows>dataset` — an array of row-arrays led by a header row of the column names as strings, columns in key order, cells through `column>array` (NaN → `null`, dimensioned cells as quantities); feeds `save-tsv` directly (`1 skip` for headerless rows) | r·c | header + one array per row + `1a(r·c)` cells | O(r·c) |
+| `headn` | `( dataset n -- )` | datasets.h2o: print the first min(n, rows) rows as an aligned table — column names as the header line, two-space gutter, numeric/quantity columns right-aligned, text left, `:datetime` columns through `time>iso`, other cells through `render`; empty dataset prints nothing | r·c | rendered cells | O(r·c) |
+| `head` | `( dataset -- )` | datasets.h2o: `10 headn` | r·c | rendered cells | O(r·c) |
 | `dataset>matrix` | `( dataset cols -- m )` | datasets.h2o: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
 | `column-type` | `( dataset sym -- sym )` | datasets.h2o: the named column's type from its representation — matrix `:numeric`, quantity in exactly `s` `:datetime`, other quantity `:quantity`, array `:text`; a missing key errors through `@` | 5 | 1 pair | O(log c) |
 | `column>array` | `( column -- arr )` | datasets.h2o: a column in any representation as an array of its values — arrays pass through unchanged, matrix/quantity columns go through `matrix>array` (NaN → `null`, dimensioned elements become quantities) | n | `1a(n)` for matrix columns, none for arrays | O(n) |
@@ -969,6 +973,8 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `words` | `( -- )` | List all non-internal words in aligned columns, grouped by reference section, alphabetical within a group; session-defined words first | dict scan | none | O(\|dict\| log \|dict\|) |
+| `variables` | `( -- arr )` | core.h2o: one `{ :name :value :type }` frame per global (`variable`-declared or `to`-auto-created), oldest first — the name symbol, the live value (shared reference for collections), and its `type-of` symbol. `variables [: :name @ :] map` is the name list; `variables frames>dataset head` a table | dict scan | `1a` + one frame per global | O(\|dict\|) |
+| `vars` | `( -- )` | repl.h2o: pretty-print every global, one `variables` frame per block (`variables ' print each`) | dict scan + print | `1a` + frames | O(\|dict\|) |
 | `water` | `( -- )` | Print the water logo and the interpreter version | print | none | O(1) |
 | `apropos` | `( s -- )` | Print every word whose name or reference summary contains s (case-insensitive): name, stack effect, summary per line; session-defined words match by name | table scan | none | O(entries) |
 | `see` | `( xt -- )` | Print a word's source (`: name … ;`), or `variable`/`symbol`/primitive form | dict scan | none | O(\|dict\|) |
