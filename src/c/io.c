@@ -218,10 +218,10 @@ static int tsv_row_to_array(Interpreter *interp, char *row, int row_length) {
 	return array_handle;
 }
 
-void p_read_tsv(DISPATCH_ARGS) {
+void p_load_tsv(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val path_val = chain_sp[-1];
-	REQUIRE_CHAIN_TAG(path_val, T_STRING, "read-tsv", "a string");
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "load-tsv", "a string");
 
 	long size;
 	FILE *file = open_sized_read(interp, OBJECT_AT(VAL_DATA(path_val))->bytes, &size);
@@ -285,12 +285,12 @@ void p_read_tsv(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
-void p_write_tsv(DISPATCH_ARGS) {
+void p_save_tsv(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val path_val = chain_sp[-1];
-	REQUIRE_CHAIN_TAG(path_val, T_STRING, "write-tsv", "a string");
+	REQUIRE_CHAIN_TAG(path_val, T_STRING, "save-tsv", "a string");
 	Val rows_val = chain_sp[-2];
-	REQUIRE_CHAIN_TAG(rows_val, T_ARRAY, "write-tsv", "an array");
+	REQUIRE_CHAIN_TAG(rows_val, T_ARRAY, "save-tsv", "an array");
 	Object *rows = OBJECT_AT(VAL_DATA(rows_val));
 
 	FILE *file = fopen(OBJECT_AT(VAL_DATA(path_val))->bytes, "wb");

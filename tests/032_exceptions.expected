@@ -22,5 +22,7 @@ L1 inner-xt threw
 caught: division by zero 
 after 
 inner caught 
-error: no enclosing reset on the return stack
-in shift-with ← throw
+error: uncaught exception: 42
+error: uncaught exception: { :code 7 }
+error: uncaught exception: "histogram-table: expected at least 1 bin; got 0"
+in throw ← histogram-table

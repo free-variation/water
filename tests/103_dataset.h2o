@@ -1,38 +1,51 @@
 \ TSV -> dataset (column frame) and -> relation (indexed, deduped).
 \ A dataset is just a frame: columns are reached with native @ / keys / values,
-\ and a numeric column flows straight into the matrix/stats side.
+\ and a uniformly numeric column arrives as an n x 1 vector, flowing straight
+\ into the matrix/stats side.
 
 [ [ "name" "age" "city" ]
   [ "Alice" 30 "NYC" ]
   [ "Bob"   25 "LA"  ]
-  [ "Cy"    40 "SF"  ] ] "/tmp/lf_ds.tsv" write-tsv
-"/tmp/lf_ds.tsv" read-tsv 1 rows>dataset
+  [ "Cy"    40 "SF"  ] ] "/tmp/lf_ds.tsv" save-tsv
+"/tmp/lf_ds.tsv" load-tsv 1 rows>dataset
 dup keys . cr                           \ [ :name :age :city ]  column names, native frame keys
 dup :name @ . cr                        \ [ "Alice" "Bob" "Cy" ]  string column
-dup :age @ . cr                         \ [ 30 25 40 ]  numeric column
-dup :age @ dup size 1 matrix sum . cr   \ 95   column -> r x 1 matrix -> sum
-dup :age @ [: 1+ :] map . cr            \ [ 31 26 41 ]  derive a column with plain map
+dup :age @ transpose . cr               \ 30 25 40 as 1x3 — a numeric column is a vector
+dup :age @ sum . cr                     \ 95   straight into the matrix reductions
+dup :age @ 1+ transpose . cr            \ 31 26 41  derive a column with broadcast arithmetic
 drop
 
-\ empty cells round-trip through none and stay none inside the column
+\ an empty cell becomes NaN in a numeric column
 [ [ "name" "age" ]
   [ "Dan" null ]
-  [ "Eve" 22 ] ] "/tmp/lf_ds.tsv" write-tsv
-"/tmp/lf_ds.tsv" read-tsv 1 rows>dataset
-:age @ . cr                             \ [ null 22 ]
+  [ "Eve" 22 ] ] "/tmp/lf_ds.tsv" save-tsv
+"/tmp/lf_ds.tsv" load-tsv 1 rows>dataset
+:age @ transpose . cr                   \ nan 22 as 1x2
 
 \ headerless: synthesized :col1 .. :colN, every row is data
-[ [ 5 10 ] [ 6 11 ] [ 7 12 ] ] "/tmp/lf_ds.tsv" write-tsv
-"/tmp/lf_ds.tsv" read-tsv 0 rows>dataset
+[ [ 5 10 ] [ 6 11 ] [ 7 12 ] ] "/tmp/lf_ds.tsv" save-tsv
+"/tmp/lf_ds.tsv" load-tsv 0 rows>dataset
 dup keys . cr                           \ [ :col1 :col2 ]
-:col2 @ . cr                            \ [ 10 11 12 ]
+:col2 @ transpose . cr                  \ 10 11 12 as 1x3
+
+clear
+\ dataset>rows ( dataset -- rows ): the inverse of true rows>dataset — row-arrays
+\ led by a header row of the column names, columns in key order, NaN back to null.
+[ [ "name" "age" ] [ "Alice" 30 ] [ "Bob" null ] ] true rows>dataset
+dup dataset>rows .a cr                          \ header + data rows, null kept
+dup dup dataset>rows true rows>dataset = . cr   \ 1   round trip is exact
+dataset>rows "/tmp/lf_ds.tsv" save-tsv          \ feeds save-tsv directly
+"/tmp/lf_ds.tsv" load-tsv 1 rows>dataset :age @ transpose . cr   \ 30 nan as 1x2
+{ :height [ 170 180 ] vector m } dup dataset>rows true rows>dataset = . cr  \ 1  unit kept
+{ } dataset>rows . cr                           \ [ ]
+[ [ "k" ] ] true rows>dataset dataset>rows .a cr \ [ [ "k" ] ]  zero rows keep the header
 
 \ rows>relation: indexed on :id, deduped (the repeated u1/NYC row collapses), queryable
 [ [ "id" "city" ]
   [ "u1" "NYC" ]
   [ "u2" "LA"  ]
-  [ "u1" "NYC" ] ] "/tmp/lf_ds.tsv" write-tsv
-"/tmp/lf_ds.tsv" read-tsv [ :id ] 1 rows>relation
+  [ "u1" "NYC" ] ] "/tmp/lf_ds.tsv" save-tsv
+"/tmp/lf_ds.tsv" load-tsv [ :id ] 1 rows>relation
 dup { } query size . cr                 \ 2   duplicate collapsed (relation is a set)
 dup { :id :u2 } query . cr              \ [ { :city "LA" :id :u2 } ]
 { :id :u1 } count-matches . cr          \ 1

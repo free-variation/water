@@ -48,4 +48,19 @@ lookup sin man :word @ "sin" = . cr               \ 1
 \ help parses the next word and prints its man frame
 help sin
 
+\ an unknown name prints a plain message and does not error (line ends ok)
+help no-such-word
+
+\ every runnable line of the bare-help cheat sheet does what it claims
+3 4 + . cr                                        \ 7
+1 2 .s cr                                         \ 1 2
+clear
+: sq dup * ; 5 sq . cr                            \ 25
+"mean" apropos                                    \ the mean-family words
+' 2dup see                                        \ : 2dup over over ;
+help map                                          \ map's reference frame
+
+\ bare help (no name left on the line) prints the cheat sheet
+help
+
 bye

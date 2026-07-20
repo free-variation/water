@@ -400,7 +400,7 @@ Declared only at the **head** of a definition or quotation body. Live on the ret
 
 | Syntax | Behavior |
 |--------|----------|
-| `\| x y z \|` | Declare x, y, z, **uninitialized** (slots keep stale return-stack contents — deliberately no per-call zeroing; assign with `to` before reading); read by bare name |
+| `\| x y z \|` | Declare x, y, z, **uninitialized** (slots keep stale return-stack contents — deliberately no per-call zeroing; assign with `to` before reading — at `;`/`:]` the compiler rejects a slot fetched but stored nowhere, naming a shadowed word when one exists); read by bare name |
 | `\|> x y z \|` | Declare and receive from the stack: z ← top, y ← second, x ← third |
 | `\| x >y z \|` | Mixed: a `>` prefix marks an individual name as a receive slot; the rest are uninitialized |
 | `\| ?x \|` | A `?` prefix marks a slot initialized with a fresh logic variable per call; read by bare name. Cannot combine with `>`, and not allowed in the all-receive `\|>` / `[>` forms |
@@ -461,6 +461,7 @@ Regex words run on PCRE2 with JIT-compiled patterns. Each distinct pattern is co
 | `join` | `( arr sep -- s )` | Concatenate the string elements of `arr` separated by `sep`; errors on a non-string element | 2 + total | `1o` | O(total) |
 | `index-of` | `( s pat -- i )` | strings.h2o: codepoint index of `pat`'s first regex match in `s`, or `-1` if none (`split 0 @i size` guarded by `has?`) | n | `1a` + pieces | O(n) |
 | `string>number` | `( s -- n \| none )` | Parse a decimal/float string (via `strtod`, like a numeric literal) to a float, ignoring surrounding whitespace; the none value if `s` is not entirely a number | n | none | O(n) |
+| `edit-distance` | `( a b -- n )` | Edit distance between two strings over codepoints: insertions, deletions, substitutions, and adjacent transpositions each cost 1 (Levenshtein with transpositions — optimal string alignment); symmetric | n·m | none | O(n·m) |
 | `format` | `( … template -- s )` | Fill `template`'s `{n}` (or `{n:spec}`) placeholders with the nth-from-top stack value, then drop exactly the referenced positions (unreferenced values stay); renders floats/strings/symbols. `{nl}` and `{tab}` emit a newline and a tab — string literals have no escapes, so format is where control characters come from. Only these directives substitute; other brace content is left literal | len + refs | `1o` | O(len) |
 
 A placeholder may carry a format spec after a colon — `{n:spec}` — a printf-style mini-language controlling how the value renders. `spec` is optional flags (`-`, `+`, space, `#`, `0`), an optional field width, an optional `.precision`, and an optional conversion letter:
@@ -790,14 +791,17 @@ machinery, so there the `-local` words behave as UTC and `parse-time` lacks
 
 ## Datasets and TSV
 
-*Rows* are an array of row-arrays (as `read-tsv` returns) — the raw I/O interchange, the only form preserving a file's physical column order. A *dataset* is a column-oriented frame; a *relation* is a deduped, indexed fact set (see Fact database). `r`/`c` are rows/columns, `n`/`k` observations/selected columns. `select-rows` (under Matrices) accepts a dataset, gathering every column by one index array or vector — with `where` masks and `argsort` that is filtering and sorting.
+*Rows* are an array of row-arrays (as `load-tsv` returns) — the raw I/O interchange, the only form preserving a file's physical column order. A *dataset* is a column-oriented frame; a *relation* is a deduped, indexed fact set (see Fact database). `r`/`c` are rows/columns, `n`/`k` observations/selected columns. `select-rows` (under Matrices) accepts a dataset, gathering every column by one index array or vector — with `where` masks and `argsort` that is filtering and sorting.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `read-tsv` | `( path -- rows )` | Read a TSV file into an array of row-arrays; an empty cell → `none`, a numeric cell → float, else a string. No header handling | 1 + bytes | `1a(r)` + one array per row + a string per text cell | O(bytes) |
-| `write-tsv` | `( rows path -- )` | Write an array of row-arrays as TSV; `none` → empty, a whole-number float → integer, strings raw; errors on a tab/newline inside a string or a non-array row | 2 + r·c | none (to file) | O(r·c) |
-| `rows>dataset` | `( rows header? -- dataset )` | datasets.h2o: column-oriented frame from rows; keys come from row 0 when header? is true, else `:col1…` are synthesized | r·c | `k×1a(r)` + `1fr` | O(r·c) |
+| `load-tsv` | `( path -- rows )` | Read a TSV file into an array of row-arrays; an empty cell → `none`, a numeric cell → float, else a string. No header handling | 1 + bytes | `1a(r)` + one array per row + a string per text cell | O(bytes) |
+| `read-tsv` | `( path -- dataset )` | datasets.h2o: a TSV file with a header row as a column-oriented dataset (`load-tsv true rows>dataset`, inlined), columns typed as `rows>dataset` types them; a headerless file goes through `load-tsv` + `rows>dataset` | bytes + 2·r·c | rows + one array per column + `1m` per numeric column + `1fr` | O(bytes + r·c) |
+| `write-tsv` | `( dataset path -- )` | datasets.h2o: write a dataset as a TSV with a header row — `dataset>rows` then `save-tsv` (inlined), `read-tsv`'s inverse; a dimensioned column errors in `save-tsv` (strip with `magnitude` first) | 2·r·c | transient rows | O(r·c) |
+| `save-tsv` | `( rows path -- )` | Write an array of row-arrays as TSV; `none` → empty, a whole-number float → integer, strings raw; errors on a tab/newline inside a string or a non-array row | 2 + r·c | none (to file) | O(r·c) |
+| `rows>dataset` | `( rows header? -- dataset )` | datasets.h2o: column-oriented frame from rows with typed columns — uniformly float-or-`none` cells become an n×1 vector (`none` → NaN), uniform-unit quantity cells a dimensioned vector, anything else stays the cell array; keys come from row 0 when header? is true, else `:col1…` are synthesized | 2·r·c | `k×1a(r)` + `1m` per numeric column + `1fr` | O(r·c) |
 | `rows>relation` | `( rows index-cols header? -- relation )` | datasets.h2o: deduped relation indexed on `index-cols` (coerced to symbols) | r·c | one frame per row + relation + index buckets | O(r·c) |
+| `dataset>rows` | `( dataset -- rows )` | datasets.h2o: the inverse of `true rows>dataset` — an array of row-arrays led by a header row of the column names as strings, columns in key order, cells through `column>array` (NaN → `null`, dimensioned cells as quantities); feeds `save-tsv` directly (`1 skip` for headerless rows) | r·c | header + one array per row + `1a(r·c)` cells | O(r·c) |
 | `dataset>matrix` | `( dataset cols -- m )` | datasets.h2o: build an n×k matrix from the named numeric columns (rows are observations) | n·k | flat `1a(n·k)` + `2m(n×k)` | O(n·k) |
 | `column-type` | `( dataset sym -- sym )` | datasets.h2o: the named column's type from its representation — matrix `:numeric`, quantity in exactly `s` `:datetime`, other quantity `:quantity`, array `:text`; a missing key errors through `@` | 5 | 1 pair | O(log c) |
 | `column>array` | `( column -- arr )` | datasets.h2o: a column in any representation as an array of its values — arrays pass through unchanged, matrix/quantity columns go through `matrix>array` (NaN → `null`, dimensioned elements become quantities) | n | `1a(n)` for matrix columns, none for arrays | O(n) |
@@ -860,7 +864,7 @@ The substrate for exceptions, coroutines, generators. See `docs/continuations.md
 | `shift` | `( -- k )` | Capture the return-stack slice up to the nearest `reset`, remove the mark and that slice, push k | L | `1o` (cont) | O(L) |
 | `shift-with` | `( xt -- )` | Capture as `shift`, then run xt in the outer context with k on the stack and begin unwinding | L + xt | `1o` (cont) | O(L + xt) |
 | `resume` | `( k -- … )` | Pop k and re-enter it (multi-shot — the continuation object survives, so a retained copy can be resumed again); pushes whatever the resumed code yields | L + resumed | none | O(L + resumed) |
-| `throw` | `( exc -- )` | exceptions.h2o: `[: drop 1 :] shift-with` | — | `1o` (cont) | O(stack depth) |
+| `throw` | `( exc -- )` | Unwind to the nearest exception prompt, leaving `exc 1` (what `catch` consumes); with no enclosing prompt it is an interpreter error, `uncaught exception: <value>`, the trace captured at the throw site. The prompt search skips locals regions, so stale bytes in uninitialized local slots are never read as prompts | L | none | O(L) |
 | `catch` | `( xt -- result 0 \| exc 1 )` | exceptions.h2o: `reset (execute-catching) 0`; `(result 0)` on success, `(exc 1)` on a `throw` **or** an interpreter error (an error frame `{ :message :trace }` becomes the exception value) | — | cont if thrown; `1f` + `2s` on a caught interpreter error | O(xt) |
 | `try-catch` | `( normal-xt err-xt -- … )` | exceptions.h2o: run normal-xt; on a `throw` or interpreter error, run err-xt with the exception (the `{ :message :trace }` error frame, for an interpreter error) on the stack | — | cont if thrown; `1f` + `2s` on a caught interpreter error | O(normal-xt) |
 | `ensure` | `( body-xt cleanup-xt -- … )` | exceptions.h2o: run cleanup-xt (stack-neutral) whether body-xt returns normally or throws/errors, then re-raise on the throw path | — | cont if thrown | O(body-xt) |
@@ -974,12 +978,13 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 | `see-tree` | `( xt -- )` | Like `see-compiled`, but each colon-word call is expanded inline, indented two spaces, recursively down to primitives; recursive calls print as `name ...` | body scan | none | O(expanded body) |
 | `see-tree>string` | `( xt -- s )` | The text `see-tree` would print, returned as a string (trailing newline stripped) | body scan | `1o` | O(expanded body) |
 | `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); a unit word synthesizes its entry from the unit's definition (`unit: m × 1000`); `T_NONE` if undocumented | dict scan + log n | `1o` + strings | O(\|dict\|) |
-| `help` | `( "name" -- )` | core.h2o: parse the next word and print its `man` frame (`lookup man .`) | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
+| `help` | `( "name" -- )` | repl.h2o: parse the next word and print its `man` frame; bare `help` (no name on the line) prints a starter cheat sheet, and an unknown name prints `unknown word: <name>` without erroring. Distinguishes the three cases by `catch`ing `lookup`'s message | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |
 | `alloc-stats` | `( -- )` | Print and reset the allocation counters since the last call (`lvars=… arrays=…`) | 2 | none | O(1) |
 | `bye` | `( -- )` | `exit(0)` | — | — | — |
 | `now` | `( -- f )` | `CLOCK_MONOTONIC` seconds as a float | 1 | none | O(1) |
 | `sleep` | `( seconds -- )` | Block for the given float seconds (sub-second supported); `nanosleep` | blocks | none | O(1) |
+| `timed` | `( xt -- … )` | Run xt, print its elapsed `now` (`CLOCK_MONOTONIC`) seconds, then pass through whatever it left on the stack | 2 + xt + print | none | O(xt) |
 
 ---
 
@@ -987,7 +992,7 @@ The auto-fuser also collapses a comparison immediately before a branch — `= if
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `load` | `( s -- )` | Run a source file as if typed; record it for `reload` | file read + run | input buffer | O(file) |
+| `load` | `( s -- )` | Run a source file as if typed; record it for `reload`. An error raised while loading is prefixed `file:line: ` (the line of the failing token); a nested `load` locates to the innermost file | file read + run | input buffer | O(file) |
 | `load-library` | `( name -- )` | core.h2o: `load` `lib/<name>` from beside the water binary (`binary-dir`), so `"plot" load-library` works from any cwd; a name without `.h2o` gains it | file read + run | input buffer | O(file) |
 | `reload` | `( -- )` | Truncate user state, re-run every loaded file in order | forget + N loads | — | O(Σ files) |
 | `save` | `( s -- )` | Write all user words as re-loadable `.h2o` source | dict scan + write | file I/O | O(\|user dict\|) |

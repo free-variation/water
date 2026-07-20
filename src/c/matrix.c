@@ -60,7 +60,7 @@ void p_at_j(DISPATCH_ARGS) {
 
 	REQUIRE_CHAIN_INDEX(index, source->matrix.columns, "@j", "column index", "columns");
 
-	SYNC_REGISTERS(interp, chain_ip, chain_sp - 2);
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
 	int num_rows = source->matrix.rows;
 	int col_handle = object_new_matrix(interp, num_rows, 1);
 	if (interp->error_flag)
@@ -642,7 +642,7 @@ int matrix_nonzero_indices(Interpreter *interp, Object *source) {
 void p_where(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val mask = chain_sp[-1];
-	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
 
 	REQUIRE_CHAIN_TAG(mask, T_MATRIX, "where", "a matrix mask");
 

@@ -463,7 +463,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 	int here = vocab.here;
 	int dst = dst_cfa + 1;
 
-	if (here >= 3 && dict_is_handler[here - 3]) {
+	if (here >= 3 && here - 3 >= compiler.fuse_floor && dict_is_handler[here - 3]) {
 		cfa_handler tail = (cfa_handler)dict[here - 3];
 		int store_cfa = -1;
 #define MATCH3(suffix, ...) if (tail == p_vv_##suffix) store_cfa = vv_##suffix##_store_cfa;
@@ -481,7 +481,7 @@ int superword_try_fuse_store(Interpreter *interp, int dst_cfa) {
 		}
 	}
 
-	if (here >= 2 && dict_is_handler[here - 2]) {
+	if (here >= 2 && here - 2 >= compiler.fuse_floor && dict_is_handler[here - 2]) {
 		cfa_handler tail = (cfa_handler)dict[here - 2];
 		int store_cfa = -1;
 #define MATCH2_VF(suffix, op, base) if (tail == p_vf_##suffix) store_cfa = vf_##suffix##_store_cfa;

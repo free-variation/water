@@ -142,6 +142,7 @@ cumulative-sum
 curry
 cwd
 dataset>matrix
+dataset>rows
 date-shift
 date>epoch
 date>epoch-local
@@ -172,6 +173,7 @@ drop-nans
 dup
 each
 ecdf
+edit-distance
 else
 emit
 end-process
@@ -279,6 +281,7 @@ load
 load-bag
 load-image
 load-library
+load-tsv
 log
 lookup
 lowest-bit
@@ -396,6 +399,7 @@ sample-with-replacement
 sample-without-replacement
 save
 save-image
+save-tsv
 se
 second
 see
@@ -461,6 +465,7 @@ then
 this
 throw
 time>iso
+timed
 times
 to
 to-slice!

@@ -28,6 +28,8 @@ static void anaphor_register_name(const char *name) {
 
 	memcpy(&compiler.local_names_pool[offset], name, (size_t)name_len + 1);
 	compiler.local_names_pool_here += name_len + 1;
+	compiler.local_fetched[compiler.n_local_names] = 0;
+	compiler.local_stored[compiler.n_local_names] = 1;
 	compiler.local_name_offsets[compiler.n_local_names++] = offset;
 }
 
@@ -102,6 +104,28 @@ int try_anaphor(Interpreter *interp, const char *token) {
 	return 1;
 }
 
+static int check_locals_assigned(Interpreter *interp) {
+	int scope_idx = compiler.n_local_scopes - 1;
+	if (scope_idx < 0)
+		return 1;
+
+	int scope_start = compiler.local_scope_starts[scope_idx];
+	for (int name_idx = scope_start; name_idx < compiler.n_local_names; name_idx++) {
+		if (!compiler.local_fetched[name_idx] || compiler.local_stored[name_idx])
+			continue;
+
+		const char *name = &compiler.local_names_pool[compiler.local_name_offsets[name_idx]];
+		int shadowed_cfa = find(name);
+		rollback_partial_definition();
+		if (shadowed_cfa)
+			fail(interp, "local '%s' is read but never assigned (a word of that name exists)", name);
+		else
+			fail(interp, "local '%s' is read but never assigned", name);
+		return 0;
+	}
+	return 1;
+}
+
 void p_semicolon(DISPATCH_ARGS) {
 	if (compiler.compiling_src_start > 0 && compiler.n_local_scopes > 1) {
 		rollback_partial_definition();
@@ -113,6 +137,8 @@ void p_semicolon(DISPATCH_ARGS) {
 		fail(interp, "; : unterminated loop (a begin has no until/again/repeat)");
 		return;
 	}
+	if (!check_locals_assigned(interp))
+		return;
 	leave_compile_scope(interp);
 	emit_call(interp, vocab.exit_cfa);
 	if (compiler.compiling_src_start > 0 && vocab.latest_cfa != 0) {
@@ -182,7 +208,10 @@ void p_qif(DISPATCH_ARGS) {
 }
 
 static int valid_patch_slot(Interpreter *interp, int slot, const char *op) {
-	if (slot < DICT_RESERVED || slot > vocab.here) {
+	int scope_start = compiler.n_local_scopes > 0
+		? compiler.local_scope_dict_starts[compiler.n_local_scopes - 1]
+		: vocab.here;
+	if (compiler.n_local_scopes == 0 || slot < scope_start || slot >= vocab.here) {
 		fail(interp, "%s: no matching control-flow opener", op);
 		return 0;
 	}
@@ -371,6 +400,8 @@ void p_qsemi(DISPATCH_ARGS) {
 		fail(interp, ":] : unterminated loop (a begin has no until/again/repeat)");
 		return;
 	}
+	if (!check_locals_assigned(interp))
+		return;
 	leave_compile_scope(interp);
 	emit_call(interp, vocab.exit_cfa);
 	POP(leave_chain_val);
@@ -607,6 +638,8 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 		memcpy(&compiler.local_names_pool[offset], token, (size_t)name_len);
 		compiler.local_names_pool[offset + name_len] = 0;
 		compiler.local_names_pool_here += name_len + 1;
+		compiler.local_fetched[compiler.n_local_names] = 0;
+		compiler.local_stored[compiler.n_local_names] = 0;
 		compiler.local_name_offsets[compiler.n_local_names++] = offset;
 
 		if (has_receive_marker)
@@ -627,6 +660,14 @@ static void compile_locals_decl(Interpreter *interp, const char *opener, int for
 		fail(interp, "%s: no '?' markers; %s receives every slot, so none can hold a fresh logic var", opener, opener);
 		return;
 	}
+
+	for (int i = 0; i < n_received; i++)
+		compiler.local_stored[scope_start + receive_slots[i]] = 1;
+	for (int i = 0; i < n_lvars; i++)
+		compiler.local_stored[scope_start + lvar_slots[i]] = 1;
+	if (force_all_receive)
+		for (int slot = 0; slot < n_declared; slot++)
+			compiler.local_stored[scope_start + slot] = 1;
 
 	if (merged_anaphors) {
 		int n_anaphors = compiler.anaphor_slots;
@@ -718,6 +759,7 @@ void p_to(DISPATCH_ARGS) {
 	if (compiler.compiling) {
 		int local_depth, local_slot_idx;
 		if (find_local(token, &local_depth, &local_slot_idx)) {
+			compiler.local_stored[compiler.found_local_name_idx] = 1;
 			if (try_fuse_local_acc(interp, local_depth, local_slot_idx))
 				return;
 			if (local_depth == 0) {
@@ -776,6 +818,7 @@ static void compile_local_unary(Interpreter *interp, const char *op,
 		fail(interp, "%s: %s is not a local", op, token);
 		return;
 	}
+	compiler.local_fetched[compiler.found_local_name_idx] = 1;
 	if (depth == 0) {
 		emit_call(interp, depth0_cfa);
 		emit(interp, (cell)slot);

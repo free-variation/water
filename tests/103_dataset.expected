@@ -1,11 +1,27 @@
 [ :name :age :city ] 
 [ "Alice" "Bob" "Cy" ] 
-[ 30 25 40 ] 
+<matrix 1x3>
+         30         25         40
+
 95 
-[ 31 26 41 ] 
-[ null 22 ] 
+<matrix 1x3>
+         31         26         41
+
+<matrix 1x2>
+        nan         22
+
 [ :col1 :col2 ] 
-[ 10 11 12 ] 
+<matrix 1x3>
+         10         11         12
+
+[ [ "name" "age" ] [ "Alice" 30 ] [ "Bob" null ] ] 
+1 
+<matrix 1x2>
+         30        nan
+
+1 
+[ ] 
+[ [ "k" ] ] 
 2 
 [ { :city "LA" :id :u2 } ] 
 1 
@@ -183,8 +199,8 @@ in sort ← count
 <matrix 1x2>
    8.65e+04   8.66e+04
 
-error: no enclosing reset on the return stack
-in shift-with ← throw ← frames>dataset
+error: uncaught exception: "rows have differing keys"
+in throw ← frames>dataset
 <matrix 1x4>
           0          1          0          1
 

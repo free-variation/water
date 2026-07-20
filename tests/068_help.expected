@@ -29,3 +29,37 @@ unit newton  \ m.kg.s^-2
   :alloc matrix 1m(r×c)
   :order same
 }
+unknown word: no-such-word 
+7 
+1 2 
+25 
+column-means     ( m -- m' )              matrix.h2o: column-sums then scalar ÷
+cross-validate   ( units n-folds fit-xt score-xt -- loss ) statistics.h2o: k-fold cross-validation — units deal round-robin into folds in the order given (shuffle first when order matters; reuse one shuffle to compare configurations on the same folds); per fold, fit ( train-units -- model ) then score ( model test-units -- loss ), both taking everything from the stack since they run in this word's frame; answers the mean fold loss. A unit is whatever the array holds — rows, or per-cluster index arrays for cluster CV
+mean             ( m -- f )               matrix.h2o: sum ÷ element count
+nonmissing-count ( m -- n )               The number of non-NaN elements — the divisor mean and se use
+row-means        ( m -- m' )              matrix.h2o: row-sums then scalar ÷
+se               ( m -- f )               statistics.h2o: standard error of the mean, std / sqrt(n)
+summary          ( v/dataset -- fr )      statistics.h2o: a vector answers { :min :q1 :median :mean :q3 :max } over its finite elements — a dimensioned vector in its unit, an instant vector (unit exactly s) with each statistic rendered through time>iso — plus :missing with the NaN count when any; an all-missing vector answers { :missing n }, an empty one { }. A dataset answers that frame per numeric column and { :distinct } (distinct non-missing cells, plus :missing) per text column, keyed by column name; any other column value errors naming the column
+: 2dup over over ;
+{
+  :summary Apply xt to each element; xt must net exactly one value
+  :word map
+  :effect ( arr/set xt -- arr )
+  :ops 2 + n·xt
+  :alloc 1a(n)
+  :order O(n·xt)
+}
+water — a quick start:
+  3 4 + .            add two numbers and print the result
+  .s                 show the whole stack (clear empties it)
+  [ 1 2 3 ]          an array
+  { :a 1 }           a frame (symbol-keyed)
+  < 1 2 3 >          a set
+  : sq dup * ;       define a word
+  5 sq .             run it (prints 25)
+  words              list every word
+  "mean" apropos     find words by name or summary
+  ' 2dup see         print a word's definition
+  help map           print one word's reference entry
+  bye                quit
+ 

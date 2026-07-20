@@ -6,3 +6,12 @@
 countdown
 : tagged 0 begin 1 + dup . dup 4 = if drop exit then again ;
 tagged cr
+
+\ a closer with no matching opener errors instead of patching an arbitrary
+\ dictionary cell (a bare `200 then` once silently wrote dict[200]); each line
+\ is its own REPL entry, and the dictionary stays intact afterward
+200 then
+200 else
+200 until
+200 200 repeat
+3 4 + . cr

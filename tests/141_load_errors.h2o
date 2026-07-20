@@ -1,0 +1,30 @@
+\ A load-time error carries a file:line prefix: the loader knows the file, and
+\ the line is the newline count to the failing token. Caught here with try-catch
+\ so the located :message shows; an uncaught one prints the same at the REPL.
+
+\ compile error on line 3
+"3 4 + drop
+5 6 * drop
+bogus drop
+" "/tmp/lf141a.h2o" write-file
+[: "/tmp/lf141a.h2o" load :] [: :message @ . cr :] try-catch   \ ...lf141a.h2o:3: unknown word: bogus
+
+\ a runtime fault in top-level code is located at the triggering line
+"1 2 + drop
+3 0 /
+" "/tmp/lf141b.h2o" write-file
+[: "/tmp/lf141b.h2o" load :] [: :message @ . cr :] try-catch   \ ...lf141b.h2o:2: division by zero
+
+\ unterminated definition -> located at the end-of-file line
+": f 1 2 +
+" "/tmp/lf141c.h2o" write-file
+[: "/tmp/lf141c.h2o" load :] [: :message @ . cr :] try-catch   \ ...lf141c.h2o:2: unterminated definition
+
+\ nested load: the error locates to the innermost file, not the outer one
+"oops drop
+" "/tmp/lf141inner.h2o" write-file
+"1 drop
+""/tmp/lf141inner.h2o"" load
+" "/tmp/lf141outer.h2o" write-file
+[: "/tmp/lf141outer.h2o" load :] [: :message @ . cr :] try-catch   \ ...lf141inner.h2o:1: unknown word: oops
+bye

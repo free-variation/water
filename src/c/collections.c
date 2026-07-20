@@ -565,6 +565,10 @@ void p_array_of(DISPATCH_ARGS) {
 	Val length_val = chain_sp[-1];
 	REQUIRE_CHAIN_TAG(length_val, T_FLOAT, "array-of", "a float length");
 	int array_len = (int)VAL_NUMBER(length_val);
+	if (array_len < 0) {
+		fail(interp, "length must be non-negative; got %d", array_len);
+		return;
+	}
 
 	NEW_ARRAY(array_handle, array, array_len);
 	for (int i = 0; i < array_len; i++)
@@ -704,7 +708,7 @@ void p_sample(DISPATCH_ARGS) {
 	int with_replacement = truthy(replacement_val);
 
 	if (count < 0) {
-		fail(interp, "count must be non-negative; got %d", count);
+		fail(interp, "length must be non-negative; got %d", count);
 		return;
 	}
 
@@ -727,7 +731,7 @@ void p_sample(DISPATCH_ARGS) {
 		for (int i = 0; i < count; i++)
 			sampled->items[i] = source->items[random_below(source->len)];
 	} else {
-		int *indices = malloc(sizeof(int) * (size_t)source->len);
+		int *indices = xmalloc(sizeof(int) * (size_t)source->len);
 		for (int i = 0; i < source->len; i++)
 			indices[i] = i;
 
@@ -1573,6 +1577,17 @@ static int row_cmp(void *interp, const void *left, const void *right) {
 	return val_cmp((Interpreter *)interp, *(const Val *)left, *(const Val *)right);
 }
 
+typedef struct {
+	cell key;
+	int index;
+} GroupEntry;
+
+static int group_entry_cmp(const void *left, const void *right) {
+	cell a = ((const GroupEntry *)left)->key;
+	cell b = ((const GroupEntry *)right)->key;
+	return (a > b) - (a < b);
+}
+
 void p_group_by(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
 	Val col_val = chain_sp[-1];
@@ -1589,29 +1604,40 @@ void p_group_by(DISPATCH_ARGS) {
 	if (interp->error_flag)
 		return;
 
-
+	Object *rows = OBJECT_AT(VAL_DATA(rows_val));
+	GroupEntry *entries = malloc(sizeof(GroupEntry) * (size_t)MAX(row_count, 1));
+	if (!entries) {
+		gc_root_pop(interp);
+		fail(interp, "out of memory");
+		return;
+	}
 	for (int i = 0; i < row_count; i++) {
-		Val row = OBJECT_AT(VAL_DATA(rows_val))->items[i];
-		cell key = VAL_DATA(frame_field(row, col));
+		entries[i].key = VAL_DATA(frame_field(rows->items[i], col));
+		entries[i].index = i;
+	}
+	qsort(entries, (size_t)row_count, sizeof(GroupEntry), group_entry_cmp);
 
-		Object *frame = OBJECT_AT(frame_handle);
-		FRAME_LOOKUP(frame, key, at, present);
-		int bag;
-		if (present) {
-			bag = (int)VAL_DATA(frame->frame.values[at]);
-		} else {
-			bag = object_new_array(interp, 0);
-			if (interp->error_flag) {
-				gc_root_pop(interp);
-				return;
-			}
-			frame_put(OBJECT_AT(frame_handle), key, make_array(bag));
+	for (int i = 0; i < row_count; ) {
+		cell key = entries[i].key;
+		int bag = object_new_array(interp, 0);
+		if (interp->error_flag) {
+			free(entries);
+			gc_root_pop(interp);
+			return;
 		}
+		frame_put(OBJECT_AT(frame_handle), key, make_array(bag));
 
 		Object *bag_obj = OBJECT_AT(bag);
-		GROW_IF_FULL(bag_obj->len, bag_obj->capacity, bag_obj->items);
-		bag_obj->items[bag_obj->len++] = row;
+		Object *source = OBJECT_AT(VAL_DATA(rows_val));
+		int j = i;
+		while (j < row_count && entries[j].key == key) {
+			GROW_IF_FULL(bag_obj->len, bag_obj->capacity, bag_obj->items);
+			bag_obj->items[bag_obj->len++] = source->items[entries[j].index];
+			j++;
+		}
+		i = j;
 	}
+	free(entries);
 
 
 	Object *result = OBJECT_AT(frame_handle);
@@ -1801,7 +1827,7 @@ void p_to_slice(DISPATCH_ARGS) {
 	Object *target = OBJECT_AT(VAL_DATA(target_val));
 
 	if (n < 0) {
-		fail(interp, "count must be non-negative; got %d", n);
+		fail(interp, "length must be non-negative; got %d", n);
 		return;
 	}
 	if (offset < 0 || offset + n > target->len) {

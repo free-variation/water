@@ -57,9 +57,9 @@ clear
 \ concrete: keep evens, order preserved
 [ 1 2 3 4 5 6 ] [: 2 mod 0= :] pfilter .
 
-\ keep none / keep all
-[ 1 2 3 ] [: 0 :] pfilter .
-[ 1 2 3 ] [: 1 :] pfilter .
+\ keep none / keep all (the predicate must consume the element, like filter)
+[ 1 2 3 ] [: drop 0 :] pfilter .
+[ 1 2 3 ] [: drop 1 :] pfilter .
 
 \ empty source
 [ ] [: 1 :] pfilter .
@@ -80,6 +80,22 @@ clear
 \ failures
 [ 1 2 3 ] 5 1 4 pfilter-ext
 5 1 1 [: 0 gt :] pfilter-ext
+\ a predicate that does not net one value per element errors like filter,
+\ rather than reading past the worker stack or silently dropping the error
+[ 1 2 3 ] [: drop :] pfilter
+[ 1 2 3 ] [: 1 :] pfilter
+
+clear
+\ pmap-reduce ( arr id map-xt combine-xt -- val ) — fused parallel map+fold;
+\ map ( elem -- x ), combine ( acc x -- acc ), combine associative with id neutral
+[ 1 2 3 4 ] 0 [: :] [: + :] pmap-reduce . cr           \ 10
+[ 1 2 3 4 ] 0 [: dup * :] [: + :] pmap-reduce . cr      \ 30  sum of squares
+[ ] 0 [: :] [: + :] pmap-reduce . cr                    \ 0   empty -> id
+1 100 range 0 [: :] [: + :] pmap-reduce . cr            \ 5050
+
+\ map/combine that do not net one value per element error, not corrupt
+[ 1 2 3 ] 0 [: 2drop :] [: :] pmap-reduce
+[ 1 2 3 ] 0 [: :] [: :] pmap-reduce
 
 clear
 \ reduce ( arr init [: acc elt -- acc :] -- result ) — left fold in C.

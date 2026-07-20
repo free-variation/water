@@ -51,6 +51,7 @@ exact "batch (-b) is quiet"             '2 3 + . cr'  "5 " 0 -b
 exact "piped default is batch"          '2 3 + . cr'  "5 " 0
 # interactive: banner + per-line prompt (banner version not pinned)
 has   "interactive (-i) shows banner"   '2 3 + . cr'  "water " 0 -i
+has   "interactive (-i) shows the hint" '2 3 + . cr'  "words lists every word; help shows a quick start; bye quits" 0 -i
 has   "interactive (-i) shows prompt"   '1 2 . cr'    "ok 1|1"        0 -i
 # --max-objects lowers the object ceiling so the limit is reachable cheaply
 has   "--max-objects hits ceiling"      '1 200000 range [: drop < 0 > :] map drop'  "object registry full" 0 -b --max-objects 100000
@@ -61,6 +62,9 @@ has   "--max-objects rejects non-number" '' "positive integer"   2 --max-objects
 # unknown flag is rejected, pointing at --help
 has   "unknown flag rejected"           ''  "unknown option"     2 --bogus
 has   "unknown flag suggests help"      ''  "water --help"       2 --bogus
+# timed prints an elapsed line then passes xt's results through (the elapsed
+# value is wall-clock-dependent, so only the pass-through result is pinned)
+has   "timed passes results through"    '[: 40 2 + :] timed 100 + . cr'  "142" 0 -b
 
 # -h / --help print usage and exit 0
 has   "--help prints usage"             ''  "usage: water"       0 --help
@@ -77,6 +81,16 @@ exact "positional arg runs a program file"  ''  "5 "           0  "$prog"
 has   "missing program file reported"       ''  "cannot open"  1  /no/such/file.h2o
 rm -f "$prog"
 
+# -e runs a code string and exits without reading stdin (implies -b)
+exact "-e runs a code string"           '5 . cr'  "7 "    0 -e '3 4 + . cr'
+exact "-e is repeatable, in order"      ''        "1 2 "  0 -e '1 .' -e '2 . cr'
+has   "-e reports errors"               ''  "unknown word: bogus"  1 -e 'bogus'
+has   "-e needs a code string"          ''  "needs a code string"  2 -e
+prog=$(mktemp "${TMPDIR:-/tmp}/lf_prog.XXXXXX")
+printf '2 . \n' > "$prog"
+exact "-e composes with files in argument order"  ''  "1 2 3 "  0 -e '1 .' "$prog" -e '3 . cr'
+rm -f "$prog"
+
 # a truncated image must fail cleanly (no crash) and leave the interpreter
 # usable: load-image errors, then the next line still computes 2 3 + = 5
 img=$(mktemp "${TMPDIR:-/tmp}/lf_img.XXXXXX")
@@ -91,21 +105,6 @@ case "$out" in
     *) bad "truncated image: clean error + recovery" "want an error then 5 (exit 0)" "got (exit $code): [$out]" ;;
 esac
 rm -f "$img" "$trunc"
-
-# a tiny object table forces collections inside allocating helpers; the
-# operands must stay rooted, so results stay correct under constant GC
-# (verified to fail without the roots: binary case yields 99144). The ceiling
-# sits just above the embedded library's own object count, so growing the
-# library (new .h2o words with literals) raises the floor it must clear.
-exact "GC pressure: binary_op operands stay rooted" \
-  ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 4 5 6 7 8 ] vector 2 ^ sum acc + to acc f++ i repeat acc ; pressure . cr' \
-  "102000 " 0 -b --max-objects 80
-exact "GC pressure: unary_op operand stays rooted" \
-  ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [ 1 2 3 ] vector exp sum acc + to acc f++ i repeat acc round ; pressure . cr' \
-  "15096 " 0 -b --max-objects 80
-exact "GC pressure: unify-cons values stay rooted" \
-  ': pressure | acc i | 0 to acc 0 to i begin i 500 lt while [( 1 2 3 )] _ ~ drop acc 1 + to acc f++ i repeat acc ; pressure . cr' \
-  "500 " 0 -b --max-objects 80
 
 # --arena overrides the reservation (gigabytes, optional g suffix)
 exact "--arena accepts a size"      '2 3 + . cr'  "5 "  0 -b --arena 2g

@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.22.0"
+#define VERSION "0.22.1"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -508,6 +508,9 @@ typedef struct Interpreter {
 	Val gc_roots[MAX_GC_ROOTS];
 	int n_gc_roots;
 
+	Val *mark_worklist;
+	int mark_worklist_count, mark_worklist_cap;
+
 	Val *entry_snapshot;
 	int entry_snapshot_depth;
 	int entry_snapshot_cap;
@@ -558,6 +561,9 @@ typedef struct {
 
 	int local_names_pool_here;
 	int local_name_offsets[MAX_LOCAL_NAMES];
+	char local_fetched[MAX_LOCAL_NAMES];
+	char local_stored[MAX_LOCAL_NAMES];
+	int found_local_name_idx;
 	int n_local_names;
 	int local_scope_starts[MAX_LOCAL_SCOPES];
 	int local_scope_dict_starts[MAX_LOCAL_SCOPES];
@@ -566,6 +572,7 @@ typedef struct {
 	int n_handlers;
 	char *loaded_files[MAX_LOADED_FILES];
 	int n_loaded_files, load_depth;
+	int error_located;
 
 	int anaphor_slots;
 	int colon_dsp;
@@ -594,6 +601,8 @@ static inline int dict_op_is(int pos, cfa_handler h) {
 #define WORD_IS_IMMEDIATE(cfa) (WORD_FLAGS(cfa) & 1)
 #define WORD_IS_INLINE(cfa) (WORD_FLAGS(cfa) & 2)
 #define WORD_IS_INTERNAL(cfa) (WORD_FLAGS(cfa) & 4)
+#define WORD_USE_COUNT(cfa) (WORD_FLAGS(cfa) >> 3)
+#define WORD_USE_INCREMENT(cfa) (WORD_FLAGS(cfa) += 8)
 
 typedef struct {
 	int saved_ip;
@@ -766,6 +775,8 @@ static inline __attribute__((always_inline)) int frame_find(Object *frame, cell 
 	int at = frame_find((obj), (key)); \
 	int present = (at) < (obj)->len && (obj)->frame.keys[at] == (key)
 
+void *xmalloc(size_t bytes);
+void *xcalloc(size_t count, size_t size);
 int alloc_name(Interpreter *interp, const char *name);
 Object *arena_alloc_object(void);
 void arena_free(void *payload);
@@ -779,7 +790,6 @@ int construct_vocabulary(Interpreter *interp, int load_lib);
 int create_header(Interpreter *interp, const char *name, int flags);
 int define_primitive(Interpreter *interp, const char *name, cfa_handler handler, int flags);
 void dict_ensure(Interpreter *interp, int extra);
-int double_cmp(const void *left, const void *right);
 void emit(Interpreter *interp, cell value);
 void emit_call(Interpreter *interp, int target_cfa);
 void emit_local_fetch(Interpreter *interp, int local_depth, int local_slot_idx);
@@ -840,6 +850,8 @@ void run_inner(Interpreter *interp, int floor);
 void run_outer(Interpreter *interp);
 void skip_whitespace_and_comments(void);
 int stdout_is_tty(void);
+const char *term_bold(void);
+const char *term_plain(void);
 const char *tag_name(Tag t);
 int try_fuse_at_e_lit(Interpreter *interp);
 int try_fuse_at_e_ll(Interpreter *interp);
@@ -859,6 +871,7 @@ void backtrack(Interpreter *interp);
 void binary_op(Interpreter *interp, Val left, Val right, scalar_operator function, const char *name);
 int capture_continuation(Interpreter *interp, int what_kind, int *out_mark_index);
 int interpolate(Interpreter *interp, int template_handle);
+int prompt_index(Interpreter *interp, int kind);
 int push_prompt(Interpreter *interp, int kind);
 int random_below(int bound);
 int read_string_literal(void);
@@ -917,7 +930,9 @@ int superword_is_lit_fold(cell handler);
 int superword_try_fuse(Interpreter *interp, int op_cfa);
 int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
 
+int *decoded_codepoints(const char *bytes, int byte_len, int *count_out);
 int string_codepoint_count(Object *string);
+int string_edit_distance(const char *first_bytes, int first_len, const char *second_bytes, int second_len);
 int string_matches(Interpreter *interp, Object *subject, Object *pattern);
 int utf8_codepoint_count(const char *bytes, int length);
 int utf8_encode(int codepoint, char *out);
@@ -1110,6 +1125,7 @@ void p_swap(DISPATCH_ARGS);
 void p_tan(DISPATCH_ARGS);
 void p_tanh(DISPATCH_ARGS);
 void p_them(DISPATCH_ARGS);
+void p_throw(DISPATCH_ARGS);
 void p_to_side(DISPATCH_ARGS);
 void p_tor(DISPATCH_ARGS);
 void p_truncate(DISPATCH_ARGS);
@@ -1162,15 +1178,15 @@ void p_cwd(DISPATCH_ARGS);
 void p_env(DISPATCH_ARGS);
 void p_env_set(DISPATCH_ARGS);
 void p_file_exists(DISPATCH_ARGS);
+void p_load_tsv(DISPATCH_ARGS);
 void p_read(DISPATCH_ARGS);
 void p_read_file(DISPATCH_ARGS);
-void p_read_tsv(DISPATCH_ARGS);
+void p_save_tsv(DISPATCH_ARGS);
 void p_stderr(DISPATCH_ARGS);
 void p_stdin(DISPATCH_ARGS);
 void p_stdout(DISPATCH_ARGS);
 void p_write(DISPATCH_ARGS);
 void p_write_file(DISPATCH_ARGS);
-void p_write_tsv(DISPATCH_ARGS);
 
 void p_load_image(DISPATCH_ARGS);
 void p_save_image(DISPATCH_ARGS);
@@ -1324,6 +1340,7 @@ void p_char_at(DISPATCH_ARGS);
 void p_codepoint_at(DISPATCH_ARGS);
 void p_codepoint_to_char(DISPATCH_ARGS);
 void p_codepoints_to_string(DISPATCH_ARGS);
+void p_edit_distance(DISPATCH_ARGS);
 void p_join(DISPATCH_ARGS);
 void p_match(DISPATCH_ARGS);
 void p_match_all(DISPATCH_ARGS);

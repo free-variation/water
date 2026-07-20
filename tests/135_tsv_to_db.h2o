@@ -10,7 +10,7 @@ variable db
 [ [ "id" "name" "score" "note" ]
   [ 1 "alice" 9.5 "hi" ]
   [ 2 "bob"   8   null ]
-  [ 3 "alice" 7.25 "yo" ] ] "/tmp/lf_tsv2db.tsv" write-tsv
+  [ 3 "alice" 7.25 "yo" ] ] "/tmp/lf_tsv2db.tsv" save-tsv
 variable info
 "/tmp/lf_tsv2db.tsv" db "t" tsv>db to info
 info :n-rows @ . cr                          \ 3
@@ -31,7 +31,7 @@ info :columns @ [: :type @ :] map . cr       \ [ :real :real :real :real :text ]
 db "SELECT COUNT(*) AS c FROM iris WHERE species = ?" [ "Iris-setosa" ] db-query>dataset :c @ 0 @e . cr   \ 50
 
 \ === errors, grouped at the end: each recovers ===
-[ [ "a" "b" ] [ 1 2 ] [ 3 ] ] "/tmp/lf_ragged.tsv" write-tsv
+[ [ "a" "b" ] [ 1 2 ] [ 3 ] ] "/tmp/lf_ragged.tsv" save-tsv
 [: "/tmp/lf_ragged.tsv" db "r" tsv>db :] catch . . cr                     \ 1 then the throw message (ragged rows)
 [: "/tmp/lf_tsv2db.tsv" db "t" tsv>db :] catch swap :message @ . . cr     \ the sqlite message (table exists) then 1
 db db-close

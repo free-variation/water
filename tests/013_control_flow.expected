@@ -3,3 +3,8 @@
 z 
 1 2 3 
 1 2 3 4 
+error: then: no matching control-flow opener
+error: else: no matching control-flow opener
+error: until: no matching control-flow opener
+error: repeat: no matching control-flow opener
+7 

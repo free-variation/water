@@ -1,0 +1,18 @@
+\ lib/plot.h2o versioned save: save-figure writes images-<name>/N.svg, the
+\ index advancing per save. Creating the directory shells out to `mkdir -p`
+\ (a subprocess), so this is native-only; the wasm suite skips it. The SVG
+\ rendering itself is covered by 131_plot, which runs everywhere.
+"lib/plot.h2o" load
+
+\ === versioned figures: next free slot, numbered saves ===
+[ "rm" "-rf" "/tmp/images-lf140" ] run-result drop
+"/tmp" cd
+"/tmp/images-lf140" next-svg-index . cr                      \ 1 (no directory yet)
+640 480 figure [ 1 2 ] vector [ 3 4 ] vector scatter
+"lf140" save-figure
+"/tmp/images-lf140" next-svg-index . cr                      \ 2
+"lf140" save-figure
+"/tmp/images-lf140" next-svg-index . cr                      \ 3
+"/tmp/images-lf140/1.svg" file-exists? . cr                  \ 1
+"/tmp/images-lf140/2.svg" file-exists? . cr                  \ 1
+bye

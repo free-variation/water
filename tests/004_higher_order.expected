@@ -4,6 +4,18 @@ error: expected array or set; got a float
 error: filter: predicate must leave exactly one value per element, but changed the stack by 2
 1 1 1 1 1 [ 2 4 6 ] [ ] [ 1 2 3 ] [ ] [ 3 4 5 ] [ 2 4 ] [ 2 4 ] [ 1 2 3 4 ] 3 error: expected an execution token; got a float
 error: expected array or set; got a float
+error: pfilter: predicate must leave exactly one value per element, but changed the stack by 0
+in pfilter-ext ← pfilter
+error: pfilter: predicate must leave exactly one value per element, but changed the stack by 2
+in pfilter-ext ← pfilter
+10 
+30 
+0 
+5050 
+error: pmap-reduce: map and combine must leave exactly one value per element, but changed the stack by 0
+in pmap-reduce-ext ← pmap-reduce
+error: pmap-reduce: map and combine must leave exactly one value per element, but changed the stack by 2
+in pmap-reduce-ext ← pmap-reduce
 15 
 24 
 5 

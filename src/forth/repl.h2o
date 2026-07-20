@@ -1,0 +1,30 @@
+\ === repl.h2o — user-interaction words ===
+\ Words for the person at the prompt: help and its kin. Loaded last in
+\ FORTH_SRCS so the whole library is available to build on.
+
+\ help ( "name" -- ): print the named word's reference entry; bare `help` (no name
+\ on the line) prints a starter cheat sheet. Built on catch — `lookup` fails with a
+\ distinct message for an empty line versus an unknown word, and catch hands the
+\ message over to tell the two apart.
+: help
+	[: lookup man . :] catch if
+		:message @ dup "expected a word name" has? if
+			drop
+"water — a quick start:
+  3 4 + .            add two numbers and print the result
+  .s                 show the whole stack (clear empties it)
+  [ 1 2 3 ]          an array
+  { :a 1 }           a frame (symbol-keyed)
+  < 1 2 3 >          a set
+  : sq dup * ;       define a word
+  5 sq .             run it (prints 25)
+  words              list every word
+  ""mean"" apropos     find words by name or summary
+  ' 2dup see         print a word's definition
+  help map           print one word's reference entry
+  bye                quit
+" .
+		else
+			"^\w+ : " "" replace . cr
+		then
+	then ;

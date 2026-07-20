@@ -95,6 +95,12 @@ _ render "_" = . cr
 ' dub see>string "src: {0}" format "src: : dub dup + ;" = . cr
 
 clear
+\ --- pretty-printing a deeply nested array truncates at the nesting cap
+\ instead of recursing off the C stack (render shares . 's pp_value path) ---
+0 [: 1 array :] 400 times render "\.\.\." has? . cr    \ 1  (marker present)
+[ [ [ 1 ] ] ] render "\.\.\." has? . cr                \ 0  (shallow: printed in full)
+
+clear
 \ --- peek and , print the top value without consuming it ---
 5 peek 1 + . cr                 \ 5 6
 1 2 , + . cr                    \ 2 3

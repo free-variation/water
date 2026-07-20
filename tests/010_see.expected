@@ -23,7 +23,7 @@ symbol red
 ;
 a: not a colon definition
 : ll-arith   \ 14 cells
- 0: (enter-locals) 2
+ 0: (enter-locals-to) 2
  2: (ll+0) 0 1
  5: (ll-0) 0 1
  8: (ll*0) 0 1
@@ -31,7 +31,7 @@ a: not a colon definition
  13: exit
 ;
 : lit-arith   \ 14 cells
- 0: (enter-locals) 1
+ 0: (enter-locals-to) 1
  2: (ll.lit+0) 0 2
  5: (ll.lit-0) 0 2
  8: (ll.lit*0) 0 2
@@ -39,7 +39,7 @@ a: not a colon definition
  13: exit
 ;
 : rev-arith   \ 14 cells
- 0: (enter-locals) 1
+ 0: (enter-locals-to) 1
  2: (ll.lit+0) 0 2
  5: (ll.lit*0) 0 2
  8: (ll.litrev-0) 0 2
@@ -47,7 +47,7 @@ a: not a colon definition
  13: exit
 ;
 : at-local-idx   \ 15 cells
- 0: (enter-locals) 1
+ 0: (enter-locals-to) 1
  2: [
  3: (lit) 10
  5: (lit) 20
@@ -67,7 +67,7 @@ a: not a colon definition
  10: exit
 ;
 : at-lit-of-local   \ 8 cells
- 0: (enter-locals) 1
+ 0: (enter-locals-to) 1
  2: (@i.lit.l0) 0 1
  5: (leave-locals) 1
  7: exit
@@ -79,10 +79,10 @@ a: not a colon definition
  7: exit
 ;
 : mid
-  0: (enter-locals) 1
+  0: (enter-locals-to) 1
   2: (load2) 0 0
   5: leaf:
-    0: (enter-locals) 2
+    0: (enter-locals-to) 2
     2: (ll*0) 0 1
     5: (ll+0) 0 1
     8: (leave-locals) 2
@@ -91,7 +91,7 @@ a: not a colon definition
   9: exit
 ;
 : rec
-  0: (enter-locals) 1
+  0: (enter-locals-to) 1
   2: (ll.lit-0) 0 1
   5: rec ...
   7: (leave-locals) 1

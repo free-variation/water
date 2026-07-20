@@ -7,8 +7,6 @@ variable pi
 : print . ; inline
 : print-stack .s ; inline
 
-: help lookup man . ;
-
 ( name -- ) \ load lib/<name> from beside the water binary; ".h2o" added if absent
 : load-library
 	dup "\.h2o$" has? not if ".h2o" + then
@@ -78,4 +76,7 @@ inline
 ( a b -- larger )  \ the lt-ordered greater of two scalars
 : max2 2dup lt if swap then drop ;
 inline
+
+( xt -- ... )  \ run xt, print elapsed CLOCK_MONOTONIC seconds, pass its results through
+: timed now >r execute now r> - . cr ;
 

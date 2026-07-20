@@ -88,7 +88,7 @@ void p_quantile(DISPATCH_ARGS) {
 		fail(interp, "all elements are NaN (missing)");
 		return;
 	}
-	qsort(sorted, n_nonmissing, sizeof(double), double_cmp);
+	sort_doubles(sorted, n_nonmissing);
 
 	double rank = probability * (double)(n_nonmissing - 1);
 	size_t lower = (size_t)rank;

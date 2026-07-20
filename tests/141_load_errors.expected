@@ -1,0 +1,4 @@
+/tmp/lf141a.h2o:3: unknown word: bogus 
+/tmp/lf141b.h2o:2: division by zero 
+/tmp/lf141c.h2o:2: unterminated definition 
+/tmp/lf141inner.h2o:1: unknown word: oops (did you mean cons?) 

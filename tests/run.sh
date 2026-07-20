@@ -49,4 +49,8 @@ echo
 sh "$here/cli_tests.sh"
 cli_status=$?
 
-[ "$fail" -eq 0 ] && [ "$cli_status" -eq 0 ]
+echo
+sh "$here/gc_pressure.sh"
+gc_status=$?
+
+[ "$fail" -eq 0 ] && [ "$cli_status" -eq 0 ] && [ "$gc_status" -eq 0 ]

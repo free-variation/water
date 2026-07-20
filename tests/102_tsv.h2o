@@ -1,6 +1,21 @@
 \ TSV write/read round-trip: numeric cells type to floats, an empty cell
 \ round-trips through none, and a value with no clean TSV form is rejected.
-[ [ "name" "age" ] [ "Alice" 30 ] [ "Bob" null ] ] "/tmp/lf_tsv_test.tsv" write-tsv
-"/tmp/lf_tsv_test.tsv" read-tsv .a cr
-"/tmp/lf_tsv_test.tsv" read-tsv 1 @i 1 @i . cr   \ 30, parsed as a float
-[ [ < 1 2 > ] ] "/tmp/lf_tsv_test.tsv" write-tsv  \ a set has no TSV form -> error
+[ [ "name" "age" ] [ "Alice" 30 ] [ "Bob" null ] ] "/tmp/lf_tsv_test.tsv" save-tsv
+"/tmp/lf_tsv_test.tsv" load-tsv .a cr
+"/tmp/lf_tsv_test.tsv" load-tsv 1 @i 1 @i . cr   \ 30, parsed as a float
+
+\ === read-tsv: a header TSV straight to a dataset ===
+clear
+"/tmp/lf_tsv_test.tsv" read-tsv dup keys . cr    \ [ :name :age ]
+dup :name @ . cr                                 \ [ "Alice" "Bob" ]
+dup :age @ 0 @e . cr                             \ 30 (numeric column is a vector)
+:age @ nonmissing-count . cr                     \ 1 (Bob's empty cell is NaN)
+
+\ === write-tsv: a dataset back to a TSV, read-tsv's inverse ===
+clear
+"/tmp/lf_tsv_test.tsv" read-tsv "/tmp/lf_tsv_test2.tsv" write-tsv
+"/tmp/lf_tsv_test.tsv" read-tsv "/tmp/lf_tsv_test2.tsv" read-tsv = . cr   \ 1  file round trip
+
+\ === errors ===
+clear
+[ [ < 1 2 > ] ] "/tmp/lf_tsv_test.tsv" save-tsv  \ a set has no TSV form -> error

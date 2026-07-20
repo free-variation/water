@@ -131,3 +131,13 @@ clear
   3.0 to start  4.0 to step  5.0 to i
   start begin step f+ i 1.0 f- to i i 0.0 fgt 0= until ;
 floor-test . cr
+
+\ Store-fusion floor: `to <var>` right after a control-flow boundary must not
+\ fuse a var-op that sits below the boundary into a store variant. `then` had
+\ patched the branch to the position where `to` compiles; fusing rewound `here`
+\ below it, so the branch landed inside the rewritten store op. Both arms end in
+\ a var-op, so `to c` sits just after `then`; each path must reach it intact.
+7.0 to a  2.0 to b
+: store-floor 0= if vvf* a b else vvf+ a b then to c ;
+0 store-floor c . cr                 \ flag 0 -> vvf* -> 14
+1 store-floor c . cr                 \ flag 1 -> vvf+ -> 9

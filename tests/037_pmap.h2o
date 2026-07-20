@@ -57,3 +57,9 @@ num-cores 0 gt . cr
 \ the stale value (a partial reset would leak 99 into the result).
 1 1 range 1 1 [: 99 >side [ 1 2 ] 5 @i :] pmap-ext
 1 1 range 1 1 [: side> :] pmap-ext . cr
+
+\ pmap validates the quotation's arity like serial map: a body that does not
+\ leave exactly one value per element is an error, not a read past the worker
+\ stack (an arity-0 body once read data_stack[dsp-1] below the stack)
+[ 1 2 3 ] [: drop :] pmap                       \ net 0: leaves nothing
+[ 1 2 3 ] [: dup :] pmap                         \ net 2: leaves too many

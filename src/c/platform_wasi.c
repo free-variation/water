@@ -24,8 +24,11 @@ int platform_executable_path(char *out, size_t cap) {
 
 int platform_repl_begin(struct Interpreter *interp, int want_interactive) {
 	(void)interp;
-	if (want_interactive)
+	if (want_interactive) {
 		printf("water %s\n", VERSION);
+		printf("%swords%s lists every word; %shelp%s shows a quick start; %sbye%s quits\n",
+				term_bold(), term_plain(), term_bold(), term_plain(), term_bold(), term_plain());
+	}
 	return want_interactive;
 }
 

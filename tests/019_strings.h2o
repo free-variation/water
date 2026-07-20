@@ -203,6 +203,7 @@ clear
 "{0}" format                                                 \ empty stack
 5 "{3}" format                                               \ needs 4, has 1
 5 format                                                     \ template not a string
+1 "{3000000000}" format                                      \ index past INT_MAX: reported, not a wild read
 
 clear
 \ string>number ( s -- n | none ) — parse a decimal/float string to a float
@@ -230,3 +231,21 @@ clear
 "10" string>number "20" string>number + 30 = . cr
 42 render string>number 42 = . cr
 3.14 render string>number 3.14 = . cr
+
+\ edit-distance ( a b -- n ) — Levenshtein distance over codepoints
+\ (insertions + deletions + substitutions, each cost 1); symmetric.
+
+"kitten" "sitting" edit-distance . cr        \ 3 (k>s, e>i, +g)
+"sitting" "kitten" edit-distance . cr        \ 3 (symmetric)
+"same" "same" edit-distance . cr             \ 0
+"" "" edit-distance . cr                     \ 0
+"" "abc" edit-distance . cr                  \ 3 (all insertions)
+"abc" "" edit-distance . cr                  \ 3 (all deletions)
+"flamingo" "flamingo!" edit-distance . cr    \ 1
+"héllo" "hello" edit-distance . cr           \ 1 (é is one codepoint, not two bytes)
+"日本語" "日本" edit-distance . cr           \ 1
+
+\ an adjacent transposition costs one edit (optimal string alignment)
+"ab" "ba" edit-distance . cr                 \ 1
+"swpa" "swap" edit-distance . cr             \ 1
+"abcd" "acbd" edit-distance . cr             \ 1

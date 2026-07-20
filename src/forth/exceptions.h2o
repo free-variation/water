@@ -1,5 +1,5 @@
-\ Exceptions
-: throw ( exc -- ) [: drop 1 :] shift-with ;
+\ Exceptions (throw is a C primitive: unwind to the nearest exception prompt
+\ leaving exc 1, or an "uncaught exception" interpreter error when none encloses)
 : catch ( xt -- result 0 | exc 1 ) reset (execute-catching) 0 ;
 
 : try-catch ( normal-xt error-xt -- ... )

@@ -4,3 +4,10 @@
 \ survives a collection instead of crashing. Reverting to recursive
 \ tail-marking turns this into a SIGSEGV.
 1 1000000 range array>cons gc 42 . cr
+
+\ Non-tail nesting: each array holds the deeper one in element 0, not the
+\ tail, so the tail loop cannot absorb it. Recursive marking on non-tail
+\ children overflowed the C stack. mark descends a bounded number of C
+\ frames, then defers deeper children to an explicit worklist, so arbitrary
+\ nesting survives a collection instead of crashing.
+[ 0 ] [: 0 2 array :] 200000 times gc 43 . cr

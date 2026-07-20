@@ -1,0 +1,19 @@
+\ did-you-mean: the unknown-word error names the nearest dictionary word
+\ (Levenshtein over codepoints; allowed distance 1 for 2-character tokens,
+\ 2 for longer, none for 1-character tokens; internal words excluded;
+\ in-scope locals included while compiling; nearest wins, newest on ties).
+
+filtr                \ (did you mean filter?)
+transposr            \ (did you mean transpose?)
+swpa                 \ (did you mean swap?)
+qzqzqz               \ (no word within distance 2 -> plain error)
+q                    \ (1-character token -> plain error)
+: f | total | 0 to total totl ;   \ (a local is suggested too)
+
+\ distance ties break by use frequency (counted over the embedded library's
+\ own compilation), then by longest common prefix; transposition costs 1
+swop                 \ (did you mean swap? — not stop; swap is frequent)
+ovr                  \ (did you mean over?)
+dip                  \ (did you mean dup?)
+swpa                 \ (did you mean swap? — transposition, distance 1)
+ot                   \ (did you mean to? — 2-character transposition)

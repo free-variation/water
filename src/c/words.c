@@ -1095,20 +1095,35 @@ void p_reset(DISPATCH_ARGS) {
 }
 
 
-static int find_prompt(Interpreter *interp, int kind) {
-	int mark_index = interp->rsp - 1;
+int prompt_index(Interpreter *interp, int kind) {
+	int scope_base = interp->local_base;
+	int scope_top = scope_base > 0
+		? scope_base + saved_n_locals(interp->return_stack[scope_base - 1]) : -1;
 
-	while (mark_index >= 0 &&
-			!(VAL_TAG(interp->return_stack[mark_index]) == T_MARK
-				&& (VAL_DATA(interp->return_stack[mark_index]) & 1) == kind)) {
-		mark_index--;
+	for (int i = interp->rsp - 1; i >= 0; i--) {
+		if (scope_base > 0 && i >= scope_base && i < scope_top)
+			continue;
+		if (scope_base > 0 && i == scope_base - 1) {
+			scope_base = saved_local_base(interp->return_stack[i]);
+			scope_top = scope_base > 0
+				? scope_base + saved_n_locals(interp->return_stack[scope_base - 1]) : -1;
+			continue;
+		}
+
+		Val frame = interp->return_stack[i];
+		if (VAL_TAG(frame) == T_MARK && (VAL_DATA(frame) & 1) == kind)
+			return i;
 	}
-	if (mark_index < 0) {
+
+	return -1;
+}
+
+static int find_prompt(Interpreter *interp, int kind) {
+	int mark_index = prompt_index(interp, kind);
+	if (mark_index < 0)
 		fail(interp, kind == PROMPT_CHOICE
 				? "no enclosing amb to backtrack to"
 				: "no enclosing reset on the return stack");
-		return -1;
-	}
 
 	return mark_index;
 }
@@ -1189,6 +1204,29 @@ void p_shift_with(DISPATCH_ARGS) {
 	if (interp->error_flag)
 		return;
 
+	interp->unwinding = 1;
+}
+
+void p_throw(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
+
+	int mark_index = prompt_index(interp, PROMPT_EXCEPTION);
+	if (mark_index < 0) {
+		char *rendered = NULL;
+		size_t rendered_len = 0;
+		FILE *out = open_memstream(&rendered, &rendered_len);
+		if (out) {
+			print_val_inspect(out, interp, chain_sp[-1]);
+			fclose(out);
+		}
+		fail(interp, "uncaught exception: %s", rendered ? rendered : "?");
+		free(rendered);
+		return;
+	}
+
+	unwind_to(interp, mark_index);
+	push(interp, make_float(1.0));
 	interp->unwinding = 1;
 }
 
@@ -1300,10 +1338,7 @@ static void print_word_group(const char **names, const int *groups, int n_collec
 	if (n_in_group == 0)
 		return;
 	qsort(scratch, (size_t)n_in_group, sizeof(char *), name_cmp);
-	if (stdout_is_tty())
-		printf("\033[1m%s:\033[0m\n", label);
-	else
-		printf("%s:\n", label);
+	printf("%s%s:%s\n", term_bold(), label, term_plain());
 	print_word_columns(scratch, n_in_group);
 }
 
@@ -1404,8 +1439,8 @@ void p_words(DISPATCH_ARGS) {
 		if (!WORD_IS_INTERNAL(cfa))
 			word_count++;
 
-	const char **names = malloc(sizeof(char *) * (size_t)word_count);
-	int *groups = malloc(sizeof(int) * (size_t)word_count);
+	const char **names = xmalloc(sizeof(char *) * (size_t)word_count);
+	int *groups = xmalloc(sizeof(int) * (size_t)word_count);
 	int session_group = help_section_count;
 	int undocumented_group = help_section_count + 1;
 	int units_group = help_section_count + 2;
@@ -1426,7 +1461,7 @@ void p_words(DISPATCH_ARGS) {
 		n_collected++;
 	}
 
-	const char **group_names = malloc(sizeof(char *) * (size_t)word_count);
+	const char **group_names = xmalloc(sizeof(char *) * (size_t)word_count);
 	print_word_group(names, groups, n_collected, session_group, "this session", group_names);
 	for (int s = 0; s < help_section_count; s++)
 		print_word_group(names, groups, n_collected, s, help_section_names[s], group_names);
@@ -1816,9 +1851,11 @@ int interpolate(Interpreter *interp, int template_handle) {
 				cursor += 5;
 				continue;
 			}
-			int scan = cursor + 1, digit_value = 0, saw_digit = 0;
+			int scan = cursor + 1, saw_digit = 0;
+			long long digit_value = 0;
 			while (scan < template->len && isdigit((unsigned char)template->bytes[scan])) {
-				digit_value = digit_value * 10 + (template->bytes[scan] - '0');
+				if (digit_value <= INT_MAX)
+					digit_value = digit_value * 10 + (template->bytes[scan] - '0');
 				scan++;
 				saw_digit = 1;
 			}
@@ -1836,22 +1873,23 @@ int interpolate(Interpreter *interp, int template_handle) {
 					spec_len = close - spec_start;
 				}
 				if (close < template->len && template->bytes[close] == '}') {
-					int stack_index = interp->dsp - 1 - digit_value;
+					long long stack_index = (long long)interp->dsp - 1 - digit_value;
 					if (stack_index < 0) {
-						fail(interp, "{%d} needs %d stack value(s) but only %d present",
+						fail(interp, "{%lld} needs %lld stack value(s) but only %d present",
 								digit_value, digit_value + 1, interp->dsp);
 						free(out_buffer);
 						return object_new_string(interp, "", 0);
 					}
+					int reference = (int)digit_value;
 					int already = 0;
 					for (int i = 0; i < ref_count; i++)
-						if (refs[i] == digit_value) {
+						if (refs[i] == reference) {
 							already = 1;
 							break;
 						}
 					if (!already && ref_count < (int)(sizeof(refs) / sizeof(refs[0])))
-						refs[ref_count++] = digit_value;
-					Val value = interp->data_stack[stack_index];
+						refs[ref_count++] = reference;
+					Val value = interp->data_stack[(int)stack_index];
 					if (spec)
 						interp_render_with_spec(interp, value, spec, spec_len, &out_buffer, &capacity, &out_length);
 					else

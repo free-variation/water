@@ -16,3 +16,8 @@
 7590 
 2480 
 1800 
+error: local 'x' is read but never assigned
+error: local 'keys' is read but never assigned (a word of that name exists)
+error: local 'x' is read but never assigned
+error: local 'y' is read but never assigned
+5 

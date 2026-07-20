@@ -112,20 +112,12 @@ int unify(Interpreter *interp, Val left_val, Val right_val) {
 	return unify_depth(interp, left_val, right_val, 0);
 }
 
-static int enclosing_choice(Interpreter *interp) {
-	for (int i = interp->rsp - 1; i >= 0; i--)
-		if (VAL_TAG(interp->return_stack[i]) == T_MARK
-				&& (VAL_DATA(interp->return_stack[i]) & 1) == PROMPT_CHOICE)
-			return 1;
-	return 0;
-}
-
 static void unify_outcome(Interpreter *interp, Val left, Val right, int unified) {
 	if (interp->error_flag) return;
 
 	if (unified) {
 		push(interp, deref(interp, left));
-	} else if (enclosing_choice(interp)) {
+	} else if (prompt_index(interp, PROMPT_CHOICE) >= 0) {
 		backtrack(interp);
 	} else {
 		char *lbuf = NULL, *rbuf = NULL;

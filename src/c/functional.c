@@ -112,7 +112,7 @@ void p_filter(DISPATCH_ARGS) {
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	int source_index = interp->dsp - 1;
 
-	int *keep = malloc((size_t)MAX(source->len, 1) * sizeof(int));
+	int *keep = xmalloc((size_t)MAX(source->len, 1) * sizeof(int));
 	int n_kept = 0;
 	CallContext context;
 	call_open(interp, xt, &context);
@@ -183,7 +183,7 @@ void p_reduce(DISPATCH_ARGS) {
 		POP_INT(n, word_name, "count"); \
 		POP_XT(xt, word_name); \
 		if (n < 0) { \
-			fail(interp, "count must be non-negative; got %d", n); \
+			fail(interp, "length must be non-negative; got %d", n); \
 			return; \
 		} \
 		CallContext context; \
@@ -257,9 +257,16 @@ static void pmap_kernel(int start_index, int end_index, void *context) {
 		worker_interp = claim_worker();
 
 	for (int i = start_index; i < end_index; i++) {
+		int dsp_before = worker_interp->dsp;
 		push(worker_interp, mapping->domain->items[i]);
 		execute_cfa(worker_interp, mapping->function);
 		if (worker_interp->error_flag) {
+			parallel_error = 1;
+			return;
+		}
+		if (worker_interp->dsp != dsp_before + 1) {
+			fail(worker_interp, "pmap: quotation must leave exactly one value per element, but changed the stack by %d",
+					worker_interp->dsp - dsp_before);
 			parallel_error = 1;
 			return;
 		}
@@ -339,6 +346,16 @@ static int parallel_apply(Object *domain, int worker_count,
 	return parallel_error;
 }
 
+static const char *parallel_worker_error(void) {
+	int claimed = atomic_load(&worker_claim);
+	if (claimed > MAX_WORKER_THREADS)
+		claimed = MAX_WORKER_THREADS;
+	for (int i = 0; i < claimed; i++)
+		if (worker_pool[i] && worker_pool[i]->error_flag && worker_pool[i]->error_message[0])
+			return worker_pool[i]->error_message;
+	return NULL;
+}
+
 typedef struct {
 	int predicate;
 	Object *domain;
@@ -352,9 +369,16 @@ static void pfilter_kernel(int start_index, int end_index, void *context) {
 		worker_interp = claim_worker();
 
 	for (int i = start_index; i < end_index; i++) {
+		int dsp_before = worker_interp->dsp;
 		push(worker_interp, filter->domain->items[i]);
 		execute_cfa(worker_interp, filter->predicate);
 		if (worker_interp->error_flag) {
+			parallel_error = 1;
+			return;
+		}
+		if (worker_interp->dsp != dsp_before + 1) {
+			fail(worker_interp, "pfilter: predicate must leave exactly one value per element, but changed the stack by %d",
+					worker_interp->dsp - dsp_before);
 			parallel_error = 1;
 			return;
 		}
@@ -371,14 +395,16 @@ void p_pfilter(DISPATCH_ARGS) {
 	Object *domain = OBJECT_AT(VAL_DATA(domain_val));
 	int domain_index = interp->dsp - 1;
 
-	char *keep = calloc((size_t)MAX(domain->len, 1), 1);
+	char *keep = xcalloc((size_t)MAX(domain->len, 1), 1);
 
 	PfilterContext filter = { .predicate = predicate, .domain = domain, .keep = keep };
 	ParallelRegion region;
 	if (parallel_apply(domain, worker_count, items_per_claim, pfilter_kernel, &filter, &region)) {
 		free(keep);
 		region_abort(&region);
-		fail(interp, "a worker predicate failed (faulted or allocated past the parallel headroom)");
+		const char *worker_message = parallel_worker_error();
+		fail(interp, "%s", worker_message ? worker_message
+				: "a worker predicate failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
 
@@ -469,7 +495,9 @@ void p_pmap(DISPATCH_ARGS) {
 
 	if (failed) {
 		region_abort(&region);
-		fail(interp, "a worker quotation failed (faulted or allocated past the parallel headroom)");
+		const char *worker_message = parallel_worker_error();
+		fail(interp, "%s", worker_message ? worker_message
+				: "a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
 
@@ -510,12 +538,19 @@ static void pmap_reduce_kernel(int start_index, int end_index, void *context) {
 
 	Val accumulator = reduction->partials->items[worker_slot];
 	for (int i = start_index; i < end_index; i++) {
+		int dsp_before = worker_interp->dsp;
 		push(worker_interp, accumulator);
 		push(worker_interp, reduction->domain->items[i]);
 
 		execute_cfa(worker_interp, reduction->map_function);
 		execute_cfa(worker_interp, reduction->combine_function);
 		if (worker_interp->error_flag) {
+			parallel_error = 1;
+			return;
+		}
+		if (worker_interp->dsp != dsp_before + 1) {
+			fail(worker_interp, "pmap-reduce: map and combine must leave exactly one value per element, but changed the stack by %d",
+					worker_interp->dsp - dsp_before);
 			parallel_error = 1;
 			return;
 		}
@@ -558,7 +593,9 @@ void p_pmap_reduce(DISPATCH_ARGS) {
 		gc_root_pop(interp);
 		gc_root_pop(interp);
 		region_abort(&region);
-		fail(interp, "a worker quotation failed (faulted or allocated past the parallel headroom)");
+		const char *worker_message = parallel_worker_error();
+		fail(interp, "%s", worker_message ? worker_message
+				: "a worker quotation failed (faulted or allocated past the parallel headroom)");
 		return;
 	}
 

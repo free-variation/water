@@ -5,6 +5,6 @@
 "keep" 
 [ "hi" :sym 42 ] 
 error: slice [5, 8) out of bounds for length 3
-error: count must be non-negative; got -1
+error: length must be non-negative; got -1
 error: expected an array; got a float
 error: stack underflow (need 5 values plus target)

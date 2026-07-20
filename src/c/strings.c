@@ -549,7 +549,42 @@ static int exploded_array(Interpreter *interp, Object *source,
 	}
 
 STRING_EXPLODE_OP(p_string_to_chars, produce_char_string)
-STRING_EXPLODE_OP(p_string_to_codepoints, produce_codepoint)
+
+int *decoded_codepoints(const char *bytes, int byte_len, int *count_out) {
+	int count = utf8_codepoint_count(bytes, byte_len);
+	int *codepoints = xmalloc(sizeof(int) * (size_t)(count > 0 ? count : 1));
+
+	int offset = 0;
+	int index = 0;
+	while (offset < byte_len)
+		offset += utf8_decode(bytes + offset, byte_len - offset, &codepoints[index++]);
+
+	*count_out = count;
+	return codepoints;
+}
+
+void p_string_to_codepoints(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val source_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(source_val, T_STRING, "string>codepoints", "a string");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+
+	int codepoint_count;
+	int *codepoints = decoded_codepoints(source->bytes, source->len, &codepoint_count);
+
+	int handle = object_new_array(interp, codepoint_count);
+	if (interp->error_flag) {
+		free(codepoints);
+		return;
+	}
+	Object *codepoint_array = OBJECT_AT(handle);
+	for (int i = 0; i < codepoint_count; i++)
+		codepoint_array->items[i] = make_float((double)codepoints[i]);
+	free(codepoints);
+	chain_sp[-1] = make_array(handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
 
 void p_codepoint_to_char(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
@@ -691,6 +726,66 @@ void p_join(DISPATCH_ARGS) {
 	}
 
 	chain_sp[-2] = make_string(handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
+int string_edit_distance(const char *first_bytes, int first_len, const char *second_bytes, int second_len) {
+	int first_count;
+	int second_count;
+	int *first_codes = decoded_codepoints(first_bytes, first_len, &first_count);
+	int *second_codes = decoded_codepoints(second_bytes, second_len, &second_count);
+
+	int width = second_count + 1;
+	int *two_rows_ago = xmalloc(sizeof(int) * (size_t)width);
+	int *previous_row = xmalloc(sizeof(int) * (size_t)width);
+	int *current_row = xmalloc(sizeof(int) * (size_t)width);
+	for (int j = 0; j < width; j++)
+		previous_row[j] = j;
+
+	for (int i = 1; i <= first_count; i++) {
+		current_row[0] = i;
+		for (int j = 1; j <= second_count; j++) {
+			int deletion = previous_row[j] + 1;
+			int insertion = current_row[j - 1] + 1;
+			int substitution = previous_row[j - 1] + (first_codes[i - 1] == second_codes[j - 1] ? 0 : 1);
+			int nearest = deletion < insertion ? deletion : insertion;
+			nearest = nearest < substitution ? nearest : substitution;
+			if (i > 1 && j > 1
+			    && first_codes[i - 1] == second_codes[j - 2]
+			    && first_codes[i - 2] == second_codes[j - 1]) {
+				int transposition = two_rows_ago[j - 2] + 1;
+				nearest = nearest < transposition ? nearest : transposition;
+			}
+			current_row[j] = nearest;
+		}
+
+		int *rotated_row = two_rows_ago;
+		two_rows_ago = previous_row;
+		previous_row = current_row;
+		current_row = rotated_row;
+	}
+
+	int distance = previous_row[second_count];
+	free(first_codes);
+	free(second_codes);
+	free(two_rows_ago);
+	free(previous_row);
+	free(current_row);
+	return distance;
+}
+
+void p_edit_distance(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val second_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(second_val, T_STRING, "edit-distance", "a string");
+	Object *second = OBJECT_AT(VAL_DATA(second_val));
+	Val first_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(first_val, T_STRING, "edit-distance", "a string");
+	Object *first = OBJECT_AT(VAL_DATA(first_val));
+
+	int distance = string_edit_distance(first->bytes, first->len, second->bytes, second->len);
+	chain_sp[-2] = make_float((double)distance);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }

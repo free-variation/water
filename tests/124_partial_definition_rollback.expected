@@ -1,9 +1,9 @@
-error: unknown word: >x
-error: unknown word: loopy
+error: unknown word: >x (did you mean >r?)
+error: unknown word: loopy (did you mean copy?)
 3 
 1 
 {
-  :message unknown word: >z
+  :message /tmp/w124_bad.h2o:1: unknown word: >z (did you mean >r?)
   :trace in load ← [: "/tmp/w124_bad.h2o" load :]
 }
 

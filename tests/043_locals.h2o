@@ -74,3 +74,13 @@ ex2 3 swap resume . cr
 inline
 : outer-inline  77 inlinee ;
 outer-inline . cr
+
+clear
+\ === errors: a scratch local fetched but stored nowhere holds garbage ===
+\ (grouped at the end; batch keeps running after each aborted definition)
+: read-unassigned | x | x . ;         \ (local 'x' is read but never assigned)
+: shadows-a-word | keys | keys . ;    \ (names a dictionary word — flagged as such)
+: incr-unassigned | x | ++ x ;        \ (++/f++ count as reads, so x is still unstored)
+[: | y | y . :]                       \ (the check fires at :] as well as ;)
+: store-clears-it | x | 5 to x x ;    \ (a store anywhere in the scope makes it legal)
+store-clears-it . cr                  \ 5

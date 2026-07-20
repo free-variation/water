@@ -1,5 +1,6 @@
-( column -- sym) \ :real when every non-empty cell is a float, else :text
+( column -- sym) \ :real for a vector column or all-float cells, else :text
 : column-sql-type
+	dup matrix? if drop :real exit then
 	[: none? not :] filter
 	dup size 0= if drop :text exit then
 	[: float? :] all? if :real else :text then ; internal
@@ -64,7 +65,7 @@
 ( tsv-path db table -- info ) \ imports a tsv. header row names the columns, types inferred by column
 : tsv>db
 	| >tsv-path >db >table rows names n-columns dataset types statement |
-	tsv-path read-tsv to rows
+	tsv-path load-tsv to rows
 	rows size 0= if tsv-path "tsv>db: {0} has no header row" format throw then
 
 	rows 0 @i to names
@@ -88,7 +89,7 @@
 	  		type :real = if
 	  			{ :name name string>symbol
 				  :type type
-				  :summary dataset name string>symbol @ vector summary }
+				  :summary dataset name string>symbol @ summary }
 			else
 				{ :name name string>symbol
 				  :type type

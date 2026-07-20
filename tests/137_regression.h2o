@@ -18,7 +18,7 @@
 \ regress on iris: petal_width ~ petal_length reproduces the textbook OLS,
 \ slope ~0.4158, intercept ~-0.3631, with bootstrap SE/CI from resampling
 7 seed
-"data/iris.tsv" read-tsv 1 rows>dataset
+"data/iris.tsv" load-tsv 1 rows>dataset
 [ :petal_length ] :petal_width 500 linear-regression . cr
 
 \ ===== logistic regression (IRLS over dgelsd) =====
@@ -55,7 +55,7 @@ cv-serial  cv-X cv-y cv-units [ 1 100 ] 2 pcv-logistic-ridge  = . cr   \ 1
 \ dataset-level logistic-regression: iris virginica-vs-versicolor by sepal length,
 \ the classic non-separable logistic. Bootstrap gives SE/CI/bias per coefficient;
 \ Firth keeps every resample finite so the bootstrap never diverges.
-"data/iris.tsv" read-tsv 1 rows>dataset :sepal_length @ 50 skip to sepal-lengths
+"data/iris.tsv" load-tsv 1 rows>dataset :sepal_length @ matrix>array 50 skip to sepal-lengths
 0 50 array-of  1 50 array-of  concat to species-y
 [ :sepal_length :y ]  sepal-lengths species-y 2 array  frame to iris-two
 7 seed

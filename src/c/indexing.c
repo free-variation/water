@@ -12,10 +12,10 @@ static inline __attribute__((always_inline)) Val *array_index_fetch(Interpreter 
 		*sp = array->items[index];
 		return sp + 1;
 	}
-	SYNC_REGISTERS(interp, sync_ip, sp);
 	if (VAL_TAG(source_val) == T_MATRIX) {
 		Object *source = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= source->matrix.rows) {
+			SYNC_REGISTERS(interp, sync_ip, sp);
 			fail(interp, "row index %d out of bounds (%d rows)", index, source->matrix.rows);
 			return NULL;
 		}
@@ -34,6 +34,7 @@ static inline __attribute__((always_inline)) Val *array_index_fetch(Interpreter 
 	if (VAL_TAG(source_val) == T_SEGMENT) {
 		Object *segment = OBJECT_AT(VAL_DATA(source_val));
 		if (index < 0 || index >= segment->segment.length) {
+			SYNC_REGISTERS(interp, sync_ip, sp);
 			fail(interp, "segment index %d out of bounds (length %d)", index, segment->segment.length);
 			return NULL;
 		}

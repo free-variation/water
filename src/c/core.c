@@ -18,7 +18,7 @@ AllocContext main_alloc;
 static platform_mutex_t intern_lock = PLATFORM_MUTEX_INIT;
 
 
-static void *xmalloc(size_t bytes) {
+void *xmalloc(size_t bytes) {
 	void *block = malloc(bytes);
 	if (!block) {
 		fprintf(stderr, "water: out of memory\n");
@@ -27,7 +27,7 @@ static void *xmalloc(size_t bytes) {
 	return block;
 }
 
-static void *xcalloc(size_t count, size_t size) {
+void *xcalloc(size_t count, size_t size) {
 	void *block = calloc(count, size);
 	if (!block) {
 		fprintf(stderr, "water: out of memory\n");
@@ -492,7 +492,7 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->continuation.resume_ip = resume_ip;
 	obj->continuation.local_base_offset = -1;
 	obj->continuation.capture_generation = vocab.forget_generation;
-	obj->continuation.return_slice = malloc(sizeof(Val) * (size_t)MAX(return_len, 1));
+	obj->continuation.return_slice = xmalloc(sizeof(Val) * (size_t)MAX(return_len, 1));
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
 
 	heap_bytes_add((size_t)return_len * sizeof(Val));
@@ -679,15 +679,6 @@ int val_cmp(Interpreter *interp, Val left, Val right) {
 	return val_cmp_depth(interp, left, right, 0);
 }
 
-int double_cmp(const void *left, const void *right) {
-	double a = *(const double *)left;
-	double b = *(const double *)right;
-
-	if (a < b) return -1;
-	if (a > b) return 1;
-	return 0;
-}
-
 
 void print_double(FILE *out, double number) {
 	if (number == (double)(int64_t)number && number > -1e15 && number < 1e15)
@@ -704,6 +695,9 @@ int stdout_is_tty(void) {
 		cached = isatty(fileno(stdout));
 	return cached;
 }
+
+const char *term_bold(void) { return stdout_is_tty() ? "\033[1m" : ""; }
+const char *term_plain(void) { return stdout_is_tty() ? "\033[0m" : ""; }
 
 static int print_depth = 0;
 
@@ -974,11 +968,17 @@ static void pp_value(FILE *out, Interpreter *interp, Val value, int indent) {
 		return;
 	}
 
+	print_depth_enter();
+	if (print_depth > MAX_NESTING_DEPTH) {
+		fputs("[...]", out);
+		print_depth_leave();
+		return;
+	}
+
 	int n = arr->len;
 	int trunc = print_truncate && n > PRINT_FIRST + PRINT_LAST;
 	int child_indent = indent + 2;
 	fputs("[ ", out);
-	print_depth_enter();
 	int first = 1;
 	for (int i = 0; i < n; i++) {
 		if (trunc && i == PRINT_FIRST) {
@@ -1456,6 +1456,11 @@ void call_invoke(Interpreter *interp) {
 		int base = interp->loop_local_base;
 		int data_start = interp->dsp - n;
 
+		if (unlikely(data_start < 0)) {
+			fail(interp, "insufficient values on data stack; need %d", n);
+			return;
+		}
+
 		if (interp->loop_slots_ip < 0) {
 			for (int i = 0; i < n; i++)
 				interp->return_stack[base + i] = interp->data_stack[data_start + i];
@@ -1839,6 +1844,7 @@ void fail(Interpreter *interp, const char *fmt, ...) {
 	vsnprintf(interp->error_message, sizeof(interp->error_message), fmt, args);
 	va_end(args);
 	interp->error_flag = 1;
+	compiler.error_located = 0;
 	capture_error_trace(interp);
 }
 
@@ -1957,6 +1963,11 @@ void p_enter_locals_to(DISPATCH_ARGS) {
 
 	if (interp->loop_local_refill) {
 		interp->loop_local_refill = 0;
+		if (unlikely(chain_sp - n_locals < interp->data_stack)) {
+			SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+			fail(interp, "insufficient values on data stack; need %d", n_locals);
+			return;
+		}
 		Val *incoming = chain_sp - n_locals;
 		for (int i = 0; i < n_locals; i++)
 			interp->return_stack[interp->local_base + i] = incoming[i];
@@ -1992,6 +2003,11 @@ void p_enter_locals_mixed(DISPATCH_ARGS) {
 
 	if (interp->loop_local_refill) {
 		interp->loop_local_refill = 0;
+		if (unlikely(chain_sp - n_received < interp->data_stack)) {
+			SYNC_REGISTERS(interp, chain_ip + 2 + n_received, chain_sp);
+			fail(interp, "insufficient values on data stack; need %d", n_received);
+			return;
+		}
 		Val *incoming = chain_sp - n_received;
 
 		for (int i = 0; i < n_received; i++)
@@ -2813,6 +2829,7 @@ int find_local(const char *token, int *depth_out, int *slot_out) {
 
 			*depth_out = depth;
 			*slot_out = name_idx - slice_start;
+			compiler.found_local_name_idx = name_idx;
 			return 1;
 		}
 	}
@@ -2867,6 +2884,78 @@ void emit_local_fetch(Interpreter *interp, int local_depth, int local_slot_idx) 
 	compiler.fuse_prev2_var = 0;
 }
 
+typedef struct {
+	const char *token;
+	int token_len;
+	int allowed_distance;
+	const char *name;
+	int distance;
+	cell uses;
+	int prefix_len;
+} SuggestionSearch;
+
+static int common_prefix_length(const char *token, const char *name) {
+	int length = 0;
+	while (token[length] && token[length] == name[length])
+		length++;
+	return length;
+}
+
+static void suggestion_consider(SuggestionSearch *search, const char *name, cell uses) {
+	int name_len = (int)strlen(name);
+	int length_gap = name_len - search->token_len;
+	if (length_gap > search->allowed_distance || -length_gap > search->allowed_distance)
+		return;
+
+	int distance = string_edit_distance(search->token, search->token_len, name, name_len);
+	if (distance > search->allowed_distance)
+		return;
+
+	int prefix_len = common_prefix_length(search->token, name);
+	if (search->name) {
+		if (distance > search->distance)
+			return;
+		if (distance == search->distance) {
+			if (uses < search->uses)
+				return;
+			if (uses == search->uses && prefix_len <= search->prefix_len)
+				return;
+		}
+	}
+
+	search->name = name;
+	search->distance = distance;
+	search->uses = uses;
+	search->prefix_len = prefix_len;
+}
+
+static const char *nearest_word_name(const char *token) {
+	int token_len = (int)strlen(token);
+	if (token_len <= 1)
+		return NULL;
+
+	SuggestionSearch search = {
+		.token = token,
+		.token_len = token_len,
+		.allowed_distance = token_len == 2 ? 1 : 2,
+		.name = NULL,
+		.distance = 0,
+		.uses = 0,
+		.prefix_len = 0,
+	};
+
+	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
+		if (WORD_IS_INTERNAL(cfa))
+			continue;
+		suggestion_consider(&search, &vocab.name_pool[WORD_NAME(cfa)], WORD_USE_COUNT(cfa));
+	}
+	if (compiler.compiling)
+		for (int i = 0; i < compiler.n_local_names; i++)
+			suggestion_consider(&search, &compiler.local_names_pool[compiler.local_name_offsets[i]], 0);
+
+	return search.name;
+}
+
 void run_outer(Interpreter *interp) {
 	while (!interp->error_flag) {
 		skip_whitespace();
@@ -2906,6 +2995,7 @@ void run_outer(Interpreter *interp) {
 		if (compiler.compiling) {
 			int local_depth, local_slot_idx;
 			if (find_local(tok, &local_depth, &local_slot_idx)) {
+				compiler.local_fetched[compiler.found_local_name_idx] = 1;
 				emit_local_fetch(interp, local_depth, local_slot_idx);
 				continue;
 			}
@@ -2915,6 +3005,7 @@ void run_outer(Interpreter *interp) {
 
 		int cf = find(tok);
 		if (cf) {
+			WORD_USE_INCREMENT(cf);
 			if (compiler.compiling && !WORD_IS_IMMEDIATE(cf)) {
 				if (superword_try_fuse(interp, cf)) {
 					continue;
@@ -3020,7 +3111,11 @@ void run_outer(Interpreter *interp) {
 			continue;
 		}
 
-		fail(interp, "unknown word: %s", tok);
+		const char *nearest_name = nearest_word_name(tok);
+		if (nearest_name)
+			fail(interp, "unknown word: %s (did you mean %s?)", tok, nearest_name);
+		else
+			fail(interp, "unknown word: %s", tok);
 		return;
 	}
 }
@@ -3055,7 +3150,7 @@ void load_file(Interpreter *interp, const char *filename) {
 		return;
 	}
 
-	char *saved_inbuf_contents = malloc((size_t)compiler.input_buffer_len + 1);
+	char *saved_inbuf_contents = xmalloc((size_t)compiler.input_buffer_len + 1);
 	memcpy(saved_inbuf_contents, compiler.input_buffer, (size_t)compiler.input_buffer_len);
 	int saved_inbuf_len = compiler.input_buffer_len;
 	int saved_inbuf_pos = compiler.input_buffer_pos;
@@ -3073,14 +3168,25 @@ void load_file(Interpreter *interp, const char *filename) {
 	compiler.load_depth--;
 
 	if (!interp->error_flag && compiler.need_more) {
-		fail(interp, "%s: unterminated string literal", filename);
+		fail(interp, "unterminated string literal");
 	}
 	if (!interp->error_flag && compiler.compiling) {
-		fail(interp, "%s: unterminated definition", filename);
+		fail(interp, "unterminated definition");
 		compiler.compiling = 0;
 	}
-	if (interp->error_flag)
+	if (interp->error_flag) {
 		rollback_partial_definition();
+		if (!compiler.error_located) {
+			int line = 1;
+			for (int i = 0; i < compiler.input_buffer_pos && i < compiler.input_buffer_len; i++)
+				if (compiler.input_buffer[i] == '\n')
+					line++;
+			char located[sizeof interp->error_message];
+			snprintf(located, sizeof located, "%s:%d: %s", filename, line, interp->error_message);
+			memcpy(interp->error_message, located, sizeof interp->error_message);
+			compiler.error_located = 1;
+		}
+	}
 
 	memcpy(compiler.input_buffer, saved_inbuf_contents, (size_t)saved_inbuf_len);
 	compiler.input_buffer[saved_inbuf_len] = 0;
@@ -3128,7 +3234,26 @@ static int handle_in_chunks(int handle, int *chunks, int n_chunks, int last_next
 }
 #endif
 
+#define MARK_MAX_C_DEPTH 512
+
+static void mark_value_at(Interpreter *interp, Val value, int depth);
+
+static inline void mark_child(Interpreter *interp, Val child, int depth) {
+	if (depth < MARK_MAX_C_DEPTH) {
+		mark_value_at(interp, child, depth + 1);
+		return;
+	}
+	GROW_IF_FULL_SYS(interp->mark_worklist_count, interp->mark_worklist_cap, interp->mark_worklist);
+	interp->mark_worklist[interp->mark_worklist_count++] = child;
+}
+
 void mark_value(Interpreter *interp, Val value) {
+	mark_value_at(interp, value, 0);
+	while (interp->mark_worklist_count > 0)
+		mark_value_at(interp, interp->mark_worklist[--interp->mark_worklist_count], 0);
+}
+
+static void mark_value_at(Interpreter *interp, Val value, int depth) {
 	for (;;) {
 		if (VAL_TAG(value) == T_LOGIC_VAR) {
 			value = interp->lvar_stack[VAL_DATA(value)];
@@ -3153,7 +3278,7 @@ void mark_value(Interpreter *interp, Val value) {
 			if (pairs.mark_epoch[slot] == interp->gc_epoch)
 				return;
 			pairs.mark_epoch[slot] = interp->gc_epoch;
-			mark_value(interp, pairs.table[slot].head);
+			mark_child(interp, pairs.table[slot].head, depth);
 			value = pairs.table[slot].tail;
 			continue;
 		}
@@ -3166,7 +3291,7 @@ void mark_value(Interpreter *interp, Val value) {
 			if (pairs.mark_epoch[slot] == interp->gc_epoch)
 				return;
 			pairs.mark_epoch[slot] = interp->gc_epoch;
-			mark_value(interp, pairs.table[slot].head);
+			mark_child(interp, pairs.table[slot].head, depth);
 			return;
 		}
 
@@ -3184,21 +3309,21 @@ void mark_value(Interpreter *interp, Val value) {
 			if (obj->len == 0)
 				return;
 			for (int i = 0; i < obj->len - 1; i++)
-				mark_value(interp, obj->items[i]);
+				mark_child(interp, obj->items[i], depth);
 			value = obj->items[obj->len - 1];
 			continue;
 		} else if (obj->kind == OBJECT_FRAME) {
 			if (obj->len == 0)
 				return;
 			for (int i = 0; i < obj->len - 1; i++)
-				mark_value(interp, obj->frame.values[i]);
+				mark_child(interp, obj->frame.values[i], depth);
 			value = obj->frame.values[obj->len - 1];
 			continue;
 		} else if (obj->kind == OBJECT_CONTINUATION) {
 			if (obj->continuation.return_len == 0)
 				return;
 			for (int i = 0; i < obj->continuation.return_len - 1; i++)
-				mark_value(interp, obj->continuation.return_slice[i]);
+				mark_child(interp, obj->continuation.return_slice[i], depth);
 			value = obj->continuation.return_slice[obj->continuation.return_len - 1];
 			continue;
 		}
@@ -3578,14 +3703,10 @@ void gc(Interpreter *interp) {
 		sorted_cfas[num_cfas++] = cfa;
 	}
 
-	for (i = 1; i < num_cfas; i++) {
-		int current = sorted_cfas[i];
-		int slot = i - 1;
-		while (slot >= 0 && sorted_cfas[slot] > current) {
-			sorted_cfas[slot + 1] = sorted_cfas[slot];
-			slot--;
-		}
-		sorted_cfas[slot + 1] = current;
+	for (i = 0; i < num_cfas / 2; i++) {
+		int swap = sorted_cfas[i];
+		sorted_cfas[i] = sorted_cfas[num_cfas - 1 - i];
+		sorted_cfas[num_cfas - 1 - i] = swap;
 	}
 
 	for (i = 0; i < num_cfas; i++) {
@@ -4188,6 +4309,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "trim", p_trim, 0);
 	define_primitive(interp, "join", p_join, 0);
 	define_primitive(interp, "string>number", p_string_to_number, 0);
+	define_primitive(interp, "edit-distance", p_edit_distance, 0);
 	define_primitive(interp, "format", p_format, 0);
 	define_primitive(interp, "update-at", p_update_at, 0);
 	define_primitive(interp, "merge", p_merge, 0);
@@ -4199,6 +4321,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "shift", p_shift, 0);
 	define_primitive(interp, "shift-with", p_shift_with, 0);
 	define_primitive(interp, "resume", p_resume, 0);
+	define_primitive(interp, "throw", p_throw, 0);
 
 	define_primitive(interp, "{", p_frameopen, 0);
 	define_primitive(interp, "}", p_frameclose, 0);
@@ -4470,8 +4593,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "read-file", p_read_file, 0);
 	define_primitive(interp, "write-file", p_write_file, 0);
 	define_primitive(interp, "append-file", p_append_file, 0);
-	define_primitive(interp, "read-tsv", p_read_tsv, 0);
-	define_primitive(interp, "write-tsv", p_write_tsv, 0);
+	define_primitive(interp, "load-tsv", p_load_tsv, 0);
+	define_primitive(interp, "save-tsv", p_save_tsv, 0);
 	define_primitive(interp, "start-process", p_start_process, 0);
 	define_primitive(interp, "write", p_write, 0);
 	define_primitive(interp, "read", p_read, 0);
@@ -4526,6 +4649,32 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	return 0;
 }
 
+static void run_program_text(Interpreter *interp, const char *text) {
+	int text_len = (int)strlen(text);
+	if (text_len >= INPUT_BUFFER_SIZE) {
+		fail(interp, "-e: program too large (%d bytes, max %d)", text_len, INPUT_BUFFER_SIZE - 1);
+		return;
+	}
+
+	memcpy(compiler.input_buffer, text, (size_t)text_len + 1);
+	compiler.input_buffer_len = text_len;
+	compiler.input_buffer_pos = 0;
+	compiler.need_more = 0;
+
+	run_outer(interp);
+
+	if (!interp->error_flag && compiler.need_more)
+		fail(interp, "-e: unterminated string literal");
+	if (!interp->error_flag && compiler.compiling) {
+		fail(interp, "-e: unterminated definition");
+		compiler.compiling = 0;
+	}
+	if (interp->error_flag)
+		rollback_partial_definition();
+
+	inbuf_reset();
+}
+
 static void print_usage(void) {
 	printf("usage: water [options] [file.h2o ...]\n"
 		"\n"
@@ -4534,6 +4683,7 @@ static void print_usage(void) {
 		"\n"
 		"  -i, --interactive   drop into the REPL after running the files\n"
 		"  -b, --batch         no banner or prompts, even on a terminal\n"
+		"  -e CODE             run CODE as a program, in argument order with the files (implies -b)\n"
 		"      --no-lib        skip loading the embedded library\n"
 		"      --arena SIZE    reserve SIZE gigabytes of heap (e.g. 32g)\n"
 		"      --max-objects N cap the object table at N entries\n"
@@ -4549,8 +4699,9 @@ int main(int argc, char **argv) {
 	int show_version = 0;
 	int show_words = 0;
 	long max_objects_arg = 0;
-	const char *program_files[argc];
-	int n_program_files = 0;
+	const char *program_items[argc];
+	unsigned char program_item_is_code[argc];
+	int n_program_items = 0;
 	for (int i = 1; i < argc; i++) {
 		if (strcmp(argv[i], "-h") == 0 || strcmp(argv[i], "--help") == 0) {
 			print_usage();
@@ -4565,6 +4716,17 @@ int main(int argc, char **argv) {
 			interactive_set = 1;
 		}
 		else if (strcmp(argv[i], "-b") == 0 || strcmp(argv[i], "--batch") == 0) {
+			interactive = 0;
+			interactive_set = 1;
+		}
+		else if (strcmp(argv[i], "-e") == 0) {
+			if (i + 1 >= argc) {
+				fprintf(stderr, "water: -e needs a code string\n");
+				return 2;
+			}
+			program_items[n_program_items] = argv[++i];
+			program_item_is_code[n_program_items] = 1;
+			n_program_items++;
 			interactive = 0;
 			interactive_set = 1;
 		}
@@ -4600,11 +4762,13 @@ int main(int argc, char **argv) {
 			return 2;
 		}
 		else {
-			program_files[n_program_files++] = argv[i];
+			program_items[n_program_items] = argv[i];
+			program_item_is_code[n_program_items] = 0;
+			n_program_items++;
 		}
 	}
 
-	if (n_program_files > 0 && !interactive_set)
+	if (n_program_items > 0 && !interactive_set)
 		interactive = 0;
 
 	Interpreter *interp = main_init();
@@ -4626,18 +4790,22 @@ int main(int argc, char **argv) {
 		return 0;
 	}
 
-	for (int i = 0; i < n_program_files; i++) {
-		load_file(interp, program_files[i]);
+	for (int i = 0; i < n_program_items; i++) {
+		if (program_item_is_code[i])
+			run_program_text(interp, program_items[i]);
+		else
+			load_file(interp, program_items[i]);
 		if (interp->error_flag) {
 			fprintf(stderr, "error: %s\n", interp->error_message);
 			if (interp->error_trace[0])
 				fprintf(stderr, "%s\n", interp->error_trace);
 			return 1;
 		}
-		record_loaded_file(interp, program_files[i]);
+		if (!program_item_is_code[i])
+			record_loaded_file(interp, program_items[i]);
 	}
 
-	if (n_program_files > 0 && !interactive)
+	if (n_program_items > 0 && !interactive)
 		return 0;
 
 	interactive = platform_repl_begin(interp, interactive);
@@ -4705,21 +4873,16 @@ int main(int argc, char **argv) {
 					fputs(interp->error_trace, stdout);
 				}
 			} else {
-				int tty = stdout_is_tty();
-				if (tty)
-					fputs("\033[1m", stdout);
+				fputs(term_bold(), stdout);
 				fputs("ok", stdout);
 				if (interp->dsp > 0) {
 					printf(" %d", interp->dsp);
-					if (tty)
-						fputs("\033[0m", stdout);
+					fputs(term_plain(), stdout);
 					putchar('|');
-					if (tty)
-						fputs("\033[1m", stdout);
+					fputs(term_bold(), stdout);
 					print_val_compact(stdout, interp, interp->data_stack[interp->dsp - 1]);
 				}
-				if (tty)
-					fputs("\033[0m", stdout);
+				fputs(term_plain(), stdout);
 			}
 			putchar('\n');
 			fflush(stdout);

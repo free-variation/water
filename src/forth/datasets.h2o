@@ -12,7 +12,31 @@
 		keys 0
 	then ; internal
 
-( rows header? -- dataset) \ column frame: each key maps to that column's array
+( cells -- column ) \ vector when uniformly numeric (none -> NaN) or one-unit quantities
+: column-from-cells
+	|> cells |
+	cells size 0= if
+		cells exit
+	then
+
+	cells [: dup float? swap none? or :] all? if
+		cells vector exit
+	then
+
+	cells ' quantity? all? if
+		cells ' unit-of map
+		array>set size 1= if
+			cells ' magnitude
+			map vector
+			cells 0 @i unit-of *
+			exit
+		then
+	then
+
+	cells ; internal
+
+( rows header? -- dataset) \ column frame, each column typed by column-from-cells:
+\ uniformly numeric cells become an nx1 vector (none -> NaN), else the cell array
 : rows>dataset
 	| >rows >header? keys start n-rows row-indices columns |
 
@@ -24,10 +48,13 @@
 	n-rows 0= if [ ] else start rows size 1- range then to row-indices
 	keys size iota
 	[> j |
-	   row-indices [: rows swap @i j @i :] map :]
+	   row-indices [: rows swap @i j @i :] map column-from-cells :]
 	map to columns
 
 	keys columns frame ;
+
+( path -- dataset ) \ a TSV file with a header row as a dataset (typed columns)
+: read-tsv load-tsv true rows>dataset ; inline
 
 ( rows index-cols header? -- relation ) \ rows to deduped relation, indexed on index-cols
 : rows>relation
@@ -73,8 +100,24 @@
 	dup numeric-column? if matrix>array then ; 
 
 ( column -- set ) \ the set of the column's distinct values
-: column>set 
+: column>set
 	column>array array>set ;
+
+( dataset -- rows ) \ the inverse of true rows>dataset: row-arrays led by a header
+\ row of the column names, columns in key order, cells through column>array
+: dataset>rows
+	| >dataset column-names n-columns |
+	dataset keys to column-names
+	column-names size to n-columns
+	n-columns 0= if [ ] exit then
+
+	column-names [: "{0}" format :] map 1 array
+	dataset values ' column>array map destruct
+	[: n-columns array :] n-columns mapn
+	concat ;
+
+( dataset path -- ) \ write a dataset as a TSV with a header row; read-tsv's inverse
+: write-tsv swap dataset>rows swap save-tsv ; inline
 
 ( column indices -- column' ) \ gather array elements by an index vector
 : gather-elements
@@ -218,29 +261,6 @@
 	else
 		(array-filter) execute
 	then ;
-
-( cells -- column ) \ vector when uniformly numeric (none -> NaN) or one-unit quantities
-: column-from-cells
-	|> cells |
-	cells size 0= if 
-		cells exit
-	then
-
-	cells [: dup float? swap none? or :] all? if
-		cells vector exit
-	then
-
-	cells ' quantity? all? if
-		cells ' unit-of map 
-		array>set size 1= if
-			cells ' magnitude  
-			map vector 
-			cells 0 @i unit-of * 
-			exit
-		then
-	then
-
-	cells ; internal
 
 ( rows -- dataset ) \ uniform-key row frames as a dataset, keys from row 0
 : frames>dataset

@@ -27,5 +27,5 @@
 	9 array
 :] map
 concat                                       \ [ header, row0, row1, ... ]
-"data/logistic-sim.tsv" write-tsv
+"data/logistic-sim.tsv" save-tsv
 "wrote data/logistic-sim.tsv" . cr

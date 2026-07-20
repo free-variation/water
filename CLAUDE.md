@@ -68,6 +68,18 @@ by file in SRCS order. What each file is:
   mapping: > becomes _to_ (p_string_to_chars), ? drops (p_has), ! becomes
   _set/_store/_inplace or drops (p_env_set, p_slice_store, p_add_inplace,
   p_set_add); libc collisions take a trailing underscore (p_emit_).
+- Choosing a new word's form — test these predicates in order, take the
+  first that holds, and state the chosen form and predicate before
+  writing the body:
+  1. Re-enters the interpreter (execute_xt/call_step) or tail-calls
+     push-style shared helpers (binary_op/unary_op/push_quantity) →
+     interp-state: POP_*/PEEK_* + push, end DISPATCH(interp).
+  2. Allocates GC objects while heap operands are live → PEEK_*_AT
+     reads (operands stay stack-rooted), register exit.
+  3. Otherwise → REQUIRE_STACK_DEPTH + chain_sp reads +
+     REQUIRE_CHAIN_TAG, end DISPATCH_REGISTERS.
+  Never choose a form by imitating neighboring words; neighbors may
+  differ in exactly the property the predicate tests.
 - Words are register-threaded by default: work on chain_ip/chain_sp, open
   with REQUIRE_STACK_DEPTH/ROOM, end DISPATCH_REGISTERS; kernels return
   handles for the word to write into chain_sp. A word may be interp-state

@@ -26,6 +26,14 @@ dup keys . cr                                  \ [ :a ]
 \ === aggregation: group, then map each bucket to its size (count per group) ===
 [ { :id 1 :c :x } { :id 2 :c :y } { :id 3 :c :x } { :id 4 :c :x } ] :c group-by values [: size :] map . cr   \ count per group: x->3, y->1
 
+\ === keys arriving out of order still group correctly (the pass sorts by key
+\ so each key inserts in order, but the grouping is independent of row order) ===
+[ { :k :z :n 1 } { :k :a :n 2 } { :k :z :n 3 } { :k :m :n 4 } { :k :a :n 5 } ] :k group-by
+dup keys size . cr                             \ 3 distinct
+dup :z @ size . cr                             \ 2
+dup :a @ size . cr                             \ 2
+:m @ size . cr                                 \ 1
+
 \ === a non-symbol column is rejected ===
 [ { :id 1 } ] 5 group-by
 bye

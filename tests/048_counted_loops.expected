@@ -1,13 +1,17 @@
 *****
 7 7 7 
 0 1 2 3 4 
-error: count must be non-negative; got -1
+error: length must be non-negative; got -1
 error: expected a float count; got an execution token
 error: expected an execution token; got a float
 0 1 2 3 4 
 
 45 
 30 
-error: count must be non-negative; got -1
+error: insufficient values on data stack; need 1
+in (enter-locals-to) ← [> a | :]
+error: insufficient values on data stack; need 1
+in (enter-locals-mixed) ← [| a >b | :]
+error: length must be non-negative; got -1
 error: expected a float count; got an execution token
 error: expected an execution token; got a float

@@ -584,10 +584,11 @@ That's the whole unwind. A simple flag plus per-level `initial_rsp` tracking giv
 
 ## Part 10: Building exceptions
 
-With all that machinery, exceptions are three one-liners in `lib.h2o`:
+With all that machinery, exceptions are two one-liners and a primitive:
 
 ```forth
-: throw ( exc -- )                       [: drop 1 :] shift-with ;
+\ throw is a C primitive: unwind to the nearest exception prompt leaving exc 1;
+\ with no enclosing prompt it is the interpreter error "uncaught exception: <value>"
 : catch ( xt -- result 0 | exc 1 )       reset (execute-catching) 0 ;
 : try-catch ( normal-xt error-xt -- ... )
     >side                                \ stash error-xt
@@ -597,7 +598,7 @@ With all that machinery, exceptions are three one-liners in `lib.h2o`:
     then ;
 ```
 
-`(execute-catching)` is the one C primitive here — `execute` plus a check covered in *Catching interpreter errors* below. On the `throw` and success paths it behaves exactly like `execute`, so the two traces that follow read the same with either.
+`throw` behaves like `[: drop 1 :] shift-with` on the caught path, except that it pushes the `1` directly instead of capturing a continuation only for the handler to drop it. `(execute-catching)` is `execute` plus a check covered in *Catching interpreter errors* below. On the `throw` and success paths it behaves exactly like `execute`, so the two traces that follow read the same with either.
 
 Let's trace `[: 42 throw :] catch`:
 
@@ -606,14 +607,13 @@ Let's trace `[: 42 throw :] catch`:
 3. `reset` pushes a MARK (id=N) onto the return stack.
 4. `(execute-catching)` pops the xt and invokes it.
 5. The xt runs: `42` pushes 42 onto the data stack; `throw` runs.
-6. `throw`'s body is `[: drop 1 :] shift-with`. The handler quotation is pushed onto the data stack.
-7. `shift-with` pops the handler, captures the return-stack frames above the MARK, keeps the MARK in place, pushes `k` onto the data stack (now `[42, k]`), and executes the handler.
-8. The handler runs: `drop` pops k, leaving `[42]`; `1` pushes 1, leaving `[42, 1]`. Handler returns.
-9. `shift-with` sets `unwinding = 1`.
-10. The unwinding cascade begins. Inner-loop levels break and propagate up until reaching the level that owns the MARK.
-11. That level pops the MARK (clearing `unwinding`), pops the docol frame for `catch`, and sets `ip` to wherever catch was called from in the calling word.
-12. The `0` after `(execute-catching)` in catch's body is bypassed (catch's body never runs again).
-13. Execution continues past catch in the calling word, with `[42, 1]` on the data stack.
+6. `throw` finds the nearest exception MARK on the return stack (skipping locals regions — an uninitialized local slot can hold stale bytes that look like a mark).
+7. It unwinds the return stack to just above the MARK, keeping the MARK in place, and pushes `1`, leaving `[42, 1]`.
+8. `throw` sets `unwinding = 1`.
+9. The unwinding cascade begins. Inner-loop levels break and propagate up until reaching the level that owns the MARK.
+10. That level pops the MARK (clearing `unwinding`), pops the docol frame for `catch`, and sets `ip` to wherever catch was called from in the calling word.
+11. The `0` after `(execute-catching)` in catch's body is bypassed (catch's body never runs again).
+12. Execution continues past catch in the calling word, with `[42, 1]` on the data stack.
 
 Now trace `[: 42 :] catch` (success path):
 
@@ -1373,7 +1373,7 @@ The mark id counter (`next_mark_id`) is global and monotonic. If you serialize a
 
 | Word | Stack effect | Built from |
 |---|---|---|
-| `throw` | `( exc -- )` | `[: drop 1 :] shift-with` |
+| `throw` | `( exc -- )` | C primitive: unwind to the nearest exception prompt leaving `exc 1`; uncaught → `uncaught exception: <value>` error |
 | `catch` | `( xt -- result 0 \| exc 1 )` | `reset (execute-catching) 0` |
 | `try-catch` | `( normal-xt error-xt -- ... )` | side stack + `catch` + if/else |
 

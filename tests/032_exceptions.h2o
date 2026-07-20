@@ -80,5 +80,11 @@ symbol :oops
 [: [: [ 1 2 3 ] 9 @i :] [: drop "inner caught" . cr :] try-catch :]
 [: drop "outer" . cr :] try-catch                     \ inner caught
 
-\ -- 20: throw at top-level (no catch) — surfaces as interpreter error
+\ -- 20: throw at top-level (no catch) — an interpreter error naming the value
 42 throw
+
+\ -- 21: an uncaught thrown frame renders in full
+{ :code 7 } throw
+
+\ -- 22: an uncaught library throw carries the trace from the throw site
+[ 1 2 ] vector 0 histogram-table

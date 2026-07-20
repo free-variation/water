@@ -30,6 +30,8 @@ clear
 0 5 array-of .
 99 3 array-of .
 "x" 4 array-of .
+0 0 array-of . cr                               \ [ ]  empty is fine
+1 -5 array-of                                   \ (negative length rejected, not a wild memcpy)
 
 clear
 \ basic
