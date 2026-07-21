@@ -703,6 +703,65 @@ extern int print_truncate;
 	pairs.table[slot].head = make_tagged(T_NONE, 0); \
 	pairs.table[slot].tail = make_tagged(T_NONE, 0)
 
+#define MALLOC_OR_FAIL(interp, dst, bytes) do { \
+	(dst) = malloc(bytes); \
+	if (!(dst)) { \
+		fail((interp), "out of memory"); \
+		return; \
+	} \
+} while (0)
+
+#define CALLOC_OR_FAIL(interp, dst, count, size) do { \
+	(dst) = calloc((count), (size)); \
+	if (!(dst)) { \
+		fail((interp), "out of memory"); \
+		return; \
+	} \
+} while (0)
+
+#define MALLOC_OR_FAIL_RETURNING(interp, dst, bytes, sentinel) do { \
+	(dst) = malloc(bytes); \
+	if (!(dst)) { \
+		fail((interp), "out of memory"); \
+		return sentinel; \
+	} \
+} while (0)
+
+#define CALLOC_OR_FAIL_RETURNING(interp, dst, count, size, sentinel) do { \
+	(dst) = calloc((count), (size)); \
+	if (!(dst)) { \
+		fail((interp), "out of memory"); \
+		return sentinel; \
+	} \
+} while (0)
+
+#define MALLOC_OR_FAIL_CLEANUP(interp, dst, bytes, cleanup) do { \
+	(dst) = malloc(bytes); \
+	if (!(dst)) { \
+		cleanup; \
+		fail((interp), "out of memory"); \
+		return; \
+	} \
+} while (0)
+
+#define MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, dst, bytes, cleanup, sentinel) do { \
+	(dst) = malloc(bytes); \
+	if (!(dst)) { \
+		cleanup; \
+		fail((interp), "out of memory"); \
+		return sentinel; \
+	} \
+} while (0)
+
+#define CALLOC_OR_FAIL_RETURNING_CLEANUP(interp, dst, count, size, cleanup, sentinel) do { \
+	(dst) = calloc((count), (size)); \
+	if (!(dst)) { \
+		cleanup; \
+		fail((interp), "out of memory"); \
+		return sentinel; \
+	} \
+} while (0)
+
 #define PEEK_AT(var, depth, op) \
 	if (interp->dsp <= (depth)) { \
 		fail(interp, "stack underflow"); \
@@ -905,6 +964,11 @@ int set_member(Interpreter *interp, int set_handle, Val value);
 void set_remove(Interpreter *interp, int set_handle, Val value);
 int set_union(Interpreter *interp, int handle_a, int handle_b);
 
+typedef struct {
+	double value;
+	int index;
+} ArgsortPair;
+
 int create_matrix(Interpreter *interp);
 int matrix_add(Interpreter *interp, Val left_val, Val right_val);
 int matrix_div(Interpreter *interp, Val left_val, Val right_val);
@@ -921,6 +985,7 @@ int matrix_sum_columns(Interpreter *interp, Object *source);
 double matrix_sum_overall(Object *source);
 int matrix_sum_rows(Interpreter *interp, Object *source);
 void sort_doubles(double *elements, size_t n_elements);
+void sort_pairs(ArgsortPair *elements, size_t n_elements);
 int vector_argsort_copy(Interpreter *interp, Object *source);
 int vector_sorted_copy(Interpreter *interp, Object *source);
 
@@ -930,9 +995,9 @@ int superword_is_lit_fold(cell handler);
 int superword_try_fuse(Interpreter *interp, int op_cfa);
 int superword_try_fuse_store(Interpreter *interp, int dst_cfa);
 
-int *decoded_codepoints(const char *bytes, int byte_len, int *count_out);
+int *decoded_codepoints(Interpreter *interp, const char *bytes, int byte_len, int *count_out);
 int string_codepoint_count(Object *string);
-int string_edit_distance(const char *first_bytes, int first_len, const char *second_bytes, int second_len);
+int string_edit_distance(Interpreter *interp, const char *first_bytes, int first_len, const char *second_bytes, int second_len);
 int string_matches(Interpreter *interp, Object *subject, Object *pattern);
 int utf8_codepoint_count(const char *bytes, int length);
 int utf8_encode(int codepoint, char *out);

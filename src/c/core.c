@@ -435,13 +435,8 @@ int object_new_matrix(Interpreter *interp, int num_rows, int num_columns) {
 	obj->matrix.columns = num_columns;
 	size_t num_elements = (size_t)num_rows * (size_t)num_columns;
 
-	obj->matrix.elements = calloc(num_elements ? num_elements : 1, sizeof(double));
-	if (!obj->matrix.elements) {
-		arena_free_object(obj);
-		arena.objects[slot] = NULL;
-		fail(interp, "matrix too large to allocate");
-		return -1;
-	}
+	CALLOC_OR_FAIL_RETURNING_CLEANUP(interp, obj->matrix.elements, num_elements ? num_elements : 1, sizeof(double),
+			{ arena_free_object(obj); arena.objects[slot] = NULL; }, -1);
 
 	heap_bytes_add(num_elements * sizeof(double));
 
@@ -461,14 +456,8 @@ int object_new_segment(Interpreter *interp, int length, SegmentType element_type
 	obj->segment.element_type = element_type;
 	obj->segment.length = length;
 	size_t element_size = segment_element_size(element_type);
-	obj->segment.data = calloc((size_t)(length > 0 ? length : 1), element_size);
-
-	if (!obj->segment.data) {
-		arena_free_object(obj);
-		arena.objects[slot] = NULL;
-		fail(interp, "out of memory (%lld bytes)", (long long)length * (long long)element_size);
-		return -1;
-	}
+	CALLOC_OR_FAIL_RETURNING_CLEANUP(interp, obj->segment.data, (size_t)(length > 0 ? length : 1), element_size,
+			{ arena_free_object(obj); arena.objects[slot] = NULL; }, -1);
 
 	heap_bytes_add((size_t)length * element_size);
 
@@ -492,7 +481,8 @@ int object_new_continuation(Interpreter *interp, const Val *frames, int return_l
 	obj->continuation.resume_ip = resume_ip;
 	obj->continuation.local_base_offset = -1;
 	obj->continuation.capture_generation = vocab.forget_generation;
-	obj->continuation.return_slice = xmalloc(sizeof(Val) * (size_t)MAX(return_len, 1));
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, obj->continuation.return_slice, sizeof(Val) * (size_t)MAX(return_len, 1),
+			{ arena_free_object(obj); arena.objects[slot] = NULL; }, -1);
 	memcpy(obj->continuation.return_slice, frames, sizeof(Val) * (size_t)return_len);
 
 	heap_bytes_add((size_t)return_len * sizeof(Val));
@@ -2901,13 +2891,13 @@ static int common_prefix_length(const char *token, const char *name) {
 	return length;
 }
 
-static void suggestion_consider(SuggestionSearch *search, const char *name, cell uses) {
+static void suggestion_consider(Interpreter *interp, SuggestionSearch *search, const char *name, cell uses) {
 	int name_len = (int)strlen(name);
 	int length_gap = name_len - search->token_len;
 	if (length_gap > search->allowed_distance || -length_gap > search->allowed_distance)
 		return;
 
-	int distance = string_edit_distance(search->token, search->token_len, name, name_len);
+	int distance = string_edit_distance(interp, search->token, search->token_len, name, name_len);
 	if (distance > search->allowed_distance)
 		return;
 
@@ -2929,7 +2919,7 @@ static void suggestion_consider(SuggestionSearch *search, const char *name, cell
 	search->prefix_len = prefix_len;
 }
 
-static const char *nearest_word_name(const char *token) {
+static const char *nearest_word_name(Interpreter *interp, const char *token) {
 	int token_len = (int)strlen(token);
 	if (token_len <= 1)
 		return NULL;
@@ -2947,11 +2937,16 @@ static const char *nearest_word_name(const char *token) {
 	for (int cfa = vocab.latest_cfa; cfa != 0; cfa = (int)WORD_LINK(cfa)) {
 		if (WORD_IS_INTERNAL(cfa))
 			continue;
-		suggestion_consider(&search, &vocab.name_pool[WORD_NAME(cfa)], WORD_USE_COUNT(cfa));
+		suggestion_consider(interp, &search, &vocab.name_pool[WORD_NAME(cfa)], WORD_USE_COUNT(cfa));
+		if (interp->error_flag)
+			return NULL;
 	}
 	if (compiler.compiling)
-		for (int i = 0; i < compiler.n_local_names; i++)
-			suggestion_consider(&search, &compiler.local_names_pool[compiler.local_name_offsets[i]], 0);
+		for (int i = 0; i < compiler.n_local_names; i++) {
+			suggestion_consider(interp, &search, &compiler.local_names_pool[compiler.local_name_offsets[i]], 0);
+			if (interp->error_flag)
+				return NULL;
+		}
 
 	return search.name;
 }
@@ -3111,7 +3106,9 @@ void run_outer(Interpreter *interp) {
 			continue;
 		}
 
-		const char *nearest_name = nearest_word_name(tok);
+		const char *nearest_name = nearest_word_name(interp, tok);
+		if (interp->error_flag)
+			return;
 		if (nearest_name)
 			fail(interp, "unknown word: %s (did you mean %s?)", tok, nearest_name);
 		else

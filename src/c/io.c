@@ -228,12 +228,8 @@ void p_load_tsv(DISPATCH_ARGS) {
 	if (!file)
 		return;
 
-	char *buffer = malloc((size_t)size + 1);
-	if (buffer == NULL) {
-		fclose(file);
-		fail(interp, "out of memory");
-		return;
-	}
+	char *buffer;
+	MALLOC_OR_FAIL_CLEANUP(interp, buffer, (size_t)size + 1, fclose(file));
 	int length = (int)fread(buffer, 1, (size_t)size, file);
 	fclose(file);
 	buffer[length] = 0;
@@ -376,11 +372,8 @@ void p_read(DISPATCH_ARGS) {
 
 	int length = 0;
 	int capacity = 1 << 16;
-	char *buffer = malloc((size_t)capacity);
-	if (!buffer) {
-		fail(interp, "out of memory");
-		return;
-	}
+	char *buffer;
+	MALLOC_OR_FAIL(interp, buffer, (size_t)capacity);
 	while (1) {
 		if (length == capacity) {
 			if (capacity > INT_MAX / 2) {

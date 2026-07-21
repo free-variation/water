@@ -112,7 +112,8 @@ void p_filter(DISPATCH_ARGS) {
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 	int source_index = interp->dsp - 1;
 
-	int *keep = xmalloc((size_t)MAX(source->len, 1) * sizeof(int));
+	int *keep;
+	MALLOC_OR_FAIL(interp, keep, (size_t)MAX(source->len, 1) * sizeof(int));
 	int n_kept = 0;
 	CallContext context;
 	call_open(interp, xt, &context);
@@ -395,7 +396,8 @@ void p_pfilter(DISPATCH_ARGS) {
 	Object *domain = OBJECT_AT(VAL_DATA(domain_val));
 	int domain_index = interp->dsp - 1;
 
-	char *keep = xcalloc((size_t)MAX(domain->len, 1), 1);
+	char *keep;
+	CALLOC_OR_FAIL(interp, keep, (size_t)MAX(domain->len, 1), 1);
 
 	PfilterContext filter = { .predicate = predicate, .domain = domain, .keep = keep };
 	ParallelRegion region;

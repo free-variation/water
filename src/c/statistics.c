@@ -1,5 +1,57 @@
 #include "water.h"
 
+typedef struct {
+	double value;
+	double response;
+} CARTFeatureEntry;
+
+typedef struct {
+	CARTFeatureEntry *entries;
+	int *rows;
+} CARTSortedColumn;
+
+typedef enum { FEATURE_NUMERIC, FEATURE_CATEGORICAL } CARTFeatureKind;
+
+typedef struct {
+	CARTFeatureKind kind;
+	CARTSortedColumn numeric;
+	int *levels;
+	int n_levels;
+	Val *level_values;
+} CARTFeature;
+
+typedef struct {
+	CARTFeature *features;
+	int n_features;
+	double *response;
+} CARTSample;
+
+typedef struct {
+	int feature;
+	double threshold;
+	int category_offset;
+	int left_child;
+	int right_child;
+	double prediction;
+	int n_rows;
+} CARTNode;
+
+typedef struct {
+	CARTNode *nodes;
+	int n_nodes;
+	int n_allocated;
+	char *category_flags;
+	int n_category_flags;
+	int category_flags_cap;
+} CART;
+
+typedef struct {
+	int *row_index;
+	char *branch;
+	CARTFeatureEntry *staged_entries;
+	int *staged_rows;
+} CARTPartition;
+
 double matrix_variance_overall(Object *source, size_t *n_nonmissing_out) {
 	size_t n = (size_t)(source->matrix.rows * source->matrix.columns);
 	const double * restrict elements = source->matrix.elements;
@@ -71,11 +123,8 @@ void p_quantile(DISPATCH_ARGS) {
 		return;
 	}
 
-	double *sorted = malloc(n * sizeof(double));
-	if (!sorted) {
-		fail(interp, "out of memory");
-		return;
-	}
+	double *sorted;
+	MALLOC_OR_FAIL(interp, sorted, n * sizeof(double));
 	size_t n_nonmissing = 0;
 	for (size_t i = 0; i < n; i++) {
 		double element = source->matrix.elements[i];
@@ -114,11 +163,8 @@ void p_quantile(DISPATCH_ARGS) {
 static int finite_sorted_copy(Interpreter *interp, const Object *sample, double **elements_out) {
 	int n_cells = sample->matrix.rows * sample->matrix.columns;
 
-	double *elements = malloc(sizeof(double) * (size_t)MAX(n_cells, 1));
-	if (!elements) {
-		fail(interp, "out of memory");
-		return -1;
-	}
+	double *elements;
+	MALLOC_OR_FAIL_RETURNING(interp, elements, sizeof(double) * (size_t)MAX(n_cells, 1), -1);
 
 	int n_finite = 0;
 	for (int i = 0; i < n_cells; i++) {
@@ -328,17 +374,10 @@ void p_correlation_kendall(DISPATCH_ARGS) {
 	}
 
 	int n_points = n_x_elements;
-	KendallPoint *points = malloc((size_t)n_points * sizeof(KendallPoint));
-	if (!points) {
-		fail(interp, "out of memory");
-		return;
-	}
-	double *ys_in_x_order = malloc((size_t)n_points * 2 * sizeof(double));
-	if (!ys_in_x_order) {
-		free(points);
-		fail(interp, "out of memory");
-		return;
-	}
+	KendallPoint *points;
+	MALLOC_OR_FAIL(interp, points, (size_t)n_points * sizeof(KendallPoint));
+	double *ys_in_x_order;
+	MALLOC_OR_FAIL_CLEANUP(interp, ys_in_x_order, (size_t)n_points * 2 * sizeof(double), free(points));
 	double *merged_values = ys_in_x_order + n_points;
 
 	const double *x_elements = xs->matrix.elements;
@@ -380,5 +419,374 @@ void p_correlation_kendall(DISPATCH_ARGS) {
 	chain_sp[-2] = make_float(tau);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
+
+typedef struct {
+	int feature;
+	double threshold;
+	int n_left;
+	double score;
+} CARTSplit;
+
+static CARTSplit scan_feature(const CARTFeatureEntry *entries, int node_start, int node_end,
+		double node_sum, int min_samples) {
+	int n_rows = node_end - node_start;
+
+	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .score = -INFINITY };
+	double left_sum = 0.0;
+
+	for (int i = node_start; i + 1 < node_end; i++) {
+		left_sum += entries[i].response;
+		int n_left = i - node_start + 1;
+
+		if (entries[i].value == entries[i + 1].value)
+			continue;
+
+		int n_right = n_rows - n_left;
+		if (n_left < min_samples || n_right < min_samples)
+			continue;
+
+		double right_sum = node_sum - left_sum;
+		double score = left_sum * left_sum / n_left
+				+ right_sum * right_sum / n_right;
+
+		if (score > best.score) {
+			best.score = score;
+			best.threshold = (entries[i].value + entries[i + 1].value) / 2.0;
+			best.n_left = n_left;
+		}
+	}
+
+	return best;
+}
+
+typedef struct {
+	double *level_sum;
+	int *level_count;
+	int *level_order;
+	char *goes_left;
+} CARTCategoryStats;
+
+static int level_mean_cmp(void *stats_thunk, const void *left, const void *right) {
+	const CARTCategoryStats *stats = stats_thunk;
+	int left_level = *(const int *)left;
+	int right_level = *(const int *)right;
+
+	double left_key = stats->level_sum[left_level] * stats->level_count[right_level];
+	double right_key = stats->level_sum[right_level] * stats->level_count[left_level];
+
+	return (left_key > right_key) - (left_key < right_key);
+}
+
+static int order_categories(const int *levels, int n_levels,
+		const int *row_index, int node_start, int node_end,
+		const double *response, CARTCategoryStats *category_stats,
+		double *node_sum_out) {
+	double *level_sum = category_stats->level_sum;
+	int *level_count = category_stats->level_count;
+	int *level_order = category_stats->level_order;
+
+	for (int level = 0; level < n_levels; level++) {
+		level_sum[level] = 0.0;
+		level_count[level] = 0;
+	}
+
+	double node_sum = 0.0;
+
+	for (int i = node_start; i < node_end; i++) {
+		int row = row_index[i];
+		int level = levels[row];
+
+		level_sum[level] += response[row];
+		level_count[level]++;
+
+		node_sum += response[row];
+	}
+
+	int n_present = 0;
+	for (int level = 0; level < n_levels; level++)
+		if (level_count[level] > 0)
+			level_order[n_present++] = level;
+
+	platform_qsort_r(level_order, (size_t)n_present, sizeof(int), category_stats, level_mean_cmp);
+
+	*node_sum_out = node_sum;
+	return n_present;
+}
+
+static CARTSplit scan_categorical(const int *levels, int n_levels,
+		const int *row_index, int node_start, int node_end,
+		const double *response, int min_samples,
+		CARTCategoryStats *category_stats) {
+	double node_sum;
+	int n_present = order_categories(levels, n_levels, row_index, node_start, node_end,
+			response, category_stats, &node_sum);
+
+	int n_rows = node_end - node_start;
+	double *level_sum = category_stats->level_sum;
+	int *level_count = category_stats->level_count;
+	int *level_order = category_stats->level_order;
+
+	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .score = -INFINITY };
+	double left_sum = 0.0;
+	int left_count = 0;
+
+	for (int j = 0; j + 1 < n_present; j++) {
+		int level = level_order[j];
+		left_sum += level_sum[level];
+		left_count += level_count[level];
+
+		int right_count = n_rows - left_count;
+		if (left_count < min_samples || right_count < min_samples)
+			continue;
+
+		double right_sum = node_sum - left_sum;
+		double score = left_sum * left_sum / left_count
+				+ right_sum * right_sum / right_count;
+
+		if (score > best.score) {
+			best.score = score;
+			best.n_left = left_count;
+		}
+	}
+
+	return best;
+}
+
+static CARTSplit choose_split(const CARTSample *sample, const CARTPartition *partition,
+		CARTCategoryStats *category_stats, int node_start, int node_end,
+		double node_sum, int min_samples) {
+	int n_rows = node_end - node_start;
+
+	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0,
+			.score = node_sum * node_sum / n_rows };
+
+	for (int f = 0; f < sample->n_features; f++) {
+		const CARTFeature *feature = &sample->features[f];
+
+		CARTSplit candidate = feature->kind == FEATURE_NUMERIC
+			? scan_feature(feature->numeric.entries, node_start, node_end, node_sum, min_samples)
+			: scan_categorical(feature->levels, feature->n_levels, partition->row_index,
+					node_start, node_end, sample->response, min_samples, category_stats);
+
+		if (candidate.score > best.score) {
+			best = candidate;
+			best.feature = f;
+		}
+	}
+
+	return best;
+}
+
+enum { BRANCH_LEFT = 0, BRANCH_RIGHT = 1 };
+
+static void mark_branches(const int *rows, int node_start, int node_end, int n_left, char *branch) {
+	int right_start = node_start + n_left;
+	for (int i = node_start; i < right_start; i++)
+		branch[rows[i]] = BRANCH_LEFT;
+	for (int i = right_start; i < node_end; i++)
+		branch[rows[i]] = BRANCH_RIGHT;
+}
+
+static void mark_branches_categorical(const int *levels, int n_levels,
+		const int *row_index, int node_start, int node_end,
+		const double *response, int n_left,
+		CARTCategoryStats *category_stats, char *branch) {
+	double node_sum;
+	int n_present = order_categories(levels, n_levels, row_index, node_start, node_end,
+			response, category_stats, &node_sum);
+
+	char *goes_left = category_stats->goes_left;
+	for (int level = 0; level < n_levels; level++)
+		goes_left[level] = 0;
+
+	int left_count = 0;
+	for (int j = 0; j < n_present && left_count < n_left; j++) {
+		int level = category_stats->level_order[j];
+		goes_left[level] = 1;
+		left_count += category_stats->level_count[level];
+	}
+
+	for (int i = node_start; i < node_end; i++) {
+		int row = row_index[i];
+		branch[row] = goes_left[levels[row]] ? BRANCH_LEFT : BRANCH_RIGHT;
+	}
+}
+
+static void partition_column(CARTSortedColumn *column, int node_start, int node_end, int n_left,
+		const char *branch, CARTFeatureEntry *staged_entries, int *staged_rows) {
+	int right_start = node_start + n_left;
+	int left_index = node_start;
+	int right_index = right_start;
+
+	for (int i = node_start; i < node_end; i++) {
+		int row = column->rows[i];
+		if (branch[row] == BRANCH_LEFT) {
+			staged_entries[left_index] = column->entries[i];
+			staged_rows[left_index] = row;
+			left_index++;
+		} else {
+			staged_entries[right_index] = column->entries[i];
+			staged_rows[right_index] = row;
+			right_index++;
+		}
+	}
+
+	memcpy(&column->entries[node_start], &staged_entries[node_start], sizeof(CARTFeatureEntry) * (size_t)(node_end - node_start));
+	memcpy(&column->rows[node_start], &staged_rows[node_start], sizeof(int) * (size_t)(node_end - node_start));
+}
+
+static void partition_row_index(int *row_index, int node_start, int node_end, const char *branch) {
+	int left_index = node_start;
+	int right_index = node_end - 1;
+
+	while (left_index <= right_index) {
+		while (left_index <= right_index && branch[row_index[left_index]] == BRANCH_LEFT)
+			left_index++;
+		while (left_index <= right_index && branch[row_index[right_index]] == BRANCH_RIGHT)
+			right_index--;
+
+		if (left_index < right_index) {
+			int swap_row = row_index[left_index];
+			row_index[left_index] = row_index[right_index];
+			row_index[right_index] = swap_row;
+			left_index++;
+			right_index--;
+		}
+	}
+}
+
+static void partition_node(CARTSample *sample, CARTPartition *partition,
+		CARTCategoryStats *category_stats, const CARTSplit *split,
+		int node_start, int node_end) {
+	const CARTFeature *feature = &sample->features[split->feature];
+
+	if (feature->kind == FEATURE_NUMERIC)
+		mark_branches(feature->numeric.rows, node_start, node_end, split->n_left, partition->branch);
+	else
+		mark_branches_categorical(feature->levels, feature->n_levels,
+				partition->row_index, node_start, node_end, sample->response,
+				split->n_left, category_stats, partition->branch);
+
+	for (int f = 0; f < sample->n_features; f++) {
+		if (sample->features[f].kind != FEATURE_NUMERIC || f == split->feature)
+			continue;
+		partition_column(&sample->features[f].numeric, node_start, node_end,
+				split->n_left, partition->branch, partition->staged_entries, partition->staged_rows);
+	}
+
+	partition_row_index(partition->row_index, node_start, node_end, partition->branch);
+}
+
+static int append_node(CART *tree) {
+	GROW_IF_FULL_SYS(tree->n_nodes, tree->n_allocated, tree->nodes);
+	int node_index = tree->n_nodes++;
+	return node_index;
+}
+
+static void record_categorical_split(CART *tree, int node_index,
+		const CARTCategoryStats *category_stats, int n_levels) {
+	int offset = tree->n_category_flags;
+
+	while (tree->n_category_flags + n_levels > tree->category_flags_cap) {
+		tree->category_flags_cap = tree->category_flags_cap ? tree->category_flags_cap * 2 : 8;
+		tree->category_flags = realloc(tree->category_flags, (size_t)tree->category_flags_cap);
+	}
+
+	const char *goes_left = category_stats->goes_left;
+	for (int level = 0; level < n_levels; level++)
+		tree->category_flags[offset + level] = goes_left[level];
+
+	tree->n_category_flags += n_levels;
+	tree->nodes[node_index].category_offset = offset;
+}
+
+static int grow_node(CARTSample *sample, CARTPartition *partition,
+		CARTCategoryStats *category_stats, CART *tree,
+		int max_depth, int min_samples, int node_start, int node_end, int tree_depth) {
+	int n_rows = node_end - node_start;
+
+	double node_sum = 0.0;
+	for (int i = node_start; i < node_end; i++)
+		node_sum += sample->response[partition->row_index[i]];
+
+	int node_index = append_node(tree);
+	CARTNode *node = &tree->nodes[node_index];
+	node->feature = -1;
+	node->threshold = 0.0;
+	node->category_offset = -1;
+	node->left_child = -1;
+	node->right_child = -1;
+	node->prediction = node_sum / n_rows;
+	node->n_rows = n_rows;
+
+	if (tree_depth >= max_depth)
+		return node_index;
+
+	CARTSplit split = choose_split(sample, partition, category_stats,
+			node_start, node_end, node_sum, min_samples);
+	if (split.feature < 0)
+		return node_index;
+
+	partition_node(sample, partition, category_stats, &split, node_start, node_end);
+
+	if (sample->features[split.feature].kind == FEATURE_CATEGORICAL)
+		record_categorical_split(tree, node_index, category_stats,
+				sample->features[split.feature].n_levels);
+
+	int mid = node_start + split.n_left;
+	int left = grow_node(sample, partition, category_stats, tree,
+			max_depth, min_samples, node_start, mid, tree_depth + 1);
+	int right = grow_node(sample, partition, category_stats, tree,
+			max_depth, min_samples, mid, node_end, tree_depth + 1);
+
+	node = &tree->nodes[node_index];
+	node->feature = split.feature;
+	node->threshold = split.threshold;
+	node->left_child = left;
+	node->right_child = right;
+
+	return node_index;
+}
+
+static void presort_numeric_column(const double *column_values, const double *response,
+		int n_rows, CARTSortedColumn *sorted_column, ArgsortPair *value_rows) {
+	for (int row = 0; row < n_rows; row++) {
+		value_rows[row].value = column_values[row];
+		value_rows[row].index = row;
+	}
+
+	sort_pairs(value_rows, (size_t)n_rows);
+
+	CARTFeatureEntry *entries = sorted_column->entries;
+	int *rows = sorted_column->rows;
+
+	for (int i = 0; i < n_rows; i++) {
+		int row = value_rows[i].index;
+		entries[i].value = value_rows[i].value;
+		entries[i].response = response[row];
+		rows[i] = row;
+	}
+}
+
+static void free_cart_sample(CARTSample *sample, int n_initialized_features) {
+	for (int f = 0; f < n_initialized_features; f++) {
+		CARTFeature *feature = &sample->features[f];
+
+		if (feature->kind == FEATURE_NUMERIC) {
+			free(feature->numeric.entries);
+			free(feature->numeric.rows);
+		} else {
+			free(feature->levels);
+			free(feature->level_values);
+		}
+	}
+
+	free(sample->features);
+}
+
+static int category_value_cmp(void *interpreter, const void *left, const void *right) {
+	Interpreter *interp = interpreter;
+	return val_cmp(interp, *(const Val *)left, *(const Val *)right);
 }
 

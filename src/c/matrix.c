@@ -350,11 +350,8 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 #pragma clang fp reassociate(on)
 		const double * restrict a_elements = A->matrix.elements;
 		const double * restrict b_elements = B->matrix.elements;
-		double *a_column = malloc(sizeof(double) * (size_t)k);
-		if (!a_column) {
-			fail(interp, "out of memory for a %d-element column buffer", k);
-			return -1;
-		}
+		double *a_column;
+		MALLOC_OR_FAIL_RETURNING(interp, a_column, sizeof(double) * (size_t)k, -1);
 
 		for (i = 0; i < m; i++) {
 			for (p = 0; p < k; p++)
@@ -430,11 +427,6 @@ static size_t sort_partition_nans(double *elements, size_t n_elements) {
 
 	return sortable;
 }
-
-typedef struct {
-	double value;
-	int index;
-} ArgsortPair;
 
 static inline int argsort_pair_before(ArgsortPair left, ArgsortPair right) {
 	if (left.value != right.value)
@@ -537,7 +529,7 @@ RADIX_SORT(pairs, ArgsortPair, PAIR_KEY)
 	}
 
 SORT_DISPATCH(, doubles, double)
-SORT_DISPATCH(static, pairs, ArgsortPair)
+SORT_DISPATCH(, pairs, ArgsortPair)
 
 static int vector_length(Interpreter *interp, Object *vector, const char *noun_phrase) {
 	int n_rows = vector->matrix.rows;
@@ -578,11 +570,8 @@ int vector_argsort_copy(Interpreter *interp, Object *source) {
 		return -1;
 
 	size_t n_elements = (size_t)length;
-	ArgsortPair *pairs = malloc(n_elements * sizeof(ArgsortPair));
-	if (!pairs) {
-		fail(interp, "out of memory");
-		return -1;
-	}
+	ArgsortPair *pairs;
+	MALLOC_OR_FAIL_RETURNING(interp, pairs, n_elements * sizeof(ArgsortPair), -1);
 
 	const double *elements = source->matrix.elements;
 	size_t sortable = 0;

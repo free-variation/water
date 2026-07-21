@@ -6,7 +6,8 @@ int string_concat(Interpreter *interp, int left_handle, int right_handle) {
 	Object *right = OBJECT_AT(right_handle);
 	int combined_length = left->len + right->len;
 
-	char *buffer = malloc((size_t)combined_length + 1);
+	char *buffer;
+	MALLOC_OR_FAIL_RETURNING(interp, buffer, (size_t)combined_length + 1, -1);
 	memcpy(buffer, left->bytes, (size_t)left->len);
 	memcpy(buffer + left->len, right->bytes, (size_t)right->len);
 	int result_handle = object_new_string(interp, buffer, combined_length);
@@ -1481,8 +1482,10 @@ void p_words(DISPATCH_ARGS) {
 		if (!WORD_IS_INTERNAL(cfa))
 			word_count++;
 
-	const char **names = xmalloc(sizeof(char *) * (size_t)word_count);
-	int *groups = xmalloc(sizeof(int) * (size_t)word_count);
+	const char **names;
+	MALLOC_OR_FAIL(interp, names, sizeof(char *) * (size_t)word_count);
+	int *groups;
+	MALLOC_OR_FAIL_CLEANUP(interp, groups, sizeof(int) * (size_t)word_count, free(names));
 	int session_group = help_section_count;
 	int undocumented_group = help_section_count + 1;
 	int units_group = help_section_count + 2;
@@ -1503,7 +1506,8 @@ void p_words(DISPATCH_ARGS) {
 		n_collected++;
 	}
 
-	const char **group_names = xmalloc(sizeof(char *) * (size_t)word_count);
+	const char **group_names;
+	MALLOC_OR_FAIL_CLEANUP(interp, group_names, sizeof(char *) * (size_t)word_count, { free(groups); free(names); });
 	print_word_group(names, groups, n_collected, session_group, "this session", group_names);
 	for (int s = 0; s < help_section_count; s++)
 		print_word_group(names, groups, n_collected, s, help_section_names[s], group_names);
@@ -1825,7 +1829,7 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 		long long as_int = (long long)VAL_NUMBER(value);
 		n = snprintf(stackbuf, sizeof stackbuf, fmt, as_int);
 		if (n >= (int)sizeof stackbuf) {
-			rendered = malloc((size_t)n + 1);
+			MALLOC_OR_FAIL(interp, rendered, (size_t)n + 1);
 			snprintf(rendered, (size_t)n + 1, fmt, as_int);
 		}
 	} else if (conv && conv != 's') {
@@ -1837,12 +1841,13 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 		snprintf(fmt, sizeof fmt, "%%%s", cspec);
 		n = snprintf(stackbuf, sizeof stackbuf, fmt, as_float);
 		if (n >= (int)sizeof stackbuf) {
-			rendered = malloc((size_t)n + 1);
+			MALLOC_OR_FAIL(interp, rendered, (size_t)n + 1);
 			snprintf(rendered, (size_t)n + 1, fmt, as_float);
 		}
 	} else {
 		int text_cap = 64;
-		char *text = malloc(text_cap);
+		char *text;
+		MALLOC_OR_FAIL(interp, text, text_cap);
 		int text_len = 0;
 		interp_render_val(interp, value, &text, &text_cap, &text_len);
 		interp_append(interp, &text, &text_cap, &text_len, "", 1);
@@ -1856,7 +1861,7 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 			snprintf(fmt, sizeof fmt, "%%%ss", cspec);
 		n = snprintf(stackbuf, sizeof stackbuf, fmt, text);
 		if (n >= (int)sizeof stackbuf) {
-			rendered = malloc((size_t)n + 1);
+			MALLOC_OR_FAIL_CLEANUP(interp, rendered, (size_t)n + 1, free(text));
 			snprintf(rendered, (size_t)n + 1, fmt, text);
 		}
 		free(text);
@@ -1872,11 +1877,8 @@ static void interp_render_with_spec(Interpreter *interp, Val value,
 int interpolate(Interpreter *interp, int template_handle) {
 	Object *template = OBJECT_AT(template_handle);
 	int capacity = template->len + 64;
-	char *out_buffer = malloc((size_t)capacity);
-	if (!out_buffer) {
-		fail(interp, "out of memory");
-		return object_new_string(interp, "", 0);
-	}
+	char *out_buffer;
+	MALLOC_OR_FAIL_RETURNING(interp, out_buffer, (size_t)capacity, -1);
 	int out_length = 0;
 	int refs[64];
 	int ref_count = 0;

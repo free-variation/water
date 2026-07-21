@@ -130,7 +130,8 @@ static pcre2_code *compiled_pattern(Interpreter *interp, Object *pattern) {
 		pcre2_code_free(interp->regex_cache[slot].re);
 		free(interp->regex_cache[slot].pattern);
 	}
-	interp->regex_cache[slot].pattern = malloc((size_t)pattern->len);
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, interp->regex_cache[slot].pattern, (size_t)pattern->len,
+			{ pcre2_code_free(re); interp->regex_cache[slot].in_use = 0; }, NULL);
 	memcpy(interp->regex_cache[slot].pattern, pattern->bytes, (size_t)pattern->len);
 	interp->regex_cache[slot].pattern_len = pattern->len;
 	interp->regex_cache[slot].pattern_hash = hash;
@@ -550,9 +551,10 @@ static int exploded_array(Interpreter *interp, Object *source,
 
 STRING_EXPLODE_OP(p_string_to_chars, produce_char_string)
 
-int *decoded_codepoints(const char *bytes, int byte_len, int *count_out) {
+int *decoded_codepoints(Interpreter *interp, const char *bytes, int byte_len, int *count_out) {
 	int count = utf8_codepoint_count(bytes, byte_len);
-	int *codepoints = xmalloc(sizeof(int) * (size_t)(count > 0 ? count : 1));
+	int *codepoints;
+	MALLOC_OR_FAIL_RETURNING(interp, codepoints, sizeof(int) * (size_t)(count > 0 ? count : 1), NULL);
 
 	int offset = 0;
 	int index = 0;
@@ -570,7 +572,9 @@ void p_string_to_codepoints(DISPATCH_ARGS) {
 	Object *source = OBJECT_AT(VAL_DATA(source_val));
 
 	int codepoint_count;
-	int *codepoints = decoded_codepoints(source->bytes, source->len, &codepoint_count);
+	int *codepoints = decoded_codepoints(interp, source->bytes, source->len, &codepoint_count);
+	if (interp->error_flag)
+		return;
 
 	int handle = object_new_array(interp, codepoint_count);
 	if (interp->error_flag) {
@@ -612,11 +616,8 @@ void p_codepoints_to_string(DISPATCH_ARGS) {
 	Object *codes = OBJECT_AT(VAL_DATA(codes_val));
 
 	int codepoint_count = codes->len;
-	char *buffer = malloc((size_t)codepoint_count * 4 + 1);
-	if (!buffer) {
-		fail(interp, "out of memory");
-		return;
-	}
+	char *buffer;
+	MALLOC_OR_FAIL(interp, buffer, (size_t)codepoint_count * 4 + 1);
 
 	int offset = 0;
 	for (int i = 0; i < codepoint_count; i++) {
@@ -730,16 +731,25 @@ void p_join(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-int string_edit_distance(const char *first_bytes, int first_len, const char *second_bytes, int second_len) {
+int string_edit_distance(Interpreter *interp, const char *first_bytes, int first_len, const char *second_bytes, int second_len) {
 	int first_count;
 	int second_count;
-	int *first_codes = decoded_codepoints(first_bytes, first_len, &first_count);
-	int *second_codes = decoded_codepoints(second_bytes, second_len, &second_count);
+	int *first_codes = decoded_codepoints(interp, first_bytes, first_len, &first_count);
+	if (interp->error_flag)
+		return -1;
+	int *second_codes = decoded_codepoints(interp, second_bytes, second_len, &second_count);
+	if (interp->error_flag) {
+		free(first_codes);
+		return -1;
+	}
 
 	int width = second_count + 1;
-	int *two_rows_ago = xmalloc(sizeof(int) * (size_t)width);
-	int *previous_row = xmalloc(sizeof(int) * (size_t)width);
-	int *current_row = xmalloc(sizeof(int) * (size_t)width);
+	int *two_rows_ago;
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, two_rows_ago, sizeof(int) * (size_t)width, { free(first_codes); free(second_codes); }, -1);
+	int *previous_row;
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, previous_row, sizeof(int) * (size_t)width, { free(first_codes); free(second_codes); free(two_rows_ago); }, -1);
+	int *current_row;
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, current_row, sizeof(int) * (size_t)width, { free(first_codes); free(second_codes); free(two_rows_ago); free(previous_row); }, -1);
 	for (int j = 0; j < width; j++)
 		previous_row[j] = j;
 
@@ -784,7 +794,9 @@ void p_edit_distance(DISPATCH_ARGS) {
 	REQUIRE_CHAIN_TAG(first_val, T_STRING, "edit-distance", "a string");
 	Object *first = OBJECT_AT(VAL_DATA(first_val));
 
-	int distance = string_edit_distance(first->bytes, first->len, second->bytes, second->len);
+	int distance = string_edit_distance(interp, first->bytes, first->len, second->bytes, second->len);
+	if (interp->error_flag)
+		return;
 	chain_sp[-2] = make_float((double)distance);
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);

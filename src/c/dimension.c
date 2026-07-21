@@ -31,7 +31,7 @@ int init_n_units;
 
 void dimension_init() {
 	unit_cap = 8;
-	units = malloc(sizeof(Unit) * (size_t)unit_cap);
+	units = xmalloc(sizeof(Unit) * (size_t)unit_cap);
 
 	units[0].terms = NULL;
 	units[0].n_terms = 0;
@@ -227,7 +227,7 @@ static int unit_eq(Unit *left, Unit *right) {
 	return same_dimensions(left, right);
 }
 
-static int unit_intern(DimTerm *terms, int n_terms, Rational scale) {
+static int unit_intern(Interpreter *interp, DimTerm *terms, int n_terms, Rational scale) {
 	if (n_terms == 0)
 		return 0;
 
@@ -239,7 +239,7 @@ static int unit_intern(DimTerm *terms, int n_terms, Rational scale) {
 
 	GROW_IF_FULL_SYS(n_units, unit_cap, units);
 
-	units[n_units].terms = malloc(sizeof(DimTerm) * (size_t)n_terms);
+	MALLOC_OR_FAIL_RETURNING(interp, units[n_units].terms, sizeof(DimTerm) * (size_t)n_terms, -1);
 	memcpy(units[n_units].terms, terms, sizeof(DimTerm) * (size_t)n_terms);
 	units[n_units].n_terms = n_terms;
 	units[n_units].scale = scale;
@@ -248,12 +248,12 @@ static int unit_intern(DimTerm *terms, int n_terms, Rational scale) {
 	return n_units++;
 }
 
-static int unit_of_dimension(int dimension) {
+static int unit_of_dimension(Interpreter *interp, int dimension) {
 	DimTerm term;
 	term.dimension = dimension;
 	term.power = make_rational(1, 1);
 
-	return unit_intern(&term, 1, make_rational(1, 1));
+	return unit_intern(interp, &term, 1, make_rational(1, 1));
 }
 
 static int unit_canonicalize(DimTerm *terms, int n_terms) {
@@ -375,13 +375,17 @@ int dimension_load(FILE *file) {
 	return 1;
 }
 
-static int unit_combine(int left, int right, int sign, double *collapse_factor) {
+static int unit_combine(Interpreter *interp, int left, int right, int sign, double *collapse_factor) {
 	Unit *left_unit = &units[left];
 	Unit *right_unit = &units[right];
 
 	int max_terms = left_unit->n_terms + right_unit->n_terms;
 	DimTerm inline_terms[16];
 	DimTerm *merged = max_terms <= 16 ? inline_terms : malloc(sizeof(DimTerm) * (size_t)max_terms);
+	if (!merged) {
+		fail(interp, "out of memory");
+		return -1;
+	}
 	int n_merged = 0;
 
 	for (int i = 0; i < left_unit->n_terms; i++)
@@ -425,22 +429,22 @@ static int unit_combine(int left, int right, int sign, double *collapse_factor) 
 	if (n_terms == 0)
 		*collapse_factor = (double)scale.numerator / (double)scale.denominator;
 
-	int combined_unit = unit_intern(merged, n_terms, scale);
+	int combined_unit = unit_intern(interp, merged, n_terms, scale);
 
 	if (merged != inline_terms) free(merged);
 	return combined_unit;
 }
 
 int unit_multiply(Interpreter *interp, int left, int right, double *collapse_factor) {
-	int combined = unit_combine(left, right, 1, collapse_factor);
-	if (combined < 0)
+	int combined = unit_combine(interp, left, right, 1, collapse_factor);
+	if (combined < 0 && !interp->error_flag)
 		fail(interp, "unit scale or exponent overflow");
 	return combined;
 }
 
 int unit_divide(Interpreter *interp, int left, int right, double *collapse_factor) {
-	int combined = unit_combine(left, right, -1, collapse_factor);
-	if (combined < 0)
+	int combined = unit_combine(interp, left, right, -1, collapse_factor);
+	if (combined < 0 && !interp->error_flag)
 		fail(interp, "unit scale or exponent overflow");
 	return combined;
 }
@@ -457,7 +461,8 @@ int unit_pow(Interpreter *interp, int unit, int numerator, int denominator) {
 	}
 
 	Unit *base_unit = &units[unit];
-	DimTerm *scaled_terms = malloc(sizeof(DimTerm) * (size_t)base_unit->n_terms);
+	DimTerm *scaled_terms;
+	MALLOC_OR_FAIL_RETURNING(interp, scaled_terms, sizeof(DimTerm) * (size_t)base_unit->n_terms, -1);
 
 	for (int i = 0; i < base_unit->n_terms; i++) {
 		scaled_terms[i].dimension = base_unit->terms[i].dimension;
@@ -469,7 +474,7 @@ int unit_pow(Interpreter *interp, int unit, int numerator, int denominator) {
 	}
 
 	int n_terms = unit_canonicalize(scaled_terms, base_unit->n_terms);
-	int raised_unit = unit_intern(scaled_terms, n_terms, scale);
+	int raised_unit = unit_intern(interp, scaled_terms, n_terms, scale);
 
 	free(scaled_terms);
 	return raised_unit;
@@ -561,7 +566,9 @@ int quantity_truthy(Val quantity) {
 
 void p_base(DISPATCH_ARGS) {
 	int dimension = new_dimension();
-	int unit = unit_of_dimension(dimension);
+	int unit = unit_of_dimension(interp, dimension);
+	if (interp->error_flag)
+		return;
 
 	push_quantity(interp, make_float(1.0), unit);
 
@@ -647,7 +654,9 @@ void p_unit(DISPATCH_ARGS) {
 			&& dimension_names[units[source_unit].terms[0].dimension] == DIMENSION_UNNAMED)
 		base_dimension = units[source_unit].terms[0].dimension;
 
-	int unit = unit_intern(units[source_unit].terms, units[source_unit].n_terms, scale);
+	int unit = unit_intern(interp, units[source_unit].terms, units[source_unit].n_terms, scale);
+	if (interp->error_flag)
+		return;
 
 	int cfa = create_header(interp, name, 0);
 	units[unit].name = WORD_NAME(cfa);

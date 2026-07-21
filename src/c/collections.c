@@ -731,7 +731,8 @@ void p_sample(DISPATCH_ARGS) {
 		for (int i = 0; i < count; i++)
 			sampled->items[i] = source->items[random_below(source->len)];
 	} else {
-		int *indices = xmalloc(sizeof(int) * (size_t)source->len);
+		int *indices;
+		MALLOC_OR_FAIL(interp, indices, sizeof(int) * (size_t)source->len);
 		for (int i = 0; i < source->len; i++)
 			indices[i] = i;
 
@@ -817,7 +818,7 @@ static int frame_entry_cmp(const void *a, const void *b) {
 	return (left->order > right->order) - (left->order < right->order);
 }
 
-void frame_sort_dedup(Object *frame) {
+void frame_sort_dedup(Interpreter *interp, Object *frame) {
 	if (frame->len < 2)
 		return;
 
@@ -858,7 +859,8 @@ void frame_sort_dedup(Object *frame) {
 		return;
 	}
 
-	FrameEntry *entries = malloc(sizeof(FrameEntry) * (size_t)frame->len);
+	FrameEntry *entries;
+	MALLOC_OR_FAIL(interp, entries, sizeof(FrameEntry) * (size_t)frame->len);
 	for (int i = 0; i < frame->len; i++) {
 		entries[i].key = frame->frame.keys[i];
 		entries[i].value = frame->frame.values[i];
@@ -1459,7 +1461,9 @@ void p_frame(DISPATCH_ARGS) {
 		frame->frame.values[i] = values->items[i];
 	}
 	frame->len = keys->len;
-	frame_sort_dedup(frame);
+	frame_sort_dedup(interp, frame);
+	if (interp->error_flag)
+		return;
 
 	chain_sp[-2] = make_frame(frame_handle);
 
@@ -1605,12 +1609,8 @@ void p_group_by(DISPATCH_ARGS) {
 		return;
 
 	Object *rows = OBJECT_AT(VAL_DATA(rows_val));
-	GroupEntry *entries = malloc(sizeof(GroupEntry) * (size_t)MAX(row_count, 1));
-	if (!entries) {
-		gc_root_pop(interp);
-		fail(interp, "out of memory");
-		return;
-	}
+	GroupEntry *entries;
+	MALLOC_OR_FAIL_CLEANUP(interp, entries, sizeof(GroupEntry) * (size_t)MAX(row_count, 1), gc_root_pop(interp));
 	for (int i = 0; i < row_count; i++) {
 		entries[i].key = VAL_DATA(frame_field(rows->items[i], col));
 		entries[i].index = i;
@@ -2115,7 +2115,9 @@ static void json_parse_object(Interpreter *interp, JSONParser *parser, Val *dest
 		return;
 	}
 
-	frame_sort_dedup(OBJECT_AT(handle));
+	frame_sort_dedup(interp, OBJECT_AT(handle));
+	if (interp->error_flag)
+		return;
 
 	parser->depth--;
 }
