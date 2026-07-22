@@ -4530,7 +4530,6 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "ks-distance", p_ks_distance, 0);
 	define_primitive(interp, "fit-tree", p_fit_tree, 0);
 	define_primitive(interp, "pfit-tree", p_pfit_tree, 0);
-	define_primitive(interp, "fit-tree-hist", p_fit_tree_hist, 0);
 	define_primitive(interp, "norm", p_norm, 0);
 	define_primitive(interp, "frobenius-norm", p_frobenius_norm, 0);
 	define_primitive(interp, "row-sums", p_row_sums, 0);

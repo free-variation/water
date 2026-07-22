@@ -217,7 +217,6 @@ find
 find-executable
 first
 fit-tree
-fit-tree-hist
 flat-map
 flatten
 flatten-array

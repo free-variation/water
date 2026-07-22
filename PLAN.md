@@ -4,20 +4,145 @@ A TODO list of pending work, highest priority first.
 
 ---
 
-## Histogram regression tree (`fit-tree-hist`) — residuals
+## Exact CART: prediction and missing values
 
-1. A predict word (`tree row -- prediction`) walking the tree frame — also the
-   missing instrument for the similarity acceptance: training SSE of
-   `fit-tree-hist` within a few percent of `fit-tree` on
-   `data/logistic-sim.tsv`.
-2. Quantile bins as the split-quality lever for skewed features: a per-feature
-   sort is too slow per call but amortizes once binning is hoisted out of the
-   per-round path by gradient boosting.
-3. Missing values, both trees: a reserved NaN bin plus a learned default
-   direction (today a NaN sorts as an ordinary value).
-4. Gradient boosting reuses the histogram builder with `(gradient sum,
-   hessian sum)` in place of `(response sum, count)`; bin once, reuse the codes
-   across rounds.
+1. A polymorphic `predict ( model X -- yhat )` walking the tree frame (and
+   `[1|X]·beta`/`sigmoid` for the linear/logistic fits once they carry a
+   `:kind` tag), with `classify` thresholding logistic output; then a
+   regression score word (SSE/R²/RMSE) so a fit can be evaluated. Traversal
+   conventions: numeric tie `≤ → left`; unseen categorical → right (matches
+   xgboost inference).
+2. Missing-value handling: a learned default direction per split — each split
+   evaluates sending the missing rows' `(sum, count)` left vs right, keeps the
+   higher-gain side, stores it on the node as `:default`, and `predict`
+   follows it. Today a NaN sorts as an ordinary value; on NaN-free data the
+   change is inert, so existing trees are unaffected.
+
+---
+
+## FFI out-parameter primitives + xgboost binding
+
+Bind the system libxgboost through the existing FFI as an opaque fast
+predictor: `xgb-fit ( X y params -- booster )` / `xgb-predict ( booster X --
+yhat )` in a loadable `lib/xgboost.h2o`. The exact `fit-tree`/`pfit-tree` stay;
+this is a comparison baseline and production GBM, not a replacement. No
+xgboost-specific C — the C side gains only generic FFI
+primitives that any out-parameter/float32 library needs.
+
+### Decisions
+
+1. FFI route, not vendoring: xgboost is CMake-only C++17 with no amalgamation;
+   `ffi-open` on an installed `libxgboost.dylib` keeps the build C-only. The
+   library path comes from env `XGBOOST_LIB`, default
+   `/opt/homebrew/lib/libxgboost.dylib`.
+2. Data passes as float64 via array-interface JSON: `XGDMatrixCreateFromDense
+   (char const *data, char const *config, DMatrixHandle *out)` and
+   `XGDMatrixSetInfoFromInterface(handle, field, char const *data)` both take
+   `__array_interface__` JSON (verified in c_api.h), so a Water matrix's
+   buffer address + typestr `"<f8"` avoids any float32 input conversion. First
+   implementation step tests that `"<f8"` is accepted; if rejected, add the
+   fallback primitive `matrix>floats` (7 below) and pass `"<f4"`.
+3. Predictions return as `float const **out_result` (owner: the booster,
+   "copy before use") — copied immediately into a fresh Water matrix.
+4. Every xgboost call returns an int status; a nonzero status reads
+   `XGBGetLastError()` (a `:string` return, already marshallable) and throws
+   its message.
+5. Native-only: `foreign.c` is not in WASM_SRCS; each new primitive gets a
+   `WASM_UNSUPPORTED` stub in platform_wasi.c beside the existing ffi stubs
+   (lines 66–72). The binding lives in lib/ (loadable), so the wasm suite
+   never sees it.
+6. `BoosterHandle`s are opaque `T_PTR`s — not frames, not `:kind`-tagged
+   models. The polymorphic `predict` design does not cover them; `xgb-predict`
+   is its own word.
+
+### New primitives (foreign.c; each: stack effect, semantics, form)
+
+All six are register-threaded (predicate: no interpreter re-entry, no
+push-style helper tail calls); only `floats>matrix` allocates a GC object, and
+it does so before any stack write, with only non-heap operands (T_PTR, float)
+live.
+
+1. `pointer-cell ( -- ptr )` — malloc(8), zeroed, interned as T_PTR. The
+   scratch slot for every `Handle *out` and `bst_ulong *out` parameter; also
+   serves as a one-element `DMatrixHandle[]` for `XGBoosterCreate`. Freed by
+   the existing `ffi-free`.
+2. `pointer-deref ( ptr -- ptr' )` — load `*(void **)p`, intern the loaded
+   pointer. Reads a written-back handle out of a cell and steps through
+   `float const **` / `bst_ulong const **`.
+3. `pointer>address ( ptr -- n )` — the pointer's numeric address as a float,
+   for building array-interface JSON. Exact only below 2^53; macOS arm64 user
+   pointers are < 2^47. Error if the address exceeds 2^53. Reference row
+   states the bound.
+4. `pointer-long ( ptr -- n )` — load `*(int64_t *)p` as a float (reads
+   `bst_ulong` out-values such as `out_dim` and the dereferenced `out_shape`).
+5. `floats>matrix ( ptr n -- m )` — copy n float32 values from foreign memory
+   into a new n×1 double matrix (the prediction read-back).
+6. (fallback, only if decision 2's float64 test fails) `matrix>floats
+   ( m -- ptr )` — malloc'd float32 copy of a matrix's elements, interned;
+   freed by `ffi-free`. Also enables `XGDMatrixSetFloatInfo`.
+
+Checklist per primitive: water.h declaration in the foreign.c block
+(alphabetical), core.c registration beside `ffi-free`, platform_wasi.c
+`WASM_UNSUPPORTED` stub, reference.md row in the Foreign function interface
+table, golden coverage (see acceptance 1).
+
+### lib/xgboost.h2o words
+
+1. Load-time: `XGBOOST_LIB` env (default above) → `ffi-open`, then
+   `ffi-function` declarations for XGDMatrixCreateFromDense,
+   XGDMatrixSetInfoFromInterface, XGDMatrixFree, XGBoosterCreate,
+   XGBoosterSetParam, XGBoosterUpdateOneIter, XGBoosterPredictFromDMatrix,
+   XGBoosterFree, XGBoosterSaveModel, XGBoosterLoadModel, XGBGetLastError.
+2. `(xgb-check) ( status -- )` internal — nonzero → XGBGetLastError throw.
+3. `(array-interface) ( m -- s )` internal — matrix>pointer,
+   pointer>address, dim, format `{"data":[ADDR,false],"shape":[R,C],
+   "typestr":"<f8","version":3}`. The address must print as plain integer
+   digits (~15 digits, no exponent); verify `format`'s rendering at this
+   magnitude first, else route through an integer-string word.
+4. `xgb-fit ( X y params -- booster )` — X n×k matrix (row-major, as Water
+   stores), y n×1; DMatrix from X (config `{"missing":NaN}`), label via
+   SetInfoFromInterface, BoosterCreate over a pointer-cell holding the
+   DMatrix, params frame → SetParam per key with `format`ted values
+   (`:rounds`, default 100, is consumed by the update loop, not passed),
+   UpdateOneIter × rounds, XGDMatrixFree, return the booster T_PTR.
+5. `xgb-predict ( booster X -- yhat )` — DMatrix from X, predict with config
+   `{"type":0,"training":false,"iteration_begin":0,"iteration_end":0,
+   "strict_shape":false}` and three pointer-cells; n from pointer-deref +
+   pointer-long of out_shape; floats>matrix copy; XGDMatrixFree; free the
+   cells.
+6. `xgb-free ( booster -- )`; `xgb-save ( booster path -- )`;
+   `xgb-load-model ( path -- booster )` (create an empty booster, then
+   XGBoosterLoadModel into it).
+
+### Implementation steps
+
+1. The six primitives (five now, `matrix>floats` contingent) through the full
+   per-primitive checklist; native golden for the xgboost-independent subset.
+2. Smoke script: ffi-open libxgboost, CreateFromDense with a `"<f8"`
+   interface, read the status — decides decision 2's fallback before the
+   binding is written.
+3. lib/xgboost.h2o as specified.
+4. Acceptance runs; README line for the loadable library.
+
+### Acceptance
+
+1. Primitive golden (native suite): matrix>pointer → pointer>address is
+   positive and integer-exact; pointer-cell → pointer-deref of an unwritten
+   cell is a null-address pointer; a float32 round trip reproduces the source
+   matrix (via matrix>floats if built, else via a cell-written scalar).
+   Follows the suite's existing handling for native-only ffi tests; the wasm
+   suite stays green.
+2. Parity: on data/logistic-sim.tsv with fixed seed, nthread, max_depth 6,
+   eta 0.3, 100 rounds — `xgb-fit`+`xgb-predict` predictions match R
+   xgboost's predictions on the same rows to float32 tolerance (R writes its
+   predictions to TSV; a Water script compares). Machine-local script, not a
+   golden: library versions move, so the suite cannot pin it.
+3. Error surface (discriminating case): a label vector of wrong length makes
+   `xgb-fit` throw with XGBGetLastError's message — distinguishes the checked
+   design from one that drops statuses (which would fail later, opaquely, at
+   UpdateOneIter).
+4. `xgb-save` → `xgb-load-model` → `xgb-predict` reproduces the original
+   predictions exactly.
 
 ---
 

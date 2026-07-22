@@ -1366,7 +1366,6 @@ void p_where(DISPATCH_ARGS);
 double matrix_variance_overall(Object *source, size_t *n_nonmissing_out);
 void p_correlation_kendall(DISPATCH_ARGS);
 void p_fit_tree(DISPATCH_ARGS);
-void p_fit_tree_hist(DISPATCH_ARGS);
 void p_ks_distance(DISPATCH_ARGS);
 void p_pfit_tree(DISPATCH_ARGS);
 void p_quantile(DISPATCH_ARGS);
