@@ -4,6 +4,23 @@ A TODO list of pending work, highest priority first.
 
 ---
 
+## Histogram regression tree (`fit-tree-hist`) — residuals
+
+1. A predict word (`tree row -- prediction`) walking the tree frame — also the
+   missing instrument for the similarity acceptance: training SSE of
+   `fit-tree-hist` within a few percent of `fit-tree` on
+   `data/logistic-sim.tsv`.
+2. Quantile bins as the split-quality lever for skewed features: a per-feature
+   sort is too slow per call but amortizes once binning is hoisted out of the
+   per-round path by gradient boosting.
+3. Missing values, both trees: a reserved NaN bin plus a learned default
+   direction (today a NaN sorts as an ordinary value).
+4. Gradient boosting reuses the histogram builder with `(gradient sum,
+   hessian sum)` in place of `(response sum, count)`; bin once, reuse the codes
+   across rounds.
+
+---
+
 ## Statistics: a minimal spanning set
 
 Build applied statistics from a few kernels, each reused across many methods,

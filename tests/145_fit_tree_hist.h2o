@@ -1,0 +1,80 @@
+\ fit-tree-hist ( features y params -- tree ) — histogram CART regression tree.
+\ Same output-frame shape as fit-tree; numeric columns bin once into :max-bins
+\ (default 256) uniform-width codes and split thresholds are bin upper edges,
+\ within one bin-width of fit-tree's exact midpoints. Categorical columns split
+\ identically to fit-tree (level codes are the bins). Params frame adds
+\ :max-bins to fit-tree's :max-depth / :min-samples / :store-leaf-responses.
+
+\ === numeric split at depth 1 (bin-edge threshold near the exact 2.5) ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 } fit-tree-hist to tree
+tree :prediction @ . cr             \ 3
+tree :feature @ . cr                \ :x
+tree :threshold @ . cr              \ 2.00781 (bin edge)
+tree :n_rows @ . cr                 \ 4
+tree /left/prediction @ . cr        \ 1
+tree /right/prediction @ . cr       \ 5
+tree /left/n_rows @ . cr            \ 2
+clear
+
+\ === :max-bins 2 puts the edge at the exact midpoint here ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 :max-bins 2 } fit-tree-hist to tree
+tree :threshold @ . cr              \ 2.5
+tree /left/prediction @ . cr        \ 1
+tree /right/prediction @ . cr       \ 5
+clear
+
+\ === max-depth 0 is a stump ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 0 } fit-tree-hist to tree
+tree :prediction @ . cr             \ 3
+tree :feature has? . cr             \ 0
+clear
+
+\ === max-depth 2 deepens both sides ===
+{ :x [ 1 2 3 4 5 6 7 8 ] vector } [ 1 1 2 2 8 8 9 9 ] vector { :max-depth 2 } fit-tree-hist to tree
+tree /left/left/prediction @ . cr   \ 1
+tree /left/right/prediction @ . cr  \ 2
+tree /right/left/prediction @ . cr  \ 8
+tree /right/right/prediction @ . cr \ 9
+clear
+
+\ === min-samples blocks a split that underfills a side ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :min-samples 3 } fit-tree-hist to tree
+tree :feature has? . cr             \ 0
+clear
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :min-samples 2 :max-depth 1 } fit-tree-hist to tree
+tree /left/n_rows @ . cr            \ 2
+clear
+
+\ === categorical split on a mean-ordered subset (identical to fit-tree) ===
+{ :c [ :a :b :c :a :b :c ] } [ 1 10 2 1 10 2 ] vector { } fit-tree-hist to tree
+tree :feature @ . cr                \ :c
+tree :categories @ . cr             \ < :c :a >
+tree /left/prediction @ . cr        \ 1.5
+tree /right/prediction @ . cr       \ 10
+tree /right/n_rows @ . cr           \ 2
+clear
+
+\ === store-leaf-responses attaches :responses to leaves only ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 :store-leaf-responses 1 } fit-tree-hist to tree
+tree /left/responses @ . cr         \ 2x1 vector of 1 1
+tree :responses has? . cr           \ 0
+clear
+
+\ === best feature chosen across numeric and categorical ===
+{ :x [ 1 2 3 4 ] vector :c [ :lo :hi :lo :hi ] } [ 1 9 1 9 ] vector { :max-depth 1 } fit-tree-hist to tree
+tree :feature @ . cr                \ :c
+tree :categories @ . cr             \ < :lo >
+tree /left/prediction @ . cr        \ 1
+clear
+
+\ === errors (reason parenthesized) ===
+[ 1 2 ] vector [ 1 2 ] vector { } fit-tree-hist          \ (features must be a frame)
+clear
+{ :x [ 1 2 ] vector } { } { } fit-tree-hist              \ (response must be a numeric vector)
+clear
+{ :x [ 1 2 3 ] vector } [ 1 2 ] vector { } fit-tree-hist \ (column and response lengths differ)
+clear
+{ :x < 1 2 > } [ 1 2 ] vector { } fit-tree-hist          \ (column must be a numeric vector or an array)
+clear
+{ } [ 1 2 ] vector { } fit-tree-hist                     \ (need at least one feature)
+clear
