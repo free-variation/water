@@ -20,10 +20,10 @@ dup "cblas_dgemm" [
 >side
 
 ( m -- columns ) \ the row-major leading dimension
-: (leading-dim) dim swap drop ; internal
+: leading-dim dim swap drop ; internal
 
 ( alpha A B beta C ta tb -- R ) \ R = alpha op(A) op(B) + beta C via cblas
-: (accel-dgemm)
+: accel-dgemm
 	| >alpha >a >b >beta >c >ta >tb m n k r |
 	ta if a dim swap drop else a dim drop then to m
 	ta if a dim drop else a dim swap drop then to k
@@ -37,17 +37,17 @@ dup "cblas_dgemm" [
 
 	c copy to r
 	101  111 ta +  111 tb +  m n k  alpha
-	a matrix>pointer  a (leading-dim)
-	b matrix>pointer  b (leading-dim)
+	a matrix>pointer  a leading-dim
+	b matrix>pointer  b leading-dim
 	beta
 	r matrix>pointer  n
 	(cblas-dgemm)
 	r ; internal
 
-: dgemm-nn 0 0 (accel-dgemm) ;
-: dgemm-tn 1 0 (accel-dgemm) ;
-: dgemm-nt 0 1 (accel-dgemm) ;
-: dgemm-tt 1 1 (accel-dgemm) ;
+: dgemm-nn 0 0 accel-dgemm ;
+: dgemm-tn 1 0 accel-dgemm ;
+: dgemm-nt 0 1 accel-dgemm ;
+: dgemm-tt 1 1 accel-dgemm ;
 
 side>
 
@@ -59,14 +59,14 @@ dup "LAPACKE_dgesvd" [
 						 :ptr :int \ u (left vectors) ldu
 						 :ptr :int \ vt (right vectors) ldvt
 						 :ptr \ superb (workspace)
-					 ] :int ffi-function dgesvd
+					 ] :int ffi-function (dgesvd)
 
 dup "LAPACKE_dgelsd" [
 						 :int :int :int :int \ matrix_layout m n nrhs
 						 :ptr :int \ a (design matrix) lda
 						 :ptr :int \ b (rhs, overwritten with the solution) ldb
 						 :ptr :double :ptr \ s (singular values) rcond rank
-					 ] :int ffi-function dgelsd
+					 ] :int ffi-function (dgelsd)
 
 : svd ( A -- U S VT )
 	| a rows cols min-dim u s vt superb info |
@@ -85,7 +85,7 @@ dup "LAPACKE_dgelsd" [
 	vt matrix>pointer cols
 	superb matrix>pointer
 
-	dgesvd to info
+	(dgesvd) to info
 	info if info "svd: dgesvd failed (info={0})" format throw then
 
 	u s vt ;
@@ -111,7 +111,7 @@ dup "LAPACKE_dgelsd" [
 	-1.0
 	rank segment>pointer
 
-	dgelsd to info
+	(dgelsd) to info
 	info if 
 		info "fit-linear: dgelsd failed (info={0})" format
 		throw
@@ -264,4 +264,64 @@ dup "LAPACKE_dgelsd" [
 ( X y units lambdas n-folds -- fr ) \ cv-logistic-ridge with the cells run under
 \ pmap; identical results, the cells being deterministic
 : pcv-logistic-ridge  ' pmap cv-logistic-ridge-with ;
+
+
+( -- path ) \ XGBOOST_LIB if set, else the default homebrew install path
+: xgb-lib-path
+	"XGBOOST_LIB" env dup none? if drop "/opt/homebrew/lib/libxgboost.dylib" then ; internal
+
+xgb-lib-path ffi-open
+dup "XGDMatrixCreateFromDense"      [ :string :string :ptr ]          :int    ffi-function (xgd-from-dense)
+dup "XGDMatrixSetInfoFromInterface" [ :ptr :string :string ]          :int    ffi-function (xgd-set-info)
+dup "XGDMatrixFree"                 [ :ptr ]                          :int    ffi-function (xgd-free)
+dup "XGBoosterCreate"               [ :ptr :long :ptr ]               :int    ffi-function (xgb-create)
+dup "XGBoosterSetParam"             [ :ptr :string :string ]          :int    ffi-function (xgb-set-param)
+dup "XGBoosterUpdateOneIter"        [ :ptr :int :ptr ]                :int    ffi-function (xgb-update)
+dup "XGBoosterPredictFromDMatrix"   [ :ptr :ptr :string :ptr :ptr :ptr ] :int ffi-function (xgb-predict-raw)
+dup "XGBoosterFree"                 [ :ptr ]                          :int    ffi-function (xgb-booster-free)
+dup "XGBGetLastError"               [ ]                               :string ffi-function (xgb-last-error)
+drop
+
+( status -- ) \ nonzero xgboost statut throws the library's last message
+: xgb-check if (xgb-last-error) throw then ; internal
+
+( matrix -- json ) \ NumPy __array_interface__ (float64) over a matrix's row-major buffer
+: array-interface
+	{ :data [ it matrix>pointer pointer>address :0 ]
+	  :shape [ it dim ]
+	  :typestr "<f8"
+	  :version 3 }
+	frame>json nip-it; internal
+
+( X y fit-params -- booster ) \ train a booster on features X (nxk) and response y (nx1)
+\ params are keyed by xgboost parameter name; :rounds drives the boosting loop (default 100)
+: fit-xgb
+	| >X >y >params rounds dmatrix booster dmatrix-cell booster-cell |
+	params :rounds 100 @or to rounds
+
+	pointer-cell to dmatrix-cell
+	X array-interface "{""missing"": NaN}" dmatrix-cell (xgd-from-dense) xgb-check
+	dmatrix-cell pointer-deref to dmatrix
+	dmatrix "label" y array-interface (xgd-set-info) xgb-check
+
+	pointer-cell to booster-cell
+	dmatrix-cell 1 booster-cell (xgb-create) xgb-check
+	booster-cell pointer-deref to booster
+
+	params keys [: :rounds = not :] filter
+	[> key | 
+	   booster key "{0}" format 
+	   params key @ "{0}" format 
+	   (xgb-set-param) xgb-check
+	:] each
+
+	[> i |
+	   booster i dmatrix (xgb-update) xgb-check 
+	:] rounds i-times
+
+	dmatrix (xgd-free) xgb-check
+	dmatrix-cell ffi-free booster-cell ffi-free
+	booster ;
+
+
 

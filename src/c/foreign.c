@@ -348,3 +348,86 @@ void p_segment_to_pointer(DISPATCH_ARGS) {
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
+
+void p_pointer_cell(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+
+	void *cell;
+	CALLOC_OR_FAIL(interp, cell, 1, sizeof(void *));
+
+	*chain_sp = make_pointer(ffi_pointer_intern(cell));
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
+}
+
+void p_pointer_deref(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val cell_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(cell_val, T_PTR, "pointer-deref", "a pointer");
+
+	void *cell = ffi_pointers[VAL_DATA(cell_val)];
+	void *loaded = *(void **)cell;
+
+	chain_sp[-1] = make_pointer(ffi_pointer_intern(loaded));
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
+void p_pointer_to_address(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val pointer_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(pointer_val, T_PTR, "pointer>address", "a pointer");
+
+	int64_t numeric_address = (int64_t)(intptr_t)ffi_pointers[VAL_DATA(pointer_val)];
+	if (numeric_address >= ((int64_t)1 << 53)) {
+		fail(interp, "pointer address exceeds 2^53; not float-exact");
+		return;
+	}
+
+	chain_sp[-1] = make_float((double)numeric_address);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
+void p_pointer_long(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val cell_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(cell_val, T_PTR, "pointer-long", "a pointer");
+
+	int64_t value = *(int64_t *)ffi_pointers[VAL_DATA(cell_val)];
+	if (value >= ((int64_t)1 << 53)) {
+		fail(interp, "value exceeds 2^53; not float-exact");
+		return;
+	}
+
+	chain_sp[-1] = make_float((double)value);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
+
+void p_floats_to_matrix(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val count_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(count_val, T_FLOAT, "floats>matrix", "a float count");
+	int n_elements = (int)VAL_NUMBER(count_val);
+	Val pointer_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(pointer_val, T_PTR, "floats>matrix", "a pointer");
+	if (n_elements < 1) {
+		fail(interp, "count must be positive; got %d", n_elements);
+		return;
+	}
+
+	const float *source = ffi_pointers[VAL_DATA(pointer_val)];
+
+	int matrix_handle = object_new_matrix(interp, n_elements, 1);
+	if (interp->error_flag)
+		return;
+
+	double *elements = OBJECT_AT(matrix_handle)->matrix.elements;
+	for (int i = 0; i < n_elements; i++)
+		elements[i] = (double)source[i];
+
+	chain_sp[-2] = make_matrix(matrix_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}

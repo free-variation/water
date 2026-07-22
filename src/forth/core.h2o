@@ -33,12 +33,36 @@
 : 2dup over over ;
 inline
 
+( a b c -- c a b )
+: -rot rot rot ;
+inline
+
 ( a b -- )
 : 2drop drop drop ;
 inline
 
 ( a b -- b )
 : nip swap drop ;
+inline
+
+( a b -- b )
+: nip-it nip ; 
+inline
+
+( a b -- b )
+: nip-this nip ;
+inline
+
+( a b c -- c )
+: nip-them nip nip ;
+inline
+
+( a b c -- b c )
+: nip-other rot drop ;
+inline
+
+( a b c -- b c )
+: nip-that nip-other ;
 inline
 
 ( val -- val ) \ prints the top without consuming it

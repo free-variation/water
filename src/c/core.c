@@ -4283,6 +4283,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, ">side", p_to_side, 0);
 	define_primitive(interp, "side>", p_side_to, 0);
 	define_primitive(interp, "side-drop", p_side_drop, 0);
+	define_primitive(interp, "side-peek", p_side_peek, 0);
 	define_primitive(interp, "side-depth", p_side_depth, 0);
 	define_primitive(interp, "@", p_frame_get, 0);
 	define_primitive(interp, "@or", p_frame_get_or, 0);
@@ -4375,6 +4376,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "map", p_map, 0);
 	define_primitive(interp, "mapn", p_mapn, 0);
 	define_primitive(interp, "filter", p_filter, 0);
+	define_primitive(interp, "find-first", p_find_first, 0);
 	define_primitive(interp, "reduce", p_reduce, 0);
 	define_primitive(interp, "times", p_times, 0);
 	define_primitive(interp, "i-times", p_i_times, 0);
@@ -4609,7 +4611,12 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	ffi_register_call_cfa(define_primitive(interp, "(ffi-call)", p_ffi_call, 4));
 	define_primitive(interp, "ffi-free", p_ffi_free, 0);
 	define_primitive(interp, "matrix>pointer", p_matrix_to_pointer, 0);
+	define_primitive(interp, "floats>matrix", p_floats_to_matrix, 0);
 	define_primitive(interp, "segment>pointer", p_segment_to_pointer, 0);
+	define_primitive(interp, "pointer-cell", p_pointer_cell, 0);
+	define_primitive(interp, "pointer-deref", p_pointer_deref, 0);
+	define_primitive(interp, "pointer-long", p_pointer_long, 0);
+	define_primitive(interp, "pointer>address", p_pointer_to_address, 0);
 	define_primitive(interp, "db-close", p_db_close, 0);
 	define_primitive(interp, "db-exec", p_db_exec, 0);
 	define_primitive(interp, "db-query", p_db_query, 0);

@@ -1176,6 +1176,7 @@ void p_shift(DISPATCH_ARGS);
 void p_shift_with(DISPATCH_ARGS);
 void p_side_depth(DISPATCH_ARGS);
 void p_side_drop(DISPATCH_ARGS);
+void p_side_peek(DISPATCH_ARGS);
 void p_side_to(DISPATCH_ARGS);
 void p_sin(DISPATCH_ARGS);
 void p_size(DISPATCH_ARGS);
@@ -1394,6 +1395,7 @@ void p_store_i_drop_array(DISPATCH_ARGS);
 void p_sub_store_i(DISPATCH_ARGS);
 
 void p_filter(DISPATCH_ARGS);
+void p_find_first(DISPATCH_ARGS);
 void p_i_times(DISPATCH_ARGS);
 void p_map(DISPATCH_ARGS);
 void p_mapn(DISPATCH_ARGS);
@@ -1440,7 +1442,12 @@ void p_ffi_free(DISPATCH_ARGS);
 void p_ffi_function(DISPATCH_ARGS);
 void p_ffi_open(DISPATCH_ARGS);
 void p_ffi_variadic(DISPATCH_ARGS);
+void p_floats_to_matrix(DISPATCH_ARGS);
 void p_matrix_to_pointer(DISPATCH_ARGS);
+void p_pointer_cell(DISPATCH_ARGS);
+void p_pointer_deref(DISPATCH_ARGS);
+void p_pointer_long(DISPATCH_ARGS);
+void p_pointer_to_address(DISPATCH_ARGS);
 void p_segment_to_pointer(DISPATCH_ARGS);
 
 void p_running(DISPATCH_ARGS);

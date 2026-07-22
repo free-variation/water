@@ -69,7 +69,12 @@ WASM_UNSUPPORTED(p_ffi_variadic, "ffi-variadic")
 WASM_UNSUPPORTED(p_ffi_call, "(ffi-call)")
 WASM_UNSUPPORTED(p_ffi_free, "ffi-free")
 WASM_UNSUPPORTED(p_matrix_to_pointer, "matrix>pointer")
+WASM_UNSUPPORTED(p_floats_to_matrix, "floats>matrix")
 WASM_UNSUPPORTED(p_segment_to_pointer, "segment>pointer")
+WASM_UNSUPPORTED(p_pointer_cell, "pointer-cell")
+WASM_UNSUPPORTED(p_pointer_deref, "pointer-deref")
+WASM_UNSUPPORTED(p_pointer_long, "pointer-long")
+WASM_UNSUPPORTED(p_pointer_to_address, "pointer>address")
 
 int ffi_register_call_cfa(int cfa) {
 	return cfa;

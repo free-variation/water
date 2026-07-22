@@ -1,11 +1,11 @@
-\ Functional words over arrays: find / any? / all? / each / flat-map /
+\ Functional words over arrays: find-first / any? / all? / each / flat-map /
 \ sort-by / partition / group-with.
 
-\ === find ==================================================================
-[ 1 2 3 4 ] [: 2 mod 0= :] find . cr             \ 2   (first match, not 4)
-[ 1 3 5 ] [: 2 mod 0= :] find . cr               \ null
-[ ] [: drop 1 :] find . cr                       \ null
-[ "a" "bb" "ccc" ] [: size 2 = :] find . cr      \ bb
+\ === find-first ===========================================================
+[ 1 2 3 4 ] [: 2 mod 0= :] find-first . cr             \ 2   (first match, not 4)
+[ 1 3 5 ] [: 2 mod 0= :] find-first . cr               \ null
+[ ] [: drop 1 :] find-first . cr                       \ null
+[ "a" "bb" "ccc" ] [: size 2 = :] find-first . cr      \ bb
 
 \ === any? / all? ===========================================================
 [ 1 3 5 ] [: 2 mod 0= :] any? . cr               \ 0

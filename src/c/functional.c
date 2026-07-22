@@ -152,6 +152,37 @@ void p_filter(DISPATCH_ARGS) {
 	DISPATCH(interp);
 }
 
+void p_find_first(DISPATCH_ARGS) {
+	POP_XT(pred, "find-first");
+	PEEK_SEQUENCE_AT(source_val, 0, "find-first");
+	Object *source = OBJECT_AT(VAL_DATA(source_val));
+	int source_index = interp->dsp - 1;
+
+	Val found = make_tagged(T_NONE, 0);
+	CallContext context;
+	call_open(interp, pred, &context);
+	for (int i = 0; i < source->len && !interp->error_flag; i++) {
+		int dsp_before = interp->dsp;
+		push(interp, source->items[i]);
+		Val verdict;
+		if (!call_one_result(interp, &context, pred, dsp_before, "find-first", "predicate", "element", &verdict))
+			break;
+		if (truthy(verdict)) {
+			found = source->items[i];
+			break;
+		}
+	}
+	call_close(interp, &context);
+
+	if (interp->error_flag)
+		return;
+
+	interp->dsp = source_index;
+	push(interp, found);
+
+	DISPATCH(interp);
+}
+
 void p_reduce(DISPATCH_ARGS) {
 	POP_XT(combiner, "reduce");
 	POP(init_val);

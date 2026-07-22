@@ -46,6 +46,7 @@ incremental collection.
 | `swap` | `( a b -- b a )` | Exchange top two | 4 | none | O(1) |
 | `over` | `( a b -- a b a )` | Copy second over top | 5 | none | O(1) |
 | `rot` | `( a b c -- b c a )` | Rotate top three | 6 | none | O(1) |
+| `-rot` | `( a b c -- c a b )` | core.h2o: reverse rotate — brings the top down under the other two (`rot rot`, inlined) | 12 | none | O(1) |
 | `depth` | `( -- n )` | Push current depth | 1 | none | O(1) |
 | `roll` | `( xₙ … x₀ n -- xₙ₋₁ … x₀ xₙ )` | Move the item n deep to the top; memmoves the n above it down | 2 + n | none | O(n) |
 | `clear` | `( … -- )` | Reset data stack depth to 0 | 1 | none | O(1) |
@@ -57,6 +58,11 @@ incremental collection.
 | `2dup` | `( a b -- a b a b )` | core.h2o: `over over` (inlined) | 10 | none | O(1) |
 | `2drop` | `( a b -- )` | core.h2o: `drop drop` (inlined) | 6 | none | O(1) |
 | `nip` | `( a b -- b )` | core.h2o: `swap drop` (inlined) | 5 | none | O(1) |
+| `nip-it` | `( a b -- b )` | core.h2o: `nip` (inlined) | 5 | none | O(1) |
+| `nip-this` | `( a b -- b )` | core.h2o: `nip` (inlined) | 5 | none | O(1) |
+| `nip-them` | `( a b c -- c )` | core.h2o: `nip nip` (inlined) | 10 | none | O(1) |
+| `nip-other` | `( a b c -- b c )` | core.h2o: `rot drop` (inlined) | 7 | none | O(1) |
+| `nip-that` | `( a b c -- b c )` | core.h2o: `nip-other` (inlined) | 7 | none | O(1) |
 
 ---
 
@@ -315,6 +321,7 @@ A third stack (depth 1024) for stashing values out of the way; used by `try-catc
 | `>side` | `( a -- )` | Push to side stack | 2 | none | O(1) |
 | `side>` | `( -- a )` | Pop from side stack | 2 | none | O(1) |
 | `side-drop` | `( -- )` | Discard side-stack top | 1 | none | O(1) |
+| `side-peek` | `( -- a )` | Copy side-stack top to the data stack | 1 | none | O(1) |
 | `side-depth` | `( -- n )` | Push side-stack depth | 1 | none | O(1) |
 
 ---
@@ -396,6 +403,8 @@ These parse following tokens and/or compile code. Costs are dominated by compila
 ### Locals
 
 Declared only at the **head** of a definition or quotation body. Live on the return stack: up to 128 names across up to 16 nested scopes. Quotations close over the enclosing definition's locals **by frame position, resolved at execution**: run at the depth it was compiled for (passed to a C word like `map`/`execute` called in the defining word itself), the capture works; executed inside another colon word's locals frame, the same reference silently reads that word's slots instead. A quotation that must travel through other words takes its values from the stack (`[>` receive-all) with `curry` binding them in.
+
+The mechanism, and when the capture holds: a local reference compiles to a **`(frames-up, slot)`** pair — `slot` is the variable's index in the frame that declares it; `frames-up` is the number of *locals-bearing* scopes lexically between the reference and that declaration (a scope that declares no locals is not counted). Names are discarded after compilation and no value is bound then. At execution the reference walks `frames-up` links up the live return-stack frame chain from the current base, then indexes `slot`. So `frames-up` is a **lexical** constant applied to the **dynamic** frame chain, and the two agree only when the frames between the quotation and its definer at run time are exactly the locals-bearing scopes the compiler saw. An interposed word is **transparent** if it pushes no locals frame — every C combinator (`map`, `reduce`, `filter`, `i-times`, `execute`), and any forth word with no locals of its own — and **opaque** if it declares locals: its frame then sits one link below the definer's, every `frames-up` overshoots by one, and the reference reads the interposing word's slots. Hence a capture-carrying quotation survives `map` but not a locals-bearing forth word such as `each`; a combinator intended to run such quotations must itself declare no locals (e.g. `: each  [: over execute :] reduce drop ;`, which threads the user xt through `reduce`'s C loop with no frame of its own).
 
 | Syntax | Behavior |
 |--------|----------|
@@ -834,7 +843,7 @@ The quotation/predicate cost dominates; `xt` denotes one call.
 | `reduce` | `( arr/set init xt -- val )` | Left fold; xt is `( acc elem -- acc )` | 3 + n·xt | none | O(n·xt) |
 | `times` | `( xt n -- )` | Run xt n times, no index pushed | 2 + n·xt | none | O(n·xt) |
 | `i-times` | `( xt n -- )` | Run xt n times, pushing index 0..n-1 first | 2 + n·(1+xt) | none | O(n·xt) |
-| `find` | `( items pred -- element )` | arrays.h2o: the first element for which pred is truthy, or the none value; stops at the first hit | n·xt | none | O(n·xt) |
+| `find-first` | `( items pred -- element )` | The first element for which pred is truthy, or the none value; short-circuits at the first hit (does not run pred over the rest) | n·xt | none | O(n·xt) |
 | `any?` | `( items pred -- bool )` | arrays.h2o: `find none? not` | n·xt | none | O(n·xt) |
 | `all?` | `( items pred -- bool )` | arrays.h2o: false at the first element failing pred, else true (vacuously true on empty) | n·xt | none | O(n·xt) |
 | `each` | `( items xt -- )` | arrays.h2o: run xt `( element -- )` on every element for its side effects; no result, no allocation | n·xt | none | O(n·xt) |
@@ -1080,6 +1089,11 @@ Call C functions in any shared library at runtime via `libdl` + `libffi` — no 
 | `ffi-function` | `( lib symbol arg-types ret-type -- ) <name>` | Resolve `symbol` in `lib`, build a libffi call interface, and define the following word `<name>` to call it. `arg-types` is an array of type symbols, `ret-type` a single symbol. The interface is prepared once; calls are ~30–100 ns | dlsym + prep_cif | 1 binding | O(argc) |
 | `matrix>pointer` | `( m -- ptr )` | Intern the matrix's row-major element buffer and return a `T_PTR` handle to pass as a `:ptr` argument; no copy — aliases the live buffer (amortized intern) | 1 | none | O(1) |
 | `segment>pointer` | `( seg -- ptr )` | Intern a segment's data buffer and return a `T_PTR` handle (no copy) | 1 | none | O(1) |
+| `pointer-cell` | `( -- ptr )` | Allocate a zeroed pointer-sized cell and return a `T_PTR` handle to it, for use as a C out-parameter slot (`&out`) or a one-element handle array; a callee writes a pointer or integer into it, read back with `pointer-deref`. Freed by `ffi-free` | malloc | 1 cell (not GC'd) | O(1) |
+| `pointer-deref` | `( ptr -- ptr' )` | Load the pointer stored at cell `ptr` (`*(void**)ptr`) and return it as a `T_PTR` handle — reads a handle a C call wrote into an out-parameter cell, or steps through a `T**` | 1 | 1 handle | O(1) |
+| `pointer-long` | `( ptr -- n )` | Load the 64-bit integer stored at cell `ptr` (`*(int64_t*)ptr`) as a float — reads a `bst_ulong`/`long` out-value a C call wrote into a cell; errors above 2^53 (not float-exact) | 1 | none | O(1) |
+| `pointer>address` | `( ptr -- n )` | The pointer's numeric address as a float, for embedding in an `__array_interface__` JSON string; errors if the address exceeds 2^53 (not float-exact — macOS arm64 user addresses are well under it) | 1 | none | O(1) |
+| `floats>matrix` | `( ptr n -- m )` | Copy `n` 32-bit floats from foreign memory at `ptr` into a fresh n×1 double matrix — the read-back for a C call that returns a `float const*` result buffer (e.g. predictions); errors if `n < 1` | n | `1m(n×1)` | O(n) |
 | `ffi-variadic` | `( lib symbol arg-types ret-type n-fixed -- ) <name>` | Like `ffi-function` for a variadic C function: `n-fixed` leading arguments use the fixed convention, the rest the variadic one (`ffi_prep_cif_var`). Variadic argument types are fixed per binding, so declare one word per type combination (e.g. a `:string` `setopt` and a `:long` `setopt`) | dlsym + prep_cif_var | 1 binding | O(argc) |
 | `ffi-free` | `( ptr -- )` | `free` a C buffer held as a `T_PTR` (e.g. from `malloc`) and clear its registry slot. Not for library handles | free | none | O(1) |
 

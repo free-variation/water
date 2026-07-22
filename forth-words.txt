@@ -14,6 +14,7 @@
 -
 -!
 --
+-rot
 .
 .a
 .s
@@ -213,8 +214,8 @@ ffi-variadic
 fgt
 file-exists?
 filter
-find
 find-executable
+find-first
 first
 fit-tree
 flat-map
@@ -222,6 +223,7 @@ flatten
 flatten-array
 fln
 float?
+floats>matrix
 flog
 flt
 fmod
@@ -320,6 +322,11 @@ n-rows
 nan?
 negate
 nip
+nip-it
+nip-other
+nip-that
+nip-them
+nip-this
 none?
 nonmissing-count
 norm
@@ -347,6 +354,10 @@ pmap
 pmap-ext
 pmap-reduce
 pmap-reduce-ext
+pointer-cell
+pointer-deref
+pointer-long
+pointer>address
 print
 print-stack
 ptr?
@@ -429,6 +440,7 @@ shift-with
 shuffle
 side-depth
 side-drop
+side-peek
 side>
 sigmoid
 sin

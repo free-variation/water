@@ -1048,6 +1048,17 @@ void p_side_depth(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
+void p_side_peek(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
+	if (interp->side_dsp <= 0) {
+		fail(interp, "side stack is empty");
+		return;
+	}
+	*chain_sp = interp->side_stack[interp->side_dsp - 1];
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
+}
+
 void p_execute(DISPATCH_ARGS) {
 	POP_XT(value, "execute");
 	execute_xt(interp, value);

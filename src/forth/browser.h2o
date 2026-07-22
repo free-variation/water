@@ -45,12 +45,12 @@
 		exit 
 	then drop
 
-	mac-browsers [: file-exists? :] find
+	mac-browsers [: file-exists? :] find-first
 	dup none? not if 
 		exit 
 	then drop
 	
-	linux-browsers [: find-executable :] map [: none? not :] find ; internal
+	linux-browsers [: find-executable :] map [: none? not :] find-first ; internal
 
 ( path -- ) \ open path in a frameless --app window when a browser is found, else the
 \ platform default handler (a normal tab); a relative path resolves against cwd

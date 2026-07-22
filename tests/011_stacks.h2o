@@ -11,3 +11,11 @@ clear
 42 store-fetch .
 : peek-twice >r r@ r@ r> ;
 9 peek-twice . . .
+
+clear
+1 2 nip-it . cr
+1 2 nip-this . cr
+1 2 3 nip-them . cr
+1 2 3 nip-other . . cr
+1 2 3 nip-that . . cr
+5 >side side-peek . side-depth . side-drop cr
