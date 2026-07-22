@@ -239,7 +239,7 @@ typedef struct {
 } PmapContext;
 
 
-static int cpu_count(void) {
+int cpu_count(void) {
 	long n_cores = sysconf(_SC_NPROCESSORS_ONLN);
 	return n_cores > 0 ? (int)n_cores : 1;
 }

@@ -1,0 +1,43 @@
+3 
+:x 
+2.5 
+4 
+1 
+5 
+2 
+3 
+0 
+4.5 
+2.5 
+6.5 
+1 
+9 
+0 
+2.5 
+:c 
+< :c :a > 
+1.5 
+10 
+2 
+<matrix 2x1>
+          1
+          1
+
+1 
+0 
+0 
+:c 
+< :lo > 
+1 
+1 
+2.5 
+1 
+5 
+< :c :a > 
+1.5 
+10 
+error: expected a features frame; got a matrix
+error: expected a numeric response vector; got a frame
+error: feature column has 3 rows; response has 2
+error: feature column must be a numeric vector or an array; got a set
+error: need at least one row and one feature; got 2 rows, 0 features

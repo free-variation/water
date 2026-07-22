@@ -261,6 +261,7 @@ const HelpEntry help_entries[] = {
 	{ "find", "( items pred -- element )", "arrays.h2o: the first element for which pred is truthy, or the none value; stops at the first hit", "n·xt", "none", "O(n·xt)", 23 },
 	{ "find-executable", "( name -- path|none )", "io.h2o: the absolute path of name on $PATH (first directory holding it), or the none value if unset or not found; a name containing / is not special-cased (it just won't match a bare PATH entry)", "split + probe", "1o per candidate", "O(dirs)", 31 },
 	{ "first", "( arr/pair -- v )", "core.h2o: element 0 of an array, or a cons's head — reads pairs-shaped results (count, group-indices) and logic pairs alike", "4", "none", "O(1)", 14 },
+	{ "fit-tree", "( features y params -- tree )", "CART regression tree. features is a frame of typed columns — a numeric vector splits at a midpoint :threshold, an array column is categorical and splits on a mean-ordered subset stored as :categories; y is a numeric response vector. Returns a nested frame: every node carries :prediction (mean of its rows) and :n_rows, an internal node adds :feature and either :threshold or :categories plus :left/:right, a leaf optionally carries :responses. Splits maximize S_L²/n_L + S_R²/n_R (squared-error reduction), each numeric column presorted once. Params frame: :max-depth (default unlimited), :min-samples (minimum rows on each side of a split, default 1), :store-leaf-responses (default off)", "features·n·depth", "malloc(24n) per numeric column + node buffer + tree frame", "O(features·n·depth)", 18 },
 	{ "flat-map", "( items xt -- arr )", "arrays.h2o: map flatten-array; xt returns an array per element, results concatenated", "n·xt + total", "1a(n) + 1a(total)", "O(n·xt + total)", 23 },
 	{ "flatten", "( m -- m' )", "matrix.h2o: 1×(r·c) reshape", "r×c", "1m(1×r·c)", "O(r×c)", 18 },
 	{ "flatten-array", "( arr -- arr )", "Flatten one level; returns the input unchanged if no element is itself an array", "1 + m", "1a(m)", "O(m)", 14 },
@@ -386,6 +387,7 @@ const HelpEntry help_entries[] = {
 	{ "percentile", "( m pct -- f )", "statistics.h2o: quantile at pct ∈ [0,100] (inlined)", "n log n", "malloc(n)", "O(n log n)", 18 },
 	{ "pfilter", "( arr pred -- arr )", "Parallel filter, order preserved", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt / w)", 23 },
 	{ "pfilter-ext", "( arr w c pred -- arr )", "pfilter with explicit worker count and items-per-claim", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt / w)", 23 },
+	{ "pfit-tree", "( features y params -- tree )", "fit-tree's parallel form, producing a byte-identical tree: independent subtrees below a shallow frontier grow concurrently across num-cores worker threads, then graft into the tree; the presort and the frontier top stay serial. Speeds up deep trees; shallow (boosting-depth) trees reach no frontier and fall back to serial", "as fit-tree", "as fit-tree + per-worker node buffers", "O(features·n·depth / cores)", 18 },
 	{ "pmap", "( arr xt -- arr )", "Parallel map (num-cores workers, claim 1)", "2 + n·xt", "1a(n)", "O(n·xt / w)", 23 },
 	{ "pmap-ext", "( arr w c xt -- arr )", "pmap with explicit worker count and items-per-claim", "2 + n·xt", "1a(n)", "O(n·xt / w)", 23 },
 	{ "pmap-reduce", "( arr id map-xt combine-xt -- val )", "Fused parallel map+fold; combine-xt must be associative with id as neutral element", "2 + n·xt", "per-worker partials", "O(n·xt / w)", 23 },
@@ -582,4 +584,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 537;
+const int help_entry_count = 539;

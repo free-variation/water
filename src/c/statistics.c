@@ -24,6 +24,7 @@ typedef struct {
 	CARTFeature *features;
 	int n_features;
 	double *response;
+	cell *feature_names;
 } CARTSample;
 
 typedef struct {
@@ -34,6 +35,7 @@ typedef struct {
 	int right_child;
 	double prediction;
 	int n_rows;
+	int row_start;
 } CARTNode;
 
 typedef struct {
@@ -425,6 +427,7 @@ typedef struct {
 	int feature;
 	double threshold;
 	int n_left;
+	double left_sum;
 	double score;
 } CARTSplit;
 
@@ -432,7 +435,7 @@ static CARTSplit scan_feature(const CARTFeatureEntry *entries, int node_start, i
 		double node_sum, int min_samples) {
 	int n_rows = node_end - node_start;
 
-	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .score = -INFINITY };
+	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .left_sum = 0.0, .score = -INFINITY };
 	double left_sum = 0.0;
 
 	for (int i = node_start; i + 1 < node_end; i++) {
@@ -454,6 +457,7 @@ static CARTSplit scan_feature(const CARTFeatureEntry *entries, int node_start, i
 			best.score = score;
 			best.threshold = (entries[i].value + entries[i + 1].value) / 2.0;
 			best.n_left = n_left;
+			best.left_sum = left_sum;
 		}
 	}
 
@@ -527,7 +531,7 @@ static CARTSplit scan_categorical(const int *levels, int n_levels,
 	int *level_count = category_stats->level_count;
 	int *level_order = category_stats->level_order;
 
-	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .score = -INFINITY };
+	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .left_sum = 0.0, .score = -INFINITY };
 	double left_sum = 0.0;
 	int left_count = 0;
 
@@ -547,6 +551,7 @@ static CARTSplit scan_categorical(const int *levels, int n_levels,
 		if (score > best.score) {
 			best.score = score;
 			best.n_left = left_count;
+			best.left_sum = left_sum;
 		}
 	}
 
@@ -558,7 +563,7 @@ static CARTSplit choose_split(const CARTSample *sample, const CARTPartition *par
 		double node_sum, int min_samples) {
 	int n_rows = node_end - node_start;
 
-	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0,
+	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .left_sum = 0.0,
 			.score = node_sum * node_sum / n_rows };
 
 	for (int f = 0; f < sample->n_features; f++) {
@@ -703,12 +708,8 @@ static void record_categorical_split(CART *tree, int node_index,
 
 static int grow_node(CARTSample *sample, CARTPartition *partition,
 		CARTCategoryStats *category_stats, CART *tree,
-		int max_depth, int min_samples, int node_start, int node_end, int tree_depth) {
+		int max_depth, int min_samples, int node_start, int node_end, double node_sum, int tree_depth) {
 	int n_rows = node_end - node_start;
-
-	double node_sum = 0.0;
-	for (int i = node_start; i < node_end; i++)
-		node_sum += sample->response[partition->row_index[i]];
 
 	int node_index = append_node(tree);
 	CARTNode *node = &tree->nodes[node_index];
@@ -719,6 +720,7 @@ static int grow_node(CARTSample *sample, CARTPartition *partition,
 	node->right_child = -1;
 	node->prediction = node_sum / n_rows;
 	node->n_rows = n_rows;
+	node->row_start = node_start;
 
 	if (tree_depth >= max_depth)
 		return node_index;
@@ -734,11 +736,12 @@ static int grow_node(CARTSample *sample, CARTPartition *partition,
 		record_categorical_split(tree, node_index, category_stats,
 				sample->features[split.feature].n_levels);
 
-	int mid = node_start + split.n_left;
+	int right_start = node_start + split.n_left;
+	double right_sum = node_sum - split.left_sum;
 	int left = grow_node(sample, partition, category_stats, tree,
-			max_depth, min_samples, node_start, mid, tree_depth + 1);
+			max_depth, min_samples, node_start, right_start, split.left_sum, tree_depth + 1);
 	int right = grow_node(sample, partition, category_stats, tree,
-			max_depth, min_samples, mid, node_end, tree_depth + 1);
+			max_depth, min_samples, right_start, node_end, right_sum, tree_depth + 1);
 
 	node = &tree->nodes[node_index];
 	node->feature = split.feature;
@@ -747,6 +750,190 @@ static int grow_node(CARTSample *sample, CARTPartition *partition,
 	node->right_child = right;
 
 	return node_index;
+}
+
+#define PARALLEL_FIT_MIN_ROWS 20000
+
+typedef struct {
+	int node_start;
+	int node_end;
+	double node_sum;
+	int tree_depth;
+	int parent_index;
+	int child_side;
+	CART fragment;
+	CARTCategoryStats category_stats;
+} CARTSubtreeTask;
+
+typedef struct {
+	CARTSubtreeTask *tasks;
+	int n_tasks;
+	int n_allocated;
+} CARTSubtreeList;
+
+static int grow_top(CARTSample *sample, CARTPartition *partition, CARTCategoryStats *category_stats,
+		CART *tree, CARTSubtreeList *subtrees, int max_depth, int min_samples, int frontier_depth,
+		int node_start, int node_end, double node_sum, int tree_depth, int parent_index, int child_side) {
+	if (tree_depth == frontier_depth) {
+		GROW_IF_FULL_SYS(subtrees->n_tasks, subtrees->n_allocated, subtrees->tasks);
+		CARTSubtreeTask *task = &subtrees->tasks[subtrees->n_tasks++];
+		task->node_start = node_start;
+		task->node_end = node_end;
+		task->node_sum = node_sum;
+		task->tree_depth = tree_depth;
+		task->parent_index = parent_index;
+		task->child_side = child_side;
+		task->fragment = (CART){0};
+		task->category_stats = (CARTCategoryStats){0};
+		return -1;
+	}
+
+	int n_rows = node_end - node_start;
+
+	int node_index = append_node(tree);
+	CARTNode *node = &tree->nodes[node_index];
+	node->feature = -1;
+	node->threshold = 0.0;
+	node->category_offset = -1;
+	node->left_child = -1;
+	node->right_child = -1;
+	node->prediction = node_sum / n_rows;
+	node->n_rows = n_rows;
+	node->row_start = node_start;
+
+	if (tree_depth >= max_depth)
+		return node_index;
+
+	CARTSplit split = choose_split(sample, partition, category_stats, node_start, node_end, node_sum, min_samples);
+	if (split.feature < 0)
+		return node_index;
+
+	partition_node(sample, partition, category_stats, &split, node_start, node_end);
+
+	if (sample->features[split.feature].kind == FEATURE_CATEGORICAL)
+		record_categorical_split(tree, node_index, category_stats, sample->features[split.feature].n_levels);
+
+	int right_start = node_start + split.n_left;
+	double right_sum = node_sum - split.left_sum;
+	int left = grow_top(sample, partition, category_stats, tree, subtrees, max_depth, min_samples,
+			frontier_depth, node_start, right_start, split.left_sum, tree_depth + 1, node_index, 0);
+	int right = grow_top(sample, partition, category_stats, tree, subtrees, max_depth, min_samples,
+			frontier_depth, right_start, node_end, right_sum, tree_depth + 1, node_index, 1);
+
+	node = &tree->nodes[node_index];
+	node->feature = split.feature;
+	node->threshold = split.threshold;
+	node->left_child = left;
+	node->right_child = right;
+
+	return node_index;
+}
+
+static void graft_fragment(CART *tree, const CART *fragment, int parent_index, int child_side) {
+	int node_base = tree->n_nodes;
+	int flags_base = tree->n_category_flags;
+
+	while (tree->n_nodes + fragment->n_nodes > tree->n_allocated) {
+		tree->n_allocated = tree->n_allocated ? tree->n_allocated * 2 : 8;
+		tree->nodes = realloc(tree->nodes, sizeof(CARTNode) * (size_t)tree->n_allocated);
+	}
+	while (tree->n_category_flags + fragment->n_category_flags > tree->category_flags_cap) {
+		tree->category_flags_cap = tree->category_flags_cap ? tree->category_flags_cap * 2 : 8;
+		tree->category_flags = realloc(tree->category_flags, (size_t)tree->category_flags_cap);
+	}
+
+	if (fragment->n_category_flags > 0)
+		memcpy(&tree->category_flags[flags_base], fragment->category_flags, (size_t)fragment->n_category_flags);
+	tree->n_category_flags += fragment->n_category_flags;
+
+	for (int i = 0; i < fragment->n_nodes; i++) {
+		CARTNode node = fragment->nodes[i];
+		if (node.left_child >= 0) {
+			node.left_child += node_base;
+			node.right_child += node_base;
+		}
+		if (node.category_offset >= 0)
+			node.category_offset += flags_base;
+		tree->nodes[node_base + i] = node;
+	}
+	tree->n_nodes += fragment->n_nodes;
+
+	if (child_side == 0)
+		tree->nodes[parent_index].left_child = node_base;
+	else
+		tree->nodes[parent_index].right_child = node_base;
+}
+
+typedef struct {
+	CARTSample *sample;
+	CARTPartition *partition;
+	CARTSubtreeTask *tasks;
+	int max_depth;
+	int min_samples;
+} CARTGrowContext;
+
+static void grow_subtree_kernel(int start_index, int end_index, void *context_pointer) {
+	CARTGrowContext *context = context_pointer;
+
+	for (int t = start_index; t < end_index; t++) {
+		CARTSubtreeTask *task = &context->tasks[t];
+		grow_node(context->sample, context->partition, &task->category_stats, &task->fragment,
+				context->max_depth, context->min_samples,
+				task->node_start, task->node_end, task->node_sum, task->tree_depth);
+	}
+}
+
+static void grow_tree_parallel(Interpreter *interp, CARTSample *sample, CARTPartition *partition,
+		CARTCategoryStats *top_category_stats, CART *tree, int max_depth, int min_samples,
+		int frontier_depth, int n_rows, double root_sum, int worker_count, int max_levels) {
+	CARTSubtreeList subtrees = {0};
+	grow_top(sample, partition, top_category_stats, tree, &subtrees,
+			max_depth, min_samples, frontier_depth, 0, n_rows, root_sum, 0, -1, 0);
+
+	if (subtrees.n_tasks == 0) {
+		free(subtrees.tasks);
+		return;
+	}
+
+	for (int t = 0; max_levels > 0 && t < subtrees.n_tasks; t++) {
+		CARTCategoryStats *stats = &subtrees.tasks[t].category_stats;
+		stats->level_sum = malloc((size_t)max_levels * sizeof(double));
+		stats->level_count = malloc((size_t)max_levels * sizeof(int));
+		stats->level_order = malloc((size_t)max_levels * sizeof(int));
+		stats->goes_left = malloc((size_t)max_levels * sizeof(char));
+		if (!stats->level_sum || !stats->level_count || !stats->level_order || !stats->goes_left) {
+			for (int done = 0; done <= t; done++) {
+				free(subtrees.tasks[done].category_stats.level_sum);
+				free(subtrees.tasks[done].category_stats.level_count);
+				free(subtrees.tasks[done].category_stats.level_order);
+				free(subtrees.tasks[done].category_stats.goes_left);
+			}
+			free(subtrees.tasks);
+			fail(interp, "out of memory");
+			return;
+		}
+	}
+
+	CARTGrowContext context = {
+		.sample = sample,
+		.partition = partition,
+		.tasks = subtrees.tasks,
+		.max_depth = max_depth,
+		.min_samples = min_samples,
+	};
+	parallel_for(subtrees.n_tasks, worker_count, 1, grow_subtree_kernel, &context);
+
+	for (int t = 0; t < subtrees.n_tasks; t++) {
+		CARTSubtreeTask *task = &subtrees.tasks[t];
+		graft_fragment(tree, &task->fragment, task->parent_index, task->child_side);
+		free(task->fragment.nodes);
+		free(task->fragment.category_flags);
+		free(task->category_stats.level_sum);
+		free(task->category_stats.level_count);
+		free(task->category_stats.level_order);
+		free(task->category_stats.goes_left);
+	}
+	free(subtrees.tasks);
 }
 
 static void presort_numeric_column(const double *column_values, const double *response,
@@ -789,4 +976,332 @@ static int category_value_cmp(void *interpreter, const void *left, const void *r
 	Interpreter *interp = interpreter;
 	return val_cmp(interp, *(const Val *)left, *(const Val *)right);
 }
+
+
+static int encode_categorical_column(Interpreter *interp, Object *column, int n_rows, CARTFeature *feature)
+{
+	Val *sorted_values;
+	MALLOC_OR_FAIL_RETURNING(interp, sorted_values, (size_t)n_rows * sizeof(Val), -1);
+
+	memcpy(sorted_values, column->items, (size_t)n_rows * sizeof(Val));
+	platform_qsort_r(sorted_values, (size_t)n_rows, sizeof(Val), interp, category_value_cmp);
+
+	int n_levels = 1;
+	for (int sorted_index = 1; sorted_index < n_rows; sorted_index++)
+			if (val_cmp(interp, sorted_values[sorted_index], sorted_values[sorted_index - 1]) != 0)
+				n_levels++;
+
+	Val *level_values;
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, level_values, (size_t)n_levels * sizeof(Val), free(sorted_values), -1);
+
+	int level = 0;
+	level_values[0] = sorted_values[0];
+	for (int sorted_index = 1; sorted_index < n_rows; sorted_index++)
+		if (val_cmp(interp, sorted_values[sorted_index], sorted_values[sorted_index - 1]) != 0)
+			level_values[++level] = sorted_values[sorted_index];
+
+	int *levels;
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, levels, (size_t)n_rows * sizeof(int), { free(sorted_values); free(level_values); }, -1);
+
+	for (int row = 0; row < n_rows; row++) {
+		Val value = column->items[row];
+		LOWER_BOUND(n_levels, probe, val_cmp(interp, level_values[probe], value) < 0, code);
+		levels[row] = code;
+	}
+
+	free(sorted_values);
+
+	feature->levels = levels;
+	feature->n_levels = n_levels;
+	feature->level_values = level_values;
+
+	return 0;
+}
+
+static int build_cart_sample(Interpreter *interp, Object *features, double *response,
+		int n_rows, CARTSample *sample) {
+	int n_features = features->len;
+
+	CARTFeature *feature_columns;
+	CALLOC_OR_FAIL_RETURNING(interp, feature_columns, (size_t)n_features, sizeof(CARTFeature), -1);
+	sample->features = feature_columns;
+
+	ArgsortPair *value_rows;
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, value_rows, (size_t)n_rows * sizeof(ArgsortPair),
+			free_cart_sample(sample, 0), -1);
+
+	for (int f = 0; f < n_features; f++) {
+		Val column_val = features->frame.values[f];
+		int unit;
+		Val numeric_val = quantity_unwrap(column_val, &unit);
+		CARTFeature *feature = &feature_columns[f];
+
+		if (VAL_TAG(numeric_val) == T_MATRIX) {
+			Object *column = OBJECT_AT(VAL_DATA(numeric_val));
+			feature->kind = FEATURE_NUMERIC;
+			MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, feature->numeric.entries, (size_t)n_rows * sizeof(CARTFeatureEntry),
+					{ free(value_rows); free_cart_sample(sample, f); }, -1);
+			MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, feature->numeric.rows, (size_t)n_rows * sizeof(int),
+					{ free(value_rows); free_cart_sample(sample, f + 1); }, -1);
+			presort_numeric_column(column->matrix.elements, response, n_rows, &feature->numeric, value_rows);
+		} else {
+			Object *column = OBJECT_AT(VAL_DATA(column_val));
+			feature->kind = FEATURE_CATEGORICAL;
+			if (encode_categorical_column(interp, column, n_rows, feature) < 0) {
+				free(value_rows);
+				free_cart_sample(sample, f);
+				return -1;
+			}
+		}
+	}
+
+	free(value_rows);
+
+	sample->n_features = n_features;
+	sample->response = response;
+	sample->feature_names = features->frame.keys;
+
+	return 0;
+}
+
+static void cart_fill_frame(Interpreter *interp, const CART *tree, const CARTSample *sample,
+		const int *row_index, int node_index, int frame_handle, int store_leaf_responses) {
+	const CARTNode *node = &tree->nodes[node_index];
+	Object *frame = OBJECT_AT(frame_handle);
+
+	frame_put(frame, intern_symbol(interp, "prediction"), make_float(node->prediction));
+	frame_put(frame, intern_symbol(interp, "n_rows"), make_float((double)node->n_rows));
+
+	if (node->left_child < 0) {
+		if (store_leaf_responses) {
+			int responses_handle = object_new_matrix(interp, node->n_rows, 1);
+			if (interp->error_flag)
+				return;
+			double *responses = OBJECT_AT(responses_handle)->matrix.elements;
+			for (int i = 0; i < node->n_rows; i++)
+				responses[i] = sample->response[row_index[node->row_start + i]];
+			frame_put(OBJECT_AT(frame_handle), intern_symbol(interp, "responses"), make_matrix(responses_handle));
+		}
+		return;
+	}
+
+	const CARTFeature *feature = &sample->features[node->feature];
+	frame_put(frame, intern_symbol(interp, "feature"), make_symbol((int)sample->feature_names[node->feature]));
+
+	if (feature->kind == FEATURE_NUMERIC) {
+		frame_put(frame, intern_symbol(interp, "threshold"), make_float(node->threshold));
+	} else {
+		int categories_handle = object_new_set(interp);
+		if (interp->error_flag)
+			return;
+		for (int level = 0; level < feature->n_levels; level++)
+			if (tree->category_flags[node->category_offset + level])
+				set_add(interp, categories_handle, feature->level_values[level]);
+		frame_put(OBJECT_AT(frame_handle), intern_symbol(interp, "categories"), make_set(categories_handle));
+	}
+
+	int left_handle = object_new_frame(interp);
+	if (interp->error_flag)
+		return;
+	frame_put(OBJECT_AT(frame_handle), intern_symbol(interp, "left"), make_frame(left_handle));
+
+	int right_handle = object_new_frame(interp);
+	if (interp->error_flag)
+		return;
+	frame_put(OBJECT_AT(frame_handle), intern_symbol(interp, "right"), make_frame(right_handle));
+
+	cart_fill_frame(interp, tree, sample, row_index, node->left_child, left_handle, store_leaf_responses);
+	if (interp->error_flag)
+		return;
+	cart_fill_frame(interp, tree, sample, row_index, node->right_child, right_handle, store_leaf_responses);
+}
+
+static void free_fit_allocations(CARTPartition *partition, CARTCategoryStats *category_stats,
+		CART *tree, CARTSample *sample, int n_features) {
+	free(partition->row_index);
+	free(partition->branch);
+	free(partition->staged_entries);
+	free(partition->staged_rows);
+
+	free(category_stats->level_sum);
+	free(category_stats->level_count);
+	free(category_stats->level_order);
+	free(category_stats->goes_left);
+
+	free(tree->nodes);
+	free(tree->category_flags);
+
+	free_cart_sample(sample, n_features);
+}
+
+static double frame_number_or(Interpreter *interp, Object *frame, const char *name, double fallback) {
+	cell key = intern_symbol(interp, name);
+	FRAME_LOOKUP(frame, key, at, present);
+	if (!present)
+		return fallback;
+
+	Val value = frame->frame.values[at];
+	return VAL_TAG(value) == T_FLOAT ? VAL_NUMBER(value) : fallback;
+}
+
+static int fit_tree_build(Interpreter *interp, Object *features, Object *y, Object *params, int parallel) {
+	int y_rows = y->matrix.rows;
+	int y_columns = y->matrix.columns;
+	if (y_rows != 1 && y_columns != 1) {
+		fail(interp, "expected a response vector (nx1 or 1xn); got %dx%d", y_rows, y_columns);
+		return -1;
+	}
+
+	int n_rows = y_rows * y_columns;
+	int n_features = features->len;
+	if (n_rows < 1 || n_features < 1) {
+		fail(interp, "need at least one row and one feature; got %d rows, %d features", n_rows, n_features);
+		return -1;
+	}
+
+	for (int f = 0; f < n_features; f++) {
+		int column_unit;
+		Val column_val = quantity_unwrap(features->frame.values[f], &column_unit);
+		Tag column_tag = VAL_TAG(column_val);
+		(void)column_unit;
+
+		int column_length;
+		if (column_tag == T_MATRIX) {
+			Object *column = OBJECT_AT(VAL_DATA(column_val));
+			column_length = column->matrix.rows * column->matrix.columns;
+		} else if (column_tag == T_ARRAY) {
+			column_length = OBJECT_AT(VAL_DATA(column_val))->len;
+		} else {
+			fail(interp, "feature column must be a numeric vector or an array; got %s", tag_name(column_tag));
+			return -1;
+		}
+		if (column_length != n_rows) {
+			fail(interp, "feature column has %d rows; response has %d", column_length, n_rows);
+			return -1;
+		}
+	}
+
+	int max_depth = (int)frame_number_or(interp, params, "max-depth", (double)INT_MAX);
+	int min_samples = MAX((int)frame_number_or(interp, params, "min-samples", 1.0), 1);
+	int store_leaf_responses = frame_number_or(interp, params, "store-leaf-responses", 0.0) != 0.0;
+
+	CARTSample sample = {0};
+	CARTPartition partition = {0};
+	CARTCategoryStats category_stats = {0};
+	CART tree = {0};
+
+	double *response = y->matrix.elements;
+	if (build_cart_sample(interp, features, response, n_rows, &sample) < 0)
+		return -1;
+
+	int max_levels = 0;
+	for (int f = 0; f < n_features; f++)
+		if (sample.features[f].kind == FEATURE_CATEGORICAL && sample.features[f].n_levels > max_levels)
+			max_levels = sample.features[f].n_levels;
+
+	if (max_levels > 0) {
+		MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, category_stats.level_sum, (size_t)max_levels * sizeof(double),
+				free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+		MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, category_stats.level_count, (size_t)max_levels * sizeof(int),
+				free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+		MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, category_stats.level_order, (size_t)max_levels * sizeof(int),
+				free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+		MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, category_stats.goes_left, (size_t)max_levels * sizeof(char),
+				free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+	}
+
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, partition.row_index, (size_t)n_rows * sizeof(int),
+			free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+	for (int i = 0; i < n_rows; i++)
+		partition.row_index[i] = i;
+
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, partition.branch, (size_t)n_rows * sizeof(char),
+			free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, partition.staged_entries, (size_t)n_rows * sizeof(CARTFeatureEntry),
+			free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+	MALLOC_OR_FAIL_RETURNING_CLEANUP(interp, partition.staged_rows, (size_t)n_rows * sizeof(int),
+			free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features), -1);
+
+	double root_sum = 0.0;
+	for (int i = 0; i < n_rows; i++)
+		root_sum += response[i];
+
+	if (parallel) {
+		int worker_count = cpu_count();
+		int frontier_depth = 1;
+		while ((1 << frontier_depth) < 4 * worker_count && frontier_depth < 12)
+			frontier_depth++;
+		grow_tree_parallel(interp, &sample, &partition, &category_stats, &tree,
+				max_depth, min_samples, frontier_depth, n_rows, root_sum, worker_count, max_levels);
+		if (interp->error_flag) {
+			free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features);
+			return -1;
+		}
+	} else {
+		grow_node(&sample, &partition, &category_stats, &tree, max_depth, min_samples, 0, n_rows, root_sum, 0);
+	}
+
+	int root_handle = object_new_frame(interp);
+	if (interp->error_flag) {
+		free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features);
+		return -1;
+	}
+	gc_root_push(interp, make_frame(root_handle));
+
+	cart_fill_frame(interp, &tree, &sample, partition.row_index, 0, root_handle, store_leaf_responses);
+
+	free_fit_allocations(&partition, &category_stats, &tree, &sample, n_features);
+	gc_root_pop(interp);
+	if (interp->error_flag)
+		return -1;
+
+	return root_handle;
+}
+
+void p_fit_tree(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+
+	Val params_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(params_val, T_FRAME, "fit-tree", "a parameters frame");
+	int y_unit;
+	Val y_matrix_val = quantity_unwrap(chain_sp[-2], &y_unit);
+	REQUIRE_CHAIN_TAG(y_matrix_val, T_MATRIX, "fit-tree", "a numeric response vector");
+	Val features_val = chain_sp[-3];
+	REQUIRE_CHAIN_TAG(features_val, T_FRAME, "fit-tree", "a features frame");
+	(void)y_unit;
+
+	int root_handle = fit_tree_build(interp, OBJECT_AT(VAL_DATA(features_val)),
+			OBJECT_AT(VAL_DATA(y_matrix_val)), OBJECT_AT(VAL_DATA(params_val)), 0);
+	if (interp->error_flag)
+		return;
+
+	chain_sp[-3] = make_frame(root_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
+}
+
+void p_pfit_tree(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 3);
+
+	Val params_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(params_val, T_FRAME, "pfit-tree", "a parameters frame");
+	int y_unit;
+	Val y_matrix_val = quantity_unwrap(chain_sp[-2], &y_unit);
+	REQUIRE_CHAIN_TAG(y_matrix_val, T_MATRIX, "pfit-tree", "a numeric response vector");
+	Val features_val = chain_sp[-3];
+	REQUIRE_CHAIN_TAG(features_val, T_FRAME, "pfit-tree", "a features frame");
+	(void)y_unit;
+
+	int root_handle = fit_tree_build(interp, OBJECT_AT(VAL_DATA(features_val)),
+			OBJECT_AT(VAL_DATA(y_matrix_val)), OBJECT_AT(VAL_DATA(params_val)), 1);
+	if (interp->error_flag)
+		return;
+
+	chain_sp[-3] = make_frame(root_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 2);
+}
+
+
+
 

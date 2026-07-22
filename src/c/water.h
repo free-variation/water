@@ -809,6 +809,7 @@ int dgemm_kernel(Interpreter *interp, int transpose_a, int transpose_b,
 
 void parallel_for(int n_items, int n_threads, int items_per_claim,
 		void (*kernel)(int start_index, int end_index, void *context), void *context);
+int cpu_count(void);
 
 void write_u8 (FILE *f, uint8_t v);
 int read_u8 (FILE *f, uint8_t *v);
@@ -1364,7 +1365,9 @@ void p_where(DISPATCH_ARGS);
 
 double matrix_variance_overall(Object *source, size_t *n_nonmissing_out);
 void p_correlation_kendall(DISPATCH_ARGS);
+void p_fit_tree(DISPATCH_ARGS);
 void p_ks_distance(DISPATCH_ARGS);
+void p_pfit_tree(DISPATCH_ARGS);
 void p_quantile(DISPATCH_ARGS);
 void p_variance(DISPATCH_ARGS);
 

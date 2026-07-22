@@ -216,6 +216,7 @@ filter
 find
 find-executable
 first
+fit-tree
 flat-map
 flatten
 flatten-array
@@ -341,6 +342,7 @@ peek
 percentile
 pfilter
 pfilter-ext
+pfit-tree
 pmap
 pmap-ext
 pmap-reduce

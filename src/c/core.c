@@ -4528,6 +4528,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "quantile", p_quantile, 0);
 	define_primitive(interp, "correlation-kendall", p_correlation_kendall, 0);
 	define_primitive(interp, "ks-distance", p_ks_distance, 0);
+	define_primitive(interp, "fit-tree", p_fit_tree, 0);
+	define_primitive(interp, "pfit-tree", p_pfit_tree, 0);
 	define_primitive(interp, "norm", p_norm, 0);
 	define_primitive(interp, "frobenius-norm", p_frobenius_norm, 0);
 	define_primitive(interp, "row-sums", p_row_sums, 0);

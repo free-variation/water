@@ -1,0 +1,97 @@
+\ fit-tree ( features y params -- tree ) — CART regression tree.
+\ Numeric columns (vectors) split at a midpoint :threshold; categorical columns
+\ (arrays) split on a mean-ordered subset stored as :categories. Every node
+\ carries :prediction (mean of its rows) and :n_rows; an internal node adds
+\ :feature and either :threshold or :categories plus :left and :right; a leaf
+\ optionally carries :responses. Params frame: :max-depth (default unlimited),
+\ :min-samples (minimum rows on each side of a split, default 1),
+\ :store-leaf-responses (default off).
+
+\ === numeric split at depth 1 ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 } fit-tree to tree
+tree :prediction @ . cr             \ 3
+tree :feature @ . cr                \ :x
+tree :threshold @ . cr              \ 2.5
+tree :n_rows @ . cr                 \ 4
+tree /left/prediction @ . cr        \ 1
+tree /right/prediction @ . cr       \ 5
+tree /left/n_rows @ . cr            \ 2
+clear
+
+\ === max-depth 0 is a stump ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 0 } fit-tree to tree
+tree :prediction @ . cr             \ 3
+tree :feature has? . cr             \ 0
+clear
+
+\ === max-depth 2 deepens both sides ===
+{ :x [ 1 2 3 4 5 6 7 8 ] vector } [ 1 1 2 2 8 8 9 9 ] vector { :max-depth 2 } fit-tree to tree
+tree :threshold @ . cr              \ 4.5
+tree /left/threshold @ . cr         \ 2.5
+tree /right/threshold @ . cr        \ 6.5
+tree /left/left/prediction @ . cr   \ 1
+tree /right/right/prediction @ . cr \ 9
+clear
+
+\ === min-samples blocks a split that underfills a side ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :min-samples 3 } fit-tree to tree
+tree :feature has? . cr             \ 0
+clear
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :min-samples 2 } fit-tree to tree
+tree :threshold @ . cr              \ 2.5
+clear
+
+\ === categorical split on a mean-ordered subset ===
+{ :c [ :a :b :c :a :b :c ] } [ 1 10 2 1 10 2 ] vector { } fit-tree to tree
+tree :feature @ . cr                \ :c
+tree :categories @ . cr             \ < :c :a >
+tree /left/prediction @ . cr        \ 1.5
+tree /right/prediction @ . cr       \ 10
+tree /right/n_rows @ . cr           \ 2
+clear
+
+\ === store-leaf-responses attaches :responses to leaves only ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 :store-leaf-responses 1 } fit-tree to tree
+tree /left/responses @ . cr         \ 2x1 vector of 1 1
+tree /left/responses has? . cr      \ 1
+tree :responses has? . cr           \ 0
+clear
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 } fit-tree to tree
+tree /left/responses has? . cr      \ 0
+clear
+
+\ === best feature chosen across numeric and categorical ===
+{ :x [ 1 2 3 4 ] vector :c [ :lo :hi :lo :hi ] } [ 1 9 1 9 ] vector { :max-depth 1 } fit-tree to tree
+tree :feature @ . cr                \ :c
+tree :categories @ . cr             \ < :lo >
+tree /left/prediction @ . cr        \ 1
+clear
+
+\ === empty params default to unlimited depth ===
+{ :x [ 1 2 3 4 ] vector } [ 1 2 3 4 ] vector { } fit-tree to tree
+tree /left/feature has? . cr        \ 1
+clear
+
+\ === pfit-tree: parallel word, output matches fit-tree ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 } pfit-tree to tree
+tree :threshold @ . cr              \ 2.5
+tree /left/prediction @ . cr        \ 1
+tree /right/prediction @ . cr       \ 5
+clear
+{ :c [ :a :b :c :a :b :c ] } [ 1 10 2 1 10 2 ] vector { } pfit-tree to tree
+tree :categories @ . cr             \ < :c :a >
+tree /left/prediction @ . cr        \ 1.5
+tree /right/prediction @ . cr       \ 10
+clear
+
+\ === errors (reason parenthesized) ===
+[ 1 2 ] vector [ 1 2 ] vector { } fit-tree          \ (features must be a frame)
+clear
+{ :x [ 1 2 ] vector } { } { } fit-tree              \ (response must be a numeric vector)
+clear
+{ :x [ 1 2 3 ] vector } [ 1 2 ] vector { } fit-tree \ (column and response lengths differ)
+clear
+{ :x < 1 2 > } [ 1 2 ] vector { } fit-tree          \ (column must be a numeric vector or an array)
+clear
+{ } [ 1 2 ] vector { } fit-tree                     \ (need at least one feature)
+clear
