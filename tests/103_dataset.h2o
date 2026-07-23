@@ -162,20 +162,20 @@ filterable [: drop 0 :] filter . cr             \ no rows, representations kept
 [ 1 2 3 4 5 ] [: 2 mod 1 = :] filter . cr       \ [ 1 3 5 ] array path intact
 
 clear
-\ map-rows ( dataset xt -- dataset ): xt maps each row frame to a new row
+\ map ( dataset xt -- dataset ): xt maps each row frame to a new row
 \ frame; frames>dataset ( rows -- dataset ) rebuilds columns, inferring each
 \ representation (floats -> vector with NaN for none, one-unit quantities ->
 \ dimensioned vector, else array).
 { :name [ "ann" "bob" ] :height [ 170 180 ] vector m :score [ 5 1 ] vector } to mappable
 
-mappable [> row | { :who row :name @ :ratio row :score @ row :height @ magnitude / } :] map-rows . cr
-mappable [> row | row :double row :score @ 2 * ! :] map-rows . cr
-{ } [: :] map-rows . cr                        \ { }
+mappable [> row | { :who row :name @ :ratio row :score @ row :height @ magnitude / } :] map . cr
+mappable [> row | row :double row :score @ 2 * ! :] map . cr
+{ } [: :] map . cr                             \ { }
 
 [ { :a 1 :b "x" } { :a 2 :b "y" } ] frames>dataset . cr
 [ { :a 1 } { :a null } ] frames>dataset :a @ transpose . cr    \ 1 nan as 1x2
 [ ] frames>dataset . cr                        \ { }
-{ :when [ 100 200 ] vector s } [> row | { :later row :when @ 1 day + } :] map-rows
+{ :when [ 100 200 ] vector s } [> row | { :later row :when @ 1 day + } :] map
 dup :later column-type . cr                     \ :datetime survives the rebuild
 :later @ magnitude transpose . cr               \ 86500 86600 as 1x2
 

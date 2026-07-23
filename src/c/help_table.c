@@ -283,7 +283,7 @@ const HelpEntry help_entries[] = {
 	{ "frame>array", "( fr -- arr )", "Flatten to a key-sorted alternating-kv array; inverse of array>frame", "1 + n", "1o", "O(n)", 16 },
 	{ "frame>json", "( val -- s )", "Serialize a value to JSON. Floats use the shortest round-trip form; strings are escaped (non-ASCII emitted raw); object keys are the symbol names", "walk + build", "1o string", "O(tree size)", 17 },
 	{ "frame?", "( a -- bool )", "core.h2o: type-of :frame = (inlined)", "5", "none", "O(1)", 4 },
-	{ "frames>dataset", "( rows -- dataset )", "datasets.h2o: an array of row frames (as query, db-query :rows, or map-rows produce) as a column-oriented dataset, keys from row 0 — differing keys throw. Each column's representation is inferred: all-float cells (none → NaN) become an n×1 vector, uniform-unit quantities a dimensioned vector, anything else stays an array", "n·k log k", "one column per key + 1o", "O(n·k log k)", 22 },
+	{ "frames>dataset", "( rows -- dataset )", "datasets.h2o: an array of row frames (as query, db-query :rows, or map over a dataset produce) as a column-oriented dataset, keys from row 0 — differing keys throw. Each column's representation is inferred: all-float cells (none → NaN) become an n×1 vector, uniform-unit quantities a dimensioned vector, anything else stays an array", "n·k log k", "one column per key + 1o", "O(n·k log k)", 22 },
 	{ "frobenius-norm", "( m -- f )", "√(Σ aᵢⱼ²) over all elements (same value as norm)", "1 + n", "none", "O(n)", 18 },
 	{ "fround", "( a -- round a ) ⚠", "nearest, in place", "1", "none", "O(1)", 1 },
 	{ "fround-down", "( a -- floor a ) ⚠", "in place", "1", "none", "O(1)", 1 },
@@ -343,8 +343,7 @@ const HelpEntry help_entries[] = {
 	{ "lvar?", "( a -- bool )", "core.h2o: type-of :lvar = (inlined)", "5", "none", "O(1)", 4 },
 	{ "magnitude", "( v -- v' )", "A quantity's bare magnitude (float or matrix, the unit dropped); any other value passes through unchanged", "2", "none", "O(1)", 5 },
 	{ "man", "( xt -- fr )", "Frame of a word's reference entry (:word :effect :summary, plus :ops :alloc :order for runtime words); a unit word synthesizes its entry from the unit's definition (unit: m × 1000); T_NONE if undocumented", "dict scan + log n", "1o + strings", "O(|dict|)", 29 },
-	{ "map", "( arr/set xt -- arr )", "Apply xt to each element; xt must net exactly one value", "2 + n·xt", "1a(n)", "O(n·xt)", 23 },
-	{ "map-rows", "( dataset xt -- dataset )", "datasets.h2o: xt maps each row frame to a new row frame — derive, rename, or drop fields; the returned frames rebuild through frames>dataset, so all rows must share keys and columns re-infer their representation", "n·xt + n·k log k", "rows + new columns", "O(n·(xt + k log k))", 22 },
+	{ "map", "( arr/set xt -- arr ) or ( dataset xt -- dataset )", "Apply xt to each element; xt must net exactly one value. datasets.h2o extends it to a dataset: xt maps each row frame to a new row frame — derive, rename, or drop fields — and the returned frames rebuild through frames>dataset, so all rows must share keys and columns re-infer their representation", "2 + n·xt", "1a(n); dataset rows + new columns", "O(n·xt); dataset O(n·(xt + k log k))", 23 },
 	{ "mapn", "( arr₁ … arr_N xt N -- arr )", "N-ary zip-map over equal-length arrays", "rows·(N+xt)", "1a(rows)", "O(rows·xt)", 23 },
 	{ "match", "( s pat -- [ whole cap… ] | 0 )", "First (leftmost) match as a flat array: whole match then each capture; no match returns 0", "n", "1a + captures", "O(n)", 12 },
 	{ "match-all", "( s pat -- [ [whole cap…] … ] | 0 )", "Every non-overlapping leftmost match, each a flat sub-array; a zero-width match advances one byte; no match returns 0", "n", "1a per match + captures", "O(n + m·g)", 12 },
@@ -602,4 +601,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 557;
+const int help_entry_count = 556;

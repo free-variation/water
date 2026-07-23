@@ -98,7 +98,7 @@ a: not a colon definition
   9: exit
 ;
 v: not a colon definition
-: qmap   \ 17 cells
+: qmap   \ 18 cells
  0: [
  1: (lit) 1
  3: (lit) 2
@@ -110,7 +110,7 @@ v: not a colon definition
  12: exit
  13: (lit) '?
  15: map
- 16: exit
+ 17: exit
 ;
 : qmap
   0: [
@@ -123,8 +123,44 @@ v: not a colon definition
   11: 1+
   12: exit
   13: (lit) '?
-  15: map
-  16: exit
+  15: map:
+    0: over
+    1: type-of
+    2: (lit) :frame
+    4: =
+    5: (0branch) 5
+    7: dataset-map:
+      0: swap
+      1: dataset-rows:
+        0: (enter-locals-mixed) 3 1 0
+        4: (local@0) 0
+        6: keys
+        7: (local!0) 2
+        9: (local@0) 2
+        11: size
+        12: (local!0) 1
+        14: (local@0) 1
+        16: (0=0branch) 4
+        18: [
+        19: ]
+        20: exit
+      3: swap
+      4: (lit) 'map
+      6: execute
+      7: frames>dataset:
+        0: (enter-locals-to) 1
+        2: (local@0) 0
+        4: size
+        5: (0=0branch) 4
+        7: {
+        8: }
+        9: exit
+      9: exit
+    9: (branch) 4
+    11: (lit) 'map
+    13: execute
+    14: exit
+  17: exit
 ;
 : else-call   \ 12 cells
  0: (lit) 0
@@ -161,7 +197,7 @@ v: not a colon definition
  5: *
  6: exit
 ;
-: at-swap-local   \ 16 cells
+: at-swap-local   \ 17 cells
  0: (enter-locals) 1
  2: (local!0) 0
  4: (branch) 5
@@ -170,14 +206,14 @@ v: not a colon definition
  9: exit
  10: (lit) '?
  12: map
- 13: (leave-locals) 1
- 15: exit
+ 14: (leave-locals) 1
+ 16: exit
 ;
 [ 30 10 ] 
-: at-swap-nested   \ 35 cells
+: at-swap-nested   \ 36 cells
  0: (enter-locals) 1
  2: (local!0) 0
- 4: (branch) 25
+ 4: (branch) 26
  6: [:
  7: (enter-locals-to) 1
  9: [
@@ -192,9 +228,9 @@ v: not a colon definition
  23: exit
  24: (lit) '?
  26: map
- 27: (leave-locals) 1
- 29: exit
- 30: (lit) '?
- 32: (leave-locals) 1
- 34: exit
+ 28: (leave-locals) 1
+ 30: exit
+ 31: (lit) '?
+ 33: (leave-locals) 1
+ 35: exit
 ;

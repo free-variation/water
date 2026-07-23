@@ -32,3 +32,24 @@
 
 1 
 [ { :estimate -12.0436 :se 3.00968 :bias -0.303214 :ci-low -19.088 :ci-high -7.43674 } { :estimate 1.92813 :se 0.48135 :bias 0.048784 :ci-low 1.22304 :ci-high 3.10194 } ] 
+<matrix 1x1>
+      1.609
+
+<matrix 1x2>
+          1        0.6
+
+<matrix 1x2>
+        0.5        0.4
+
+<matrix 1x2>
+       0.15       1.94
+
+<matrix 1x2>
+       0.15       1.94
+
+<matrix 1x2>
+     -2.673     0.5941
+
+<matrix 1x2>
+     -2.673     0.5941
+

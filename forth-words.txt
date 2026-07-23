@@ -299,7 +299,6 @@ lvar?
 magnitude
 man
 map
-map-rows
 mapn
 match
 match-all

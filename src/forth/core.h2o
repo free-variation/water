@@ -101,6 +101,8 @@ inline
 ( xt -- ... )  \ run xt, print elapsed CLOCK_MONOTONIC seconds, pass its results through
 : timed now >r execute now r> - . cr ;
 
+( val -- val ) \ The identity function
+: identity ; inline
 
 ( -- arr ) \ one { :name :value :type } frame per global, oldest first
 : variables

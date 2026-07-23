@@ -44,12 +44,12 @@ se               ( m -- f )               statistics.h2o: standard error of the 
 summary          ( v/dataset -- fr )      statistics.h2o: a vector answers { :min :q1 :median :mean :q3 :max } over its finite elements — a dimensioned vector in its unit, an instant vector (unit exactly s) with each statistic rendered through time>iso — plus :missing with the NaN count when any; an all-missing vector answers { :missing n }, an empty one { }. A dataset answers that frame per numeric column and { :distinct } (distinct non-missing cells, plus :missing) per text column, keyed by column name; any other column value errors naming the column
 : 2dup over over ;
 {
-  :summary Apply xt to each element; xt must net exactly one value
+  :summary Apply xt to each element; xt must net exactly one value. datasets.h2o extends it to a dataset: xt maps each row frame to a new row frame — derive, rename, or drop fields — and the returned frames rebuild through frames>dataset, so all rows must share keys and columns re-infer their representation
   :word map
-  :effect ( arr/set xt -- arr )
+  :effect ( arr/set xt -- arr ) or ( dataset xt -- dataset )
   :ops 2 + n·xt
-  :alloc 1a(n)
-  :order O(n·xt)
+  :alloc 1a(n); dataset rows + new columns
+  :order O(n·xt); dataset O(n·(xt + k log k))
 }
 water — a quick start:
   3 4 + .            add two numbers and print the result

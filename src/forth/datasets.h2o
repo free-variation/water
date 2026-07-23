@@ -275,11 +275,21 @@
 	dup [> key | rows [: key @ :] map column-from-cells :] map
 	frame ;
 
-( dataset xt -- dataset) \ xt maps each row frame to a new row frame
-: map-rows
+' map constant (array-map) internal
+
+( dataset xt -- dataset ) \ xt maps each row frame to a new row frame
+: dataset-map
 	swap dataset-rows
-	swap map
-	frames>dataset ;
+	swap (array-map) execute
+	frames>dataset ; internal
+
+( array/set/dataset xt -- same ) \ map xt over elements, or over each dataset row frame
+: map
+	over frame? if
+		dataset-map
+	else
+		(array-map) execute
+	then ;
 
 ( dataset/matrix -- n ) \ number of rows
 : n-rows dim drop ;

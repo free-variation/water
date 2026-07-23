@@ -60,3 +60,33 @@ cv-serial  cv-X cv-y cv-units [ 1 100 ] 2 pcv-logistic-ridge  = . cr   \ 1
 [ :sepal_length :y ]  sepal-lengths species-y 2 array  frame to iris-two
 7 seed
 iris-two [ :sepal_length ] :y 300 logistic-regression . cr   \ slope ~1.9
+
+\ ===== generalized linear models (fit-glm and the family objects) =====
+
+\ gamma regression, log link. an intercept-only fit recovers beta0 = ln(ybar):
+\ ln(mean [2 4 6 8]) = ln 5. this discriminates the log link from the canonical
+\ inverse link, whose intercept-only fit would be 1/ybar = 0.2
+[ 1 1 1 1 ] 4 1 matrix  [ 2 4 6 8 ] 4 1 matrix  100 1e-10 fit-gamma . cr   \ 1.60944
+
+\ gamma recovers known coefficients from means generated at eta = 1 + 0.6 x
+[ 1 0.5  1 1.0  1 1.5  1 2.0  1 2.5  1 3.0 ] 6 2 matrix
+[ 1 0.6 0.5 * + exp  1 0.6 1.0 * + exp  1 0.6 1.5 * + exp
+  1 0.6 2.0 * + exp  1 0.6 2.5 * + exp  1 0.6 3.0 * + exp ] 6 1 matrix
+100 1e-12 fit-gamma transpose . cr                                        \ [1 0.6]
+
+\ poisson regression, log link, recovers coefficients from eta = 0.5 + 0.4 x
+[ 1 0.0  1 0.5  1 1.0  1 1.5  1 2.0  1 2.5 ] 6 2 matrix
+[ 0.5 0.4 0.0 * + exp  0.5 0.4 0.5 * + exp  0.5 0.4 1.0 * + exp
+  0.5 0.4 1.5 * + exp  0.5 0.4 2.0 * + exp  0.5 0.4 2.5 * + exp ] 6 1 matrix
+100 1e-12 fit-poisson transpose . cr                                      \ [0.5 0.4]
+
+\ the gaussian/identity family reduces fit-glm to one-step OLS: same beta as fit-linear
+[ 1 1  1 2  1 3  1 4 ] 4 2 matrix  [ 2.1 3.9 6.2 7.8 ] 4 1 matrix to gauss-y to gauss-X
+gauss-X gauss-y gaussian-identity 50 1e-10 fit-glm transpose . cr         \ OLS beta
+gauss-X gauss-y fit-linear transpose . cr                                 \ same beta
+
+\ the binomial/logit family through fit-glm equals fit-logistic-ridge at lambda 0
+[ 1 2 3 4 5 6 7 8 ] 8 1 matrix with-intercept to bin-X
+[ 0 0 1 0 1 0 1 1 ] 8 1 matrix to bin-y
+bin-X bin-y binomial-logit 100 1e-10 fit-glm transpose . cr               \ logit beta
+bin-X bin-y 100 1e-10 0 fit-logistic-ridge transpose . cr                 \ same beta

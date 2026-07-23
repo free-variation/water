@@ -19,32 +19,26 @@ A TODO list of pending work, highest priority first.
 ## Statistics: a minimal spanning set
 
 Build applied statistics from a few kernels, each reused across many methods,
-with inference resampling-first (index loops over asymptotic tables). The
-kernels: SVD (present), weighted least squares (present as `fit-linear` plus
-the sqrt-w idiom), the resampling loop (present as `bootstrap`), and a
-pairwise-distance primitive (§4 — small C, unless the dgemm identity
-suffices). Everything else is library code composing them.
+with inference resampling-first (index loops over asymptotic tables). Compose
+everything in library code from four kernels — SVD, weighted least squares (the
+`fit-linear` sqrt-w idiom), the resampling loop (`bootstrap`), and a
+pairwise-distance primitive (§4, small C unless the dgemm identity suffices).
 
-Layering: LAPACK-free stats live in the embedded library (wasm-capable) built
-on the C kernels; statistics.h2o holds what needs the shared library and
-masks any embedded word it accelerates by redefining it in toto — the golden
-suite, running both native (masked) and wasm (unmasked), keeps the copies
-honest. To that end add a built-in `svd`: a one-sided Jacobi kernel in C,
-masked by the dgesvd binding. Its goldens pin S and the U·S·Vᵀ
-reconstruction, never raw U/V entries (column signs are not canonical and
-the two implementations disagree on them).
+Add a built-in `svd` so the embedded (wasm-capable) library can decompose
+without the FFI: a one-sided Jacobi kernel in C, masked by the dgesvd binding.
+Pin its goldens on S and the U·S·Vᵀ reconstruction, never raw U/V entries
+(column signs are not canonical and the two implementations disagree on them).
 
 Where C work is and is not needed: IRLS needs none — each iteration is dgemm +
-element-wise link/variance words + a LAPACK solve, all C already; `fit-logistic`
-runs the full Firth loop as library code today, and generalized IRLS (§2) only
-swaps the element-wise words in the loop. The small C beyond the kernels:
+element-wise link/variance words + a LAPACK solve, and a new family (§2) swaps
+only the element-wise words. The small C beyond the kernels:
 `erf`/normal-CDF (§2 probit, BCa intervals — a few lines alongside
-`exp`/`tanh`; the inverse `qnorm` already exists in forth), the
+`exp`/`tanh`; `qnorm` covers the quantile inverse), the
 empirical-distribution statistics
-(§5 — `ks`, `cvm`, `ad`, `wasserstein`: used constantly, each a small
-one-pass kernel), and `row-argmins` / its argmax and column twins
+(§5 — `ks`, `cvm`, `ad`, `wasserstein`, each a small
+one-pass kernel), and `row-argmins` with its argmax and column twins
 (index-returning kin of `row-mins`, one pass — k-means' assignment step
-needs the per-row index, and only the flat `argmin` exists). Gaussian
+needs the per-row index the flat `argmin` does not return). Gaussian
 mixtures (§1) add no C, only a `dpotrf`/`dpotrs` export to the lapacke
 vendoring. Rank transforms (§3) compose `iota` + `sort-by`; k-means,
 spectral methods, and the tensor step of LCA (§1) otherwise ride
@@ -95,19 +89,17 @@ spectral methods, and the tensor step of LCA (§1) otherwise ride
 
 To settle: whether spectral clustering's affinity construction (RBF
 bandwidth, kNN graph) waits on the distance primitive (§4); how much of
-CA/MCA folds into the LCA indicator plumbing; where the library splits
-(statistics.h2o is already the stats home — clustering and LCA may warrant
-their own files).
+CA/MCA folds into the LCA indicator plumbing; whether clustering and LCA
+warrant their own files rather than statistics.h2o.
 
 ### 2. Weighted least squares and the GLM family
 
-- **fit-weighted** — name the sqrt-w row-scaling idiom `fit-logistic`
-  already uses ( X y w -- beta ).
-- **Generalized IRLS** — parameterize link and variance in one loop:
-  Poisson (log link), probit, negative binomial, multinomial/ordinal
-  logistic. One reweighting loop, one linear solver. Library code
-  throughout; probit is the one link needing a new C word (element-wise
-  `erf`/normal-CDF — the quantile side is covered by `qnorm`).
+- **fit-weighted** — name the sqrt-w row-scaling idiom inside `fit-logistic`
+  as ( X y w -- beta ).
+- **More GLM families** — probit (needs an element-wise `erf`/normal-CDF C
+  word; `qnorm` covers the quantile side), negative binomial (estimate the
+  dispersion), and multinomial/ordinal logistic (a stacked design, not a
+  single reweighting).
 - **Ridge** — singular-value filtering σ/(σ²+λ) on the design; λ chosen by
   cross-validation (§3).
 - **LDA** — within-class whitening + SVD of the class means.
@@ -123,10 +115,9 @@ logistic reuses the Firth machinery or defers it to the binary case.
 
 ### 2b. Correlations: residuals
 
-- Midranks for `ranks` ties: tied values currently take index-order
-  ranks, so `correlation-spearman` drifts on heavily tied data and
-  answers 1 (not null) for a constant vector. Average each tied run's
-  ranks; then spearman's degenerate cases match pearson's.
+- Give `ranks` midranks for ties — average each tied run's ranks — so
+  `correlation-spearman` stops drifting on heavily tied data and returns
+  null (not 1) for a constant vector, matching pearson's degenerate cases.
 
 ### 3. The resampling loop as the inference engine
 
@@ -143,13 +134,13 @@ tables stay out.
   statistic (argsort — Mann–Whitney's twin); ROC and calibration curves
   as cumulative counts over the argsort order; isotonic calibration
   (PAVA) as a library pass.
-- **Rank statistics** — `ranks` exists (spearman rides it); Wilcoxon /
-  Mann–Whitney, Kruskal–Wallis become rank statistics with permutation
-  nulls. Midranks for ties (§2b) feed directly into these.
-- Parallel variants ride pmap as pbootstrap does; per-replicate seeding
-  (`resample-indices-ext` at run-seed + i, as `bootstrap-with` does) is
-  the established reproducibility discipline — reuse it for permutation
-  and jackknife index generators.
+- **Rank statistics** — build Wilcoxon / Mann–Whitney and Kruskal–Wallis as
+  rank statistics with permutation nulls, over the `ranks` word spearman
+  uses. Midranks for ties (§2b) feed directly into these.
+- Ride pmap for the parallel variants as pbootstrap does; reuse the
+  per-replicate seeding pattern (`resample-indices-ext` at run-seed + i,
+  as `bootstrap-with` does) for the permutation and jackknife index
+  generators.
 
 To settle: one generic word ( data index-gen-xt statistic-xt n -- dist )
 with bootstrap/permutation/jackknife as instances, or a word per method.
@@ -215,8 +206,8 @@ from session definitions, so the undocumented canary reaches them.
 ## Basic graphing: residuals
 
 - **Chart set** — step (the ecdf as drawn) and bar charts.
-- **Stats consumers** — QQ plots (`sort` + `qnorm`, both available now;
-  bring back plot-side `fit-line` over `abline`), ROC and calibration
+- **Stats consumers** — QQ plots (over `sort` + `qnorm`; bring back
+  plot-side `fit-line` over `abline`), ROC and calibration
   curves (the model-metrics bullet), residual and fit plots for the
   regressions.
 - **Log axes** — transform at the domain with power-of-ten tick labels,
@@ -291,7 +282,7 @@ arbitrary input) grow the table without limit, because the everyday associative
 type — the frame — is symbol-keyed.
 
 Make runtime-minted symbols collectible by reachability, the contract strings
-and arrays already follow: a symbol keeps its identity (and its O(1) index
+and arrays follow: a symbol keeps its identity (and its O(1) index
 equality) for as long as something live refers to it, and is reclaimed once
 nothing does. A string re-interned after its symbol was collected gets a fresh
 identity, which is sound because no live value held the old one.
@@ -405,7 +396,7 @@ the before/after thunks, recognized by both unwind cascades in the inner loop
 
 To settle: whether `after` firing once per failed alternative of a multi-shot
 region is the wanted semantics or a footgun; how a wind mark interleaves with
-the locals-frame and trail rewind the unwind already carries; whether
+the locals-frame and trail rewind the unwind carries; whether
 `before`/`after` observe the region's data stack or run isolated.
 
 ---

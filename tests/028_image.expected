@@ -9,7 +9,7 @@ V=42
 3 
 2.5 
 [ 2 3 4 ] 
-: bump-all   \ 17 cells
+: bump-all   \ 18 cells
  0: (branch) 12
  2: [:
  3: (enter-locals-to) 1
@@ -20,10 +20,10 @@ V=42
  12: exit
  13: (lit) '?
  15: map
- 16: exit
+ 17: exit
 ;
 error: expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got none and a float
-in + ← [> x | x 1 + :]
+in + ← [> x | x 1 + :] ← bump-all
 1 
 2 
 2 
