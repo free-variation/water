@@ -833,6 +833,73 @@ probeNext();setInterval(probeNext,500);
 	border-mark :y-ticks ticks-mark
 	figure>svg ;
 
+\ === decision-tree diagram (fit-tree output as a node-link figure) ===
+
+( node -- n ) \ number of leaves in the subtree
+: tree-leaf-count
+	dup :feature has? not if drop 1 exit then
+	dup :left @ tree-leaf-count  swap :right @ tree-leaf-count  + ; internal
+
+( node -- depth ) \ maximum depth below node (a leaf is 0)
+: tree-node-depth
+	dup :feature has? not if drop 0 exit then
+	dup :left @ tree-node-depth  swap :right @ tree-node-depth  max2 1 + ; internal
+
+( node -- label ) \ the node's split condition, or a leaf's prediction
+: tree-node-label
+	dup :feature has? not if :prediction @ "{0}" format exit then
+	dup :threshold has? if
+		dup :feature @ swap :threshold @ "{1} <= {0}" format
+	else
+		dup :feature @ swap :categories @ [: "{0}" format :] map ", " join "{1} in {0}" format
+	then ; internal
+
+( label max -- label' ) \ clip to max codepoints with an ellipsis when longer
+: truncate-label
+	|> label max |
+	label size max gt if  label 0 max 1 - substring "…" +  else label then ; internal
+
+( center-x cy label -- ) \ a node box centered at (center-x, cy) with its label
+: tree-box
+	|> cx cy label |
+	cx 80 -  cy 14 -  160 28  svg-rect
+	cx  cy 4 +  label 26 truncate-label  svg-text ; internal
+
+( node depth next-leaf -- center-x next-leaf ) \ draw the subtree, threading the leaf counter;
+\ a leaf sits at its counter position, an internal node centers over its two children
+: tree-draw-node
+	| >node >depth >next-leaf  cy leftx rightx cx child-cy |
+	depth 1 + :level-height figure@ * to cy
+	node :feature has? not if
+		next-leaf 0.5 + :leaf-spacing figure@ * to cx
+		cx cy node tree-node-label tree-box
+		cx  next-leaf 1 +  exit
+	then
+	node :left @   depth 1 + next-leaf tree-draw-node  to next-leaf to leftx
+	node :right @  depth 1 + next-leaf tree-draw-node  to next-leaf to rightx
+	leftx rightx + 2 / to cx
+	depth 2 + :level-height figure@ * to child-cy
+	cx cy 14 +  leftx  child-cy 14 -  svg-line
+	cx cy 14 +  rightx child-cy 14 -  svg-line
+	cx cy node tree-node-label tree-box
+	cx next-leaf ; internal
+
+( tree -- svg ) \ a fit-tree node-link diagram: internal nodes show the split, leaves the
+\ prediction, edges go to the left (condition-true) child then the right
+: plot-tree
+	| >tree n-leaves levels |
+	tree tree-leaf-count to n-leaves
+	tree tree-node-depth 1 + to levels
+	n-leaves 180 *  levels 1 + 70 *  figure
+	180 :leaf-spacing figure!
+	70 :level-height figure!
+	10 :font-size figure!
+	"white" fill  "none" stroke
+	0 0  n-leaves 180 *  levels 1 + 70 *  svg-rect
+	"black" stroke  "middle" text-anchor
+	tree 0 0 tree-draw-node 2drop
+	figure>svg ;
+
 
 
 

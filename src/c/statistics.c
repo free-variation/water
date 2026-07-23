@@ -36,6 +36,8 @@ typedef struct {
 	double prediction;
 	int n_rows;
 	int row_start;
+	int missing_left;
+	int split_missing_count;
 } CARTNode;
 
 typedef struct {
@@ -428,36 +430,62 @@ typedef struct {
 	double threshold;
 	int n_left;
 	double left_sum;
+	int missing_count;
+	double missing_sum;
+	int missing_left;
 	double score;
 } CARTSplit;
 
 static CARTSplit scan_feature(const CARTFeatureEntry *entries, int node_start, int node_end,
 		double node_sum, int min_samples) {
-	int n_rows = node_end - node_start;
+	int finite_end = node_end;
+	double missing_sum = 0.0;
+	while (finite_end > node_start && entries[finite_end - 1].value != entries[finite_end - 1].value)
+		missing_sum += entries[--finite_end].response;
+	int missing_count = node_end - finite_end;
+	int n_finite = finite_end - node_start;
+	double finite_sum = node_sum - missing_sum;
 
-	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .left_sum = 0.0, .score = -INFINITY };
+	CARTSplit best = { .feature = -1, .threshold = 0.0, .n_left = 0, .left_sum = 0.0,
+			.missing_count = missing_count, .missing_sum = missing_sum, .missing_left = 1,
+			.score = -INFINITY };
 	double left_sum = 0.0;
 
-	for (int i = node_start; i + 1 < node_end; i++) {
+	for (int i = node_start; i + 1 < finite_end; i++) {
 		left_sum += entries[i].response;
 		int n_left = i - node_start + 1;
 
 		if (entries[i].value == entries[i + 1].value)
 			continue;
 
-		int n_right = n_rows - n_left;
-		if (n_left < min_samples || n_right < min_samples)
-			continue;
+		int n_right = n_finite - n_left;
+		double right_sum = finite_sum - left_sum;
+		double threshold = (entries[i].value + entries[i + 1].value) / 2.0;
 
-		double right_sum = node_sum - left_sum;
-		double score = left_sum * left_sum / n_left
-				+ right_sum * right_sum / n_right;
+		if (n_left + missing_count >= min_samples && n_right >= min_samples) {
+			double left_total = left_sum + missing_sum;
+			double score = left_total * left_total / (n_left + missing_count)
+					+ right_sum * right_sum / n_right;
+			if (score > best.score) {
+				best.score = score;
+				best.threshold = threshold;
+				best.n_left = n_left;
+				best.left_sum = left_sum;
+				best.missing_left = 1;
+			}
+		}
 
-		if (score > best.score) {
-			best.score = score;
-			best.threshold = (entries[i].value + entries[i + 1].value) / 2.0;
-			best.n_left = n_left;
-			best.left_sum = left_sum;
+		if (n_left >= min_samples && n_right + missing_count >= min_samples) {
+			double right_total = right_sum + missing_sum;
+			double score = left_sum * left_sum / n_left
+					+ right_total * right_total / (n_right + missing_count);
+			if (score > best.score) {
+				best.score = score;
+				best.threshold = threshold;
+				best.n_left = n_left;
+				best.left_sum = left_sum;
+				best.missing_left = 0;
+			}
 		}
 	}
 
@@ -585,12 +613,17 @@ static CARTSplit choose_split(const CARTSample *sample, const CARTPartition *par
 
 enum { BRANCH_LEFT = 0, BRANCH_RIGHT = 1 };
 
-static void mark_branches(const int *rows, int node_start, int node_end, int n_left, char *branch) {
+static void mark_branches(const int *rows, int node_start, int node_end,
+		int n_left, int missing_count, int missing_left, char *branch) {
+	int finite_end = node_end - missing_count;
 	int right_start = node_start + n_left;
 	for (int i = node_start; i < right_start; i++)
 		branch[rows[i]] = BRANCH_LEFT;
-	for (int i = right_start; i < node_end; i++)
+	for (int i = right_start; i < finite_end; i++)
 		branch[rows[i]] = BRANCH_RIGHT;
+	char missing_branch = missing_left ? BRANCH_LEFT : BRANCH_RIGHT;
+	for (int i = finite_end; i < node_end; i++)
+		branch[rows[i]] = missing_branch;
 }
 
 static void mark_branches_categorical(const int *levels, int n_levels,
@@ -667,7 +700,8 @@ static void partition_node(CARTSample *sample, CARTPartition *partition,
 	const CARTFeature *feature = &sample->features[split->feature];
 
 	if (feature->kind == FEATURE_NUMERIC)
-		mark_branches(feature->numeric.rows, node_start, node_end, split->n_left, partition->branch);
+		mark_branches(feature->numeric.rows, node_start, node_end, split->n_left,
+				split->missing_count, split->missing_left, partition->branch);
 	else
 		mark_branches_categorical(feature->levels, feature->n_levels,
 				partition->row_index, node_start, node_end, sample->response,
@@ -717,7 +751,15 @@ static int append_leaf(CART *tree, int node_start, int n_rows, double node_sum) 
 	node->prediction = node_sum / n_rows;
 	node->n_rows = n_rows;
 	node->row_start = node_start;
+	node->missing_left = 0;
+	node->split_missing_count = 0;
 	return node_index;
+}
+
+static int split_left_count(const CARTSplit *split, double *left_sum_out) {
+	int missing_to_left = split->missing_left ? split->missing_count : 0;
+	*left_sum_out = split->left_sum + (split->missing_left ? split->missing_sum : 0.0);
+	return split->n_left + missing_to_left;
 }
 
 static int grow_node(CARTSample *sample, CARTPartition *partition,
@@ -741,10 +783,12 @@ static int grow_node(CARTSample *sample, CARTPartition *partition,
 		record_categorical_split(tree, node_index, category_stats,
 				sample->features[split.feature].n_levels);
 
-	int right_start = node_start + split.n_left;
-	double right_sum = node_sum - split.left_sum;
+	double left_sum;
+	int n_left = split_left_count(&split, &left_sum);
+	int right_start = node_start + n_left;
+	double right_sum = node_sum - left_sum;
 	int left = grow_node(sample, partition, category_stats, tree,
-			max_depth, min_samples, node_start, right_start, split.left_sum, tree_depth + 1);
+			max_depth, min_samples, node_start, right_start, left_sum, tree_depth + 1);
 	int right = grow_node(sample, partition, category_stats, tree,
 			max_depth, min_samples, right_start, node_end, right_sum, tree_depth + 1);
 
@@ -753,6 +797,8 @@ static int grow_node(CARTSample *sample, CARTPartition *partition,
 	node->threshold = split.threshold;
 	node->left_child = left;
 	node->right_child = right;
+	node->missing_left = split.missing_left;
+	node->split_missing_count = split.missing_count;
 
 	return node_index;
 }
@@ -809,10 +855,12 @@ static int grow_top(CARTSample *sample, CARTPartition *partition, CARTCategorySt
 	if (sample->features[split.feature].kind == FEATURE_CATEGORICAL)
 		record_categorical_split(tree, node_index, category_stats, sample->features[split.feature].n_levels);
 
-	int right_start = node_start + split.n_left;
-	double right_sum = node_sum - split.left_sum;
+	double left_sum;
+	int n_left = split_left_count(&split, &left_sum);
+	int right_start = node_start + n_left;
+	double right_sum = node_sum - left_sum;
 	int left = grow_top(sample, partition, category_stats, tree, subtrees, max_depth, min_samples,
-			frontier_depth, node_start, right_start, split.left_sum, tree_depth + 1, node_index, 0);
+			frontier_depth, node_start, right_start, left_sum, tree_depth + 1, node_index, 0);
 	int right = grow_top(sample, partition, category_stats, tree, subtrees, max_depth, min_samples,
 			frontier_depth, right_start, node_end, right_sum, tree_depth + 1, node_index, 1);
 
@@ -821,6 +869,8 @@ static int grow_top(CARTSample *sample, CARTPartition *partition, CARTCategorySt
 	node->threshold = split.threshold;
 	node->left_child = left;
 	node->right_child = right;
+	node->missing_left = split.missing_left;
+	node->split_missing_count = split.missing_count;
 
 	return node_index;
 }
@@ -934,12 +984,22 @@ static void grow_tree_parallel(Interpreter *interp, CARTSample *sample, CARTPart
 
 static void presort_numeric_column(const double *column_values, const double *response,
 		int n_rows, CARTSortedColumn *sorted_column, ArgsortPair *value_rows) {
+	int n_finite = 0;
+	int missing_index = n_rows;
 	for (int row = 0; row < n_rows; row++) {
-		value_rows[row].value = column_values[row];
-		value_rows[row].index = row;
+		double value = column_values[row];
+		if (value == value) {
+			value_rows[n_finite].value = value;
+			value_rows[n_finite].index = row;
+			n_finite++;
+		} else {
+			missing_index--;
+			value_rows[missing_index].value = value;
+			value_rows[missing_index].index = row;
+		}
 	}
 
-	sort_pairs(value_rows, (size_t)n_rows);
+	sort_pairs(value_rows, (size_t)n_finite);
 
 	CARTFeatureEntry *entries = sorted_column->entries;
 	int *rows = sorted_column->rows;
@@ -1093,6 +1153,9 @@ static void cart_fill_frame(Interpreter *interp, const CART *tree,
 
 	if (feature_levels[node->feature].level_values == NULL) {
 		frame_put(frame, intern_symbol(interp, "threshold"), make_float(node->threshold));
+		if (node->split_missing_count > 0)
+			frame_put(frame, intern_symbol(interp, "default"),
+					make_symbol((int)intern_symbol(interp, node->missing_left ? "left" : "right")));
 	} else {
 		int categories_handle = object_new_set(interp);
 		if (interp->error_flag)

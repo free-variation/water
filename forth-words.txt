@@ -169,6 +169,7 @@ difference
 dim
 dot
 double-segment
+draw-tree
 drop
 drop-nans
 dup
@@ -363,6 +364,8 @@ pointer>address
 predict
 print
 print-stack
+prune
+prune-cv
 ptr?
 qnorm
 quantile

@@ -104,8 +104,8 @@
 [ 1 0 ] vector [ 0.5 0.5 ] vector binomial-deviance . cr    \ 2.77259  ( -2*2*ln 0.5 )
 [ 1 ] vector [ 0 ] vector binomial-deviance . cr            \ 55.262   ( -2*ln 1e-12 )
 
-\ cross-validate ( units n-folds fit score -- loss ): round-robin folds in given order
-[ 1 2 3 4 5 6 ] 3 [: vector mean :] [: vector mean - abs :] cross-validate . cr   \ 1
+\ cross-validate ( units n-folds fit score -- fold-losses ): round-robin folds in order
+[ 1 2 3 4 5 6 ] 3 [: vector mean :] [: vector mean - abs :] cross-validate mean . cr   \ 1
 [: [ 1 2 3 ] 5 [: vector mean :] [: vector mean - abs :] cross-validate :] catch . . cr   \ 1 then the folds-exceed-units message
 
 \ ks-distance ( a b -- d ): two-sample Kolmogorov-Smirnov statistic

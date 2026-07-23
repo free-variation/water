@@ -1,0 +1,68 @@
+\ cart-vs-logistic.h2o — compare a CART regression tree against ridge logistic
+\ regression on the UCI Adult / Census Income data (mixed numeric + categorical
+\ features, binary income target). Both models are cross-validated: the tree's
+\ complexity by prune-cv (1-SE), the logistic penalty by a lambda grid.
+\ exercises: read-tsv / select-columns / select-rows, fit-tree / prune-cv /
+\ predict / draw-tree, indicators! / dataset>matrix / with-intercept /
+\ fit-logistic-ridge / dgemm-nn / sigmoid, cross-validate, and lib/plot.h2o
+\ (plot-tree, histogram, save-figure).
+\
+\ Get the data with (comma-space CSV -> headered TSV, target mapped to 0/1):
+\   curl -s https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data \
+\     | grep -v '^$' | sed 's/, /\t/g; s/\t<=50K$/\t0/; s/\t>50K$/\t1/' > /tmp/body
+\   then prepend a tab-separated header line and save as data/adult.tsv.
+
+"lib/statistics.h2o" load
+"lib/plot.h2o" load
+
+\ --- data: 8000-row subsample, split 6000 train / 2000 test ---
+"data/adult.tsv" read-tsv 8000 iota select-rows to adult
+adult :income @ to y
+[ :age :fnlwgt :education-num :capital-gain :capital-loss :hours-per-week ] to numeric-cols
+[ :workclass :education :marital-status :occupation :relationship :race :sex :native-country ] to categorical-cols
+0 5999 range to train-rows    6000 7999 range to test-rows
+y train-rows select-rows to train-y    y test-rows select-rows to test-y
+
+\ --- CART: the mixed columns go in as a features frame; categoricals split
+\     natively, "?" is just another level, no encoding needed ---
+adult numeric-cols categorical-cols + select-columns to features
+features train-rows select-rows train-y { :max-depth 5 :folds 5 } prune-cv to tree
+tree features test-rows select-rows predict to cart-yhat
+
+\ --- logistic: every categorical must be one-hot encoded into a design matrix
+\     (built on all rows so the train/test columns align), then fit with an L2
+\     penalty (the wide one-hot design separates, so plain IRLS divides by zero) ---
+{ } to design
+numeric-cols     [> col | design col adult col @ ! drop :] each
+categorical-cols [> col | design adult col @ col indicators! drop :] each
+design design keys dataset>matrix with-intercept to design-matrix
+design-matrix train-rows select-rows to train-design
+design-matrix test-rows  select-rows to test-design
+train-rows size iota to fold-units
+
+\ tune the ridge lambda by 5-fold CV on the training rows
+0 to current-lambda
+[ 0.01 0.1 1 10 100 ] to lambda-grid
+lambda-grid [> lam |
+	lam to current-lambda
+	fold-units 5
+	[> tr | train-design tr select-rows  train-y tr select-rows  100 1e-8 current-lambda fit-logistic-ridge :]
+	[> b te | 1 train-design te select-rows b 0 te size 1 0-matrix dgemm-nn sigmoid  train-y te select-rows - dup * mean :]
+	cross-validate mean :]
+map to cv-losses
+lambda-grid cv-losses vector argmin @i to best-lambda
+
+train-design train-y 100 1e-8 best-lambda fit-logistic-ridge to beta
+1 test-design beta 0 test-rows size 1 0-matrix dgemm-nn sigmoid to logistic-yhat
+
+\ --- evaluate on the held-out test rows ---
+"chosen ridge lambda: " . best-lambda . cr
+"                 Brier     accuracy" . cr
+"CART:       " . cart-yhat     test-y - dup * mean . "  " . 1 cart-yhat     0.5 gt test-y - abs mean - . cr
+"logistic:   " . logistic-yhat test-y - dup * mean . "  " . 1 logistic-yhat 0.5 gt test-y - abs mean - . cr
+
+\ --- plots: the tree as a node-link diagram, the logistic scores as a histogram ---
+tree draw-tree
+tree plot-tree drop  "cart-tree" save-figure
+640 480 figure  logistic-yhat 30 histogram  "P(income > 50K)" x-label  "logistic-scores" save-figure
+"wrote images-cart-tree/*.svg and images-logistic-scores/*.svg" . cr

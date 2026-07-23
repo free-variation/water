@@ -51,20 +51,18 @@
 		2 array :]
 	map ; internal
 
-( units n-folds fit-xt score-xt -- loss ) \ k-fold CV: units deal round-robin into
-\ folds in the given order (shuffle first; one shuffle compares configurations on
+( units n-folds fit-xt score-xt -- fold-losses ) \ k-fold CV: units deal round-robin
+\ into folds in the given order (shuffle first; one shuffle compares configurations on
 \ the same folds); fit ( train-units -- model ), score ( model test-units -- loss ),
-\ both stack-complete; answers the mean fold loss
+\ both stack-complete; answers the per-fold losses as an n-folds vector (mean it for
+\ the CV estimate, std for the standard error the 1-SE rule needs)
 : cross-validate
 	| >units >n-folds >fit >score |
 	units n-folds cv-folds
-	0
-	[> fold-loss fold |
+	[> fold |
 		fold 0 @i fit execute
-		fold 1 @i score execute
-		fold-loss + :]
-	reduce
-	n-folds / ;
+		fold 1 @i score execute :]
+	map vector ;
 
 ( matrix -- float ) \ standard deviation
 : std var sqrt ; inline
@@ -322,7 +320,12 @@
 	begin node :feature has? while
 		features node :feature @ @ to column
 		node :threshold has? if
-			column i @e  node :threshold @  gt
+			column i @e
+			dup nan? node :default has? and if
+				drop node :default @ :right =
+			else
+				node :threshold @ gt
+			then
 		else
 			node :categories @  column i @i  member? not
 		then
@@ -363,6 +366,112 @@
 		accumulator keys [> key | accumulator key  accumulator key @ total /  ! drop :] each
 	then
 	accumulator ;
+
+( alpha node -- node gain leaves ) \ prune node's subtree bottom-up under cost-complexity
+\ threshold alpha; answer the pruned node, its total split-gain, and its leaf count
+: prune-subtree
+	| >alpha >node
+	  left-node left-gain left-leaves right-node right-gain right-leaves
+	  subtree-gain subtree-leaves |
+	node :feature has? not if node 0 1 exit then
+
+	alpha node :left @  prune-subtree  to left-leaves to left-gain to left-node
+	alpha node :right @ prune-subtree  to right-leaves to right-gain to right-node
+
+	node :left @ weighted-square  node :right @ weighted-square  +  node weighted-square  -
+	left-gain + right-gain + to subtree-gain
+	left-leaves right-leaves + to subtree-leaves
+
+	subtree-gain  alpha subtree-leaves 1 - *  gt not if
+		{ :prediction node :prediction @ :n_rows node :n_rows @ }  0  1
+	else
+		node :left left-node !  :right right-node !
+		subtree-gain subtree-leaves
+	then ; internal
+
+( tree alpha -- tree ) \ cost-complexity prune: collapse every subtree whose split-gain
+\ per extra leaf is at most alpha; mutates the tree in place
+: prune  swap prune-subtree  drop drop ;
+
+( node acc -- gain leaves ) \ add node's subtree effective-alpha (gain per extra leaf) to
+\ the set acc, and answer the subtree's total gain and leaf count
+: collect-alphas
+	| >node >acc left-gain left-leaves right-gain right-leaves gain leaves |
+	node :feature has? not if 0 1 exit then
+	node :left @  acc collect-alphas  to left-leaves to left-gain
+	node :right @ acc collect-alphas  to right-leaves to right-gain
+	node :left @ weighted-square  node :right @ weighted-square  +  node weighted-square  -
+	left-gain + right-gain + to gain
+	left-leaves right-leaves + to leaves
+	acc  gain leaves 1 - /  set-add! drop
+	gain leaves ; internal
+
+( tree -- alphas ) \ the weakest-link cost-complexity alphas as a sorted set, with 0 (the
+\ full tree) included; pruning at each yields the nested sequence of candidate subtrees
+: alpha-sequence
+	| >tree acc |
+	< 0 > to acc
+	tree acc collect-alphas 2drop
+	acc ; internal
+
+( features y params alpha units n-folds -- fold-losses ) \ k-fold CV mean-squared-error
+\ of a tree grown on each fold's train rows and pruned at alpha; features/y/params/alpha
+\ are curried into the fit and score quotations so they carry values, not local references
+: cv-alpha
+	|> features y params alpha units n-folds |
+	units n-folds
+	[> train features y params alpha |
+		features train select-rows  y train select-rows  params fit-tree  alpha prune :]
+		alpha swap curry  params swap curry  y swap curry  features swap curry
+	[> model test features y |
+		model  features test select-rows  predict   y test select-rows  - dup * mean :]
+		y swap curry  features swap curry
+	cross-validate ; internal
+
+( features y params -- tree ) \ fit a tree, then cost-complexity prune it at the alpha the
+\ 1-SE rule selects: the largest alpha (smallest tree) whose mean k-fold CV error is within
+\ one standard error of the minimum. :folds in params sets k (default 5)
+: prune-cv
+	| >features >y >params n-folds full-tree alphas units stats best threshold |
+	params :folds 5 @or to n-folds
+	features y params fit-tree to full-tree
+	full-tree alpha-sequence to alphas
+	y size iota to units
+
+	alphas [> alpha |
+		alpha
+		features y params alpha units n-folds cv-alpha  dup mean  swap std n-folds sqrt /
+		3 array :]
+	map to stats
+
+	stats [: 1 @i :] map vector argmin to best
+	stats best @i 1 @i  stats best @i 2 @i  +  to threshold
+
+	full-tree
+	stats [: 1 @i threshold gt not :] filter  dup size 1 - @i  0 @i
+	prune ;
+
+( node depth -- ) \ print node's subtree as indented split rules, left branch first; internal
+: draw-node
+	|> node depth |
+	node :feature has? not if
+		depth 2 * spaces  node :prediction @  node :n_rows @  "{2}predict {1}  (n {0})" format . cr
+		exit
+	then
+	node :threshold has? if
+		depth 2 * spaces  node :feature @  node :threshold @  "{2}{1} <= {0}" format . cr
+		node :left @  depth 1 +  draw-node
+		depth 2 * spaces  node :feature @  node :threshold @  "{2}{1} > {0}" format . cr
+		node :right @  depth 1 +  draw-node
+	else
+		depth 2 * spaces  node :feature @  "{1}{0} in " format .  node :categories @ . cr
+		node :left @  depth 1 +  draw-node
+		depth 2 * spaces  node :feature @  "{1}{0} not in " format .  node :categories @ . cr
+		node :right @  depth 1 +  draw-node
+	then ; internal
+
+( tree -- ) \ print a fit-tree tree as indented split rules with per-leaf prediction and count
+: draw-tree  0 draw-node ;
 
 
 

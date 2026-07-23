@@ -107,6 +107,31 @@ tree feature-importance :b @ 1000 * round 1000 / . cr      \ 0.217
 tree feature-importance keys size . cr                     \ 0  (stump, no splits)
 clear
 
+\ === missing values: a learned default direction per numeric split ===
+\ non-missing x=1,2 -> y=1 and x=3,4 -> y=5; the two missing rows' response
+\ decides which way a NaN goes, and predict on a NaN feature follows :default
+{ :x [ 1 2 3 4 null null ] vector } [ 1 1 5 5 5 5 ] vector { :max-depth 1 } fit-tree to tree
+tree :default @ . cr                                   \ :right  (missing y=5 matches right)
+tree { :x [ null ] vector } predict matrix>array . cr  \ [ 5 ]
+{ :x [ 1 2 3 4 null null ] vector } [ 1 1 5 5 1 1 ] vector { :max-depth 1 } fit-tree to tree
+tree :default @ . cr                                   \ :left  (missing y=1 matches left)
+tree { :x [ null ] vector } predict matrix>array . cr  \ [ 1 ]
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 } fit-tree :default has? . cr  \ 0  (no missing)
+clear
+
+\ === prune: cost-complexity collapse; prune-cv picks alpha by CV + 1-SE ===
+{ :x [ 1 2 3 4 5 6 7 8 ] vector } [ 1 1 2 2 8 8 9 9 ] vector { :max-depth 2 } fit-tree 1000000 prune :feature has? . cr  \ 0  (huge alpha -> stump)
+{ :x [ 1 2 3 4 5 6 7 8 ] vector } [ 1 1 2 2 8 8 9 9 ] vector { :max-depth 2 } fit-tree 10 prune /left/feature has? . cr    \ 0  (mid alpha -> sub-splits collapse)
+\ signal in x1 (step at 4.5), x2 is noise; a depth-4 tree overfits, CV + 1-SE prunes to the real split
+{ :x1 [ 1 2 3 4 5 6 7 8 ] vector :x2 [ 5 1 4 8 2 7 3 6 ] vector } [ 1 1 2 2 8 8 9 9 ] vector { :max-depth 4 :folds 4 } prune-cv to tree
+tree :feature @ . tree :threshold @ . cr                                 \ :x1 4.5
+tree /left/feature has? not  tree /right/feature has? not  and . cr      \ 1  (both children leaves)
+clear
+
+\ === draw-tree: indented split rules, left (condition-true) branch first ===
+{ :x [ 1 2 3 4 5 6 7 8 ] vector } [ 1 1 2 2 8 8 9 9 ] vector { :max-depth 2 } fit-tree draw-tree
+clear
+
 \ === errors (reason parenthesized) ===
 [ 1 2 ] vector [ 1 2 ] vector { } fit-tree          \ (features must be a frame)
 clear

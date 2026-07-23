@@ -4,15 +4,6 @@ A TODO list of pending work, highest priority first.
 
 ---
 
-## Exact CART: missing values
-
-Learn a default direction per split: each split evaluates sending the missing
-rows' `(sum, count)` left vs right, keeps the higher-gain side, and stores it
-on the node as `:default`; extend `predict` to follow `:default` when a row's
-split feature is NaN.
-
----
-
 ## xgboost: residuals
 
 - **Model persistence.** Bind `XGBoosterSaveModel`/`XGBoosterLoadModel` as
