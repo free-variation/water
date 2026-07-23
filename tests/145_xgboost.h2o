@@ -18,3 +18,18 @@
 	booster features xgb-predict  1000 * round 1000 /  matrix>array . cr  \ [ 3.005 5.001 6.999 8.995 ]
 	booster xgb-free ;
 demo-regression
+
+\ === feature ranking: xgb-importance orders features; an unused feature scores 0 ===
+\ y = 2*x0 + x1, x2 constant. Ranking (integer) and the exactly-0 unused feature are
+\ version-stable; the gain magnitudes are not, so they are not asserted here.
+: demo-importance
+	| features booster gain |
+	[ 0 0 0  0 1 0  1 0 0  1 1 0  2 0 0  2 1 0 ] 6 3 matrix to features
+	features  [ 0 1 2 3 4 5 ] 6 1 matrix
+	{ :objective "reg:squarederror" :rounds 40 :max_depth 3 :eta 0.3
+	  :tree_method "exact" :seed 1 :nthread 1 } fit-xgb to booster
+	booster "gain" xgb-importance to gain
+	gain matrix>array argsort reverse . cr  \ [ 0 1 2 ]
+	gain 2 0 @i,j . cr                      \ 0
+	booster xgb-free ;
+demo-importance

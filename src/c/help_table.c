@@ -402,6 +402,7 @@ const HelpEntry help_entries[] = {
 	{ "pointer-cell", "( -- ptr )", "Allocate a zeroed pointer-sized cell and return a T_PTR handle to it, for use as a C out-parameter slot (&out) or a one-element handle array; a callee writes a pointer or integer into it, read back with pointer-deref. Freed by ffi-free", "malloc", "1 cell (not GC'd)", "O(1)", 34 },
 	{ "pointer-deref", "( ptr -- ptr' )", "Load the pointer stored at cell ptr (*(void**)ptr) and return it as a T_PTR handle — reads a handle a C call wrote into an out-parameter cell, or steps through a T**", "1", "1 handle", "O(1)", 34 },
 	{ "pointer-long", "( ptr -- n )", "Load the 64-bit integer stored at cell ptr (*(int64_t*)ptr) as a float — reads a bst_ulong/long out-value a C call wrote into a cell; errors above 2^53 (not float-exact)", "1", "none", "O(1)", 34 },
+	{ "pointer-string-at", "( ptr i -- s )", "Copy the C string at index i of a char** at ptr (ptr[i], NUL-terminated) into a Water string — reads one entry of a returned string array (e.g. XGBoosterFeatureScore's feature names)", "1 + |s|", "1o", "O(|s|)", 34 },
 	{ "pointer>address", "( ptr -- n )", "The pointer's numeric address as a float, for embedding in an __array_interface__ JSON string; errors if the address exceeds 2^53 (not float-exact — macOS arm64 user addresses are well under it)", "1", "none", "O(1)", 34 },
 	{ "print", "( x -- )", "core.h2o: alias for .", "1 + print", "none", "O(size printed)", 11 },
 	{ "print-stack", "( -- )", "core.h2o: alias for .s", "print", "none", "O(depth)", 11 },
@@ -596,4 +597,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 551;
+const int help_entry_count = 552;

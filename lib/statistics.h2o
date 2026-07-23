@@ -279,6 +279,8 @@ dup "XGBoosterSetParam"             [ :ptr :string :string ]          :int    ff
 dup "XGBoosterUpdateOneIter"        [ :ptr :int :ptr ]                :int    ffi-function (xgb-update)
 dup "XGBoosterPredictFromDMatrix"   [ :ptr :ptr :string :ptr :ptr :ptr ] :int ffi-function (xgb-predict-raw)
 dup "XGBoosterFree"                 [ :ptr ]                          :int    ffi-function (xgb-booster-free)
+dup "XGBoosterFeatureScore"         [ :ptr :string :ptr :ptr :ptr :ptr :ptr ] :int ffi-function (xgb-feature-score)
+dup "XGBoosterGetNumFeature"        [ :ptr :ptr ]                     :int    ffi-function (xgb-num-feature)
 dup "XGBGetLastError"               [ ]                               :string ffi-function (xgb-last-error)
 drop
 
@@ -344,4 +346,37 @@ drop
 
 ( booster -- ) \ free a booster handle
 : xgb-free (xgb-booster-free) xgb-check ;
+
+( booster importance-type -- scores ) \ k×1 per-feature importance, row i is feature i
+\ importance-type is "gain" "weight" "cover" "total_gain" or "total_cover"; a feature
+\ never split on scores 0. Rank with: matrix>array argsort reverse (indices best-first)
+: xgb-importance
+	| >booster >type k n names scores dense feature-names
+	  k-cell n-cell features-cell dim-cell shape-cell scores-cell |
+	pointer-cell to k-cell
+	booster k-cell (xgb-num-feature) xgb-check
+	k-cell pointer-long to k
+	k iota [: "{0}" format :] map to feature-names
+
+	pointer-cell to n-cell
+	pointer-cell to features-cell
+	pointer-cell to dim-cell
+	pointer-cell to shape-cell
+	pointer-cell to scores-cell
+	booster  { :importance_type type :feature_names feature-names } frame>json
+	n-cell features-cell dim-cell shape-cell scores-cell  (xgb-feature-score) xgb-check
+
+	n-cell pointer-long to n
+	k 1 0-matrix to dense
+	n 0 gt if
+		scores-cell pointer-deref n floats>matrix matrix>array to scores
+		features-cell pointer-deref to names
+		[> i |
+		   dense  names i pointer-string-at string>number  0  scores i @i  !i,j drop
+		:] n i-times
+	then
+
+	k-cell ffi-free n-cell ffi-free features-cell ffi-free
+	dim-cell ffi-free shape-cell ffi-free scores-cell ffi-free
+	dense ;
 

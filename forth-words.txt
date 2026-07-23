@@ -357,6 +357,7 @@ pmap-reduce-ext
 pointer-cell
 pointer-deref
 pointer-long
+pointer-string-at
 pointer>address
 print
 print-stack

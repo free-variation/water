@@ -4616,6 +4616,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "pointer-cell", p_pointer_cell, 0);
 	define_primitive(interp, "pointer-deref", p_pointer_deref, 0);
 	define_primitive(interp, "pointer-long", p_pointer_long, 0);
+	define_primitive(interp, "pointer-string-at", p_pointer_string_at, 0);
 	define_primitive(interp, "pointer>address", p_pointer_to_address, 0);
 	define_primitive(interp, "db-close", p_db_close, 0);
 	define_primitive(interp, "db-exec", p_db_exec, 0);

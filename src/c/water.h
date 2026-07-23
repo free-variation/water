@@ -1447,6 +1447,7 @@ void p_matrix_to_pointer(DISPATCH_ARGS);
 void p_pointer_cell(DISPATCH_ARGS);
 void p_pointer_deref(DISPATCH_ARGS);
 void p_pointer_long(DISPATCH_ARGS);
+void p_pointer_string_at(DISPATCH_ARGS);
 void p_pointer_to_address(DISPATCH_ARGS);
 void p_segment_to_pointer(DISPATCH_ARGS);
 

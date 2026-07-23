@@ -311,7 +311,7 @@ The statistics library (`lib/statistics.h2o`, loaded on demand) builds on the ma
 - **Resampling** — `bootstrap` / `pbootstrap` (parallel) over a fit quotation.
 - **Linear algebra** — `svd` and `fit-linear` (least-squares) on LAPACK through the FFI; loading the library also rebinds the `dgemm-*` words to BLAS.
 - **Regression** — `linear-regression` and `logistic-regression` (IRLS with Firth correction), each returning per-coefficient estimate, standard error, bias, and confidence interval from a bootstrap.
-- **Gradient boosting** — `fit-xgb` trains an XGBoost booster on a feature matrix and response through the system `libxgboost` (`XGBOOST_LIB`, else the default install path), taking a params frame keyed by XGBoost parameter names (`:rounds` drives the boosting loop); `xgb-predict` scores a feature matrix, `xgb-free` releases the booster. The matrix passes zero-copy via a NumPy array-interface handle.
+- **Gradient boosting** — `fit-xgb` trains an XGBoost booster on a feature matrix and response through the system `libxgboost` (`XGBOOST_LIB`, else the default install path), taking a params frame keyed by XGBoost parameter names (`:rounds` drives the boosting loop); `xgb-predict` scores a feature matrix, `xgb-free` releases the booster. `xgb-importance` returns the per-feature importance (`"gain"`/`"weight"`/`"cover"`/`"total_gain"`/`"total_cover"`) as a k×1 matrix — `matrix>array argsort reverse` ranks the features. The matrix passes zero-copy via a NumPy array-interface handle.
 
 ### Foreign function interface
 

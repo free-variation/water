@@ -431,3 +431,26 @@ void p_floats_to_matrix(DISPATCH_ARGS) {
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
+
+void p_pointer_string_at(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
+	Val index_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(index_val, T_FLOAT, "pointer-string-at", "an index");
+	int index = (int)VAL_NUMBER(index_val);
+	Val pointer_val = chain_sp[-2];
+	REQUIRE_CHAIN_TAG(pointer_val, T_PTR, "pointer-string-at", "a pointer");
+	if (index < 0) {
+		fail(interp, "index must be nonnegative; got %d", index);
+		return;
+	}
+
+	const char *const *string_table = ffi_pointers[VAL_DATA(pointer_val)];
+	const char *item = string_table[index];
+	int string_handle = object_new_string(interp, item, (int)strlen(item));
+	if (interp->error_flag)
+		return;
+
+	chain_sp[-2] = make_string(string_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+}
