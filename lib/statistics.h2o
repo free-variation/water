@@ -323,5 +323,25 @@ drop
 	dmatrix-cell ffi-free booster-cell ffi-free
 	booster ;
 
+( booster X -- predictions ) \ n×1 scores for an n×k feature matrix; booster is not freed
+: xgb-predict
+	| >booster >X dmatrix dmatrix-cell shape-cell dim-cell result-cell |
+	pointer-cell to dmatrix-cell
+	X array-interface "{""missing"": NaN}" dmatrix-cell (xgd-from-dense) xgb-check
+	dmatrix-cell pointer-deref to dmatrix
 
+	pointer-cell to shape-cell
+	pointer-cell to dim-cell
+	pointer-cell to result-cell
+	booster dmatrix
+	{ :type 0 :iteration_begin 0 :iteration_end 0 :strict_shape :0 :training :0 } frame>json
+	shape-cell dim-cell result-cell  (xgb-predict-raw) xgb-check
+
+	result-cell pointer-deref  X n-rows  floats>matrix
+
+	dmatrix (xgd-free) xgb-check
+	dmatrix-cell ffi-free shape-cell ffi-free dim-cell ffi-free result-cell ffi-free ;
+
+( booster -- ) \ free a booster handle
+: xgb-free (xgb-booster-free) xgb-check ;
 

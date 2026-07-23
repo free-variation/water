@@ -1,0 +1,20 @@
+\ XGBoost gradient boosting via libxgboost through the FFI (lib/statistics.h2o).
+\ fit-xgb ( X y params -- booster ) trains a booster on an n×k feature matrix and
+\ an n×1 response; xgb-predict ( booster X -- preds ) scores an n×k matrix into an
+\ n×1 matrix; xgb-free ( booster -- ) releases the handle. Native-only (FFI); the
+\ wasm suite skips it. tree_method exact keeps the trees deterministic across
+\ libxgboost versions; predictions are rounded to 3 decimals to absorb float32
+\ round-off (native 3.3.0 matched R's 3.2.1 to 5e-7 under exact).
+
+"lib/statistics.h2o" load
+
+\ === regression: recover y = 2*x1 - 1 on a tiny exact-fit dataset ===
+: demo-regression
+	| features booster |
+	[ 1 2  2 3  3 4  4 5 ] 4 2 matrix to features
+	features  [ 3 5 7 9 ] 4 1 matrix
+	{ :objective "reg:squarederror" :rounds 40 :max_depth 3 :eta 0.3
+	  :tree_method "exact" :seed 1 :nthread 1 } fit-xgb to booster
+	booster features xgb-predict  1000 * round 1000 /  matrix>array . cr  \ [ 3.005 5.001 6.999 8.995 ]
+	booster xgb-free ;
+demo-regression
