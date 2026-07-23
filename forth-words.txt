@@ -368,6 +368,7 @@ prune-cv
 ptr?
 qnorm
 quantile
+quantiles
 quantity?
 query
 quotient

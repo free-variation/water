@@ -380,3 +380,69 @@ drop
 	dim-cell ffi-free shape-cell ffi-free scores-cell ffi-free
 	dense ;
 
+
+\ The Generalized Linear Model
+{ :inverse-link ' exp
+  :mean-derivative ' exp
+  :variance [: dup * :]
+} to gamma-log
+
+{ :inverse-link ' exp
+  :mean-derivative ' exp
+  :variance ' identity
+} to poisson-log
+
+{ :inverse-link ' identity
+  :mean-derivative [: drop 1 :]
+  :variance [: drop 1 :]
+} to gaussian-identity
+
+{ :inverse-link ' sigmoid
+  :mean-derivative [: sigmoid dup 1 swap - * :]
+  :variance [: dup 1 swap - * :]
+} to binomial-logit
+
+: fit-glm
+	| >x >y >family >max-iterations >tolerance
+	inverse-link mean-derivative variance 
+	rows cols beta eta mu mean-slope working-weight sqrt-weight working-response new-beta iterations delta converged |
+
+	x dim to cols to rows
+	family :inverse-link @ to inverse-link
+	family :mean-derivative @ to mean-derivative
+	family :variance @ to variance
+	cols 1 0-matrix to beta
+	0 to iterations
+	0 to converged
+
+	begin
+		1 x beta 0 rows 1 0-matrix dgemm-nn to eta
+		eta inverse-link execute to mu
+		eta mean-derivative execute to mean-slope
+		eta y mu - mean-slope / + to working-response
+		
+		mean-slope dup * mu variance execute / to working-weight
+		working-weight sqrt to sqrt-weight
+		sqrt-weight x * sqrt-weight working-response * fit-linear to new-beta
+		new-beta beta - dup * sum sqrt to delta
+		new-beta to beta
+
+		++ iterations
+		delta tolerance lt to converged
+		converged iterations max-iterations gt or
+	until
+
+	converged not if 
+		iterations "fit-glm: did not converge in {0} iterations" format throw
+	then
+
+	beta ;
+
+( X y max-iterations tolerance -- beta ) \ gamma regression, log link, by IRLS
+: fit-gamma
+	gamma-log -rot fit-glm ;
+
+
+( X y max-iterations tolerance -- beta ) \ poisson regression, log link, by IRLS
+: fit-poisson
+	poisson-log -rot fit-glm ;

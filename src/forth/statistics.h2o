@@ -474,4 +474,8 @@
 : draw-tree  0 draw-node ;
 
 
-
+( values probs -- quantiles )
+: quantiles
+	|> values probabilities |
+	probabilities [: values swap quantile :] map
+	vector ;

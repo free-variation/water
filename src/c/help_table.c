@@ -413,6 +413,7 @@ const HelpEntry help_entries[] = {
 	{ "ptr?", "( a -- bool )", "core.h2o: type-of :ptr = (inlined)", "5", "none", "O(1)", 4 },
 	{ "qnorm", "( p -- z )", "statistics.h2o: standard normal quantile (inverse CDF), Acklam's rational approximation — relative error below 1.15e-9, matching R's qnorm to 1e-8 over both tails; errors unless p strictly inside (0, 1)", "30", "none", "O(1)", 18 },
 	{ "quantile", "( m p -- f )", "Linearly-interpolated quantile at p ∈ [0,1] over all elements (sorts a copy); errors if p out of range or empty", "2 + n log n", "malloc(n)", "O(n log n)", 18 },
+	{ "quantiles", "( m probs -- v )", "statistics.h2o: quantile at each probability in the probs array, as a vector in that order — R's quantile(x, probs) (type 7). Sorts a copy per probability", "k·(2 + n log n)", "1a(k) + 1m(k)", "O(k·n log n)", 18 },
 	{ "quantity?", "( a -- bool )", "core.h2o: type-of :quantity = (inlined)", "5", "none", "O(1)", 4 },
 	{ "query", "( rel pattern -- [rows] )", "Array of rows matching pattern; uses an index when the pattern grounds an indexed column, else scans. When every constraint is a ground indexed column the narrowed bucket *is* the answer, so the per-row matches? is skipped (covering query)", "candidates·n", "1a + set ops", "O(candidates·n)", 27 },
 	{ "quotient", "( a b -- quotient )", "core.h2o: % swap drop; toward zero", "9", "none", "O(1)", 3 },
@@ -601,4 +602,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 556;
+const int help_entry_count = 557;

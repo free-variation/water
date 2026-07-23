@@ -68,21 +68,21 @@ syn keyword waterBuiltin n-rows nan? negate nip nip-it nip-other nip-that nip-th
 syn keyword waterBuiltin not now num-cores num-elements or other over pad-left pad-right pair? parallel-run parse-time
 syn keyword waterBuiltin partition pbootstrap peek percentile pfilter pfilter-ext pfit-tree pmap pmap-ext pmap-reduce pmap-reduce-ext pointer-cell
 syn keyword waterBuiltin pointer-deref pointer-long pointer-string-at pointer>address predict print print-stack prune prune-cv ptr? qnorm quantile
-syn keyword waterBuiltin quantity? query quotient r> r@ random random-int range ranks read read-err read-file
-syn keyword waterBuiltin read-out read-tsv reduce regress-with reify relation reload remove-last! render replace replace-where resample
-syn keyword waterBuiltin resample-indices resample-indices-ext reset reshape resume retract reverse roll rot round round-down round-up
-syn keyword waterBuiltin row-maxes row-means row-mins row-sums rows>dataset rows>relation rshift run run-result running? sample sample-with-replacement
-syn keyword waterBuiltin sample-without-replacement save save-image save-tsv se second see see-compiled see-compiled>string see-tree see-tree>string see>string
-syn keyword waterBuiltin seed segment>pointer segment? select-columns select-keys select-rows select-values set set-add! set-remove! set? shift
-syn keyword waterBuiltin shift-with shuffle side-depth side-drop side-peek sigmoid sin size skip sleep slice! sort
-syn keyword waterBuiltin sort-by spaces split sq sqrt start-generator start-process std stderr stdin stdout stop
-syn keyword waterBuiltin stream? string>chars string>codepoints string>number string>symbol string? submatrix substring sum summary swap symbol?
-syn keyword waterBuiltin take tan tanh that them this throw time>iso timed to-slice! transpose trim
-syn keyword waterBuiltin true truncate try-catch tsv>db type-of union unit unit-of update-at values var variables
-syn keyword waterBuiltin vars vector vf* vf+ vf- vf/ vfabs vfcos vfexp vflog vfneg vfsin
-syn keyword waterBuiltin vfsq vfsqrt vftan vftanh vstack vvf* vvf*+ vvf*- vvf+ vvf- vvf/ wait
-syn keyword waterBuiltin wall-now water where wildcard? with-db with-intercept with-stream words write write-file write-in write-tsv
-syn keyword waterBuiltin xml-escape xt? yield
+syn keyword waterBuiltin quantiles quantity? query quotient r> r@ random random-int range ranks read read-err
+syn keyword waterBuiltin read-file read-out read-tsv reduce regress-with reify relation reload remove-last! render replace replace-where
+syn keyword waterBuiltin resample resample-indices resample-indices-ext reset reshape resume retract reverse roll rot round round-down
+syn keyword waterBuiltin round-up row-maxes row-means row-mins row-sums rows>dataset rows>relation rshift run run-result running? sample
+syn keyword waterBuiltin sample-with-replacement sample-without-replacement save save-image save-tsv se second see see-compiled see-compiled>string see-tree see-tree>string
+syn keyword waterBuiltin see>string seed segment>pointer segment? select-columns select-keys select-rows select-values set set-add! set-remove! set?
+syn keyword waterBuiltin shift shift-with shuffle side-depth side-drop side-peek sigmoid sin size skip sleep slice!
+syn keyword waterBuiltin sort sort-by spaces split sq sqrt start-generator start-process std stderr stdin stdout
+syn keyword waterBuiltin stop stream? string>chars string>codepoints string>number string>symbol string? submatrix substring sum summary swap
+syn keyword waterBuiltin symbol? take tan tanh that them this throw time>iso timed to-slice! transpose
+syn keyword waterBuiltin trim true truncate try-catch tsv>db type-of union unit unit-of update-at values var
+syn keyword waterBuiltin variables vars vector vf* vf+ vf- vf/ vfabs vfcos vfexp vflog vfneg
+syn keyword waterBuiltin vfsin vfsq vfsqrt vftan vftanh vstack vvf* vvf*+ vvf*- vvf+ vvf- vvf/
+syn keyword waterBuiltin wait wall-now water where wildcard? with-db with-intercept with-stream words write write-file write-in
+syn keyword waterBuiltin write-tsv xml-escape xt? yield
 
 hi def link waterComment      Comment
 hi def link waterString       String
