@@ -250,6 +250,7 @@ const HelpEntry help_entries[] = {
 	{ "fasin", "( a -- asin a ) ⚠", "inverse sine, in place", "1", "none", "O(1)", 1 },
 	{ "fatan", "( a -- atan a ) ⚠", "inverse tangent, in place", "1", "none", "O(1)", 1 },
 	{ "fcos", "( a -- cos a ) ⚠", "cosine (radians), in place", "1", "none", "O(1)", 1 },
+	{ "feature-importance", "( tree -- fr )", "statistics.h2o: normalized impurity-reduction importance from a fit-tree tree — each split's squared-error reduction (n_L·pred_L² + n_R·pred_R² − n_P·pred_P²) summed per :feature and scaled to sum 1, as a frame keyed by feature symbol over the features actually split on; a stump gives { }", "nodes", "1fr", "O(nodes)", 18 },
 	{ "feq", "( a b -- f ) ⚠", "float =, result 1.0/0.0; no type check", "2", "none", "O(1)", 1 },
 	{ "fexp", "( a -- eᵃ ) ⚠", "in place", "1", "none", "O(1)", 1 },
 	{ "ffi-free", "( ptr -- )", "free a C buffer held as a T_PTR (e.g. from malloc) and clear its registry slot. Not for library handles", "free", "none", "O(1)", 34 },
@@ -404,6 +405,7 @@ const HelpEntry help_entries[] = {
 	{ "pointer-long", "( ptr -- n )", "Load the 64-bit integer stored at cell ptr (*(int64_t*)ptr) as a float — reads a bst_ulong/long out-value a C call wrote into a cell; errors above 2^53 (not float-exact)", "1", "none", "O(1)", 34 },
 	{ "pointer-string-at", "( ptr i -- s )", "Copy the C string at index i of a char** at ptr (ptr[i], NUL-terminated) into a Water string — reads one entry of a returned string array (e.g. XGBoosterFeatureScore's feature names)", "1 + |s|", "1o", "O(|s|)", 34 },
 	{ "pointer>address", "( ptr -- n )", "The pointer's numeric address as a float, for embedding in an __array_interface__ JSON string; errors if the address exceeds 2^53 (not float-exact — macOS arm64 user addresses are well under it)", "1", "none", "O(1)", 34 },
+	{ "predict", "( tree features -- yhat )", "statistics.h2o: apply a fit-tree tree to a features frame keyed as at training, walking each row from the root to a leaf — a :threshold node sends value ≤ threshold left, a :categories node sends set membership left (an unseen value goes right) — and answer the leaf :predictions as an n×1 vector", "n·depth", "1a(n) + 1m(n)", "O(n·depth)", 18 },
 	{ "print", "( x -- )", "core.h2o: alias for .", "1 + print", "none", "O(size printed)", 11 },
 	{ "print-stack", "( -- )", "core.h2o: alias for .s", "print", "none", "O(depth)", 11 },
 	{ "ptr?", "( a -- bool )", "core.h2o: type-of :ptr = (inlined)", "5", "none", "O(1)", 4 },
@@ -597,4 +599,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 552;
+const int help_entry_count = 554;

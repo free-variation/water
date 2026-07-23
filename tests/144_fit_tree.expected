@@ -36,6 +36,15 @@
 < :c :a > 
 1.5 
 10 
+[ 1 1 5 5 ] 
+[ 1 5 ] 
+[ 1 10 2 10 ] 
+[ 3 3 ] 
+1 
+1 
+0.783 
+0.217 
+0 
 error: expected a features frame; got a matrix
 error: expected a numeric response vector; got a frame
 error: feature column has 3 rows; response has 2

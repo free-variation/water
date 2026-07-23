@@ -4,145 +4,24 @@ A TODO list of pending work, highest priority first.
 
 ---
 
-## Exact CART: prediction and missing values
+## Exact CART: missing values
 
-1. A polymorphic `predict ( model X -- yhat )` walking the tree frame (and
-   `[1|X]·beta`/`sigmoid` for the linear/logistic fits once they carry a
-   `:kind` tag), with `classify` thresholding logistic output; then a
-   regression score word (SSE/R²/RMSE) so a fit can be evaluated. Traversal
-   conventions: numeric tie `≤ → left`; unseen categorical → right (matches
-   xgboost inference).
-2. Missing-value handling: a learned default direction per split — each split
-   evaluates sending the missing rows' `(sum, count)` left vs right, keeps the
-   higher-gain side, stores it on the node as `:default`, and `predict`
-   follows it. Today a NaN sorts as an ordinary value; on NaN-free data the
-   change is inert, so existing trees are unaffected.
+Learn a default direction per split: each split evaluates sending the missing
+rows' `(sum, count)` left vs right, keeps the higher-gain side, and stores it
+on the node as `:default`; extend `predict` to follow `:default` when a row's
+split feature is NaN.
 
 ---
 
-## FFI out-parameter primitives + xgboost binding
+## xgboost: residuals
 
-Bind the system libxgboost through the existing FFI as an opaque fast
-predictor: `xgb-fit ( X y params -- booster )` / `xgb-predict ( booster X --
-yhat )` in a loadable `lib/xgboost.h2o`. The exact `fit-tree`/`pfit-tree` stay;
-this is a comparison baseline and production GBM, not a replacement. No
-xgboost-specific C — the C side gains only generic FFI
-primitives that any out-parameter/float32 library needs.
-
-### Decisions
-
-1. FFI route, not vendoring: xgboost is CMake-only C++17 with no amalgamation;
-   `ffi-open` on an installed `libxgboost.dylib` keeps the build C-only. The
-   library path comes from env `XGBOOST_LIB`, default
-   `/opt/homebrew/lib/libxgboost.dylib`.
-2. Data passes as float64 via array-interface JSON: `XGDMatrixCreateFromDense
-   (char const *data, char const *config, DMatrixHandle *out)` and
-   `XGDMatrixSetInfoFromInterface(handle, field, char const *data)` both take
-   `__array_interface__` JSON (verified in c_api.h), so a Water matrix's
-   buffer address + typestr `"<f8"` avoids any float32 input conversion. First
-   implementation step tests that `"<f8"` is accepted; if rejected, add the
-   fallback primitive `matrix>floats` (7 below) and pass `"<f4"`.
-3. Predictions return as `float const **out_result` (owner: the booster,
-   "copy before use") — copied immediately into a fresh Water matrix.
-4. Every xgboost call returns an int status; a nonzero status reads
-   `XGBGetLastError()` (a `:string` return, already marshallable) and throws
-   its message.
-5. Native-only: `foreign.c` is not in WASM_SRCS; each new primitive gets a
-   `WASM_UNSUPPORTED` stub in platform_wasi.c beside the existing ffi stubs
-   (lines 66–72). The binding lives in lib/ (loadable), so the wasm suite
-   never sees it.
-6. `BoosterHandle`s are opaque `T_PTR`s — not frames, not `:kind`-tagged
-   models. The polymorphic `predict` design does not cover them; `xgb-predict`
-   is its own word.
-
-### New primitives (foreign.c; each: stack effect, semantics, form)
-
-All six are register-threaded (predicate: no interpreter re-entry, no
-push-style helper tail calls); only `floats>matrix` allocates a GC object, and
-it does so before any stack write, with only non-heap operands (T_PTR, float)
-live.
-
-1. `pointer-cell ( -- ptr )` — malloc(8), zeroed, interned as T_PTR. The
-   scratch slot for every `Handle *out` and `bst_ulong *out` parameter; also
-   serves as a one-element `DMatrixHandle[]` for `XGBoosterCreate`. Freed by
-   the existing `ffi-free`.
-2. `pointer-deref ( ptr -- ptr' )` — load `*(void **)p`, intern the loaded
-   pointer. Reads a written-back handle out of a cell and steps through
-   `float const **` / `bst_ulong const **`.
-3. `pointer>address ( ptr -- n )` — the pointer's numeric address as a float,
-   for building array-interface JSON. Exact only below 2^53; macOS arm64 user
-   pointers are < 2^47. Error if the address exceeds 2^53. Reference row
-   states the bound.
-4. `pointer-long ( ptr -- n )` — load `*(int64_t *)p` as a float (reads
-   `bst_ulong` out-values such as `out_dim` and the dereferenced `out_shape`).
-5. `floats>matrix ( ptr n -- m )` — copy n float32 values from foreign memory
-   into a new n×1 double matrix (the prediction read-back).
-6. (fallback, only if decision 2's float64 test fails) `matrix>floats
-   ( m -- ptr )` — malloc'd float32 copy of a matrix's elements, interned;
-   freed by `ffi-free`. Also enables `XGDMatrixSetFloatInfo`.
-
-Checklist per primitive: water.h declaration in the foreign.c block
-(alphabetical), core.c registration beside `ffi-free`, platform_wasi.c
-`WASM_UNSUPPORTED` stub, reference.md row in the Foreign function interface
-table, golden coverage (see acceptance 1).
-
-### lib/xgboost.h2o words
-
-1. Load-time: `XGBOOST_LIB` env (default above) → `ffi-open`, then
-   `ffi-function` declarations for XGDMatrixCreateFromDense,
-   XGDMatrixSetInfoFromInterface, XGDMatrixFree, XGBoosterCreate,
-   XGBoosterSetParam, XGBoosterUpdateOneIter, XGBoosterPredictFromDMatrix,
-   XGBoosterFree, XGBoosterSaveModel, XGBoosterLoadModel, XGBGetLastError.
-2. `(xgb-check) ( status -- )` internal — nonzero → XGBGetLastError throw.
-3. `(array-interface) ( m -- s )` internal — matrix>pointer,
-   pointer>address, dim, format `{"data":[ADDR,false],"shape":[R,C],
-   "typestr":"<f8","version":3}`. The address must print as plain integer
-   digits (~15 digits, no exponent); verify `format`'s rendering at this
-   magnitude first, else route through an integer-string word.
-4. `xgb-fit ( X y params -- booster )` — X n×k matrix (row-major, as Water
-   stores), y n×1; DMatrix from X (config `{"missing":NaN}`), label via
-   SetInfoFromInterface, BoosterCreate over a pointer-cell holding the
-   DMatrix, params frame → SetParam per key with `format`ted values
-   (`:rounds`, default 100, is consumed by the update loop, not passed),
-   UpdateOneIter × rounds, XGDMatrixFree, return the booster T_PTR.
-5. `xgb-predict ( booster X -- yhat )` — DMatrix from X, predict with config
-   `{"type":0,"training":false,"iteration_begin":0,"iteration_end":0,
-   "strict_shape":false}` and three pointer-cells; n from pointer-deref +
-   pointer-long of out_shape; floats>matrix copy; XGDMatrixFree; free the
-   cells.
-6. `xgb-free ( booster -- )`; `xgb-save ( booster path -- )`;
-   `xgb-load-model ( path -- booster )` (create an empty booster, then
-   XGBoosterLoadModel into it).
-
-### Implementation steps
-
-1. The six primitives (five now, `matrix>floats` contingent) through the full
-   per-primitive checklist; native golden for the xgboost-independent subset.
-2. Smoke script: ffi-open libxgboost, CreateFromDense with a `"<f8"`
-   interface, read the status — decides decision 2's fallback before the
-   binding is written.
-3. lib/xgboost.h2o as specified.
-4. Acceptance runs; README line for the loadable library.
-
-### Acceptance
-
-1. Primitive golden (native suite): matrix>pointer → pointer>address is
-   positive and integer-exact; pointer-cell → pointer-deref of an unwritten
-   cell is a null-address pointer; a float32 round trip reproduces the source
-   matrix (via matrix>floats if built, else via a cell-written scalar).
-   Follows the suite's existing handling for native-only ffi tests; the wasm
-   suite stays green.
-2. Parity: on data/logistic-sim.tsv with fixed seed, nthread, max_depth 6,
-   eta 0.3, 100 rounds — `xgb-fit`+`xgb-predict` predictions match R
-   xgboost's predictions on the same rows to float32 tolerance (R writes its
-   predictions to TSV; a Water script compares). Machine-local script, not a
-   golden: library versions move, so the suite cannot pin it.
-3. Error surface (discriminating case): a label vector of wrong length makes
-   `xgb-fit` throw with XGBGetLastError's message — distinguishes the checked
-   design from one that drops statuses (which would fail later, opaquely, at
-   UpdateOneIter).
-4. `xgb-save` → `xgb-load-model` → `xgb-predict` reproduces the original
-   predictions exactly.
+- **Model persistence.** Bind `XGBoosterSaveModel`/`XGBoosterLoadModel` as
+  `xgb-save ( booster path -- )` and `xgb-load-model ( path -- booster )`
+  (create an empty booster, then load into it). Acceptance: `xgb-save` →
+  `xgb-load-model` → `xgb-predict` reproduces the original predictions exactly.
+- **Multiclass / multi-output.** Read `out_dim`/`out_shape` in `xgb-predict`
+  and `xgb-importance` so a multiclass model returns the full `[n, n_classes]`
+  (predict) / `[k, n_classes]` (importance) matrix.
 
 ---
 
@@ -151,10 +30,9 @@ table, golden coverage (see acceptance 1).
 Build applied statistics from a few kernels, each reused across many methods,
 with inference resampling-first (index loops over asymptotic tables). The
 kernels: SVD (present), weighted least squares (present as `fit-linear` plus
-the sqrt-w idiom), the resampling loop (present as `bootstrap`), one tree
-grower (§4 — the one substantial new C), and a pairwise-distance primitive
-(§5 — small C, unless the dgemm identity suffices). Everything else is library
-code composing them.
+the sqrt-w idiom), the resampling loop (present as `bootstrap`), and a
+pairwise-distance primitive (§4 — small C, unless the dgemm identity
+suffices). Everything else is library code composing them.
 
 Layering: LAPACK-free stats live in the embedded library (wasm-capable) built
 on the C kernels; statistics.h2o holds what needs the shared library and
@@ -172,7 +50,7 @@ swaps the element-wise words in the loop. The small C beyond the kernels:
 `erf`/normal-CDF (§2 probit, BCa intervals — a few lines alongside
 `exp`/`tanh`; the inverse `qnorm` already exists in forth), the
 empirical-distribution statistics
-(§6 — `ks`, `cvm`, `ad`, `wasserstein`: used constantly, each a small
+(§5 — `ks`, `cvm`, `ad`, `wasserstein`: used constantly, each a small
 one-pass kernel), and `row-argmins` / its argmax and column twins
 (index-returning kin of `row-mins`, one pass — k-means' assignment step
 needs the per-row index, and only the flat `argmin` exists). Gaussian
@@ -225,7 +103,7 @@ spectral methods, and the tensor step of LCA (§1) otherwise ride
   vector of [X | y].
 
 To settle: whether spectral clustering's affinity construction (RBF
-bandwidth, kNN graph) waits on the distance primitive (§5); how much of
+bandwidth, kNN graph) waits on the distance primitive (§4); how much of
 CA/MCA folds into the LCA indicator plumbing; where the library splits
 (statistics.h2o is already the stats home — clustering and LCA may warrant
 their own files).
@@ -285,31 +163,7 @@ tables stay out.
 To settle: one generic word ( data index-gen-xt statistic-xt n -- dist )
 with bootstrap/permutation/jackknife as instances, or a word per method.
 
-### 4. One tree grower, three predictors
-
-The recursive partitioner is the one substantial new C kernel: split search
-over presorted columns on gradient/hessian statistics, with depth and
-min-leaf limits. Growing on grad/hess pairs serves all three products;
-squared error and Gini/entropy are special cases of the statistics fed in.
-
-- **Single tree** — readable rules; cost-complexity pruning by CV. Represent
-  the tree as a frame tree so it prints, stores, and save-images like any
-  value; prediction is a C traversal.
-- **Random forest** — bootstrap rows + per-split feature subsampling around
-  the grower; out-of-bag error and permutation importance fall out of §3.
-  The resampling-native ensemble.
-- **Gradient boosting** — fit-to-gradients with shrinkage and early stopping
-  (CV); any loss with grad/hess: logistic, multiclass, quantile, survival.
-  The tabular-accuracy workhorse.
-
-To settle: exact split search only, or histogram binning from the start
-(histograms are what make boosting fast at scale); categorical features —
-one-hot at the library level vs native category splits in the grower;
-missing values (surrogate splits vs a learned default direction); how much
-of the ensemble loop is C vs library code over a
-( X y grad hess params -- tree ) word.
-
-### 5. Pairwise distances (small, last)
+### 4. Pairwise distances (small, last)
 
 ( X Y -- D ) via the dgemm identity ‖x‖² + ‖y‖² − 2XYᵀ, plus a direct kernel
 for other metrics. Unlocks kNN classification/regression, MDS input, RBF
@@ -321,7 +175,7 @@ MMD — whose nulls come from the permutation loop.
 To settle: C word vs dgemm composition in library code (the identity is
 three ops but loses precision on near-duplicate rows).
 
-### 6. Empirical distributions
+### 5. Empirical distributions
 
 Distances between empirical distributions, each one pass over sorted
 samples in the `ks-distance` mold:
@@ -334,7 +188,7 @@ samples in the `ks-distance` mold:
   directly (mean |gap|), unequal n integrates the quantile difference over
   the merged grid.
 - Significance by permutation of pooled labels (§3); energy distance joins
-  once §5's pairwise distances land.
+  once §4's pairwise distances land.
 
 To settle: whether the permutation replicate loop wants a C null driver
 (in-place byte-label shuffle + statistic in one loop, skipping the
@@ -361,8 +215,8 @@ Three layers, adopted in this order:
 ## Reference coverage for the loadable libraries
 
 Add a reference.md section for lib/statistics.h2o (`svd`, `fit-linear`,
-`bootstrap`, the regressions, the dgemm rebinding) so `help` answers
-after a load. Consider a `words` group distinguishing lib/-loaded words
+`bootstrap`, the regressions, the xgboost binding, the dgemm rebinding) so
+`help` answers after a load. Consider a `words` group distinguishing lib/-loaded words
 from session definitions, so the undocumented canary reaches them.
 
 ---
@@ -519,14 +373,6 @@ workers don't block and writes serialize safely (single host).
 **Cost:** `accept` + `read-n` are small C; the FastCGI codec is library forth (plus an
 optional tiny C codec for the integer fields); the serve loop and response
 builders are library forth.
-
----
-
-## Anaphora: residuals
-
-- **wasm suite run** — the anaphora goldens (139) have not run against the
-  wasm build (no toolchain on the dev machine); nothing platform-specific
-  is involved, but the suite must confirm it.
 
 ---
 

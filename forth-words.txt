@@ -205,6 +205,7 @@ false
 fasin
 fatan
 fcos
+feature-importance
 feq
 fexp
 ffi-free
@@ -359,6 +360,7 @@ pointer-deref
 pointer-long
 pointer-string-at
 pointer>address
+predict
 print
 print-stack
 ptr?

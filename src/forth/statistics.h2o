@@ -315,5 +315,54 @@
 ( xs ys -- corr-summary ) \ kendall correlation with 500 bootstraps
 : cor ' correlation-kendall 500 correlate-with ; inline
 
+( tree features i -- prediction ) \ walk row i from the root to a leaf
+: predict-row
+	| >tree >features >i node column |
+	tree to node
+	begin node :feature has? while
+		features node :feature @ @ to column
+		node :threshold has? if
+			column i @e  node :threshold @  gt
+		else
+			node :categories @  column i @i  member? not
+		then
+		if node :right @ else node :left @ then to node
+	repeat
+	node :prediction @ ; internal
+
+( tree features -- yhat ) \ n×1 predictions for a fit-tree tree over a features
+\ frame keyed as at training; a numeric node sends value <= :threshold left, a
+\ categorical node sends value in :categories left (an unseen value goes right)
+: predict
+	| >tree >features n |
+	features dup keys first @ size to n
+	n iota [: tree features rot predict-row :] map vector ;
+
+( node -- weighted-square ) \ S²/n for the node, = prediction² · n_rows
+: weighted-square dup :prediction @ dup * swap :n_rows @ * ; internal
+
+( accumulator node -- accumulator ) \ add each internal node's squared-error
+\ reduction (weighted-square of the children minus the node) to accumulator[:feature]
+: accumulate-gain
+	| >accumulator >node feature gain |
+	node :feature has? not if accumulator exit then
+	node :feature @ to feature
+	node :left @ weighted-square  node :right @ weighted-square  +  node weighted-square  -  to gain
+	accumulator feature  accumulator feature 0 @or gain +  ! to accumulator
+	accumulator node :left @ accumulate-gain to accumulator
+	accumulator node :right @ accumulate-gain to accumulator
+	accumulator ; internal
+
+( tree -- fr ) \ { feature-symbol -> normalized impurity-reduction importance } over
+\ the features the tree splits on (summing to 1); a stump with no splits gives { }
+: feature-importance
+	| >tree accumulator total |
+	{ } tree accumulate-gain to accumulator
+	accumulator keys size 0 gt if
+		accumulator values vector sum to total
+		accumulator keys [> key | accumulator key  accumulator key @ total /  ! drop :] each
+	then
+	accumulator ;
+
 
 

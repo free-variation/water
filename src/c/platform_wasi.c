@@ -74,6 +74,7 @@ WASM_UNSUPPORTED(p_segment_to_pointer, "segment>pointer")
 WASM_UNSUPPORTED(p_pointer_cell, "pointer-cell")
 WASM_UNSUPPORTED(p_pointer_deref, "pointer-deref")
 WASM_UNSUPPORTED(p_pointer_long, "pointer-long")
+WASM_UNSUPPORTED(p_pointer_string_at, "pointer-string-at")
 WASM_UNSUPPORTED(p_pointer_to_address, "pointer>address")
 
 int ffi_register_call_cfa(int cfa) {

@@ -84,6 +84,29 @@ tree /left/prediction @ . cr        \ 1.5
 tree /right/prediction @ . cr       \ 10
 clear
 
+\ === predict walks each row to a leaf ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 } fit-tree to tree
+tree { :x [ 1 2 3 4 ] vector } predict matrix>array . cr  \ [ 1 1 5 5 ]
+tree { :x [ 2 3 ] vector } predict matrix>array . cr      \ [ 1 5 ]  (<= 2.5 left)
+clear
+{ :c [ :a :b :c :a :b :c ] } [ 1 10 2 1 10 2 ] vector { } fit-tree to tree
+tree { :c [ :a :b :c :z ] } predict matrix>array . cr     \ [ 1 10 2 10 ]  (:z unseen -> right)
+clear
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 0 } fit-tree to tree
+tree { :x [ 9 9 ] vector } predict matrix>array . cr      \ [ 3 3 ]  (stump -> root mean)
+clear
+
+\ === feature-importance: normalized impurity reduction per feature ===
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 1 } fit-tree to tree
+tree feature-importance :x @ . cr                          \ 1  (only feature)
+{ :a [ 0 0 1 1 ] :b [ 0 1 0 1 ] } [ 1 2 10 20 ] vector { :max-depth 2 } fit-tree to tree
+tree feature-importance values vector sum . cr             \ 1  (normalized)
+tree feature-importance :a @ 1000 * round 1000 / . cr      \ 0.783
+tree feature-importance :b @ 1000 * round 1000 / . cr      \ 0.217
+{ :x [ 1 2 3 4 ] vector } [ 1 1 5 5 ] vector { :max-depth 0 } fit-tree to tree
+tree feature-importance keys size . cr                     \ 0  (stump, no splits)
+clear
+
 \ === errors (reason parenthesized) ===
 [ 1 2 ] vector [ 1 2 ] vector { } fit-tree          \ (features must be a frame)
 clear
