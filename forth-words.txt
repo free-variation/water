@@ -141,6 +141,7 @@ create-index
 cross-validate
 cumulative-sum
 curry
+cv-logistic-ridge
 cwd
 dataset>matrix
 dataset>rows
@@ -219,7 +220,18 @@ filter
 find-executable
 find-first
 first
+fit-augmented
+fit-augmented-logistic
+fit-gamma
+fit-glm
+fit-linear
+fit-logistic
+fit-logistic-ridge
+fit-multinomial
+fit-multinomial-ridge
+fit-poisson
 fit-tree
+fit-xgb
 flat-map
 flatten
 flatten-array
@@ -264,6 +276,7 @@ help
 histogram-table
 hstack
 i-times
+identity
 identity-matrix
 if
 index-of
@@ -283,6 +296,7 @@ keys
 ks-distance
 last
 leave
+linear-regression
 ln
 load
 load-bag
@@ -290,6 +304,7 @@ load-image
 load-library
 load-tsv
 log
+logistic-regression
 lookup
 lowest-bit
 lshift
@@ -346,6 +361,7 @@ parallel-run
 parse-time
 partition
 pbootstrap
+pcv-logistic-ridge
 peek
 percentile
 pfilter
@@ -361,6 +377,7 @@ pointer-long
 pointer-string-at
 pointer>address
 predict
+predict-multinomial
 print
 print-stack
 prune
@@ -477,6 +494,7 @@ submatrix
 substring
 sum
 summary
+svd
 swap
 symbol
 symbol?
@@ -547,6 +565,9 @@ write
 write-file
 write-in
 write-tsv
+xgb-free
+xgb-importance
+xgb-predict
 xml-escape
 xt?
 yield

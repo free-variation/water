@@ -446,3 +446,94 @@ drop
 ( X y max-iterations tolerance -- beta ) \ poisson regression, log link, by IRLS
 : fit-poisson
 	poisson-log -rot fit-glm ;
+
+( mats -- m)
+: hstack-all 
+	dup 1 skip swap 0 @i ' hstack reduce ;
+
+( mats -- m )
+: vstack-all 
+	dup 1 skip swap 0 @i ' vstack reduce ;
+
+( column-class X probs row-class-probs row-class -- block )
+: information-block 
+	| >column-class >X >probs >row-class-probs >row-class weighted-design |
+	probs column-class @j
+	row-class column-class = if 1 else 0 then swap -
+	row-class-probs *
+	X * to weighted-design
+	1 X weighted-design 0 X n-columns dup 0-matrix dgemm-tn ;
+
+( X y reference-class max-iterations tolerance -- beta )
+: fit-multinomial-ridge
+	| >X >y >reference-class >max-iterations >tolerance >lambda
+	n-predictors n-nonreference-classes classes response beta probs
+	information gradient delta iterations converged
+	intercept-mask penalty-mask penalty-diagonal |
+	
+	y reference-class eq sum 0= if
+		reference-class "fit-multinomial-ridge: reference class {0} has no observations in y" format throw
+	then
+
+	X n-columns to n-predictors
+	y max 1+ iota [: reference-class = not :] filter to classes
+	classes size to n-nonreference-classes
+	classes [: y swap eq :] map hstack-all to response
+	n-predictors n-nonreference-classes 0-matrix to beta
+
+	n-predictors 1 0-matrix 1 + 0 0 0 !i,j to intercept-mask
+	intercept-mask n-predictors n-nonreference-classes 0-matrix 1 + * to penalty-mask
+	n-predictors n-nonreference-classes * identity-matrix
+	  penalty-mask transpose n-predictors n-nonreference-classes * 1 reshape *  lambda *  to penalty-diagonal
+
+	0 to iterations
+	0 to converged
+
+	begin
+		1 X beta 0 X n-rows n-nonreference-classes 0-matrix dgemm-nn
+		exp dup row-sums 1+ / to probs
+		1 X response probs - 0 n-predictors n-nonreference-classes 0-matrix dgemm-tn
+		lambda beta penalty-mask * * - to gradient
+
+		n-nonreference-classes iota 
+		[> row-class |
+		   n-nonreference-classes iota 
+		   [: X probs probs row-class @j row-class information-block :] map hstack-all
+		:] map vstack-all  penalty-diagonal +  to information
+
+		information gradient transpose n-predictors n-nonreference-classes * 1 reshape
+		fit-linear to delta
+
+		beta delta n-nonreference-classes n-predictors reshape transpose + to beta
+
+		delta dup * sum sqrt tolerance lt to converged
+		++ iterations
+		converged iterations max-iterations gt or
+	until
+
+	converged not if
+		iterations "fit-multinomial-ridge: did not converge in {0} iterations" format throw
+	then
+	beta ;
+
+( X y reference-class max-iterations tolerance -- beta ) \ plain multinomial MLE — fit-multinomial-ridge at lambda 0
+: fit-multinomial
+	|> X y reference-class max-iterations tolerance |
+	X y reference-class max-iterations tolerance 0 fit-multinomial-ridge ;
+
+( beta X reference-class -- probabilities ) \ n×K softmax probabilities in label order 0..K-1
+: predict-multinomial
+	| >beta >X >reference-class n-observations n-nonreference-classes n-classes class-weights weight-total |
+	beta n-columns to n-nonreference-classes
+	n-nonreference-classes 1 + to n-classes
+	X n-rows to n-observations
+	1 X beta 0 n-observations n-nonreference-classes 0-matrix dgemm-nn exp to class-weights
+	class-weights row-sums 1 + to weight-total
+	n-classes iota [> label |
+		label reference-class = if
+			1 weight-total /
+		else
+			class-weights  label reference-class gt if label 1 - else label then  @j  weight-total /
+		then
+	:] map hstack-all ;
+

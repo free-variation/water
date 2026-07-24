@@ -17,6 +17,7 @@ import os
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 REFERENCE = os.path.join(ROOT, "docs", "reference.md")
+REFERENCE_LIBRARIES = os.path.join(ROOT, "docs", "reference-libraries.md")
 OUTPUT = os.path.join(ROOT, "src", "c", "help_table.c")
 WORDLIST = os.path.join(ROOT, "forth-words.txt")
 
@@ -54,14 +55,12 @@ def c_string(value):
     return '"%s"' % escaped
 
 
-def parse():
-    entries = {}
-    sections = []
-    with open(REFERENCE, encoding="utf-8") as handle:
+def parse_file(path, entries, sections):
+    with open(path, encoding="utf-8") as handle:
         lines = handle.read().splitlines()
 
     i = 0
-    section_index = -1
+    section_index = len(sections) - 1
     while i < len(lines):
         line = lines[i]
         if line.startswith("## "):
@@ -106,6 +105,12 @@ def parse():
                 continue
             entries[name] = (name, effect, summary, ops, alloc, order, section_index)
 
+
+def parse():
+    entries = {}
+    sections = []
+    for path in (REFERENCE, REFERENCE_LIBRARIES):
+        parse_file(path, entries, sections)
     return sorted(entries.values(), key=lambda entry: entry[0]), sections
 
 

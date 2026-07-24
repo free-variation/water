@@ -202,18 +202,30 @@ new inline that calls functions → the tail.
 - README describes the language as it is: terse present-tense capability
   statements, one line per feature. No past narratives, no measurements,
   no reflections or design history — detail belongs in docs/reference.md.
-- docs/reference.md is the source of truth: gen-help.py (help table,
-  automatic in make) and gen-editors.py (make editors) consume it. Never
-  hand-edit help_table.c, repl_highlight_groups.h, editors/.
-- Every word gets a reference.md row; the words canary group
-  "undocumented" must stay empty.
-- New words: reference row, README mention if user-facing, golden test,
-  wasm suite run.
+- docs/reference.md (built-ins and embedded src/forth words) and
+  docs/reference-libraries.md (loadable lib/*.h2o words) are the source of
+  truth: gen-help.py (help table, automatic in make) reads both and merges
+  them into one name-sorted table, so a lib word answers to help/man/apropos
+  once its library is loaded; gen-editors.py (make editors) reads
+  reference.md only. Never hand-edit help_table.c, repl_highlight_groups.h,
+  editors/.
+- Every built-in/embedded word gets a reference.md row; a loadable-library
+  word gets a reference-libraries.md row. The words canary group
+  "undocumented" must stay empty (it checks built-in/embedded words only;
+  loaded lib words show under "this session").
+- New words: reference row (reference.md for built-in/embedded,
+  reference-libraries.md for lib/), README mention if user-facing, golden
+  test, wasm suite run.
 
 ## Tests
 - Golden pairs in tests/ (see run.sh); regenerate with ./water -b <
   tests/NNN_name.h2o > tests/NNN_name.expected — inspect every changed
   line before accepting.
+- Tests that `load` a lib/ library needing external deps (LAPACK, xgboost)
+  live in tests/lib/ and run via `make test-libs` (tests/run-libs.sh),
+  native-only and excluded from `make test` so the core suite builds without
+  those deps. A new such test goes in tests/lib/, not the wasm-skip list.
+  Pure-forth lib tests (e.g. lib/plot.h2o) stay in the core suite.
 - Seeded RNG for anything random; both native and wasm suites must pass.
 - Header comment names the word, stack effect, semantics. Sections split
   with `\ === title ===`. Every output line carries an aligned trailing

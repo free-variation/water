@@ -132,7 +132,7 @@ $(LAPACKE_LIB): $(LAPACKE_OBJS)
 $(LAPACKE_DIR)/%.o: $(LAPACKE_DIR)/%.c
 	$(CC) $(LAPACKE_CFLAGS) -c $< -o $@
 
-src/c/help_table.c: docs/reference.md tools/gen-help.py
+src/c/help_table.c: docs/reference.md docs/reference-libraries.md tools/gen-help.py
 	python3 tools/gen-help.py
 
 src/c/lib_embed.h: $(FORTH_SRCS) Makefile
@@ -161,6 +161,12 @@ vendor-lapacke:
 test: water
 	sh tests/run.sh
 
+# Loadable-library golden tests (tests/lib/): they load a lib/ library and need
+# its external deps (LAPACK via liblapacke_water, xgboost via libxgboost).
+# Excluded from `make test` so the core suite runs without them. Native-only.
+test-libs: water $(LAPACKE_SHARED)
+	sh tests/run-libs.sh
+
 # Runs the golden suite against the wasm build under a WASI runtime. The runner
 # finds wasmtime on PATH or ~/.wasmtime/bin; otherwise set WASMTIME=<path>.
 test-wasm: water.wasm
@@ -172,4 +178,4 @@ bench:
 clean:
 	rm -f water water.wasm $(PCRE2_OBJS) $(PCRE2_LIB) $(WASM_PCRE2_OBJS) $(WASM_PCRE2_LIB) $(SQLITE_OBJ) $(WASM_SQLITE_OBJ) $(ISOCLINE_OBJ) $(LAPACKE_OBJS) $(LAPACKE_LIB) $(LAPACKE_SHARED) $(LAPACKE_DIR)/exports.map
 
-.PHONY: all clean test test-wasm bench wasm vendor-pcre2 vendor-sqlite vendor-isocline vendor-lapacke lapacke editors
+.PHONY: all clean test test-libs test-wasm bench wasm vendor-pcre2 vendor-sqlite vendor-isocline vendor-lapacke lapacke editors

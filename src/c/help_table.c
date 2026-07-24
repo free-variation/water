@@ -38,9 +38,13 @@ const char *const help_section_names[] = {
 	"Foreign function interface",
 	"Type tags",
 	"Object allocation",
+	"Linear algebra (lib/statistics.h2o)",
+	"Regression (lib/statistics.h2o)",
+	"Generalized linear models (lib/statistics.h2o)",
+	"Gradient boosting (lib/statistics.h2o)",
 };
 
-const int help_section_count = 37;
+const int help_section_count = 41;
 
 const HelpEntry help_entries[] = {
 	{ "!", "( fr sym/path val -- fr )", "Set by key or path, vivifying intermediates; mutates fr; errors on a search path", "d log n", "realloc on growth; 1o per vivified frame", "O(d log n) amortized", 16 },
@@ -186,6 +190,7 @@ const HelpEntry help_entries[] = {
 	{ "cross-validate", "( units n-folds fit-xt score-xt -- fold-losses )", "statistics.h2o: k-fold cross-validation — units deal round-robin into folds in the order given (shuffle first when order matters; reuse one shuffle to compare configurations on the same folds); per fold, fit ( train-units -- model ) then score ( model test-units -- loss ), both taking everything from the stack since they run in this word's frame; answers the per-fold losses as an n-folds vector (mean it for the CV estimate, std for the standard error). A unit is whatever the array holds — rows, or per-cluster index arrays for cluster CV", "k·(fit + score) + n·k", "fold index arrays", "O(k·(fit + score))", 18 },
 	{ "cumulative-sum", "( m -- m' )", "Running sum over the elements in row-major order, shape preserved — a vector's prefix sums (ecdf, ROC, and calibration plumbing)", "1 + n", "1m(r×c)", "O(n)", 18 },
 	{ "curry", "( value xt -- xt' )", "Bind a value into a new anonymous word: xt' pushes value, then calls xt. Compiles ~10 permanent dictionary cells per call (reclaimed only by forget); errors inside a parallel region — curry before pmap, execute freely within", NULL, NULL, NULL, 10 },
+	{ "cv-logistic-ridge", "( X y units lambdas n-folds -- fr )", "k-fold cross-validation of ridge logistic over a lambdas grid, returning { :lambdas :deviances :best }; X excludes the intercept (added internally, unpenalized), units index rows so per-cluster index arrays give cluster CV", NULL, NULL, NULL, 38 },
 	{ "cwd", "( -- path )", "The interpreter's current working directory as a string (getcwd)", "1", "1o", "O(|path|)", 31 },
 	{ "dataset>matrix", "( dataset cols -- m )", "datasets.h2o: build an n×k matrix from the named numeric columns (rows are observations)", "n·k", "flat 1a(n·k) + 2m(n×k)", "O(n·k)", 22 },
 	{ "dataset>rows", "( dataset -- rows )", "datasets.h2o: the inverse of true rows>dataset — an array of row-arrays led by a header row of the column names as strings, columns in key order, cells through column>array (NaN → null, dimensioned cells as quantities); feeds save-tsv directly (1 skip for headerless rows)", "r·c", "header + one array per row + 1a(r·c) cells", "O(r·c)", 22 },
@@ -264,7 +269,18 @@ const HelpEntry help_entries[] = {
 	{ "find-executable", "( name -- path|none )", "io.h2o: the absolute path of name on $PATH (first directory holding it), or the none value if unset or not found; a name containing / is not special-cased (it just won't match a bare PATH entry)", "split + probe", "1o per candidate", "O(dirs)", 31 },
 	{ "find-first", "( items pred -- element )", "The first element for which pred is truthy, or the none value; short-circuits at the first hit (does not run pred over the rest)", "n·xt", "none", "O(n·xt)", 23 },
 	{ "first", "( arr/pair -- v )", "core.h2o: element 0 of an array, or a cons's head — reads pairs-shaped results (count, group-indices) and logic pairs alike", "4", "none", "O(1)", 14 },
+	{ "fit-augmented", "( augmented -- beta )", "Least squares of an [X", NULL, NULL, NULL, 37 },
+	{ "fit-augmented-logistic", "( augmented -- beta )", "Firth logistic fit of an [X", NULL, NULL, NULL, 38 },
+	{ "fit-gamma", "( X y max-iterations tolerance -- beta )", "Gamma regression, log link — fit-glm with gamma-log", NULL, NULL, NULL, 39 },
+	{ "fit-glm", "( X y family max-iterations tolerance -- beta )", "IRLS for a family object — a frame of three stack quotations :inverse-link ( eta -- mu ), :mean-derivative ( eta -- dmu/deta ), :variance ( mu -- V ). Each step solves a weighted least squares via fit-linear. Provided families: gaussian-identity, poisson-log, gamma-log, binomial-logit", NULL, NULL, NULL, 39 },
+	{ "fit-linear", "( m y -- beta )", "Ordinary least squares via LAPACKE dgelsd; m is observations×predictors (observations ≥ predictors), y the observations×1 response, beta the predictors×1 coefficients", NULL, NULL, NULL, 37 },
+	{ "fit-logistic", "( X y max-iterations tolerance -- beta )", "Binary logistic regression by Firth-penalized IRLS (estimates stay finite under separation); X includes the intercept column, y in {0,1}", NULL, NULL, NULL, 38 },
+	{ "fit-logistic-ridge", "( X y max-iterations tolerance lambda -- beta )", "L2-penalized logistic by IRLS; lambda penalizes ‖beta‖²/2 with the intercept column unpenalized, lambda 0 the plain MLE (no Firth)", NULL, NULL, NULL, 38 },
+	{ "fit-multinomial", "( X y reference-class max-iterations tolerance -- beta )", "Multinomial (softmax) logistic by Newton–Raphson, baseline-category parametrization with reference-class as the baseline; y holds integer labels 0..K−1, beta is predictors×(K−1), one coefficient column per non-reference class. As the plain MLE it diverges under separation", NULL, NULL, NULL, 39 },
+	{ "fit-multinomial-ridge", "( X y reference-class max-iterations tolerance lambda -- beta )", "fit-multinomial with an L2 penalty λ·‖β‖²/2 on every coefficient except each class's intercept; lambda 0 is the plain MLE (what fit-multinomial calls), lambda > 0 keeps the estimate finite under separation", NULL, NULL, NULL, 39 },
+	{ "fit-poisson", "( X y max-iterations tolerance -- beta )", "Poisson regression, log link — fit-glm with poisson-log", NULL, NULL, NULL, 39 },
 	{ "fit-tree", "( features y params -- tree )", "CART regression tree. features is a frame of typed columns — a numeric vector splits at a midpoint :threshold, an array column is categorical and splits on a mean-ordered subset stored as :categories; y is a numeric response vector. Returns a nested frame: every node carries :prediction (mean of its rows) and :n_rows, an internal node adds :feature and either :threshold or :categories plus :left/:right, a leaf optionally carries :responses. Splits maximize S_L²/n_L + S_R²/n_R (squared-error reduction), each numeric column presorted once. Params frame: :max-depth (default unlimited), :min-samples (minimum rows on each side of a split, default 1), :store-leaf-responses (default off). A numeric split learns a default direction for rows missing that feature (NaN): the side that maximizes the split criterion, stored on the node as :default (:left/:right) — present only when the node saw missing rows", "features·n·depth", "malloc(24n) per numeric column + node buffer + tree frame", "O(features·n·depth)", 18 },
+	{ "fit-xgb", "( X y fit-params -- booster )", "Train an XGBoost booster on features X (n×k) and response y (n×1); fit-params are keyed by xgboost parameter name, :rounds drives the boosting loop (default 100). Native-only (libxgboost via FFI)", NULL, NULL, NULL, 40 },
 	{ "flat-map", "( items xt -- arr )", "arrays.h2o: map flatten-array; xt returns an array per element, results concatenated", "n·xt + total", "1a(n) + 1a(total)", "O(n·xt + total)", 23 },
 	{ "flatten", "( m -- m' )", "matrix.h2o: 1×(r·c) reshape", "r×c", "1m(1×r·c)", "O(r×c)", 18 },
 	{ "flatten-array", "( arr -- arr )", "Flatten one level; returns the input unchanged if no element is itself an array", "1 + m", "1a(m)", "O(m)", 14 },
@@ -309,6 +325,7 @@ const HelpEntry help_entries[] = {
 	{ "histogram-table", "( v n-bins -- fr )", "statistics.h2o: equal-width bin counts over a vector's value range, as { :counts (n-bins×1) :low :bin-width }. NaNs dropped, the top value lands in the last bin, a constant vector takes the range value ± 1; errors on n-bins < 1 or no finite values", "n + n-bins", "1m(n-bins) + 1fr", "O(n + n-bins)", 18 },
 	{ "hstack", "( a b -- m )", "matrix.h2o: augment under its numpy name (inlined)", "2 + r·c", "1m(r×c)", "O(r·c)", 18 },
 	{ "i-times", "( xt n -- )", "Run xt n times, pushing index 0..n-1 first", "2 + n·(1+xt)", "none", "O(n·xt)", 23 },
+	{ "identity", "( a -- a )", "core.h2o: the value unchanged (inlined) — the no-op xt for a higher-order word that wants \"leave it as is\"", "1", "none", "O(1)", 0 },
 	{ "identity-matrix", "( n -- m )", "matrix.h2o: 1 swap diagonal-matrix", "n", "1m(n×n)", "O(n)", 18 },
 	{ "if", "( flag -- )", "Branch past the then/else if flag is falsy", NULL, NULL, NULL, 8 },
 	{ "index-of", "( s pat -- i )", "strings.h2o: codepoint index of pat's first regex match in s, or -1 if none (split 0 @i size guarded by has?)", "n", "1a + pieces", "O(n)", 12 },
@@ -328,6 +345,7 @@ const HelpEntry help_entries[] = {
 	{ "ks-distance", "( a b -- d )", "Two-sample Kolmogorov–Smirnov statistic: the largest absolute gap between the two samples' ECDFs, both advanced past each pooled value before measuring (ties). Symmetric; d ∈ [0, 1]; NaNs excluded per sample, each sample's own n; dimensioned inputs are computed over their magnitudes; errors when either sample has no finite values", "(n+m) log(n+m)", "malloc(n) + malloc(m)", "O((n+m) log(n+m)); above 8k elements the sorts are O(n) radix", 18 },
 	{ "last", "( arr n -- arr )", "arrays.h2o: swap reverse swap take reverse", "3n", "3×1a(n)", "O(n)", 14 },
 	{ "leave", "—", "Branch past the innermost loop's closing word; conditional form is if leave then", NULL, NULL, NULL, 8 },
+	{ "linear-regression", "( dataset predictors response replications -- summaries )", "OLS with nonparametric bootstrap inference: a { :estimate :se :bias :ci-low :ci-high } frame per coefficient over replications refits", NULL, NULL, NULL, 38 },
 	{ "ln", "( a -- ln a )", "log — natural log", "2", "matrix 1m(r×c)", "same", 3 },
 	{ "load", "( s -- )", "Run a source file as if typed; record it for reload. An error raised while loading is prefixed file:line:  (the line of the failing token); a nested load locates to the innermost file", "file read + run", "input buffer", "O(file)", 30 },
 	{ "load-bag", "( rel rows-array -- rel )", "Like bulk-load, but :rows stays a **bag** (the array, duplicates kept) rather than a deduped set; only :index is built", "n", "frame + sets", "O(n)", 27 },
@@ -335,6 +353,7 @@ const HelpEntry help_entries[] = {
 	{ "load-library", "( name -- )", "core.h2o: load lib/<name> from beside the water binary (binary-dir), so \"plot\" load-library works from any cwd; a name without .h2o gains it", "file read + run", "input buffer", "O(file)", 30 },
 	{ "load-tsv", "( path -- rows )", "Read a TSV file into an array of row-arrays; an empty cell → none, a numeric cell → float, else a string. No header handling", "1 + bytes", "1a(r) + one array per row + a string per text cell", "O(bytes)", 22 },
 	{ "log", "( a -- log₁₀ a )", "log10", "2", "matrix 1m(r×c)", "same", 3 },
+	{ "logistic-regression", "( dataset predictors response replications -- summaries )", "Firth logistic with the bootstrap per-coefficient summaries of linear-regression", NULL, NULL, NULL, 38 },
 	{ "lookup", "( \"name\" -- xt )", "Parse the following word at run time and push its xt — the non-immediate counterpart of '", NULL, NULL, NULL, 10 },
 	{ "lowest-bit", "( a -- i )", "0-indexed position of the lowest set bit (-1 if a is 0)", "1", "none", "O(1)", 4 },
 	{ "lshift", "( a n -- f )", "left shift a by n bits", "2", "none", "O(1)", 4 },
@@ -391,6 +410,7 @@ const HelpEntry help_entries[] = {
 	{ "parse-time", "( string format -- instant )", "Parse with strptime; uncaptured fields default to 1970-01-01 00:00:00, read as UTC unless the format captures an offset with %z; errors on a mismatch", "len", "1 pair", "O(len)", 21 },
 	{ "partition", "( items pred -- matches rest )", "arrays.h2o: the elements satisfying pred and the others, one pass, input order kept", "n·xt", "2 arrays", "O(n·xt)", 23 },
 	{ "pbootstrap", "( data fit-xt B -- arr )", "statistics.h2o: bootstrap with the fits run under pmap — identical results (per-replicate seeding), parallel resample+fit", "as bootstrap", "as bootstrap", "O(B·(n + fit) / cores)", 18 },
+	{ "pcv-logistic-ridge", "( X y units lambdas n-folds -- fr )", "cv-logistic-ridge with the (lambda, fold) cells evaluated under pmap; results are identical, the cells being deterministic", NULL, NULL, NULL, 38 },
 	{ "peek", "( a -- a )", "core.h2o: print the top value then a space without consuming it (dup ., inlined) — a stack probe", "1 + print", "none", "O(size printed)", 11 },
 	{ "percentile", "( m pct -- f )", "statistics.h2o: quantile at pct ∈ [0,100] (inlined)", "n log n", "malloc(n)", "O(n log n)", 18 },
 	{ "pfilter", "( arr pred -- arr )", "Parallel filter, order preserved", "2 + n·xt", "malloc(n) flags + 1a(k)", "O(n·xt / w)", 23 },
@@ -406,6 +426,7 @@ const HelpEntry help_entries[] = {
 	{ "pointer-string-at", "( ptr i -- s )", "Copy the C string at index i of a char** at ptr (ptr[i], NUL-terminated) into a Water string — reads one entry of a returned string array (e.g. XGBoosterFeatureScore's feature names)", "1 + |s|", "1o", "O(|s|)", 34 },
 	{ "pointer>address", "( ptr -- n )", "The pointer's numeric address as a float, for embedding in an __array_interface__ JSON string; errors if the address exceeds 2^53 (not float-exact — macOS arm64 user addresses are well under it)", "1", "none", "O(1)", 34 },
 	{ "predict", "( tree features -- yhat )", "statistics.h2o: apply a fit-tree tree to a features frame keyed as at training, walking each row from the root to a leaf — a :threshold node sends value ≤ threshold left, a :categories node sends set membership left (an unseen value goes right), a NaN feature value follows the node's :default (left when the node has none) — and answer the leaf :predictions as an n×1 vector", "n·depth", "1a(n) + 1m(n)", "O(n·depth)", 18 },
+	{ "predict-multinomial", "( beta X reference-class -- probabilities )", "Softmax probabilities from a fit-multinomial/fit-multinomial-ridge model: n×K, columns in label order 0..K−1 (the reference-class column is 1/Σ weights). Each row sums to 1", NULL, NULL, NULL, 39 },
 	{ "print", "( x -- )", "core.h2o: alias for .", "1 + print", "none", "O(size printed)", 11 },
 	{ "print-stack", "( -- )", "core.h2o: alias for .s", "print", "none", "O(depth)", 11 },
 	{ "prune", "( tree alpha -- tree )", "statistics.h2o: cost-complexity prune in place — collapse every subtree whose total split-gain per extra leaf is at most alpha (bottom-up, so each collapse sees already-pruned children); alpha 0 leaves the tree unchanged, large alpha reduces it to the root stump. Mutates the input tree", "nodes", "leaf frames", "O(nodes)", 18 },
@@ -522,6 +543,7 @@ const HelpEntry help_entries[] = {
 	{ "substring", "( s start end -- sub )", "Half-open **codepoint** range [start, end); bounds-checked against the codepoint count", "2 + n", "1o", "O(n)", 12 },
 	{ "sum", "( m -- f )", "Sum of all elements (4-way unrolled, fast-math)", "1 + r×c", "none", "O(r×c)", 18 },
 	{ "summary", "( v/dataset -- fr )", "statistics.h2o: a vector answers { :min :q1 :median :mean :q3 :max } over its finite elements — a dimensioned vector in its unit, an instant vector (unit exactly s) with each statistic rendered through time>iso — plus :missing with the NaN count when any; an all-missing vector answers { :missing n }, an empty one { }. A dataset answers that frame per numeric column and { :distinct } (distinct non-missing cells, plus :missing) per text column, keyed by column name; any other column value errors naming the column", "4n log n (per column)", "malloc(n) ×4 + 1fr (per column)", "O(n log n)", 18 },
+	{ "svd", "( A -- U S VT )", "Thin singular value decomposition via LAPACKE dgesvd: A = U diag(S) VT, with S the 1×min(m,n) singular values. Column signs of U/VT are not canonical, so pin goldens on S and the reconstruction, not raw U/VT entries", NULL, NULL, NULL, 37 },
 	{ "swap", "( a b -- b a )", "Exchange top two", "4", "none", "O(1)", 0 },
 	{ "symbol", "—", "Read the following name; declare a word that pushes a specific interned symbol", NULL, NULL, NULL, 10 },
 	{ "symbol?", "( a -- bool )", "core.h2o: type-of :symbol = (inlined)", "5", "none", "O(1)", 4 },
@@ -592,6 +614,9 @@ const HelpEntry help_entries[] = {
 	{ "write-file", "( s path -- )", "Create or truncate the file, then write the string's bytes", "file write", "none", "O(|s|)", 31 },
 	{ "write-in", "( s proc -- )", "subprocess.h2o: write the string to the child's :in stream", "write syscalls", "none", "O(|s|)", 32 },
 	{ "write-tsv", "( dataset path -- )", "datasets.h2o: write a dataset as a TSV with a header row — dataset>rows then save-tsv (inlined), read-tsv's inverse; a dimensioned column errors in save-tsv (strip with magnitude first)", "2·r·c", "transient rows", "O(r·c)", 22 },
+	{ "xgb-free", "( booster -- )", "Free a booster handle", NULL, NULL, NULL, 40 },
+	{ "xgb-importance", "( booster importance-type -- scores )", "k×1 per-feature importance, row i is feature i; importance-type is \"gain\", \"weight\", \"cover\", \"total_gain\", or \"total_cover\". Rank with matrix>array argsort reverse", NULL, NULL, NULL, 40 },
+	{ "xgb-predict", "( booster X -- predictions )", "n×1 scores for an n×k feature matrix; the booster is not freed", NULL, NULL, NULL, 40 },
 	{ "xml-escape", "( s -- s' )", "strings.h2o: & < > ' to their XML entities, for element text and single-quoted attributes; four replace passes", "4n", "4 strings", "O(n)", 12 },
 	{ "xt?", "( a -- bool )", "core.h2o: type-of :xt = (inlined)", "5", "none", "O(1)", 4 },
 	{ "yield", "( v -- resumed )", "generators.h2o: shift — emit v to the driver; returns whatever the driver passes back via resume", "L", "1o (cont)", "O(L)", 25 },
@@ -602,4 +627,4 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "C primitive alias of unify, so cons ~ fuses to (cons~)", "n", "none", "O(n)", 26 },
 };
 
-const int help_entry_count = 557;
+const int help_entry_count = 578;

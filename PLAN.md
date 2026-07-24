@@ -98,8 +98,7 @@ warrant their own files rather than statistics.h2o.
   as ( X y w -- beta ).
 - **More GLM families** — probit (needs an element-wise `erf`/normal-CDF C
   word; `qnorm` covers the quantile side), negative binomial (estimate the
-  dispersion), and multinomial/ordinal logistic (a stacked design, not a
-  single reweighting).
+  dispersion), and ordinal logistic (cumulative-logit / proportional-odds).
 - **Ridge** — singular-value filtering σ/(σ²+λ) on the design; λ chosen by
   cross-validation (§3).
 - **LDA** — within-class whitening + SVD of the class means.
@@ -110,8 +109,7 @@ warrant their own files rather than statistics.h2o.
   evaluation point: LOESS is fit-weighted in a loop, KDE is the weights
   alone.
 
-To settle: bandwidth selection (CV vs plug-in rules); whether multinomial
-logistic reuses the Firth machinery or defers it to the binary case.
+To settle: bandwidth selection (CV vs plug-in rules).
 
 ### 2b. Correlations: residuals
 
@@ -194,12 +192,10 @@ Three layers, adopted in this order:
 
 ---
 
-## Reference coverage for the loadable libraries
+## Loadable-library words in `words`
 
-Add a reference.md section for lib/statistics.h2o (`svd`, `fit-linear`,
-`bootstrap`, the regressions, the xgboost binding, the dgemm rebinding) so
-`help` answers after a load. Consider a `words` group distinguishing lib/-loaded words
-from session definitions, so the undocumented canary reaches them.
+Give `words` a "library" group for loaded lib/*.h2o words, separate from REPL
+session definitions, by snapshotting a cfa watermark after each `load-library`.
 
 ---
 

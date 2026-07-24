@@ -57,6 +57,7 @@ incremental collection.
 | `that` | `( -- v )` | Alias of `other` | 2 | none | O(1) |
 | `2dup` | `( a b -- a b a b )` | core.h2o: `over over` (inlined) | 10 | none | O(1) |
 | `2drop` | `( a b -- )` | core.h2o: `drop drop` (inlined) | 6 | none | O(1) |
+| `identity` | `( a -- a )` | core.h2o: the value unchanged (inlined) — the no-op xt for a higher-order word that wants "leave it as is" | 1 | none | O(1) |
 | `nip` | `( a b -- b )` | core.h2o: `swap drop` (inlined) | 5 | none | O(1) |
 | `nip-it` | `( a b -- b )` | core.h2o: `nip` (inlined) | 5 | none | O(1) |
 | `nip-this` | `( a b -- b )` | core.h2o: `nip` (inlined) | 5 | none | O(1) |

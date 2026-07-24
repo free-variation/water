@@ -53,3 +53,27 @@
 <matrix 1x2>
      -2.673     0.5941
 
+<matrix 1x2>
+     -2.673     0.5941
+
+<matrix 1x2>
+     -2.673     0.5941
+
+<matrix 1x8>
+     0.1111     0.1846     0.2909     0.4263     0.5737     0.7091     0.8154     0.8889
+
+<matrix 1x3>
+     0.1667     0.3333        0.5
+
+<matrix 1x3>
+     0.3333     0.1667        0.5
+
+<matrix 1x3>
+     0.3333        0.5     0.1667
+
+2.46519e-32 
+<matrix 1x2>
+     -2.673     0.5941
+
+2.46519e-32 
+fit-multinomial-ridge: reference class 5 has no observations in y 

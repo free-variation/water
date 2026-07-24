@@ -90,3 +90,35 @@ gauss-X gauss-y fit-linear transpose . cr                                 \ same
 [ 0 0 1 0 1 0 1 1 ] 8 1 matrix to bin-y
 bin-X bin-y binomial-logit 100 1e-10 fit-glm transpose . cr               \ logit beta
 bin-X bin-y 100 1e-10 0 fit-logistic-ridge transpose . cr                 \ same beta
+
+\ ===== multinomial logistic (fit-multinomial + predict-multinomial) =====
+
+\ K=2, reference class 0, is exactly binary logistic — equals fit-logistic-ridge lambda 0
+bin-X bin-y 0 100 1e-10 fit-multinomial transpose . cr                    \ [-2.673 0.5941]
+bin-X bin-y 100 1e-10 0 fit-logistic-ridge transpose . cr                 \ same beta
+
+\ predict-multinomial's class-1 column equals sigmoid(Xβ)
+bin-X bin-y 0 100 1e-10 fit-multinomial bin-X 0 predict-multinomial 1 @j transpose . cr
+
+\ intercept-only, beta = [ln2 ln3] so weights 2 and 3, reference weight 1, total 6;
+\ moving the reference class relabels the columns, all in label order 0..K-1
+[ 0.6931471805599453 1.0986122886681098 ] 1 2 matrix to mn-beta
+mn-beta [ 1 ] 1 1 matrix 0 predict-multinomial . cr                       \ .1667 .3333 .5
+mn-beta [ 1 ] 1 1 matrix 1 predict-multinomial . cr                       \ .3333 .1667 .5
+mn-beta [ 1 ] 1 1 matrix 2 predict-multinomial . cr                       \ .3333 .5 .1667
+
+\ K=3 non-separable converges; predicted probabilities sum to 1
+[ 1 2 3 4 5 6 7 8 9 10 11 12 ] 12 1 matrix with-intercept to mn-X
+[ 0 1 2 0 1 2 0 1 2 0 1 2 ] 12 1 matrix to mn-y
+mn-X mn-y 0 100 1e-8 fit-multinomial mn-X 0 predict-multinomial row-sums 1 - dup * sum . cr  \ ~0
+
+\ ridge: lambda 0 reproduces the plain MLE
+bin-X bin-y 0 100 1e-10 0 fit-multinomial-ridge transpose . cr            \ [-2.673 0.5941], same as plain
+
+\ perfectly separable 3-class data — the plain MLE diverges, ridge stays finite and converges
+[ 1 2 3  4 5 6  7 8 9 ] 9 1 matrix with-intercept to sep-X
+[ 0 0 0  1 1 1  2 2 2 ] 9 1 matrix to sep-y
+sep-X sep-y 0 100 1e-8 1 fit-multinomial-ridge sep-X 0 predict-multinomial row-sums 1 - dup * sum . cr  \ ~0
+
+\ a reference class absent from y is rejected
+[: bin-X bin-y 5 100 1e-10 fit-multinomial :] [: . cr :] try-catch   \ (reference class 5 has no observations in y)
