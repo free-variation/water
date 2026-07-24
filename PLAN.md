@@ -36,7 +36,9 @@ only the element-wise words. The small C beyond the kernels:
 `exp`/`tanh`; `qnorm` covers the quantile inverse), the
 empirical-distribution statistics
 (§5 — `ks`, `cvm`, `ad`, `wasserstein`, each a small
-one-pass kernel), and `row-argmins` with its argmax and column twins
+one-pass kernel), `cumulative-product` (`cumulative-sum`'s twin — survival
+curves S(t) = ∏(1−hazard) then compose at library level), and `row-argmins`
+with its argmax and column twins
 (index-returning kin of `row-mins`, one pass — k-means' assignment step
 needs the per-row index the flat `argmin` does not return). Gaussian
 mixtures (§1) add no C, only a `dpotrf`/`dpotrs` export to the lapacke
@@ -96,9 +98,13 @@ warrant their own files rather than statistics.h2o.
 
 - **fit-weighted** — name the sqrt-w row-scaling idiom inside `fit-logistic`
   as ( X y w -- beta ).
+- **group-demean** — the within (fixed-effects) transform: subtract group
+  means, composed over `group-indices`; dataset tooling (datasets.h2o) that
+  reduces a high-cardinality-dummy regression to a small one.
 - **More GLM families** — probit (needs an element-wise `erf`/normal-CDF C
   word; `qnorm` covers the quantile side), negative binomial (estimate the
-  dispersion), and ordinal logistic (cumulative-logit / proportional-odds).
+  dispersion), cloglog (the discrete-time hazard's canonical link; element-wise
+  words only), and ordinal logistic (cumulative-logit / proportional-odds).
 - **Ridge** — singular-value filtering σ/(σ²+λ) on the design; λ chosen by
   cross-validation (§3).
 - **LDA** — within-class whitening + SVD of the class means.
@@ -131,7 +137,14 @@ tables stay out.
   accuracy, and confusion counts as element-wise ops; AUC as a rank
   statistic (argsort — Mann–Whitney's twin); ROC and calibration curves
   as cumulative counts over the argsort order; isotonic calibration
-  (PAVA) as a library pass.
+  (PAVA) as a library pass; Brier score (element-wise); MASE against a
+  seasonal-naïve reference (rolling-origin evaluation is `cross-validate`
+  with ordered units — only the metric is new).
+- **Cluster units and weight multipliers** — the index generators must cover
+  cluster resampling (index-array units, as `bootstrap` consumers already
+  use) and the weight-multiplier variant: Rademacher weights on per-cluster
+  residuals — the wild cluster bootstrap, the standard inference when
+  clusters are few. Cluster jackknife falls out of the same units shape.
 - **Rank statistics** — build Wilcoxon / Mann–Whitney and Kruskal–Wallis as
   rank statistics with permutation nulls, over the `ranks` word spearman
   uses. Midranks for ties (§2b) feed directly into these.
