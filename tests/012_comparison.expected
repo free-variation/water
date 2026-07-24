@@ -36,4 +36,20 @@
           0
           2
 
+1 1 0 
+0 1 1 
+1 0 
+1 0 
+<matrix 3x1>
+          1
+          1
+          0
+
+<matrix 3x1>
+          0
+          1
+          1
+
+1 
+1 
 error: length mismatch (2 vs 3)

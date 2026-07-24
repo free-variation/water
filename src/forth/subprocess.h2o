@@ -35,8 +35,8 @@
 : parallel-run
   | command-count slot-count results slotprocs slot-commands next-command completed-count >commands >width |
   commands size to command-count
-  width 1 lt if 1 to width then
-  width command-count lt if width else command-count then to slot-count
+  width 1 < if 1 to width then
+  width command-count < if width else command-count then to slot-count
   null command-count array-of to results
   null slot-count array-of to slotprocs
   0 slot-count array-of to slot-commands
@@ -47,7 +47,7 @@
   :] slot-count i-times
   slot-count to next-command
   0 to completed-count
-  begin completed-count command-count lt while
+  begin completed-count command-count < while
     [: | proc command-index >slot |
       slotprocs slot @i to proc
       proc null = not if
@@ -55,7 +55,7 @@
           slot-commands slot @i to command-index
           results command-index { :out proc read-out :err proc read-err :status proc :pid @ wait } !i drop
           completed-count 1 + to completed-count
-          next-command command-count lt if
+          next-command command-count < if
             commands next-command @i start-process to proc
             slotprocs slot proc !i drop
             slot-commands slot next-command !i drop

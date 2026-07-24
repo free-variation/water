@@ -3,12 +3,12 @@
 [ 1 2 3 4 5 6 7 8 9 10 11 12 13 ] .
 [ 1 2 3 4 5 6 7 8 9 10 11 12 13 14 ] .
 [ 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 ] .
-< 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 > .
+[< 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 >] .
 
 clear
 [ 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 ] dup . cr .a
 [ 1 2 3 ] .a
-< 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 > .a
+[< 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 >] .a
 
 clear
 \ render ( v -- s ) — the text `.` would print, returned on the stack instead
@@ -30,7 +30,7 @@ _ render "_" = . cr
 \ --- single-line collections ---
 [ ] render "[ ]" = . cr
 [ 1 2 3 ] render "[ 1 2 3 ]" = . cr
-< 3 1 2 > render "< 1 2 3 >" = . cr
+[< 3 1 2 >] render "[< 1 2 3 >]" = . cr
 [( 1 2 3 )] render "[( 1 2 3 )]" = . cr
 
 \ --- strings render raw at top level but quoted inside a collection ---

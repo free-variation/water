@@ -5,7 +5,7 @@
 "s" type-of . cr                       \ :string
 :k type-of . cr                        \ :symbol
 [ 1 ] type-of . cr                     \ :array
-< 1 > type-of . cr                     \ :set
+[< 1 >] type-of . cr                     \ :set
 [( 1 2 )] type-of . cr                 \ :pair
 { :a 1 } type-of . cr                  \ :frame
 [ 1 2 3 4 ] 2 2 matrix type-of . cr    \ :matrix
@@ -32,7 +32,7 @@ ex nip type-of . cr                    \ :continuation
 "s" type-of symbol? . cr               \ 1
 
 \ one lib predicate per type; each is type-of against the matching symbol
-1 float? . "s" string? . :k symbol? . [ ] array? . < > set? . [( 1 2 )] pair? . cr   \ 1 1 1 1 1 1
+1 float? . "s" string? . :k symbol? . [ ] array? . [< >] set? . [( 1 2 )] pair? . cr   \ 1 1 1 1 1 1
 { } frame? . [ 1 ] 1 1 matrix matrix? . 10 m quantity? . ' dup xt? . cr             \ 1 1 1 1
 3 double-segment segment? . null none? . _ wildcard? . lvar lvar? . cr              \ 1 1 1 1
 1 string? . "s" float? . :k lvar? . cr                                              \ 0 0 0

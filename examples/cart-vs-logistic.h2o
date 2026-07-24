@@ -9,7 +9,7 @@
 \
 \ Get the data with (comma-space CSV -> headered TSV, target mapped to 0/1):
 \   curl -s https://archive.ics.uci.edu/ml/machine-learning-databases/adult/adult.data \
-\     | grep -v '^$' | sed 's/, /\t/g; s/\t<=50K$/\t0/; s/\t>50K$/\t1/' > /tmp/body
+\     | grep -v '^$' | sed 's/, /\t/g; s/\t<=50K$/\t0/; s/\t>50K$/\t1/' >] /tmp/body
 \   then prepend a tab-separated header line and save as data/adult.tsv.
 
 "lib/statistics.h2o" load
@@ -58,11 +58,11 @@ train-design train-y 100 1e-8 best-lambda fit-logistic-ridge to beta
 \ --- evaluate on the held-out test rows ---
 "chosen ridge lambda: " . best-lambda . cr
 "                 Brier     accuracy" . cr
-"CART:       " . cart-yhat     test-y - dup * mean . "  " . 1 cart-yhat     0.5 gt test-y - abs mean - . cr
-"logistic:   " . logistic-yhat test-y - dup * mean . "  " . 1 logistic-yhat 0.5 gt test-y - abs mean - . cr
+"CART:       " . cart-yhat     test-y - dup * mean . "  " . 1 cart-yhat     0.5 > test-y - abs mean - . cr
+"logistic:   " . logistic-yhat test-y - dup * mean . "  " . 1 logistic-yhat 0.5 > test-y - abs mean - . cr
 
 \ --- plots: the tree as a node-link diagram, the logistic scores as a histogram ---
 tree draw-tree
 tree plot-tree drop  "cart-tree" save-figure
-640 480 figure  logistic-yhat 30 histogram  "P(income > 50K)" x-label  "logistic-scores" save-figure
+640 480 figure  logistic-yhat 30 histogram  "P(income >] 50K)" x-label  "logistic-scores" save-figure
 "wrote images-cart-tree/*.svg and images-logistic-scores/*.svg" . cr

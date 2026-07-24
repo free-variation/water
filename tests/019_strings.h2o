@@ -94,7 +94,7 @@ clear
 \ errors
 "hello" 0 6 substring             \ end past length
 "hello" -1 3 substring            \ negative start
-"hello" 3 1 substring             \ start > end
+"hello" 3 1 substring             \ start >] end
 5 0 1 substring                   \ not a string
 
 \ --- multibyte: substring is codepoint-indexed; byte-substring is byte-indexed.

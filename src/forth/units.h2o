@@ -85,7 +85,7 @@ inline
 		months 12 quotient to year
 		months 12 mod 1 + to month
 		year month days-in-month to day-of-month
-		date :day @ day-of-month lt if date :day @ to day-of-month then
+		date :day @ day-of-month < if date :day @ to day-of-month then
 		{ :year year :month month :day day-of-month
 		  :hour date :hour @ :minute date :minute @ :second date :second @ } date>epoch to instant
 	then

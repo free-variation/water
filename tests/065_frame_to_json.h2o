@@ -43,5 +43,5 @@ b" frame>json . cr
 "{""a"": 1}" json>frame frame>json "{""a"": 1}" = . cr
 
 \ --- errors ---
-< 1 2 3 > frame>json
+[< 1 2 3 >] frame>json
 :foo frame>json

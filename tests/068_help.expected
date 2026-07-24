@@ -56,7 +56,7 @@ water — a quick start:
   .s                 show the whole stack (clear empties it)
   [ 1 2 3 ]          an array
   { :a 1 }           a frame (symbol-keyed)
-  < 1 2 3 >          a set
+  [< 1 2 3 >]          a set
   : sq dup * ;       define a word
   5 sq .             run it (prints 25)
   words              list every word

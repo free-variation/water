@@ -4,8 +4,8 @@
 
 \ === clocks ================================================================
 wall-now quantity? . cr                                  \ 1
-wall-now 0 s gt . cr                                     \ 1
-wall-now epoch>date :year @ 2025 gt . cr                 \ 1
+wall-now 0 s > . cr                                     \ 1
+wall-now epoch>date :year @ 2025 > . cr                 \ 1
 
 \ === epoch>date: decomposition ============================================
 0 s epoch>date . cr

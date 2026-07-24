@@ -68,7 +68,7 @@ db "SELECT name, name FROM t" [ ] db-query>dataset dup keys . :name @ size . cr
 \ === corner cases: each error recovers and the run continues ===
 db "SELECT * FROM t WHERE id = ?" [ ] db-query drop
 db "SELECT * FROM t" [ 1 ] db-query drop
-db "SELECT ?" [ < 1 2 > ] db-query drop
+db "SELECT ?" [ [< 1 2 >] ] db-query drop
 42 db-close
 db "SELCT oops" [ ] db-query drop
 db "SELCT oops" [ ] db-query>dataset drop

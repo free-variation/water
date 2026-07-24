@@ -2,7 +2,7 @@
 \ first element for which cont succeeds, fail if none do.
 
 \ commits to the first element greater than 3
-[( 1 2 3 4 5 null )] [: |> x | x 3 gt if x . else fail then :] choose cr
+[( 1 2 3 4 5 null )] [: |> x | x 3 > if x . else fail then :] choose cr
 
 \ a single-element list
 [( 9 null )] [: |> x | x . :] choose cr

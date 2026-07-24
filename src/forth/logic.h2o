@@ -21,13 +21,13 @@ inline
 : relation
 	{ } [> index col | index col { } ! :] reduce
 	>side
-	{ :rows < > :index side> } ;
+	{ :rows [< >] :index side> } ;
 
 ( column-index indexed-value row -- ) \ add row to the value's bucket in one column's index, creating the bucket if absent
 : bucket-add!
 	|> column-index indexed-value row |
 	column-index indexed-value has? not if
-		column-index indexed-value < > ! drop
+		column-index indexed-value [< >] ! drop
 	then
 	column-index indexed-value @ row set-add! drop ; internal
 
@@ -57,12 +57,12 @@ inline internal
 : bucket-of
 	|> rel pattern col |
 	rel :index @ col @  pattern col @ ?
-	2dup has? if @ else 2drop < > then ; internal
+	2dup has? if @ else 2drop [< >] then ; internal
 
 ( [sets] -- set ) \ the smallest set in a non-empty array
 : smallest-set
 	dup 0 @i
-	[> smallest candidate | smallest size candidate size lt if smallest else candidate then :] reduce ; internal
+	[> smallest candidate | smallest size candidate size < if smallest else candidate then :] reduce ; internal
 
 ( rel pattern -- candidate-rows ) \ :rows narrowed by the grounded indexed columns, intersected smallest-first
 : candidates

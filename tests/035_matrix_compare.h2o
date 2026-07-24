@@ -1,4 +1,4 @@
-\ = is structural on matrices (shape then contents); lt/gt are element-wise.
+\ = is structural on matrices (shape then contents); </> are element-wise.
 
 \ = : identical matrices are equal
 [ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 ] 2 2 matrix = . cr       \ 1
@@ -7,16 +7,16 @@
 \ = : differing shape -> not equal
 [ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 5 6 ] 2 3 matrix = . cr   \ 0
 
-\ lt/gt : element-wise, a 1.0/0.0 matrix
-[ 1 5 3 ] 1 3 matrix [ 2 4 3 ] 1 3 matrix lt .            \ [1 0 0]
-[ 1 5 3 ] 1 3 matrix [ 2 4 3 ] 1 3 matrix gt .            \ [0 1 0]
+\ </> : element-wise, a 1.0/0.0 matrix
+[ 1 5 3 ] 1 3 matrix [ 2 4 3 ] 1 3 matrix < .            \ [1 0 0]
+[ 1 5 3 ] 1 3 matrix [ 2 4 3 ] 1 3 matrix > .            \ [0 1 0]
 \ scalar broadcast
-[ 1 2 3 4 ] 2 2 matrix 3 lt .                             \ matrix < scalar -> [[1 1][0 0]]
-2 [ 1 2 3 4 ] 2 2 matrix lt .                            \ scalar < matrix -> [[0 0][1 1]]
-[ 1 2 3 4 ] 2 2 matrix 2 gt .                            \ matrix > scalar -> [[0 0][1 1]]
+[ 1 2 3 4 ] 2 2 matrix 3 < .                             \ matrix [< scalar -> [[1 1][0 0]]
+2 [ 1 2 3 4 ] 2 2 matrix < .                            \ scalar [< matrix -> [[0 0][1 1]]
+[ 1 2 3 4 ] 2 2 matrix 2 > .                            \ matrix >] scalar -> [[0 0][1 1]]
 \ mismatched shapes -> error
-[ 1 2 ] 1 2 matrix [ 1 2 3 ] 1 3 matrix lt .             \ error: shapes differ
+[ 1 2 ] 1 2 matrix [ 1 2 3 ] 1 3 matrix < .             \ error: shapes differ
 
-\ matrices still order for set membership (via val_cmp, not the lt word)
+\ matrices still order for set membership (via val_cmp, not the < word)
 [ 1 2 3 4 ] 2 2 matrix [ 1 2 3 5 ] 2 2 matrix 2 set size . cr  \ 2
 [ 1 2 3 4 ] 2 2 matrix [ 1 2 3 4 ] 2 2 matrix 2 set size . cr  \ 1

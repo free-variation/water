@@ -6,7 +6,7 @@
 [ 10 20 30 40 50 ] 3 false sample . cr   \ without replacement: distinct elements
 [ 1 2 3 4 ] 4 false sample . cr          \ full permutation (n = size, no replacement)
 [ 1 2 3 4 ] 0 true sample . cr           \ count 0 -> empty array
-< 7 8 9 > 2 false sample . cr            \ from a set -> array of elements
+[< 7 8 9 >] 2 false sample . cr            \ from a set -> array of elements
 [ "a" "b" "c" ] 4 true sample . cr       \ non-numeric elements, with replacement
 [ ] 5 true sample . cr                   \ empty collection -> empty array
 
@@ -17,7 +17,7 @@
 \ resample (lib): a same-size draw with replacement; input untouched
 [ 10 20 30 40 ] dup resample . cr
 . cr                                     \ the source array is unchanged
-< 5 6 7 > resample . cr                  \ from a set -> array of elements
+[< 5 6 7 >] resample . cr                  \ from a set -> array of elements
 [ ] resample . cr                        \ empty -> empty
 
 \ error cases

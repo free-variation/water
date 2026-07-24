@@ -3,7 +3,7 @@
 \ lands in the last bin; a constant vector takes the range value +/- 1.
 : histogram-table
 	| >data >n-bins low high bin-width counts n-values i bin tally |
-	n-bins 1 lt if n-bins "histogram-table: expected at least 1 bin; got {0}" format throw then
+	n-bins 1 < if n-bins "histogram-table: expected at least 1 bin; got {0}" format throw then
 	data as-column drop-nans to data
 	data num-elements to n-values
 	n-values 0= if "histogram-table: no finite values" throw then
@@ -13,9 +13,9 @@
 	high low - n-bins / to bin-width
 	n-bins 1 0-matrix to counts
 	0 to i
-	begin i n-values lt while
+	begin i n-values < while
 		data i @e low - bin-width / round-down to bin
-		bin n-bins 1 - gt if n-bins 1 - to bin then
+		bin n-bins 1 - > if n-bins 1 - to bin then
 		counts bin @e 1+ to tally
 		counts bin tally !e drop
 		f++ i
@@ -35,14 +35,14 @@
 \ [1e-12, 1-1e-12] so overconfidence scores badly instead of dropping ln 0 terms
 : binomial-deviance
 	| >y >p |
-	p dup 1e-12 lt 1e-12 mesh  dup 1 1e-12 - gt 1 1e-12 - mesh to p
+	p dup 1e-12 < 1e-12 mesh  dup 1 1e-12 - > 1 1e-12 - mesh to p
 	y p ln *  1 y -  1 p - ln  *  +  sum  -2 * ;
 
 ( units n-folds -- folds ) \ round-robin deal in the given order: [ [train test] .. ]
 : cv-folds
 	| >units >n-folds positions |
-	n-folds 2 lt if n-folds "cross-validate: expected at least 2 folds; got {0}" format throw then
-	units size n-folds lt if units size n-folds "cross-validate: {0} folds exceed {1} units" format throw then
+	n-folds 2 < if n-folds "cross-validate: expected at least 2 folds; got {0}" format throw then
+	units size n-folds < if units size n-folds "cross-validate: {0} folds exceed {1} units" format throw then
 	units size iota to positions
 	n-folds iota
 	[> f |
@@ -84,7 +84,7 @@
 	| >v n-finite n-missing |
 	v nonmissing-count to n-finite
 	v num-elements n-finite - to n-missing
-	n-finite 0 gt if
+	n-finite 0 > if
 		{ :min v min
 		  :q1 v 0.25 quantile
 		  :median v median
@@ -94,7 +94,7 @@
 	else
 		{ }
 	then
-	n-missing 0 gt if :missing n-missing ! then ; internal
+	n-missing 0 > if :missing n-missing ! then ; internal
 
 ( v -- fr ) \ the vector summary with each instant statistic rendered through time>iso
 : datetime-summary
@@ -112,7 +112,7 @@
 	cells size 0= if { } exit then
 	cells nan? sum to n-missing
 	{ :distinct cells [: none? not :] filter array>set size }
-	n-missing 0 gt if :missing n-missing ! then ; internal
+	n-missing 0 > if :missing n-missing ! then ; internal
 
 ( column -- fr ) \ summary by column representation
 : column-summary
@@ -123,7 +123,7 @@
 	| >dataset unfit-columns |
 	dataset keys
 	[: dataset swap @ dup numeric-column? swap array? or not :] filter to unfit-columns
-	unfit-columns size 0 gt if
+	unfit-columns size 0 > if
 		dataset unfit-columns 0 @i @ type-of
 		unfit-columns 0 @i
 		"summary: column :{0} holds {1}; expected a matrix, quantity, or array" format throw
@@ -178,7 +178,7 @@
 : column>indicators
 	| >column levels |
 	column column>array [: none? not :] filter array>set sort to levels
-	levels size 2 lt if "column>indicators: needs at least 2 distinct values" throw then
+	levels size 2 < if "column>indicators: needs at least 2 distinct values" throw then
 	levels 1 skip
 	[: column swap eq :] map
 	dup 0 @i swap 1 skip swap [: augment :] reduce ;
@@ -188,7 +188,7 @@
 : indicators!
 	| >design >column >prefix levels |
 	column column>array [: none? not :] filter array>set sort to levels
-	levels size 2 lt if "indicators!: needs at least 2 distinct values" throw then
+	levels size 2 < if "indicators!: needs at least 2 distinct values" throw then
 	levels 1 skip
 	[> level |
 		design  prefix level "{1}={0}" format string>symbol  column level eq  ! :]
@@ -282,9 +282,9 @@
 ( probability -- z ) \ standard normal quantile (inverse CDF); Acklam's rational approximation
 : qnorm
 	| >probability median-deviation squared-deviation |
-	probability 0 gt probability 1 lt and not if probability "qnorm: expected a probability in (0, 1); got {0}" format throw then
-	probability 0.02425 lt if probability ln -2 * sqrt qnorm-tail exit then
-	probability 0.97575 gt if 1 probability - ln -2 * sqrt qnorm-tail negate exit then
+	probability 0 > probability 1 < and not if probability "qnorm: expected a probability in (0, 1); got {0}" format throw then
+	probability 0.02425 < if probability ln -2 * sqrt qnorm-tail exit then
+	probability 0.97575 > if 1 probability - ln -2 * sqrt qnorm-tail negate exit then
 
 	probability 0.5 - to median-deviation
 	median-deviation dup * to squared-deviation
@@ -324,7 +324,7 @@
 			dup nan? node :default has? and if
 				drop node :default @ :right =
 			else
-				node :threshold @ gt
+				node :threshold @ >
 			then
 		else
 			node :categories @  column i @i  member? not
@@ -361,7 +361,7 @@
 : feature-importance
 	| >tree accumulator total |
 	{ } tree accumulate-gain to accumulator
-	accumulator keys size 0 gt if
+	accumulator keys size 0 > if
 		accumulator values vector sum to total
 		accumulator keys [> key | accumulator key  accumulator key @ total /  ! drop :] each
 	then
@@ -382,7 +382,7 @@
 	left-gain + right-gain + to subtree-gain
 	left-leaves right-leaves + to subtree-leaves
 
-	subtree-gain  alpha subtree-leaves 1 - *  gt not if
+	subtree-gain  alpha subtree-leaves 1 - *  > not if
 		{ :prediction node :prediction @ :n_rows node :n_rows @ }  0  1
 	else
 		node :left left-node !  :right right-node !
@@ -410,7 +410,7 @@
 \ full tree) included; pruning at each yields the nested sequence of candidate subtrees
 : alpha-sequence
 	| >tree acc |
-	< 0 > to acc
+	[< 0 >] to acc
 	tree acc collect-alphas 2drop
 	acc ; internal
 
@@ -448,7 +448,7 @@
 	stats best @i 1 @i  stats best @i 2 @i  +  to threshold
 
 	full-tree
-	stats [: 1 @i threshold gt not :] filter  dup size 1 - @i  0 @i
+	stats [: 1 @i threshold > not :] filter  dup size 1 - @i  0 @i
 	prune ;
 
 ( node depth -- ) \ print node's subtree as indented split rules, left branch first; internal

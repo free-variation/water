@@ -83,13 +83,13 @@ clear
 clear
 
 \ === early exit unwinds the anaphor frame ===
-: early it 5 gt if "big" exit then it 2 * ;
+: early it 5 > if "big" exit then it 2 * ;
 9 early . cr           \ big
 3 early . cr           \ 6
 clear
 
 \ === recursion rebinds per activation ===
-: countdown it 0 gt if it 1 - countdown then ;
+: countdown it 0 > if it 1 - countdown then ;
 3 countdown .s cr      \ 3 2 1 0 (it is non-consuming; one entry value per activation)
 clear
 

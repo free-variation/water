@@ -62,10 +62,10 @@ clear
 
 clear
 \ === dimensioned comparisons answer element-wise bare masks ===
-[ 12 8 15 ] vector $ 10 $ lt transpose . cr                    \ 0 1 0
-[ 1200 800 ] vector ¢ 10 $ lt transpose . cr                    \ 0 1 (scale normalized)
-[ 12 8 15 ] vector $ dup 10 $ lt 5 $ mesh transpose . cr       \ prices below 10 $ set to 5 $
-1 hour 1 s gt . cr                                             \ 1 (scalars stay structural)
+[ 12 8 15 ] vector $ 10 $ < transpose . cr                    \ 0 1 0
+[ 1200 800 ] vector ¢ 10 $ < transpose . cr                    \ 0 1 (scale normalized)
+[ 12 8 15 ] vector $ dup 10 $ < 5 $ mesh transpose . cr       \ prices below 10 $ set to 5 $
+1 hour 1 s > . cr                                             \ 1 (scalars stay structural)
 
 clear
 \ === errors ===

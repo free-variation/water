@@ -106,7 +106,7 @@
 
 \ ---- failures ----
 "x" max
-< 1 2 > min
+[< 1 2 >] min
 [ 1 2 3 ] row-maxes
 
 \ norm / frobenius-norm: sqrt of the sum of squared elements (Euclidean/Frobenius).

@@ -26,7 +26,7 @@
 5 read
 
 \ --- cwd ( -- path ): current working directory, non-empty.
-cwd size 0 gt . cr
+cwd size 0 > . cr
 \ --- cd ( path -- ): change working dir; root "/" is portable across machines.
 "/" cd cwd "/" = . cr
 \ --- cd is inherited by children across fork.
@@ -162,7 +162,7 @@ p :pid @ running? .  cr          \ 0
 "x" running?
 
 \ M11: a non-positive pid would broadcast (kill(0)=process group, kill(-1)=everyone);
-\ a spawned child is always > 0, so stop/wait reject pid <= 0 before kill/waitpid.
+\ a spawned child is always >] 0, so stop/wait reject pid <= 0 before kill/waitpid.
 0 stop
 -1 stop
 0 wait

@@ -62,7 +62,7 @@ clear
 \ ---- failures ----
 "x" abs
 "x" sqrt
-< 1 2 > exp
+[< 1 2 >] exp
 
 clear
 \ round (nearest, half away from zero), round-up (ceil), round-down (floor),

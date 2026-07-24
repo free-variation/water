@@ -41,7 +41,7 @@
 { :a 1 } { :a 2 } = . cr
 
 \ equal frames dedup as set members
-< { :a 1 } { :a 1 } > . cr
+[< { :a 1 } { :a 1 } >] . cr
 
 \ ! : single-key set, leaves the frame
 { :a 1 } [ :b ] 2 ! . cr
@@ -96,7 +96,7 @@
 { :x 1 :y 2 } dup keys swap values frame . cr
 
 \ frame : a set of symbols works as the keys list
-< :b :a > [ 1 2 ] frame . cr
+[< :b :a >] [ 1 2 ] frame . cr
 
 \ frame : mismatched lengths error
 [ :a ] [ 1 2 ] frame . cr

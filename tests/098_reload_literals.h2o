@@ -4,4 +4,4 @@
 \ object (n_objects=0), dangling that literal, so run/ls broke after a reload.
 \ Now objects below the init watermark survive. Non-empty output (1) proves it.
 reload
-"echo marker" run read-out size 0 gt . cr
+"echo marker" run read-out size 0 > . cr

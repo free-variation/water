@@ -85,7 +85,7 @@ variable U  variable S  variable Vt
     | >scores |
     0 scores size 1- range
     [: | >i | { :book i  :score scores i @i } :] map
-    [: | >a >b | a :score @  b :score @  gt :] sort-with ;
+    [: | >a >b | a :score @  b :score @  > :] sort-with ;
 
 : top-books ( pairs[] -- ids[] )
     top-n take

@@ -13,6 +13,6 @@ Y ? . cr                             \ [( 1 2 3 null )]  binding + pair survived
 
 \ a backtracking search that forces a GC at every step, with the captured
 \ continuation held live throughout; commit to the first option over 4
-[( 1 2 3 4 5 null )] [: |> opt | gc opt 4 gt if opt else fail then :] choose . cr   \ 5
+[( 1 2 3 4 5 null )] [: |> opt | gc opt 4 > if opt else fail then :] choose . cr   \ 5
 50 k resume . cr                     \ 51  held continuation survived the search
 bye

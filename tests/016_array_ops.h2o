@@ -39,7 +39,7 @@ clear
 [ 1 2 3 4 5 ] 0 take .
 [ 1 2 3 4 5 ] 5 take .
 
-\ clamp: n > length yields the whole array
+\ clamp: n >] length yields the whole array
 [ 1 2 3 ] 99 take .
 
 \ clamp: negative n yields the empty array
@@ -49,7 +49,7 @@ clear
 [ ] 3 take .
 
 \ set source produces an array of the first n in sorted order
-< 5 1 3 2 4 > 3 take .
+[< 5 1 3 2 4 >] 3 take .
 
 \ result is consumed: stack shape is ( source n -- result )
 1 2 3 [ 10 20 30 40 ] 2 take .
@@ -74,7 +74,7 @@ clear
 [ 1 2 3 4 5 ] reverse reverse .
 
 \ set source produces an array of items in reverse sorted order
-< 5 1 3 2 4 > reverse .
+[< 5 1 3 2 4 >] reverse .
 
 \ composes
 [ 1 2 3 4 5 ] reverse 3 take .
@@ -106,7 +106,7 @@ clear
 [ ] 3 skip .
 
 \ set source: yields the trailing portion of the sorted items as an array
-< 5 1 3 2 4 > 2 skip .
+[< 5 1 3 2 4 >] 2 skip .
 
 \ composes
 [ 1 2 3 4 5 6 ] 2 skip size .
@@ -120,7 +120,7 @@ clear
 [ 1 2 3 4 5 ] 0 last .
 [ 1 2 3 4 5 ] 5 last .
 
-\ clamp: n > length yields the whole array
+\ clamp: n >] length yields the whole array
 [ 1 2 3 ] 99 last .
 
 \ empty source
@@ -149,9 +149,9 @@ clear
 [ 1 2 3 ] dup concat .
 
 \ set source on either side: items in stored (sorted) order, result is an array
-< 5 1 3 > [ 7 8 ] concat .
-[ 0 ] < 5 1 3 > concat .
-< 1 2 > < 3 4 > concat .
+[< 5 1 3 >] [ 7 8 ] concat .
+[ 0 ] [< 5 1 3 >] concat .
+[< 1 2 >] [< 3 4 >] concat .
 
 \ stack shape: ( a b -- ab )
 9 [ 1 2 ] [ 3 4 ] concat .
@@ -183,7 +183,7 @@ clear concat
 
 clear
 \ sort ( arr -- arr ): a NEW array ordered by the system total order (val_cmp) —
-\ the same order =, lt, and sets use. Duplicates are kept; the source is unchanged.
+\ the same order =, <, and sets use. Duplicates are kept; the source is unchanged.
 
 \ floats: ascending, duplicates kept, negatives and non-integers
 [ 3 1 2 1 3 ] sort . cr             \ [ 1 1 2 3 3 ]
@@ -204,7 +204,7 @@ clear
 \ strings: lexicographic; a prefix sorts before its extension; duplicates kept
 [ "pear" "apple" "ab" "a" "apple" ] sort . cr
 
-\ mixed tags group in tag order (float < string), ordered within each tag
+\ mixed tags group in tag order (float [< string), ordered within each tag
 [ "z" 3 1 "a" 2 ] sort . cr         \ [ 1 2 3 "a" "z" ]
 
 \ nested arrays compared element-wise (val_cmp recurses; shorter prefix first)
@@ -215,7 +215,7 @@ clear
 [ :gamma :alpha :beta ] sort . cr
 
 \ a set yields its elements as an array
-< 3 1 2 > sort . cr                 \ [ 1 2 3 ]  already ordered, projected to an array
+[< 3 1 2 >] sort . cr                 \ [ 1 2 3 ]  already ordered, projected to an array
 
 \ a vector sorts ascending, shape preserved, source untouched; NaNs go last
 [ 2 1 ] vector sort .
@@ -271,20 +271,20 @@ clear
 \ Sorts by val_cmp, dedups equal elements, and does not mutate the source array.
 
 \ === ordering and dedup on floats ===
-[ 3 1 2 ] array>set . cr                       \ < 1 2 3 >
-[ 1 2 3 ] array>set . cr                       \ < 1 2 3 >    already sorted
-[ 3 2 1 ] array>set . cr                       \ < 1 2 3 >    reversed
-[ ] array>set . cr                             \ < >          empty
-[ 5 ] array>set . cr                           \ < 5 >        singleton
-[ 7 7 7 7 ] array>set . cr                     \ < 7 >        all duplicates collapse
+[ 3 1 2 ] array>set . cr                       \ [< 1 2 3 >]
+[ 1 2 3 ] array>set . cr                       \ [< 1 2 3 >]    already sorted
+[ 3 2 1 ] array>set . cr                       \ [< 1 2 3 >]    reversed
+[ ] array>set . cr                             \ [< >]          empty
+[ 5 ] array>set . cr                           \ [< 5 >]        singleton
+[ 7 7 7 7 ] array>set . cr                     \ [< 7 >]        all duplicates collapse
 [ 3 1 2 1 3 2 ] array>set size . cr            \ 3            dedup count
-[ -2 0 -5 3 -2 ] array>set . cr                \ < -5 -2 0 3 >  negatives, with a dup
+[ -2 0 -5 3 -2 ] array>set . cr                \ [< -5 -2 0 3 >]  negatives, with a dup
 
 \ === strings sort lexicographically and dedup by content ===
-[ "c" "a" "b" "a" ] array>set . cr             \ < "a" "b" "c" >
+[ "c" "a" "b" "a" ] array>set . cr             \ [< "a" "b" "c" >]
 
-\ === mixed types sort by tag (symbol < float < string) ===
-[ "x" 5 :a ] array>set . cr                    \ < :a 5 "x" >
+\ === mixed types sort by tag (symbol [< float [< string) ===
+[ "x" 5 :a ] array>set . cr                    \ [< :a 5 "x" >]
 
 \ === null (T_NONE) sorts first and dedups ===
 [ null 1 null 2 ] array>set size . cr          \ 3            two nulls collapse to one
@@ -292,7 +292,7 @@ clear
 \ === structural dedup of nested collections ===
 [ [ 1 2 ] [ 1 2 ] ] array>set size . cr        \ 1            equal arrays dedup
 [ [ 1 2 ] [ 1 3 ] ] array>set size . cr        \ 2            distinct arrays kept
-[ < 1 2 > < 2 1 > ] array>set size . cr        \ 1            equal sets dedup
+[ [< 1 2 >] [< 2 1 >] ] array>set size . cr        \ 1            equal sets dedup
 
 \ === the source array is not mutated ===
 [ 3 1 2 ] dup array>set drop . cr              \ [ 3 1 2 ]    original order intact
@@ -300,8 +300,8 @@ clear
 \ === the result is a genuine set: membership and set ops work ===
 [ 3 1 2 ] array>set 2 member? . cr             \ 1
 [ 3 1 2 ] array>set 9 member? . cr             \ 0
-[ 3 1 2 ] array>set < 2 3 4 > intersection . cr  \ < 2 3 >
-[ 3 1 2 1 ] array>set < 1 2 3 > = . cr         \ 1            equal to the set literal
+[ 3 1 2 ] array>set [< 2 3 4 >] intersection . cr  \ [< 2 3 >]
+[ 3 1 2 1 ] array>set [< 1 2 3 >] = . cr         \ 1            equal to the set literal
 
 \ === scale: sorts and dedups at size ===
 0 9999 range array>set size . cr               \ 10000

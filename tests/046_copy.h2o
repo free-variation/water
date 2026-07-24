@@ -5,7 +5,7 @@
 \ --- structural equality across every type ---
 { :a 1 :b 2 } dup copy = . cr            \ -1
 [ 1 2 3 ] dup copy = . cr                \ -1
-< 1 2 3 > dup copy = . cr                \ -1
+[< 1 2 3 >] dup copy = . cr                \ -1
 "hello" dup copy = . cr                  \ -1
 [ 1 2 3 4 ] 2 2 matrix dup copy = . cr   \ -1
 42 dup copy = . cr                       \ -1
@@ -14,10 +14,10 @@
 [ ] dup copy = . cr                      \ -1
 
 \ --- equality of mixed and deeply nested structures ---
-{ :arr [ 1 2 3 ] :set < 4 5 > :sub { :x 9 } :str "hi" } dup copy = . cr   \ -1
+{ :arr [ 1 2 3 ] :set [< 4 5 >] :sub { :x 9 } :str "hi" } dup copy = . cr   \ -1
 { :a { :b { :c { :d 1 } } } } dup copy = . cr                            \ -1
 [ { :a 1 } { :b 2 } ] dup copy = . cr                                    \ -1
-< { :a 1 } { :a 2 } > dup copy = . cr                                    \ -1
+[< { :a 1 } { :a 2 } >] dup copy = . cr                                    \ -1
 
 \ --- independence: mutate the copy via ! at increasing depth, original intact ---
 { :a 1 } dup copy /a 9 ! drop /a @ . cr                  \ 1

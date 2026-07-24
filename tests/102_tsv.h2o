@@ -18,4 +18,4 @@ clear
 
 \ === errors ===
 clear
-[ [ < 1 2 > ] ] "/tmp/lf_tsv_test.tsv" save-tsv  \ a set has no TSV form -> error
+[ [ [< 1 2 >] ] ] "/tmp/lf_tsv_test.tsv" save-tsv  \ a set has no TSV form -> error

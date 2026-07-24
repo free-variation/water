@@ -53,9 +53,9 @@ to aes
 	span n / to raw
 	10 raw log round-down ^ to base
 	raw base / to ratio
-	ratio 1.5 lt if base exit then
-	ratio 3.5 lt if base 2 * exit then
-	ratio 7.5 lt if base 5 * exit then
+	ratio 1.5 < if base exit then
+	ratio 3.5 < if base 2 * exit then
+	ratio 7.5 < if base 5 * exit then
 	base 10 * ; internal
 
 ( x1 y1 x2 y2 stroke width xspace yspace -- )
@@ -276,7 +276,7 @@ to aes
 	low :xmin figure! low n-bins bin-width * + :xmax figure!
 	0 :ymin figure! counts max :ymax figure!
 	0 to i
-	begin i n-bins lt while
+	begin i n-bins < while
 		low i bin-width * + to bar-left
 		bar-left 0 bar-left bin-width + counts i @e
 		:bar-fill figure@ :bar-stroke figure@ 1 :data :data rect-mark
@@ -295,15 +295,15 @@ to aes
 	q3 q1 - 1.5 * to reach
 	q1 reach - to fence-low
 	q3 reach + to fence-high
-	data  data fence-low lt data fence-high gt +  0 eq where select-rows to within
-	data  data fence-low lt data fence-high gt +  where select-rows to outliers
+	data  data fence-low < data fence-high > +  0 eq where select-rows to within
+	data  data fence-low < data fence-high > +  where select-rows to outliers
 	:box-stroke figure@ to box-stroke
 	center-x half-width - q1 center-x half-width + q3
 	"none" box-stroke 1 :data :data rect-mark
 	center-x half-width - q2 center-x half-width + q2 box-stroke 1 :data :data line-mark
 	center-x q3 center-x within max box-stroke 1 :data :data line-mark
 	center-x q1 center-x within min box-stroke 1 :data :data line-mark
-	outliers num-elements 0 gt if
+	outliers num-elements 0 > if
 		{ :kind :points
 		  :xs outliers num-elements 1 0-matrix center-x +
 		  :ys outliers
@@ -336,17 +336,17 @@ to aes
 	n-boxes 0= if "boxplots: no arrays" throw then
 	arrays 0 @i as-column drop-nans dup min swap max to high to low
 	1 to i
-	begin i n-boxes lt while
+	begin i n-boxes < while
 		arrays i @i as-column drop-nans to data
-		data min to bound bound low lt if bound to low then
-		data max to bound bound high gt if bound to high then
+		data min to bound bound low < if bound to low then
+		data max to bound bound high > if bound to high then
 		f++ i
 	repeat
 	0.5 :xmin figure! n-boxes 0.5 + :xmax figure!
 	low high pad-range :ymax figure! :ymin figure!
 	:height figure@ :margin figure@ - 16 + to label-y
 	0 to i
-	begin i n-boxes lt while
+	begin i n-boxes < while
 		arrays i @i i 1 + 0.3 box-at
 		i 1 + label-y labels i @i "middle" :data :pixel text-mark
 		f++ i
@@ -381,11 +381,11 @@ to aes
 	:parts figure@ to parts
 	null to low
 	0 to i
-	begin i parts size lt while
+	begin i parts size < while
 		parts i @i to mark
 		mark space-key :none @or :data = if
 			mark coords-key @ drop-nans to coords
-			coords num-elements 0 gt if
+			coords num-elements 0 > if
 				low null = if
 					coords min to low
 					coords max to high
@@ -471,7 +471,7 @@ to aes
 	xs num-elements to n-points
 
 	0 to i
-	begin i n-points lt while
+	begin i n-points < while
 		xs i @e to x
 		ys i @e to y
 		x nan? y nan? or not if
@@ -521,7 +521,7 @@ to aes
 ( segments run mark -- ) \ append run as one polyline element when it has 2+ points
 : polyline-run
 	|> segments run mark |
-	run size 1 gt if
+	run size 1 > if
 		segments
 		run " " join mark :stroke @ mark :stroke-width @ polyline-element
 		add-last! drop
@@ -536,7 +536,7 @@ to aes
 	[ ] to segments
 	xs num-elements to n-points
 	0 to i
-	begin i n-points lt while
+	begin i n-points < while
 		xs i @e to x
 		ys i @e to y
 		x nan? y nan? or if
@@ -578,16 +578,16 @@ to aes
 	domain :ymin @ to y-low
 	domain :ymax @ to y-high
 	slope 0= if
-		intercept y-low lt intercept y-high gt or if "" exit then
+		intercept y-low < intercept y-high > or if "" exit then
 		intercept to y1
 		intercept to y2
 	else
 		x1 slope * intercept + to y1
 		x2 slope * intercept + to y2
-		y1 y-low lt if y-low intercept - slope / to x1 y-low to y1 then
-		y1 y-high gt if y-high intercept - slope / to x1 y-high to y1 then
-		y2 y-low lt if y-low intercept - slope / to x2 y-low to y2 then
-		y2 y-high gt if y-high intercept - slope / to x2 y-high to y2 then
+		y1 y-low < if y-low intercept - slope / to x1 y-low to y1 then
+		y1 y-high > if y-high intercept - slope / to x1 y-high to y1 then
+		y2 y-low < if y-low intercept - slope / to x2 y-low to y2 then
+		y2 y-high > if y-high intercept - slope / to x2 y-high to y2 then
 		y1 y2 = if "" exit then
 	then
 	x1 x>pixel y1 y>pixel x2 x>pixel y2 y>pixel
@@ -621,7 +621,7 @@ to aes
 	:margin figure@ to top
 	:height figure@ :margin figure@ - to bottom
 	[ ] to elements
-	begin v high step 1e-9 * + gt not while
+	begin v high step 1e-9 * + > not while
 		v x>pixel to pixel-x
 		elements
 		pixel-x top pixel-x bottom mark :stroke @ mark :stroke-width @ line-element
@@ -640,7 +640,7 @@ to aes
 	:margin figure@ to left
 	:width figure@ :margin figure@ - to right
 	[ ] to elements
-	begin v high step 1e-9 * + gt not while
+	begin v high step 1e-9 * + > not while
 		v y>pixel to pixel-y
 		elements
 		left pixel-y right pixel-y mark :stroke @ mark :stroke-width @ line-element
@@ -658,7 +658,7 @@ to aes
 	low step / round-up step * 0 + to v
 	:height figure@ :margin figure@ - to bottom
 	[ ] to elements
-	begin v high step 1e-9 * + gt not while
+	begin v high step 1e-9 * + > not while
 		v x>pixel to pixel-x
 		elements
 		pixel-x bottom pixel-x bottom 5 + mark :stroke @ 1 line-element
@@ -679,7 +679,7 @@ to aes
 	low step / round-up step * 0 + to v
 	:margin figure@ to left
 	[ ] to elements
-	begin v high step 1e-9 * + gt not while
+	begin v high step 1e-9 * + > not while
 		v y>pixel to pixel-y
 		elements
 		left pixel-y left 5 - pixel-y mark :stroke @ 1 line-element
@@ -715,7 +715,7 @@ to aes
 	resolve-domain
 	:width figure@ :height figure@
 	"<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 {1} {0}'>{nl}" format
-	:parts figure@ [: render-mark :] map [: size 0 gt :] filter nl join +
+	:parts figure@ [: render-mark :] map [: size 0 > :] filter nl join +
 	"{nl}</svg>{nl}" format + ;
 
 ( title -- html ) \ carousel viewer: discover N.svg by probing, < > navigate, delete hides from view
@@ -857,7 +857,7 @@ probeNext();setInterval(probeNext,500);
 ( label max -- label' ) \ clip to max codepoints with an ellipsis when longer
 : truncate-label
 	|> label max |
-	label size max gt if  label 0 max 1 - substring "…" +  else label then ; internal
+	label size max > if  label 0 max 1 - substring "…" +  else label then ; internal
 
 ( center-x cy label -- ) \ a node box centered at (center-x, cy) with its label
 : tree-box

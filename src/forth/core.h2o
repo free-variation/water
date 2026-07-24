@@ -90,12 +90,12 @@ inline
 : quotient % swap drop ;
 inline
 
-( a b -- smaller )  \ the lt-ordered lesser of two scalars
-: min2 2dup gt if swap then drop ;
+( a b -- smaller )  \ the <-ordered lesser of two scalars
+: min2 2dup > if swap then drop ;
 inline
 
-( a b -- larger )  \ the lt-ordered greater of two scalars
-: max2 2dup lt if swap then drop ;
+( a b -- larger )  \ the <-ordered greater of two scalars
+: max2 2dup < if swap then drop ;
 inline
 
 ( xt -- ... )  \ run xt, print elapsed CLOCK_MONOTONIC seconds, pass its results through

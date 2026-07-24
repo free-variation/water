@@ -31,10 +31,10 @@
 [ 1 2 3 ] dup [: 100 * :] pmap drop . cr
 
 \ a set domain produces an image array
-< 3 1 2 > [: 1 + :] pmap . cr
+[< 3 1 2 >] [: 1 + :] pmap . cr
 
 \ num-cores reports at least one core
-num-cores 0 gt . cr
+num-cores 0 > . cr
 
 \ named word as the xt
 : triple 3 * ;

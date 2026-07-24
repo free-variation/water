@@ -57,7 +57,7 @@ inline
 	{ }
 	[:
 		over over side-peek execute
-		2dup has? not if 2dup < > ! drop then
+		2dup has? not if 2dup [< >] ! drop then
 		@ swap set-add! drop
 	:]
 	reduce

@@ -68,10 +68,10 @@ wall-now 2 week + time>iso .            \ the ISO timestamp two weeks from now
 "2026-01-31T09:00:00Z" iso>time { :months 1 } date-shift time>iso .   \ clamps to Feb 28
 
 \ Sets and set algebra
-< 1 2 3 > < 2 3 4 > + .                 \ < 1 2 3 4 >  (union via polymorphic +)
+[< 1 2 3 >] [< 2 3 4 >] + .                 \ [< 1 2 3 4 >]  (union via polymorphic +)
 
 \ Set-builder { x² | x ∈ 1..10, even x } — literal + filter/map + destruct
-< 1 10 range [: 2 mod 0= :] filter [: fsq :] map destruct > .   \ < 4 16 36 64 100 >
+[< 1 10 range [: 2 mod 0= :] filter [: fsq :] map destruct >] .   \ [< 4 16 36 64 100 >]
 
 \ Frames — symbol-keyed nested maps
 { :a 1 :b { :c 2 } } /b/c @ .           \ 2
@@ -113,7 +113,7 @@ lvar to X  lvar to Y  lvar to Z
 \ Datasets: column-oriented tables with verbs
 [ [ "name" "age" ] [ "ann" 34 ] [ "bo" 25 ] [ "cy" 61 ] ] true rows>dataset
 dup :age @ mean .                       \ 40  (a numeric column is already a vector)
-[: :age @ 30 gt :] filter :name @ .     \ [ "ann" "cy" ]
+[: :age @ 30 > :] filter :name @ .     \ [ "ann" "cy" ]
 
 \ Count distinct values, most frequent first; masks alter as well as select
 [ :b :a :b :c :b ] count first .        \ [ :b 3 ]
@@ -135,7 +135,7 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 
 - **Tagged Vals** — floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, quantities, segments, execution tokens, dictionary addresses, continuations, logic variables, process streams, database handles, C pointers, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
 - **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code.
-- **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `gt while`, `0= until`) fuses into a single compare-and-branch op, and an array read-modify-write (`arr i arr i @i f1- !i` or a `… delta f+ !i` step) collapses to one in-place element update. Variable-fused float words (`vf+`/`vf*`/… on one named variable, `vvf+`/`vvf*`/… on two) collapse the variable load into the float op.
+- **Compile-time instruction fusion** — adjacent variable-reads and float ops collapse into single instructions (`var var f+` → one op; `… var f+!` fuses the store), `f*+` / `f*-` are fused multiply-add/subtract, and a comparison immediately before a branch (`= if`, `> while`, `0= until`) fuses into a single compare-and-branch op, and an array read-modify-write (`arr i arr i @i f1- !i` or a `… delta f+ !i` step) collapses to one in-place element update. Variable-fused float words (`vf+`/`vf*`/… on one named variable, `vvf+`/`vvf*`/… on two) collapse the variable load into the float op.
 - **Program and execution state separated** — the dictionary, symbol pool, and object heap live in global structures (`Vocabulary`, `Compiler`, `Arena`) that are read-only during a run; the per-run mutable state — the three stacks, instruction pointer, locals, and GC roots — lives in an `Interpreter`, so one program can be shared across multiple execution contexts.
 - **Three stacks** — data, return, and a side stack for stashing values that mustn't sit on the other two.
 - **Colon definitions** — `: name body ;`. The body is captured as source text for `see` and the text-form `save`.
@@ -165,8 +165,8 @@ dup "insert into t values (?)" [ 42 ] db-exec drop
 - **Regression trees** — `fit-tree` grows a CART regression tree over a features frame and a numeric response: numeric columns split at a midpoint threshold, array columns are native categoricals split on a mean-ordered subset, and rows missing a numeric feature follow a per-split default direction learned from the split criterion. It returns the tree as a nested frame — `:prediction` and `:n_rows` at every node, `:feature` with `:threshold` or `:categories` at internal nodes, optional per-leaf `:responses` — and takes a params frame (`:max-depth`, `:min-samples`, `:store-leaf-responses`). `pfit-tree` is the parallel form, growing independent subtrees across cores into a byte-identical tree. `predict` applies a tree to a features frame, walking each row to its leaf (a numeric split sends value ≤ threshold left; a categorical split sends set membership left, an unseen value right). `feature-importance` ranks the features by normalized impurity reduction. `prune` cost-complexity-prunes a fitted tree at a given complexity, and `prune-cv` fits then prunes at the `alpha` chosen by k-fold cross-validation with the 1-SE rule. `draw-tree` prints the tree as indented rules, and `lib/plot.h2o`'s `plot-tree` renders it as an SVG node-link diagram.
 - **SVG plotting** (`lib/plot.h2o`) — scatter, line series, histogram, and Tukey boxplots over a deferred-rendering figure: marks accumulate with the style in effect, the domain resolves at render (pinned or auto from the data), ticks land on round {1,2,5}×10ᵏ steps, `x-label`/`y-label` set axis titles, `panel` draws a filled ground with gridlines as negative space, and `show-figure` opens a live-reloading browser view that `save-figure` updates in place.
 - **Element-wise math** — `abs`, `sqrt`, `exp`, `log`, `ln`, `sin`, `cos`, `tan`, `tanh`, `asin`, `acos`, `atan`, `round`, `truncate`, `round-up`, `round-down`. Polymorphic over floats and matrices.
-- **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `lt`/`gt`/`eq` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). An array operand also masks element-wise (`val_cmp` per element, a value broadcasts, equal-length arrays pair up), so `names "ann" eq where` filters a text column. On scalars and strings comparison is structural, `eq` agreeing with `=`.
-- **Sorting and masks** — `sort` (ascending copy of a vector, NaNs last), `argsort` (the sorting permutation of a vector as an index vector, or of an array under structural order as an index array; ties keep index order), `where` (flat indices of a mask's nonzero elements), `nan?` (the NaN mask — NaNs compare false under `lt`/`gt`/`eq`; an array answers a mask of its `none` elements), `mesh` (masked substitution — keep where the mask is 0 or NaN, replace where it is definitely nonzero; scalars, `null`, and quantities broadcast). Masks serve both selection and alteration: `dup 0 @j 0 lt where select-rows` keeps the rows whose first column is negative, `dup nan? 0 mesh` fills a column's NaNs, `dup -1 eq null mesh` turns a sentinel into missing.
+- **Comparison** — `=` orders matrices structurally (shape then row-major contents), so matrices work as set members; `<`/`>`/`eq` compare matrices **element-wise**, returning a 1/0 matrix (a scalar broadcasts). An array operand also masks element-wise (`val_cmp` per element, a value broadcasts, equal-length arrays pair up), so `names "ann" eq where` filters a text column. On scalars and strings comparison is structural, `eq` agreeing with `=`.
+- **Sorting and masks** — `sort` (ascending copy of a vector, NaNs last), `argsort` (the sorting permutation of a vector as an index vector, or of an array under structural order as an index array; ties keep index order), `where` (flat indices of a mask's nonzero elements), `nan?` (the NaN mask — NaNs compare false under `<`/`>`/`eq`; an array answers a mask of its `none` elements), `mesh` (masked substitution — keep where the mask is 0 or NaN, replace where it is definitely nonzero; scalars, `null`, and quantities broadcast). Masks serve both selection and alteration: `dup 0 @j 0 < where select-rows` keeps the rows whose first column is negative, `dup nan? 0 mesh` fills a column's NaNs, `dup -1 eq null mesh` turns a sentinel into missing.
 
 ### Dimensioned quantities
 
@@ -194,7 +194,7 @@ Flat, fixed-length typed numeric buffers stored off the arena (one allocation, f
 
 ### Sets, arrays, higher-order
 
-- **Set literals** — `< 1 2 3 >`, set operations, `member?`, `size`, in-place `set-add!`/`set-remove!`, and `array>set` (sort-and-dedup an array into a set in one pass).
+- **Set literals** — `[< 1 2 3 >]`, set operations, `member?`, `size`, in-place `set-add!`/`set-remove!`, and `array>set` (sort-and-dedup an array into a set in one pass).
 - **`group-by`** — `array :col group-by` groups frames by a symbol field into a frame from each value to a set of rows (the engine behind fast indexing and aggregation).
 - **Array literals** — `[ 1 2 3 ]`, the `array` constructor (gather N from the stack), `array-of` (fill), `range` ( from to -- arr ) for an ascending or descending integer sequence, `iota` ( n -- [0..n-1] ), indexed access via `@i`, in-place store via `!i`.
 - **Array operations** — `sort` (a sorted copy in `val_cmp` order; a set projects to a sorted array, a vector sorts ascending with NaNs last), `reverse`, `take`, `concat`, `flatten-array` (flatten one level), `sample` ( arr count repl -- arr ) drawing elements with or without replacement, `shuffle` (a uniform permutation of the array), `resample` (a same-size draw with replacement — the bootstrap draw), and `first`/`second` (element 0/1 of an array, head/tail of a cons).
@@ -235,7 +235,7 @@ Worker threads over one shared object heap: a quotation runs across the collecti
 
 ### Frames
 
-Symbol-keyed nested maps — the associative type, and the compound term the logic layer builds on. The three bracket families are distinct: `[ ]` arrays, `{ }` frames, `< >` sets. `[ ] { }` and `;` are self-delimiting — `[1 2 3]` and `{:a 1}` parse without inner spaces; `< >` still need theirs.
+Symbol-keyed nested maps — the associative type, and the compound term the logic layer builds on. The three bracket families are distinct: `[ ]` arrays, `{ }` frames, `[< >]` sets. `[ ] { }` and `;` are self-delimiting — `[1 2 3]` and `{:a 1}` parse without inner spaces; `[< >]` still need theirs.
 
 - **Literals** — `{ :a 1 :b 2 }`; values may be any Val, including nested frames, arrays, and sets.
 - **Builders** — `frame` ( keys values -- frame ) from two parallel collections, `array>frame` ( kv-array -- frame ) from an alternating key/value array, and `frame>array` ( frame -- kv-array ) the inverse, flattening to a key-sorted alternating array.

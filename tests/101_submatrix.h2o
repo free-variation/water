@@ -33,11 +33,11 @@ drop
 [ 1 0 1 ] 1 3 matrix where .            \ 1xn mask -> 1x2 row
 [ 0 1 1 0 ] 2 2 matrix where .          \ general matrix: flat indices [1 2]
 [ 0 0 ] vector where .                  \ no hits -> 0x1
-[ 3 -1 0 -2 ] vector 0 lt where .       \ negatives at 1,3
+[ 3 -1 0 -2 ] vector 0 < where .       \ negatives at 1,3
 5 where .                               \ error: not a matrix
 
 \ mask -> select loop: rows whose first column exceeds 2
-[ 1 2 3 4 5 6 ] 3 2 matrix dup 0 @j 2 gt where select-rows .   \ rows 1,2
+[ 1 2 3 4 5 6 ] 3 2 matrix dup 0 @j 2 > where select-rows .   \ rows 1,2
 
 \ eq: the element-wise equality mask; = stays structural on matrices.
 [ 1 2 3 2 ] vector 2 eq .              \ [0 1 0 1] as 4x1
@@ -46,7 +46,7 @@ drop
 :a :a eq . :a :b eq . cr               \ off matrices eq agrees with = -> 1 0
 [ -1 1 ] vector ln 0 eq .              \ NaN equals nothing, even 0
 
-\ nan?: the NaN mask; NaNs compare false under lt/gt/eq so this is the only route.
+\ nan?: the NaN mask; NaNs compare false under </>/eq so this is the only route.
 [ -1 1 -1 ] vector ln nan? .           \ [1 0 1] as 3x1
 [ -1 1 -1 ] vector ln nan? where .     \ NaN positions -> [0 2]
 null nan? . 5 nan? . cr                \ scalar cases: 1 0

@@ -61,7 +61,7 @@
 		[: messages try-call :] catch
 		0 = if exit then
 		-- attempts
-		attempts 1 lt if throw then
+		attempts 1 < if throw then
 		drop
 	again ;
 
@@ -72,7 +72,7 @@
 	prompts size to n-prompts
 	0 to i
 
-	begin i n-prompts lt while
+	begin i n-prompts < while
 		prompts i @i to prompt
 		history [ prompt user-message ] + to history
 		history elicit-with-retries to answer

@@ -44,7 +44,7 @@ clear
 \ === categorical split on a mean-ordered subset ===
 { :c [ :a :b :c :a :b :c ] } [ 1 10 2 1 10 2 ] vector { } fit-tree to tree
 tree :feature @ . cr                \ :c
-tree :categories @ . cr             \ < :c :a >
+tree :categories @ . cr             \ [< :c :a >]
 tree /left/prediction @ . cr        \ 1.5
 tree /right/prediction @ . cr       \ 10
 tree /right/n_rows @ . cr           \ 2
@@ -63,7 +63,7 @@ clear
 \ === best feature chosen across numeric and categorical ===
 { :x [ 1 2 3 4 ] vector :c [ :lo :hi :lo :hi ] } [ 1 9 1 9 ] vector { :max-depth 1 } fit-tree to tree
 tree :feature @ . cr                \ :c
-tree :categories @ . cr             \ < :lo >
+tree :categories @ . cr             \ [< :lo >]
 tree /left/prediction @ . cr        \ 1
 clear
 
@@ -79,7 +79,7 @@ tree /left/prediction @ . cr        \ 1
 tree /right/prediction @ . cr       \ 5
 clear
 { :c [ :a :b :c :a :b :c ] } [ 1 10 2 1 10 2 ] vector { } pfit-tree to tree
-tree :categories @ . cr             \ < :c :a >
+tree :categories @ . cr             \ [< :c :a >]
 tree /left/prediction @ . cr        \ 1.5
 tree /right/prediction @ . cr       \ 10
 clear
@@ -139,7 +139,7 @@ clear
 clear
 { :x [ 1 2 3 ] vector } [ 1 2 ] vector { } fit-tree \ (column and response lengths differ)
 clear
-{ :x < 1 2 > } [ 1 2 ] vector { } fit-tree          \ (column must be a numeric vector or an array)
+{ :x [< 1 2 >] } [ 1 2 ] vector { } fit-tree          \ (column must be a numeric vector or an array)
 clear
 { } [ 1 2 ] vector { } fit-tree                     \ (need at least one feature)
 clear

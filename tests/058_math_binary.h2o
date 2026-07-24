@@ -42,14 +42,14 @@ clear
 7 3 % drop . cr      \ 1   (the remainder)
 7 3 % swap drop . cr \ 2   (the quotient)
 
-\ min2/max2: lt-ordered lesser and greater of two scalars
+\ min2/max2: <-ordered lesser and greater of two scalars
 3 7 min2 . cr        \ 3
 7 3 min2 . cr        \ 3
 3 7 max2 . cr        \ 7
 7 3 max2 . cr        \ 7
 -2 -5 min2 . cr      \ -5
 4 4 max2 . cr        \ 4
-"apple" "pear" min2 . cr \ apple  (lt is structural on strings)
+"apple" "pear" min2 . cr \ apple  (< is structural on strings)
 
 \ failures
 5 0 %

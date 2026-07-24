@@ -85,7 +85,7 @@ org //people/*[role=admin][age>45] select-values size . cr
 org //people/*[role=ghost] select-values size . cr
 
 \ --- composition with the functional layer ---
-org //age select-values [: 35 gt :] filter . cr
+org //age select-values [: 35 > :] filter . cr
 org //people/*[role=admin] select-values size . cr
 
 \ --- cycle guard ---

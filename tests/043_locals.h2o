@@ -19,7 +19,7 @@
 4 shadow . cr
 
 \ -- 5: recursion — each call gets its own frame
-: fact | n | to n  n 1 lt if 1 else n  n 1 - fact * then ;
+: fact | n | to n  n 1 < if 1 else n  n 1 - fact * then ;
 5 fact . cr
 
 \ -- 6: a local set before shift is read after resume (frame relocation)
@@ -45,7 +45,7 @@ ex dup  5 swap resume . cr
 1 2 3 combo . cr
 
 \ -- 11: |> inside a recursion (own frame per call)
-: fact2 |> n | n 1 lt if 1 else n  n 1 - fact2 * then ;
+: fact2 |> n | n 1 < if 1 else n  n 1 - fact2 * then ;
 6 fact2 . cr
 
 \ -- 12: |> outer local visible from nested quotation
@@ -57,7 +57,7 @@ ex dup  5 swap resume . cr
 : ex2 reset 7 worker2 ;
 ex2 3 swap resume . cr
 
-\ -- 14: > marker on every local — same as |>
+\ -- 14: >] marker on every local — same as |>
 : all-recv | >a >b >c | a 100 *  b 10 *  c + + ;
 1 2 3 all-recv . cr
 

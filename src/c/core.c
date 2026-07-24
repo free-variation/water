@@ -833,11 +833,11 @@ void print_val(FILE *out, Interpreter *interp, Val value) {
 		case T_SET:
 					   print_depth_enter();
 					   if (print_depth > MAX_NESTING_DEPTH) {
-						   fputs("<...>", out);
+						   fputs("[<...>]", out);
 					   } else {
-						   fputs("< ", out);
+						   fputs("[< ", out);
 						   print_items(out, interp, OBJECT_AT(VAL_DATA(value)));
-						   putc('>', out);
+						   fputs(">]", out);
 					   }
 					   print_depth_leave();
 					   break;
@@ -1039,7 +1039,7 @@ void print_val_compact(FILE *out, Interpreter *interp, Val value) {
 					   }
 		case T_SET:
 					   print_depth_enter();
-					   fprintf(out, "<%d>", OBJECT_AT(VAL_DATA(value))->len);
+					   fprintf(out, "[<%d>]", OBJECT_AT(VAL_DATA(value))->len);
 					   print_depth_leave();
 					   break;
 		case T_ARRAY:
@@ -2606,11 +2606,11 @@ char *next_token(void) {
 
 	if (lead == ';' || lead == ']' || lead == '}') {
 		compiler.input_buffer_pos++;
-	} else if ((lead == ':' || lead == ')') && after_lead == ']') {
+	} else if ((lead == ':' || lead == ')' || lead == '>') && after_lead == ']') {
 		compiler.input_buffer_pos += 2;
 	} else if (lead == '[') {
 		int two_char_opener = after_lead == ':' || after_lead == '('
-			|| after_lead == '|' || after_lead == '>';
+			|| after_lead == '|' || after_lead == '>' || after_lead == '<';
 		compiler.input_buffer_pos += two_char_opener ? 2 : 1;
 	} else if (lead == '{') {
 		compiler.input_buffer_pos++;
@@ -2623,7 +2623,7 @@ char *next_token(void) {
 				break;
 			if (c == ']' && bracket_depth == 0) {
 				char preceding = buffer[compiler.input_buffer_pos - 1];
-				if ((preceding == ':' || preceding == ')')
+				if ((preceding == ':' || preceding == ')' || preceding == '>')
 						&& compiler.input_buffer_pos - 1 > start)
 					compiler.input_buffer_pos--;
 				break;
@@ -3020,7 +3020,9 @@ void run_outer(Interpreter *interp) {
 					if (cf == vocab.eq_cfa || cf == vocab.lt_cfa
 							|| cf == vocab.gt_cfa || cf == vocab.zeq_cfa
 							|| cf == vocab.eq_f_cfa || cf == vocab.lt_f_cfa
-							|| cf == vocab.gt_f_cfa)
+							|| cf == vocab.gt_f_cfa
+							|| cf == vocab.lte_cfa || cf == vocab.gte_cfa
+							|| cf == vocab.lte_f_cfa || cf == vocab.gte_f_cfa)
 						compiler.fuse_prev_cmp = cf;
 				}
 			} else {
@@ -3575,6 +3577,10 @@ int op_cell_count(int cursor) {
 	    || handler == vocab.dict[vocab.eq_f_zbranch_cfa]
 	    || handler == vocab.dict[vocab.lt_f_zbranch_cfa]
 	    || handler == vocab.dict[vocab.gt_f_zbranch_cfa]
+	    || handler == vocab.dict[vocab.lte_zbranch_cfa]
+	    || handler == vocab.dict[vocab.gte_zbranch_cfa]
+	    || handler == vocab.dict[vocab.lte_f_zbranch_cfa]
+	    || handler == vocab.dict[vocab.gte_f_zbranch_cfa]
 	    || handler == vocab.dict[vocab.to_var_cfa]
 	    || handler == vocab.dict[vocab.enter_locals_cfa]
 	    || handler == vocab.dict[vocab.enter_locals_to_cfa]
@@ -4188,9 +4194,11 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "f+", p_add_f, 0);
 	define_primitive(interp, "f-", p_sub_f, 0);
 	define_primitive(interp, "f*", p_mul_f, 0);
-	vocab.eq_f_cfa = define_primitive(interp, "feq", p_eq_f, 0);
-	vocab.lt_f_cfa = define_primitive(interp, "flt", p_lt_f, 0);
-	vocab.gt_f_cfa = define_primitive(interp, "fgt", p_gt_f, 0);
+	vocab.eq_f_cfa = define_primitive(interp, "f=", p_eq_f, 0);
+	vocab.lt_f_cfa = define_primitive(interp, "f<", p_lt_f, 0);
+	vocab.gt_f_cfa = define_primitive(interp, "f>", p_gt_f, 0);
+	vocab.lte_f_cfa = define_primitive(interp, "f<=", p_lte_f, 0);
+	vocab.gte_f_cfa = define_primitive(interp, "f>=", p_gte_f, 0);
 	define_primitive(interp, "bit-and", p_bit_and, 0);
 	define_primitive(interp, "bit-or", p_bit_or, 0);
 	define_primitive(interp, "bit-xor", p_bit_xor, 0);
@@ -4242,8 +4250,10 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "this", p_it, 0);
 	define_primitive(interp, "that", p_other, 0);
 	vocab.eq_cfa = define_primitive(interp, "=", p_eq, 0);
-	vocab.lt_cfa = define_primitive(interp, "lt", p_lt, 0);
-	vocab.gt_cfa = define_primitive(interp, "gt", p_gt, 0);
+	vocab.lt_cfa = define_primitive(interp, "<", p_lt, 0);
+	vocab.gt_cfa = define_primitive(interp, ">", p_gt, 0);
+	vocab.lte_cfa = define_primitive(interp, "<=", p_lte, 0);
+	vocab.gte_cfa = define_primitive(interp, ">=", p_gte, 0);
 	define_primitive(interp, "eq", p_eq_elements, 0);
 	define_primitive(interp, "nan?", p_nan, 0);
 	vocab.zeq_cfa = define_primitive(interp, "0=", p_zeq, 0);
@@ -4323,8 +4333,8 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 
 	define_primitive(interp, "{", p_frameopen, 0);
 	define_primitive(interp, "}", p_frameclose, 0);
-	define_primitive(interp, "<", p_setopen, 0);
-	define_primitive(interp, ">", p_setclose, 0);
+	define_primitive(interp, "[<", p_setopen, 0);
+	define_primitive(interp, ">]", p_setclose, 0);
 	define_primitive(interp, "[", p_array_open, 0);
 	define_primitive(interp, "]", p_array_close, 0);
 	define_primitive(interp, "[(", p_list_open, 0);
@@ -4403,12 +4413,16 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	vocab.zbranch_cfa = define_primitive(interp, "(0branch)", p_0branch, 4);
 	vocab.qzbranch_cfa = define_primitive(interp, "(?0branch)", p_qzbranch, 4);
 	vocab.eq_zbranch_cfa = define_primitive(interp, "(=0branch)", p_eq_zbranch, 4);
-	vocab.lt_zbranch_cfa = define_primitive(interp, "(lt0branch)", p_lt_zbranch, 4);
-	vocab.gt_zbranch_cfa = define_primitive(interp, "(gt0branch)", p_gt_zbranch, 4);
+	vocab.lt_zbranch_cfa = define_primitive(interp, "(<0branch)", p_lt_zbranch, 4);
+	vocab.gt_zbranch_cfa = define_primitive(interp, "(>0branch)", p_gt_zbranch, 4);
 	vocab.zeq_zbranch_cfa = define_primitive(interp, "(0=0branch)", p_zeq_zbranch, 4);
-	vocab.eq_f_zbranch_cfa = define_primitive(interp, "(feq0branch)", p_eq_f_zbranch, 4);
-	vocab.lt_f_zbranch_cfa = define_primitive(interp, "(flt0branch)", p_lt_f_zbranch, 4);
-	vocab.gt_f_zbranch_cfa = define_primitive(interp, "(fgt0branch)", p_gt_f_zbranch, 4);
+	vocab.eq_f_zbranch_cfa = define_primitive(interp, "(f=0branch)", p_eq_f_zbranch, 4);
+	vocab.lt_f_zbranch_cfa = define_primitive(interp, "(f<0branch)", p_lt_f_zbranch, 4);
+	vocab.gt_f_zbranch_cfa = define_primitive(interp, "(f>0branch)", p_gt_f_zbranch, 4);
+	vocab.lte_zbranch_cfa = define_primitive(interp, "(<=0branch)", p_lte_zbranch, 4);
+	vocab.gte_zbranch_cfa = define_primitive(interp, "(>=0branch)", p_gte_zbranch, 4);
+	vocab.lte_f_zbranch_cfa = define_primitive(interp, "(f<=0branch)", p_lte_f_zbranch, 4);
+	vocab.gte_f_zbranch_cfa = define_primitive(interp, "(f>=0branch)", p_gte_f_zbranch, 4);
 	vocab.dostr_cfa = define_primitive(interp, "(dostr)", p_dostr, 4);
 	vocab.stop_cfa = define_primitive(interp, "(stop)", p_stop, 4);
 	vocab.to_var_cfa = define_primitive(interp, "(to-var)", p_to_var, 4);

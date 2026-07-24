@@ -32,8 +32,11 @@
 :name
 ;
 <
+<=
 =
 >
+>=
+>]
 >r
 >side
 ?
@@ -58,6 +61,7 @@ TAU
 [
 [(
 [:
+[<
 [>
 [|
 ]
@@ -199,6 +203,11 @@ f--
 f/
 f1+
 f1-
+f<
+f<=
+f=
+f>
+f>=
 f^
 fabs
 facos
@@ -208,13 +217,11 @@ fasin
 fatan
 fcos
 feature-importance
-feq
 fexp
 ffi-free
 ffi-function
 ffi-open
 ffi-variadic
-fgt
 file-exists?
 filter
 find-executable
@@ -239,7 +246,6 @@ fln
 float?
 floats>matrix
 flog
-flt
 fmod
 fnegate
 forget
@@ -267,7 +273,6 @@ gen-take
 group-by
 group-indices
 group-with
-gt
 has?
 head
 head-tail
@@ -308,7 +313,6 @@ logistic-regression
 lookup
 lowest-bit
 lshift
-lt
 lvar
 lvar?
 magnitude

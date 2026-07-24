@@ -75,7 +75,7 @@ variable b  4.0 to b
 : t8 5.0 a b f*+ ;   t8 . cr     \ 5*3 + 4 = 19
 
 \ fusion inside both arms of if/else
-: branchy 0 gt if a b f* else a b f+ then ;
+: branchy 0 > if a b f* else a b f+ then ;
 1 branchy . cr                   \ 12
 0 branchy . cr                   \ 7
 
@@ -129,7 +129,7 @@ clear
 \ the loop (i: 5..1) and leave 3 + 4*5 = 23.
 : floor-test | start step i |
   3.0 to start  4.0 to step  5.0 to i
-  start begin step f+ i 1.0 f- to i i 0.0 fgt 0= until ;
+  start begin step f+ i 1.0 f- to i i 0.0 f> 0= until ;
 floor-test . cr
 
 \ Store-fusion floor: `to <var>` right after a control-flow boundary must not

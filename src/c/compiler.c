@@ -181,6 +181,14 @@ static int try_fuse_cmp_branch(Interpreter *interp) {
 		fused_cfa = vocab.lt_f_zbranch_cfa;
 	else if (compiler.fuse_prev_cmp == vocab.gt_f_cfa)
 		fused_cfa = vocab.gt_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.lte_cfa)
+		fused_cfa = vocab.lte_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.gte_cfa)
+		fused_cfa = vocab.gte_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.lte_f_cfa)
+		fused_cfa = vocab.lte_f_zbranch_cfa;
+	else if (compiler.fuse_prev_cmp == vocab.gte_f_cfa)
+		fused_cfa = vocab.gte_f_zbranch_cfa;
 	else
 		return 0;
 

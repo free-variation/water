@@ -72,7 +72,7 @@ dup "LAPACKE_dgelsd" [
 	| a rows cols min-dim u s vt superb info |
 	copy to a
 	a dim to cols to rows
-	rows cols lt if rows else cols then to min-dim
+	rows cols < if rows else cols then to min-dim
 	rows min-dim 0-matrix to u
 	1 min-dim 0-matrix to s
 	min-dim cols 0-matrix to vt
@@ -94,7 +94,7 @@ dup "LAPACKE_dgelsd" [
 : fit-linear 
 	| >mat >y rows cols a b s rank info |
 	mat dim to cols to rows
-	rows cols lt if 
+	rows cols < if 
 		rows cols "fit-linear: need at least as many observations as predictors; got {1}x{0}" format 
 		throw
 	then
@@ -154,8 +154,8 @@ dup "LAPACKE_dgelsd" [
 		new-beta to beta
 
 		++ iterations
-		delta tolerance lt to converged
-		converged  iterations max-iterations gt  or
+		delta tolerance < to converged
+		converged  iterations max-iterations >  or
 	until
 
 	converged not if
@@ -179,8 +179,8 @@ dup "LAPACKE_dgelsd" [
 	begin
 		1 x beta 0 rows 1 0-matrix dgemm-nn to eta \ eta = X*beta
 		eta sigmoid
-		dup 1e-10 lt 1e-10 mesh
-		dup 1 1e-10 - gt 1 1e-10 - mesh to mu      \ keep w = mu(1-mu) > 0 under separation
+		dup 1e-10 < 1e-10 mesh
+		dup 1 1e-10 - > 1 1e-10 - mesh to mu      \ keep w = mu(1-mu) > 0 under separation
 		mu dup 1 swap - * to w
 		w sqrt to sqrt-w
 		eta  y mu -  w /  +  to z
@@ -191,8 +191,8 @@ dup "LAPACKE_dgelsd" [
 		new-beta to beta
 
 		++ iterations
-		delta tolerance lt to converged
-		converged  iterations max-iterations gt  or
+		delta tolerance < to converged
+		converged  iterations max-iterations >  or
 	until
 
 	converged not if
@@ -368,7 +368,7 @@ drop
 
 	n-cell pointer-long to n
 	k 1 0-matrix to dense
-	n 0 gt if
+	n 0 > if
 		scores-cell pointer-deref n floats>matrix matrix>array to scores
 		features-cell pointer-deref to names
 		[> i |
@@ -428,8 +428,8 @@ drop
 		new-beta to beta
 
 		++ iterations
-		delta tolerance lt to converged
-		converged iterations max-iterations gt or
+		delta tolerance < to converged
+		converged iterations max-iterations > or
 	until
 
 	converged not if 
@@ -506,9 +506,9 @@ drop
 
 		beta delta n-nonreference-classes n-predictors reshape transpose + to beta
 
-		delta dup * sum sqrt tolerance lt to converged
+		delta dup * sum sqrt tolerance < to converged
 		++ iterations
-		converged iterations max-iterations gt or
+		converged iterations max-iterations > or
 	until
 
 	converged not if
@@ -533,7 +533,7 @@ drop
 		label reference-class = if
 			1 weight-total /
 		else
-			class-weights  label reference-class gt if label 1 - else label then  @j  weight-total /
+			class-weights  label reference-class > if label 1 - else label then  @j  weight-total /
 		then
 	:] map hstack-all ;
 

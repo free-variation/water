@@ -54,6 +54,8 @@ static double scalar_dec(double x) { return x - 1.0; }
 static double scalar_sq(double x) { return x * x; }
 static double scalar_lt(double a, double b) { return a < b; }
 static double scalar_gt(double a, double b) { return a > b; }
+static double scalar_lte(double a, double b) { return a <= b; }
+static double scalar_gte(double a, double b) { return a >= b; }
 static double scalar_eq(double a, double b) { return a == b; }
 static double scalar_nan(double element) { return isnan(element) ? 1.0 : 0.0; }
 static double scalar_add(double a, double b) { return a + b; }
@@ -396,6 +398,8 @@ BINARY_FLOAT_OP(p_fmodop, "fmod", fmod(a, b))
 BINARY_FLOAT_OP(p_eq_f, "feq", a == b)
 BINARY_FLOAT_OP(p_lt_f, "flt", a < b)
 BINARY_FLOAT_OP(p_gt_f, "fgt", a > b)
+BINARY_FLOAT_OP(p_lte_f, "flte", a <= b)
+BINARY_FLOAT_OP(p_gte_f, "fgte", a >= b)
 
 #define BITWISE_BINARY_OP(name, opname, op) \
 	void name(DISPATCH_ARGS) { \
@@ -593,6 +597,8 @@ static void array_comparison_mask(Interpreter *interp, Val left, Val right,
 	}
 MATRIX_COMPARISON_OP(p_lt, <, scalar_lt, "lt")
 MATRIX_COMPARISON_OP(p_gt, >, scalar_gt, "gt")
+MATRIX_COMPARISON_OP(p_lte, <=, scalar_lte, "lte")
+MATRIX_COMPARISON_OP(p_gte, >=, scalar_gte, "gte")
 MATRIX_COMPARISON_OP(p_eq_elements, ==, scalar_eq, "eq")
 
 void p_nan(DISPATCH_ARGS) {
@@ -658,6 +664,8 @@ void p_zeq(DISPATCH_ARGS) {
 COMPARISON_ZBRANCH(p_eq_zbranch, ==, "(=0branch)");
 COMPARISON_ZBRANCH(p_lt_zbranch, <, "(lt0branch)");
 COMPARISON_ZBRANCH(p_gt_zbranch, >, "(gt0branch)");
+COMPARISON_ZBRANCH(p_lte_zbranch, <=, "(lte0branch)");
+COMPARISON_ZBRANCH(p_gte_zbranch, >=, "(gte0branch)");
 
 
 #define FLOAT_COMPARISON_ZBRANCH(name, op, word) \
@@ -672,6 +680,8 @@ COMPARISON_ZBRANCH(p_gt_zbranch, >, "(gt0branch)");
 FLOAT_COMPARISON_ZBRANCH(p_eq_f_zbranch, ==, "(feq0branch)");
 FLOAT_COMPARISON_ZBRANCH(p_lt_f_zbranch, <, "(flt0branch)");
 FLOAT_COMPARISON_ZBRANCH(p_gt_f_zbranch, >, "(fgt0branch)");
+FLOAT_COMPARISON_ZBRANCH(p_lte_f_zbranch, <=, "(flte0branch)");
+FLOAT_COMPARISON_ZBRANCH(p_gte_f_zbranch, >=, "(fgte0branch)");
 
 void p_zeq_zbranch(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);

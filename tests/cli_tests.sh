@@ -54,7 +54,7 @@ has   "interactive (-i) shows banner"   '2 3 + . cr'  "water " 0 -i
 has   "interactive (-i) shows the hint" '2 3 + . cr'  "words lists every word; help shows a quick start; bye quits" 0 -i
 has   "interactive (-i) shows prompt"   '1 2 . cr'    "ok 1|1"        0 -i
 # --max-objects lowers the object ceiling so the limit is reachable cheaply
-has   "--max-objects hits ceiling"      '1 200000 range [: drop < 0 > :] map drop'  "object registry full" 0 -b --max-objects 100000
+has   "--max-objects hits ceiling"      '1 200000 range [: drop [< 0 >] :] map drop'  "object registry full" 0 -b --max-objects 100000
 # --max-objects argument validation
 has   "--max-objects needs a value"     ''  "needs a value"      2 --max-objects
 has   "--max-objects rejects 0"         ''  "positive integer"   2 --max-objects 0
@@ -94,11 +94,11 @@ rm -f "$prog"
 # a truncated image must fail cleanly (no crash) and leave the interpreter
 # usable: load-image errors, then the next line still computes 2 3 + = 5
 img=$(mktemp "${TMPDIR:-/tmp}/lf_img.XXXXXX")
-printf ': sq dup * ; variable v < 1 2 3 > to v [ 10 20 30 ] "%s" save-image\n' "$img" | "$bin" -b >/dev/null 2>&1
+printf ': sq dup * ; variable v [< 1 2 3 >] to v [ 10 20 30 ] "%s" save-image\n' "$img" | "$bin" -b >/dev/null 2>&1
 imgsize=$(wc -c < "$img")
 trunc=$(mktemp "${TMPDIR:-/tmp}/lf_trunc.XXXXXX")
 head -c $((imgsize / 2)) "$img" > "$trunc"
-out=$(printf '"%s" load-image\n< 9 8 7 > gc 2 3 + . cr\n' "$trunc" | "$bin" -b 2>&1)
+out=$(printf '"%s" load-image\n[< 9 8 7 >] gc 2 3 + . cr\n' "$trunc" | "$bin" -b 2>&1)
 code=$?
 case "$out" in
     *error:*5*) ok "truncated image: clean error + recovery" ;;

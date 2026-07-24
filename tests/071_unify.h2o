@@ -49,7 +49,7 @@ lvar to X   { :xs [ 1 X ] } { :xs [ 1 2 ] } ~ drop   X ? 2 = . cr   \ 1
 lvar to X   { :a [ 1 { :b X } ] } { :a [ 1 { :b 7 } ] } ~ drop   X ? 7 = . cr   \ 1
 
 \ === identity types unify when structurally equal ===
-< 1 2 3 > < 1 2 3 > ~ < 1 2 3 > = . cr               \ 1
+[< 1 2 3 >] [< 1 2 3 >] ~ [< 1 2 3 >] = . cr               \ 1
 
 \ === occur check is skipped: a var may bind to a term containing itself ===
 lvar to X   X [ X ] ~ drop   X ? size . cr           \ 1

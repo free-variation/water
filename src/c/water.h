@@ -1,7 +1,7 @@
 #ifndef WATER_H
 #define WATER_H
 
-#define VERSION "0.23.2"
+#define VERSION "0.23.3"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -458,10 +458,12 @@ typedef struct Vocabulary {
 	int qzbranch_cfa;
 	int eq_cfa, lt_cfa, gt_cfa, zeq_cfa;
 	int eq_f_cfa, lt_f_cfa, gt_f_cfa;
+	int lte_cfa, gte_cfa, lte_f_cfa, gte_f_cfa;
 	int at_i_cfa;
 	int at_e_cfa;
 	int eq_zbranch_cfa, lt_zbranch_cfa, gt_zbranch_cfa, zeq_zbranch_cfa;
 	int eq_f_zbranch_cfa, lt_f_zbranch_cfa, gt_f_zbranch_cfa;
+	int lte_zbranch_cfa, gte_zbranch_cfa, lte_f_zbranch_cfa, gte_f_zbranch_cfa;
 	int false_symbol, true_symbol;
 	int wildcard_symbol, descendant_symbol, self_symbol;
 
@@ -1132,6 +1134,10 @@ void p_gt(DISPATCH_ARGS);
 void p_gt_f(DISPATCH_ARGS);
 void p_gt_f_zbranch(DISPATCH_ARGS);
 void p_gt_zbranch(DISPATCH_ARGS);
+void p_gte(DISPATCH_ARGS);
+void p_gte_f(DISPATCH_ARGS);
+void p_gte_f_zbranch(DISPATCH_ARGS);
+void p_gte_zbranch(DISPATCH_ARGS);
 void p_inc(DISPATCH_ARGS);
 void p_inc_poly(DISPATCH_ARGS);
 void p_it(DISPATCH_ARGS);
@@ -1143,6 +1149,10 @@ void p_lt(DISPATCH_ARGS);
 void p_lt_f(DISPATCH_ARGS);
 void p_lt_f_zbranch(DISPATCH_ARGS);
 void p_lt_zbranch(DISPATCH_ARGS);
+void p_lte(DISPATCH_ARGS);
+void p_lte_f(DISPATCH_ARGS);
+void p_lte_f_zbranch(DISPATCH_ARGS);
+void p_lte_zbranch(DISPATCH_ARGS);
 void p_man(DISPATCH_ARGS);
 void p_mul(DISPATCH_ARGS);
 void p_mul_f(DISPATCH_ARGS);

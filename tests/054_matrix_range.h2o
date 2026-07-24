@@ -12,7 +12,7 @@
 \ Single-element matrix (start = end)
 3.0 3.0 1.0 matrix-range .
 
-\ End not on an exact step boundary — last element is < end
+\ End not on an exact step boundary — last element is [< end
 0.0 10.0 3.0 matrix-range .
 
 \ Step zero rejected

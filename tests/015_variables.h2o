@@ -13,7 +13,7 @@ x .
 variable y
 "hello" to y
 y .
-< 1 2 3 > to y
+[< 1 2 3 >] to y
 y .
 cr
 

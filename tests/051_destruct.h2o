@@ -18,10 +18,10 @@
 [ [ 1 2 ] [ 3 4 ] ] destruct .s clear cr \ [ [ 1 2 ] [ 3 4 ] ]
 
 \ set: elements come out in the set's internal (sorted) order
-< 3 1 2 > destruct .s clear cr           \ [ 1 2 3 ]
+[< 3 1 2 >] destruct .s clear cr           \ [ 1 2 3 ]
 
 \ empty set
-< > destruct .s clear cr                 \ [ ]
+[< >] destruct .s clear cr                 \ [ ]
 
 \ frame: pushes :key value :key value ... in key-sort order
 { :a 1 :b 2 } destruct .s clear cr       \ [ :a 1 :b 2 ]

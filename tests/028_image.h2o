@@ -15,10 +15,10 @@ variable pr     lvar to X   [( X X null )] to pr   X 9 ~ drop
 variable seg   3 double-segment to seg   seg 0 1.5 !i drop   seg 1 2.5 !i drop   seg 2 3.5 !i drop
 
 \ stack state to round-trip
-< 1 2 3 >
+[< 1 2 3 >]
 "hello"
 [ 1 2 3 4 ] 2 2 matrix
-{ :a 1 :b { :c 2 } :d < 7 8 > }
+{ :a 1 :b { :c 2 } :d [< 7 8 >] }
 
 "/tmp/lf-image-test.image" save-image
 
@@ -50,6 +50,6 @@ seg 1 @i . cr            \ 2.5 segment contents survived
 dup /a @ . cr            \ 1
 dup /b/c @ . cr          \ 2   nested frame survived
 dup /d @ size . cr       \ 2   nested set survived
-.s cr                    \ < 1 2 3 >  hello  <matrix 2x2 ...>  { ... }
+.s cr                    \ [< 1 2 3 >]  hello  <matrix 2x2 ...>  { ... }
 
 bye

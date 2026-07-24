@@ -21,8 +21,8 @@ clear
 clear
 
 \ === symmetry: qnorm(p) = -qnorm(1-p) ===
-0.42 qnorm 0.58 qnorm + abs 1e-12 lt . cr    \ 1 (central)
-0.02 qnorm 0.98 qnorm + abs 1e-12 lt . cr    \ 1 (tails)
+0.42 qnorm 0.58 qnorm + abs 1e-12 < . cr    \ 1 (central)
+0.02 qnorm 0.98 qnorm + abs 1e-12 < . cr    \ 1 (tails)
 
 clear
 
