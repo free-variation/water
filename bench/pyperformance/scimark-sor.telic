@@ -1,5 +1,5 @@
 \ scimark SOR (successive over-relaxation), N=100 — port of pyperformance
-\ bm_scimark's SOR kernel. G is a flat row-major double-segment (idx = y·N + x,
+\ bm_scimark's SOR kernel. G is a flat row-major vector (idx = y·N + x,
 \ exactly Array2D's layout); the stencil updates each interior cell in place.
 \
 \ G is allocated per outer iteration and left all-zero, as bench_SOR does, so
@@ -19,7 +19,7 @@ variable g
 1.0 1.25 f- constant one-minus-omega
 
 : build-g ^g |
-  nn double-segment to g ;
+  nn 1 0-matrix to g ;
 
 : sor-execute
   0 cycles 1 do cycle
@@ -27,13 +27,13 @@ variable g
         y n f* to rowbase
         1 nm1 1 do x
            rowbase x f+ to idx
-           g idx n f- @i
-           g idx n f+ @i f+
-           g idx 1.0 f- @i f+
-           g idx 1.0 f+ @i f+
+           g idx n f- @e
+           g idx n f+ @e f+
+           g idx 1.0 f- @e f+
+           g idx 1.0 f+ @e f+
            omega-over-four f*
-           one-minus-omega  g idx @i f*  f+  to nv
-           g nv idx !i drop
+           one-minus-omega  g idx @e f*  f+  to nv
+           g nv idx !e drop
         loop
      loop
   loop ;
@@ -41,7 +41,7 @@ variable g
 : sor-checksum ( -- s )
 
   0.0
-  0 nn 1 do i0  g i0 @i f+  loop
+  0 nn 1 do i0  g i0 @e f+  loop
   to total
   total ;
 

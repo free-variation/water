@@ -51,9 +51,9 @@ exact "mod operands stay rooted" \
 exact "unary_op operand stays rooted" \
   ': pressure 0 to acc 0 to i begin i 500 < while [ 1 2 3 ] vector exp sum acc + to acc f++ i repeat acc round ; pressure . cr' \
   "15096 " 500
-exact "unify-cons values stay rooted" \
-  ': pressure 0 to acc 0 to i begin i 500 < while [( 1 2 3 )] _ ~ drop acc 1 + to acc f++ i repeat acc ; pressure . cr' \
-  "500 " 500
+exact "unify rest-pattern operands stay rooted" \
+  ': pressure 0 to acc 0 to i lvar to tail begin i 500 < while [ 1 2 3 ] [ _ tail rest ] ~ drop tail ? 1 @i acc + to acc f++ i repeat acc ; pressure . cr' \
+  "1500 " 500
 
 # matrix row/column/where words allocate their result while the source matrix
 # is the only reference; the source must stay rooted across that allocation.

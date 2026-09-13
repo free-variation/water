@@ -1138,11 +1138,11 @@ Two things distinguish this from the continuation-capture sketch above:
 
 `fail`'s `backtrack` is the `PROMPT_CHOICE` counterpart of `shift-with`'s unwind: it finds the nearest choice mark, sets `unwind_target`, and raises `unwinding`, so the cascade in `run_inner` carries control back to the enclosing `amb`.
 
-A search reads as a description of the constraints. The lib word `choose` (built on `amb`) tries each element of a list in turn, committing to the first for which its continuation succeeds:
+A search reads as a description of the constraints. The lib word `choose` (built on `amb`) tries each element of an array in turn, committing to the first for which its continuation succeeds:
 
 ```forth choose
 \ commit to the first x in 1..5 that is greater than 3
-[( 1 2 3 4 5 null )] [: x | x 3 > if x else fail then :] choose . cr
+[ 1 2 3 4 5 ] [: x | x 3 > if x else fail then :] choose . cr
 ```
 ```output
 4
@@ -1172,21 +1172,21 @@ A green thread is a captured continuation plus some state (priority, status, per
 \ Sketch of a green-thread runtime in Telic
 
 \ A thread is just a continuation, optionally wrapped with metadata.
-\ The scheduler maintains a cons list of ready threads.
+\ The scheduler maintains an array of ready threads.
 
 variable thread-queue
-null to thread-queue
+[ ] to thread-queue
 
 : scheduler-pick   ( -- )
     \ Resume the next thread in the queue, or exit if empty.
-    thread-queue null = if exit then
-    thread-queue head-tail to thread-queue
+    thread-queue size 0= if exit then
+    thread-queue 0 @i  thread-queue 1 skip to thread-queue
     resume ;
 
 : gyield   ( -- )
-    \ Cooperative yield: capture k, add to queue, switch to next thread.
+    \ Cooperative yield: capture k, append to the queue, switch to next thread.
     [: ( k -- )
-        thread-queue cons to thread-queue
+        thread-queue swap add-last! drop
         scheduler-pick
     :] shift-with ;
 
@@ -1197,7 +1197,7 @@ null to thread-queue
 
 : run-scheduler ( -- )
     begin
-        thread-queue null = if exit then
+        thread-queue size 0= if exit then
         scheduler-pick
     again ;
 ```
@@ -1252,7 +1252,7 @@ Async I/O is the same pattern as green threads, with one twist: instead of a sch
     \ with the result on the data stack.
     [: ( k -- )
         \ register k with the event loop, tagged with the pending I/O
-        cons event-loop-register
+        2 array event-loop-register
     :] shift-with ;
 
 \ User code looks linear:

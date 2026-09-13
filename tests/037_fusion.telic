@@ -237,6 +237,16 @@ frame-read . cr
 len-of . cr
 ' len-of see-compiled
 
+\ === a literal count before array fuses to (array.lit) and gathers the same values ===
+: pair-up 2 array ;
+1 2 pair-up . cr              \ [ 1 2 ]
+' pair-up see-compiled
+: triple 3 array ;
+1 2 3 triple . cr             \ [ 1 2 3 ]
+: zero-array 0 array ;        \ a zero count stays the generic word
+zero-array . cr               \ [ ]
+' zero-array see-compiled
+
 \ === a site whose types alternate demotes and stays correct ===
 : alt = ;
 :a :a alt . cr                \ 1

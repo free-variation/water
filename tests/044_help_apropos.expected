@@ -29,14 +29,14 @@ sin ( a -- sin a )
   0
 1 
 1 
-1 2 cons . cr 
+1 2 nip . cr 
 1 
-cons ( head tail -- pair )
-  Build a cons cell
-  ops 2, alloc 1 pair, O(1)
+nip ( a b -- b )
+  Drop the second item, keeping the top
+  ops 1, alloc none, O(1)
 
-  > 1 2 cons . cr
-  [( 1 2 )]
+  > 1 2 nip . cr
+  2
 unknown word: no-such-word 
 7 
 1 2 

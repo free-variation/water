@@ -1,0 +1,25 @@
+1 [ 2 3 4 ] 
+[ ] 
+[ 5 6 ] 
+1 1 0 
+[ 2 3 ] 
+[ 1 2 ] 
+empty 
+one 
+two or more 
+not an array 
+[ 2 3 ] [ ] 
+0 1 
+[ Hd=1 ..Tl=[ 2 3 4 ] ] 
+.._9 .._ 
+:rest 
+?Orig 
+[ 2 3 4 5 ] 
+error: expected a logic variable or _; got a float
+in rest
+error: rest must be the last element of its array; found it at 0 of 2
+in ~
+error: cannot unify two rest patterns
+in ~
+error: cannot serialize a rest pattern
+in value>bytes

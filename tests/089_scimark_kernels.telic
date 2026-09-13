@@ -20,8 +20,8 @@
 variable g
 
 : seed-g ^g |
-  sor-nn double-segment to g
-  [: i | g  i i f* 97.0 fmod 97.0 f/  i  !i drop :] sor-nn i-times ;
+  sor-nn 1 0-matrix to g
+  [: i | g  i i f* 97.0 fmod 97.0 f/  i  !e drop :] sor-nn i-times ;
 
 : sor-sweep ( cycles -- )
   | cycles |
@@ -33,13 +33,13 @@ variable g
         1.0 to x
         begin x sor-nm1 < while
            rowbase x f+ to idx
-           g idx sor-n f- @i
-           g idx sor-n f+ @i f+
-           g idx 1.0 f- @i f+
-           g idx 1.0 f+ @i f+
+           g idx sor-n f- @e
+           g idx sor-n f+ @e f+
+           g idx 1.0 f- @e f+
+           g idx 1.0 f+ @e f+
            omega-over-four f*
-           one-minus-omega  g idx @i f*  f+  to nv
-           g nv idx !i drop
+           one-minus-omega  g idx @e f*  f+  to nv
+           g nv idx !e drop
            f++ x
         repeat
         f++ y
@@ -47,14 +47,14 @@ variable g
      f++ cycle
   repeat ;
 
-: g-checksum ( -- s )  0.0 [: g swap @i f+ :] sor-nn i-times ;
+: g-checksum ( -- s )  0.0 [: g swap @e f+ :] sor-nn i-times ;
 
 seed-g
 g-checksum . cr                        \ 32.8351
 1.0 sor-sweep
 g-checksum . cr                        \ 31.789
-g 9 @i . cr                            \ 0.316366
-g 54 @i . cr                           \ 0.503945
+g 9 @e . cr                            \ 0.316366
+g 54 @e . cr                           \ 0.503945
 3.0 sor-sweep
 g-checksum . cr                        \ 31.1138
 
@@ -67,44 +67,44 @@ clear
 variable row  variable col  variable val  variable x  variable y
 
 : seed-sparse ^row ^col ^val ^x ^y |
-  sp-n 1.0 f+ double-segment to row
-  sp-anz double-segment to col
-  sp-anz double-segment to val
-  sp-n double-segment to x
-  sp-n double-segment to y
-  [: i | x  i 1.0 f+ sp-n f/  i  !i drop :] sp-n i-times
-  [: i | val  i 2.0 f* 1.0 f+ sp-anz f/  i  !i drop :] sp-anz i-times
-  row 0.0 0.0 !i drop
+  sp-n 1.0 f+ 1 0-matrix to row
+  sp-anz 1 0-matrix to col
+  sp-anz 1 0-matrix to val
+  sp-n 1 0-matrix to x
+  sp-n 1 0-matrix to y
+  [: i | x  i 1.0 f+ sp-n f/  i  !e drop :] sp-n i-times
+  [: i | val  i 2.0 f* 1.0 f+ sp-anz f/  i  !e drop :] sp-anz i-times
+  row 0.0 0.0 !e drop
   [: | r |
-     row r @i to rowr
-     row  rowr sp-nr f+  r 1.0 f+  !i drop
+     row r @e to rowr
+     row  rowr sp-nr f+  r 1.0 f+  !e drop
      r sp-nr / ftruncate to step
      step 1.0 < if 1.0 to step then
      rowr step
-     [: dup 2 pick f*  swap 3 pick f+  col -rot  !i drop :] sp-nr i-times
+     [: dup 2 pick f*  swap 3 pick f+  col -rot  !e drop :] sp-nr i-times
      drop drop
   :] sp-n i-times ;
 
 : matvec ( cycles -- )
   [:
      [: | r |
-        row r @i to lo
-        row r 1.0 f+ @i to hi
+        row r @e to lo
+        row r 1.0 f+ @e to hi
         lo 0.0
-        [: | k | 1 pick k f+ to i  x col i @i @i  val i @i f*  f+ :] hi lo f- i-times
+        [: | k | 1 pick k f+ to i  x col i @e @e  val i @e f*  f+ :] hi lo f- i-times
         nip
-        y swap r !i drop
+        y swap r !e drop
      :] sp-n i-times
   :] swap times ;
 
-: y-checksum ( -- s )  0.0 [: y swap @i f+ :] sp-n i-times ;
+: y-checksum ( -- s )  0.0 [: y swap @e f+ :] sp-n i-times ;
 
 seed-sparse
 3.0 matvec
 y-checksum . cr                        \ 17.3984
-y 0 @i . cr                            \ 0.0488281
-y 15 @i . cr                           \ 2.69336
-row 16 @i . cr                         \ 64
-col 63 @i . cr                         \ 9
+y 0 @e . cr                            \ 0.0488281
+y 15 @e . cr                           \ 2.69336
+row 16 @e . cr                         \ 64
+col 63 @e . cr                         \ 9
 
 bye

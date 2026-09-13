@@ -34,6 +34,48 @@ void trail_undo_to(Interpreter *interp, int mark) {
 	}
 }
 
+static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int depth);
+
+static int rest_position(Interpreter *interp, Object *pattern) {
+	int last = pattern->len - 1;
+	for (int i = 0; i < last; i++)
+		if (VAL_TAG(pattern->items[i]) == T_REST) {
+			fail(interp, "rest must be the last element of its array; found it at %d of %d", i, pattern->len);
+			return -1;
+		}
+	return last >= 0 && VAL_TAG(pattern->items[last]) == T_REST ? last : pattern->len;
+}
+
+static int unify_rest(Interpreter *interp, Val pattern_val, Val subject_val, int n_prefix, int depth) {
+	Object *subject = OBJECT_AT(VAL_DATA(subject_val));
+	if (subject->len < n_prefix)
+		return 0;
+
+	for (int i = 0; i < n_prefix; i++)
+		if (!unify_depth(interp, OBJECT_AT(VAL_DATA(pattern_val))->items[i], subject->items[i], depth + 1))
+			return 0;
+
+	Val marker = OBJECT_AT(VAL_DATA(pattern_val))->items[n_prefix];
+	if (rest_is_wildcard(marker))
+		return 1;
+
+	gc_root_push(interp, pattern_val);
+	gc_root_push(interp, subject_val);
+	if (interp->error_flag)
+		return 0;
+	int n_remaining = subject->len - n_prefix;
+	int remaining_handle = object_new_array(interp, n_remaining);
+	gc_root_pop(interp);
+	gc_root_pop(interp);
+	if (interp->error_flag)
+		return 0;
+
+	subject = OBJECT_AT(VAL_DATA(subject_val));
+	memcpy(OBJECT_AT(remaining_handle)->items, subject->items + n_prefix, sizeof(Val) * (size_t)n_remaining);
+
+	return unify_depth(interp, make_logic_var((int)VAL_DATA(marker)), make_array(remaining_handle), depth + 1);
+}
+
 static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int depth) {
 	if (depth > MAX_NESTING_DEPTH) {
 		fail(interp, "structure too deeply nested (cycle?)");
@@ -64,6 +106,21 @@ static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int dep
 		Object *left = OBJECT_AT(VAL_DATA(left_val));
 		Object *right = OBJECT_AT(VAL_DATA(right_val));
 
+		int left_rest = rest_position(interp, left);
+		if (left_rest < 0)
+			return 0;
+		int right_rest = rest_position(interp, right);
+		if (right_rest < 0)
+			return 0;
+		if (left_rest < left->len && right_rest < right->len) {
+			fail(interp, "cannot unify two rest patterns");
+			return 0;
+		}
+		if (left_rest < left->len)
+			return unify_rest(interp, left_val, right_val, left_rest, depth);
+		if (right_rest < right->len)
+			return unify_rest(interp, right_val, left_val, right_rest, depth);
+
 		if (left->len != right->len)
 			return 0;
 		int n = left->len;
@@ -73,28 +130,6 @@ static int unify_depth(Interpreter *interp, Val left_val, Val right_val, int dep
 			if (!unify_depth(interp, left->items[i], right->items[i], depth + 1))
 				return 0;
 		MUSTTAIL return unify_depth(interp, left->items[n - 1], right->items[n - 1], depth + 1);
-	}
-
-	if (VAL_TAG(left_val) == T_PAIR && VAL_TAG(right_val) == T_PAIR) {
-		int spine_len = 0;
-
-		while (VAL_TAG(left_val) == T_PAIR && VAL_TAG(right_val) == T_PAIR) {
-			if (spine_len++ > LIST_SPINE_MAX) {
-				fail(interp, "list too long or cyclic");
-				return 0;
-			}
-
-			int left_slot = (int)VAL_DATA(left_val);
-			int right_slot = (int)VAL_DATA(right_val);
-
-			if (!unify_depth(interp, pairs.table[left_slot].head, pairs.table[right_slot].head, depth + 1))
-				return 0;
-
-			left_val = deref(interp, pairs.table[left_slot].tail);
-			right_val = deref(interp, pairs.table[right_slot].tail);
-		}
-
-		MUSTTAIL return unify_depth(interp, left_val, right_val, depth);
 	}
 
 	if (VAL_TAG(left_val) == T_FRAME && VAL_TAG(right_val) == T_FRAME) {
@@ -154,46 +189,6 @@ void p_unify(DISPATCH_ARGS) {
 
 	int unified = unify(interp, left, right);
 	unify_outcome(interp, left, right, unified);
-
-	DISPATCH(interp);
-}
-
-void p_unify_cons(DISPATCH_ARGS) {
-	POP(tail);
-	POP(head);
-	POP(left);
-
-	Val target = deref(interp, left);
-	int unified;
-	Val counterpart = target;
-
-	if (VAL_TAG(target) == T_PAIR) {
-		Pair *pair = &pairs.table[VAL_DATA(target)];
-		unified = unify(interp, pair->head, head) && unify(interp, pair->tail, tail);
-	} else if (VAL_TAG(target) == T_UNBOUND) {
-		unified = 1;
-	} else {
-		gc_root_push(interp, left);
-		gc_root_push(interp, head);
-		gc_root_push(interp, tail);
-		int slot = object_new_pair(interp);
-		gc_root_pop(interp);
-		gc_root_pop(interp);
-		gc_root_pop(interp);
-		if (interp->error_flag) return;
-
-		pairs.table[slot].head = head;
-		pairs.table[slot].tail = tail;
-
-		counterpart = make_pair(slot);
-		if (VAL_TAG(target) == T_LOGIC_VAR) {
-			bind_var(interp, (int)VAL_DATA(target), counterpart);
-			unified = 1;
-		} else
-			unified = 0;
-	}
-
-	unify_outcome(interp, left, counterpart, unified);
 
 	DISPATCH(interp);
 }
@@ -278,6 +273,21 @@ void p_amb(DISPATCH_ARGS) {
 	gc_root_pop(interp);
 
 	DISPATCH(interp);
+}
+
+void p_rest(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val variable = chain_sp[-1];
+	if (VAL_TAG(variable) == T_UNBOUND)
+		chain_sp[-1] = make_rest(REST_WILDCARD);
+	else if (VAL_TAG(variable) == T_LOGIC_VAR)
+		chain_sp[-1] = make_rest(VAL_DATA(variable));
+	else {
+		fail(interp, "expected a logic variable or _; got %s", tag_name(VAL_TAG(variable)));
+		return;
+	}
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
 }
 
 void p_wildcard(DISPATCH_ARGS) {

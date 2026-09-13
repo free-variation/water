@@ -5,6 +5,8 @@
 #define SERIAL_MAGIC_2 'L'
 #define SERIAL_MAGIC_3 'C'
 #define SERIAL_VERSION 1
+#define SERIAL_SEGMENT_INT 0
+#define SERIAL_SEGMENT_DOUBLE 1
 
 enum {
 	SERIAL_NONE = 1,
@@ -308,14 +310,6 @@ static void write_value(Interpreter *interp, Writer *writer, Val value) {
 			}
 			return;
 		}
-		case T_PAIR: {
-			if (write_shared_header(writer, value, SERIAL_PAIR))
-				return;
-			int slot = (int)VAL_DATA(value);
-			write_value(interp, writer, pairs.table[slot].head);
-			write_value(interp, writer, pairs.table[slot].tail);
-			return;
-		}
 		case T_MATRIX: {
 			if (write_shared_header(writer, value, SERIAL_MATRIX))
 				return;
@@ -330,7 +324,7 @@ static void write_value(Interpreter *interp, Writer *writer, Val value) {
 			if (write_shared_header(writer, value, SERIAL_SEGMENT))
 				return;
 			Object *segment = OBJECT_AT(VAL_DATA(value));
-			write_u32(writer, segment->segment.element_type);
+			write_u32(writer, SERIAL_SEGMENT_INT);
 			write_u32(writer, segment->segment.length);
 			for (int i = 0; i < segment->segment.length; i++)
 				write_double(writer, segment_get(segment, i));
@@ -627,31 +621,9 @@ static int read_value(Interpreter *interp, Reader *reader, Val *out) {
 			return read_collection(interp, reader, 1, out);
 		case SERIAL_FRAME:
 			return read_frame(interp, reader, out);
-		case SERIAL_PAIR: {
-			int slot = object_new_pair(interp);
-			if (interp->error_flag)
-				return 0;
-
-			Val pair = make_pair(slot);
-			pairs.table[slot].head = make_tagged(T_NONE, 0);
-			pairs.table[slot].tail = make_tagged(T_NONE, 0);
-			if (reader_remember(interp, reader, pair) < 0)
-				return 0;
-
-			gc_root_push(interp, pair);
-			Val head;
-			Val tail;
-			if (!read_value(interp, reader, &head) || !read_value(interp, reader, &tail)) {
-				gc_root_pop(interp);
-				return 0;
-			}
-			gc_root_pop(interp);
-
-			pairs.table[slot].head = head;
-			pairs.table[slot].tail = tail;
-			*out = pair;
-			return 1;
-		}
+		case SERIAL_PAIR:
+			fail(interp, "value data holds a cons pair, which this version no longer has");
+			return 0;
 		case SERIAL_MATRIX: {
 			int rows;
 			int columns;
@@ -676,13 +648,30 @@ static int read_value(Interpreter *interp, Reader *reader, Val *out) {
 			return reader_remember(interp, reader, *out) >= 0;
 		}
 		case SERIAL_SEGMENT: {
-			int element_type;
+			int element_kind;
 			int length;
-			if (!read_u32(interp, reader, &element_type) || !read_u32(interp, reader, &length))
+			if (!read_u32(interp, reader, &element_kind) || !read_u32(interp, reader, &length))
 				return 0;
 
-			int handle = object_new_segment(interp, length,
-					element_type == SEGMENT_INT ? SEGMENT_INT : SEGMENT_DOUBLE);
+			if (element_kind == SERIAL_SEGMENT_DOUBLE) {
+				int handle = object_new_matrix_raw(interp, length, 1);
+				if (interp->error_flag)
+					return 0;
+
+				double *elements = OBJECT_AT(handle)->matrix.elements;
+				for (int i = 0; i < length; i++)
+					if (!read_double(interp, reader, &elements[i]))
+						return 0;
+
+				*out = make_matrix(handle);
+				return reader_remember(interp, reader, *out) >= 0;
+			}
+			if (element_kind != SERIAL_SEGMENT_INT) {
+				fail(interp, "value data has an unknown segment kind %d", element_kind);
+				return 0;
+			}
+
+			int handle = object_new_segment(interp, length);
 			if (interp->error_flag)
 				return 0;
 

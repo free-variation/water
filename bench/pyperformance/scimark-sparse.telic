@@ -16,39 +16,39 @@ variable row  variable col  variable val  variable x  variable y
 50000.0 constant anz
 
 : build-sparse ^row ^col ^val ^x ^y |
-  n 1.0 f+ double-segment to row
-  nz double-segment to col
-  anz double-segment to val
-  n double-segment to x
-  n double-segment to y
-  row 0.0 0.0 !i drop
+  n 1.0 f+ 1 0-matrix to row
+  nz 1 0-matrix to col
+  anz 1 0-matrix to val
+  n 1 0-matrix to x
+  n 1 0-matrix to y
+  row 0.0 0.0 !e drop
   0 n 1 do r
-     row r @i to rowr
-     row  rowr nr f+  r 1.0 f+  !i drop
+     row r @e to rowr
+     row  rowr nr f+  r 1.0 f+  !e drop
      r nr / ftruncate to step
      step 1.0 < if 1.0 to step then
      0 nr 1 do k
-        col  k step f*  rowr k f+  !i drop
+        col  k step f*  rowr k f+  !e drop
      loop
   loop ;
 
 : sparse-matmult
   0 cycles 1 do c
      0 n 1 do r
-        row r @i to lo
-        row r 1.0 f+ @i to hi
+        row r @e to lo
+        row r 1.0 f+ @e to hi
         0.0
         lo hi 1 do i0
-           x col i0 @i @i  val i0 @i f*  f+
+           x col i0 @e @e  val i0 @e f*  f+
         loop
-        y swap r !i drop
+        y swap r !e drop
      loop
   loop ;
 
 : sparse-checksum ( -- s )
 
   0.0
-  0 n 1 do i0  y i0 @i f+  loop
+  0 n 1 do i0  y i0 @e f+  loop
   to total
   total ;
 

@@ -40,9 +40,9 @@ clear
 \ fully glued on both sides
 [1 2 3] . cr
 
-\ two-char closers survive gluing: :] and )]
+\ two-char closers survive gluing: :] and >]
 [:dup *:] 3 swap execute . cr
-[( 1 2)] head-tail . . cr
+[< 1 2>] size . cr
 
 \ the matrix typo from the field
 [ 1 2 3 4] 2 2 matrix .

@@ -4,7 +4,6 @@
 !i,j
 %
 '
-)]
 *
 *!
 +
@@ -60,7 +59,6 @@ PI
 QE
 TAU
 [
-[(
 [:
 [<
 ]
@@ -89,7 +87,6 @@ args
 argsort
 array
 array-of
-array>cons
 array>frame
 array>set
 array?
@@ -153,8 +150,6 @@ complex
 complex?
 concat
 conjugate
-cons
-cons>array
 constant
 continuation?
 continue
@@ -210,7 +205,6 @@ difference
 dim
 do
 dot
-double-segment
 drop
 drop-nans
 dup
@@ -353,7 +347,6 @@ group-with
 halt
 has?
 head
-head-tail
 headn
 help
 histogram
@@ -467,7 +460,6 @@ or
 over
 pad-left
 pad-right
-pair?
 panel
 parallel-run
 parse-time
@@ -543,6 +535,7 @@ resample-indices
 resample-indices-ext
 reset
 reshape
+rest
 resume
 reverse
 rm

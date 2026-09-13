@@ -52,11 +52,11 @@ help sin
 
 \ a word with reference examples carries them as { :code :output } frames,
 \ and help prints each below the frame
-' cons man :examples has? . cr                    \ 1
-' cons man :examples @ size . cr                  \ 1
-' cons man :examples @ 0 @i @code . cr            \ 1 2 cons . cr
+' nip man :examples has? . cr                     \ 1
+' nip man :examples @ size . cr                   \ 1
+' nip man :examples @ 0 @i @code . cr             \ 1 2 nip . cr
 ' sin man :examples has? . cr                     \ 1
-help cons
+help nip
 
 \ an unknown name prints a plain message and does not error (line ends ok)
 help no-such-word

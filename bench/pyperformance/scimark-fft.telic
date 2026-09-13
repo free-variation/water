@@ -27,20 +27,20 @@ variable init  variable data
   9069.0 65536.0 f/ to k1
   seed 65536.0 mod to j0
   seed 65536.0 f/ to j1
-  17.0 double-segment to rand-m
+  17.0 1 0-matrix to rand-m
   0 17 1 do slot
      j0 k0 f* to jseed
      jseed 65536.0 f/  j0 k1 f* f+  j1 k0 f* f+  32768.0 fmod to j1
      jseed 65536.0 mod to j0
-     rand-m  j0 65536.0 j1 f* f+  slot  !i drop
+     rand-m  j0 65536.0 j1 f* f+  slot  !e drop
   loop
   4.0 to ri  16.0 to rj ;
 
 : next-double ( -- d ) ^ri ^rj |
   ri to ii  rj to jj
-  rand-m ii @i  rand-m jj @i f- to k
+  rand-m ii @e  rand-m jj @e f- to k
   k 0.0 < if k m1 f+ to k then
-  rand-m k jj !i drop
+  rand-m k jj !e drop
   ii 0.0 = if 16.0 to ii else ii 1.0 f- to ii then  ii to ri
   jj 0.0 = if 16.0 to jj else jj 1.0 f- to jj then  jj to rj
   dm1 k f* ;
@@ -60,12 +60,12 @@ variable init  variable data
      j 2.0 f* to jj
      n 2.0 / ftruncate to k
      i j < if
-        data ii @i to tr
-        data ii 1.0 f+ @i to ti
-        data  data jj @i  ii  !i drop
-        data  data jj 1.0 f+ @i  ii 1.0 f+  !i drop
-        data tr jj !i drop
-        data ti  jj 1.0 f+  !i drop
+        data ii @e to tr
+        data ii 1.0 f+ @e to ti
+        data  data jj @e  ii  !e drop
+        data  data jj 1.0 f+ @e  ii 1.0 f+  !e drop
+        data tr jj !e drop
+        data ti  jj 1.0 f+  !e drop
      then
      begin j k < 0= while  j k f- to j  k 2.0 / ftruncate to k  repeat
      j k f+ to j
@@ -89,14 +89,14 @@ variable init  variable data
         ii dual 2.0 f* f+ to jj
         ii 1.0 f+ to ii1
         jj 1.0 f+ to jj1
-        data jj @i to wdr
-        data jj1 @i to wdi
-        data ii @i to xr
-        data ii1 @i to xi
-        data  xr wdr f-  jj   !i drop
-        data  xi wdi f-  jj1  !i drop
-        data  xr wdr f+  ii   !i drop
-        data  xi wdi f+  ii1  !i drop
+        data jj @e to wdr
+        data jj1 @e to wdi
+        data ii @e to xr
+        data ii1 @e to xi
+        data  xr wdr f-  jj   !e drop
+        data  xi wdi f-  jj1  !e drop
+        data  xr wdr f+  ii   !e drop
+        data  xi wdi f+  ii1  !e drop
      loop
      1 dual 1 do a
         wr sine wi f* f-  sine-squared wr f* f-  to ii    \ reuse ii as tmp_real
@@ -107,16 +107,16 @@ variable init  variable data
            ii dual 2.0 f* f+ to jj
            ii 1.0 f+ to ii1
            jj 1.0 f+ to jj1
-           data jj @i to z1r
-           data jj1 @i to z1i
+           data jj @e to z1r
+           data jj1 @e to z1i
            wr z1r f* wi z1i f* f- to wdr
            wr z1i f* wi z1r f* f+ to wdi
-           data ii @i to xr
-           data ii1 @i to xi
-           data  xr wdr f-  jj   !i drop
-           data  xi wdi f-  jj1  !i drop
-           data  xr wdr f+  ii   !i drop
-           data  xi wdi f+  ii1  !i drop
+           data ii @e to xr
+           data ii1 @e to xi
+           data  xr wdr f-  jj   !e drop
+           data  xi wdi f-  jj1  !e drop
+           data  xr wdr f+  ii   !e drop
+           data  xi wdi f+  ii1  !e drop
         loop
      loop
      dual 2.0 f* to dual
@@ -126,22 +126,22 @@ variable init  variable data
   1.0 fft-transform-internal
   1.0  nlen 2.0 f/  f/ to scale
   0 nlen 1 do k
-    data  data k @i scale f*  k  !i drop
+    data  data k @e scale f*  k  !e drop
   loop ;
 
 : fft-bench ^init ^data |
-  nlen double-segment to init
-  nlen double-segment to data
+  nlen 1 0-matrix to init
+  nlen 1 0-matrix to data
   7.0 rng-init
-  0 nlen 1 do k  init next-double k !i drop  loop
+  0 nlen 1 do k  init next-double k !e drop  loop
   now to t0
   0 loops 1 do l0
-     0 nlen 1 do k  data  init k @i  k  !i drop  loop
+     0 nlen 1 do k  data  init k @e  k  !e drop  loop
      0 cycles 1 do c  -1.0 fft-transform-internal fft-inverse  loop
   loop
   now t0 - to t0
   0.0
-  0 nlen 1 do k  data k @i f+  loop
+  0 nlen 1 do k  data k @e f+  loop
   to checksum
   "elapsed: " . t0 . " s" . cr
   checksum "checksum: {0}" format . cr ;

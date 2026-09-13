@@ -26,13 +26,20 @@ h curl-perform to code
 cr code . cr
 h curl-cleanup
 
-\ segment>pointer: hand a C function a writable buffer and read the result back.
+\ matrix>pointer: hand a C function a writable double buffer and read the result back.
 \ modf(x, *iptr) returns the fractional part and writes the integer part to *iptr.
 "/usr/lib/libSystem.B.dylib" "libm.so.6" ffi-open-either to libm
 libm "modf" [ :double :ptr ] :double ffi-function modf
-1 double-segment to part
-3.75 part segment>pointer modf . cr   \ 0.75  (fractional part, returned)
-part 0 @i . cr                        \ 3     (integer part, written into the segment)
+1 1 0-matrix to part
+3.75 part matrix>pointer modf . cr    \ 0.75  (fractional part, returned)
+part 0 @e . cr                        \ 3     (integer part, written into the matrix)
+
+\ segment>pointer: the int * out-parameter.
+\ frexp(x, *exp) returns the mantissa in [0.5, 1) and writes the exponent to *exp.
+libm "frexp" [ :double :ptr ] :double ffi-function frexp
+1 int-segment to exponent-cell
+8.0 exponent-cell segment>pointer frexp . cr   \ 0.5   (mantissa, returned)
+exponent-cell 0 @i . cr                        \ 4     (exponent, written into the segment)
 
 clear
 \ === pointer lifetime ===

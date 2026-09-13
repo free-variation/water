@@ -212,7 +212,7 @@ departs from its pyperformance original the file's header says so.
 
 ### Core language
 
-- **Tagged Vals** — `null`, floats, strings, symbols, sets, arrays, cons pairs, frames, matrices, quantities, segments, execution tokens, curried tokens, dictionary addresses, continuations, logic variables and the unbound/wildcard sentinel, process streams, database handles, C pointers, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
+- **Tagged Vals** — `null`, floats, strings, symbols, sets, arrays, frames, matrices, quantities, segments, execution tokens, curried tokens, dictionary addresses, continuations, logic variables and the unbound/wildcard sentinel, process streams, database handles, C pointers, internal marks. A single 8-byte NaN-boxed representation; the tag determines interpretation.
 - **Direct-threaded inner interpreter** — each dictionary cell is a handler function pointer, dispatched by an indirect tail call (`musttail`); a colon call, literal, or branch carries its operand in the cell(s) right after the handler. The dictionary *is* the threaded code.
 - **Compile-time instruction fusion** — a float op collapses with its operands and its store into one instruction, whether they are globals (`vvf+ a b`), locals (`zr zr f* to zr2`), a literal, or a stack slot read by depth (`2 pick f+`), so a quotation reading values parked below a combinator's operands costs the same as one reading locals. Also fused: `f*+` / `f*-` multiply-add, a comparison before a branch (`= if`, `> while`), an array read-modify-write (`arr i arr i @i f1- !i`), and `++ name` / `f++ name`. `see-compiled` shows the fused ops.
 - **Program image and execution state separated** — the dictionary, symbol pool, and object heap are global (`Vocabulary`, `Compiler`, `Arena`); the three stacks, instruction pointer, locals, and GC roots live in a per-run `Interpreter`. Several execution contexts share one image, which is how the parallel words give each worker its own stacks over the shared heap — and why a worker xt must not mutate shared inputs or print.
@@ -263,15 +263,15 @@ those bindings when one fails — on the same delimited-continuation substrate a
 exceptions.
 
 - **Variables** — `lvar` pushes a fresh one; `| ?x |` in a locals head declares one that is fresh on every call. `?` reads a variable, answering what it is bound to.
-- **`unify`** (`~`) — makes two terms equal, binding variables on either side: values by comparison, arrays and cons pairs element-wise, frames as open records where shared keys must agree and extra keys are ignored. A mismatch fails. `_` matches anything and binds nothing.
-- **Search** — `amb` runs the first of two quotations; if it fails — a mismatch, or an explicit `fail` — its bindings are undone and the second runs. `choose` does the same across a cons list. The first branch that succeeds is the one kept; `solutions` and `take-solutions` collect every success instead of the first.
+- **`unify`** (`~`) — makes two terms equal, binding variables on either side: values by comparison, arrays element-wise, with a trailing `rest` pattern taking an array's remaining elements, frames as open records where shared keys must agree and extra keys are ignored. A mismatch fails. `_` matches anything and binds nothing.
+- **Search** — `amb` runs the first of two quotations; if it fails — a mismatch, or an explicit `fail` — its bindings are undone and the second runs. `choose` does the same across an array. The first branch that succeeds is the one kept; `solutions` and `take-solutions` collect every success instead of the first.
 - **Tests** — `matches?` answers whether two terms could unify and leaves nothing bound; `unify?` keeps the bindings when they do. `case`/`of` dispatches through `unify?`, so a clause pattern may hold variables that bind for its body.
-- **Lists** — `[( a b c )]` builds cons pairs and `[( H T )]` is Prolog's `[H|T]` under `unify`, with `cons`, `head-tail`, and `array`↔`cons` conversions.
+- **Destructuring** — `[ H T rest ]` under `unify` is Prolog's `[H|T]`: `H` takes the first element, `T` the rest as an array; `[ _ rest ]` matches any array.
 - **Pattern queries over datasets** — `query` keeps the rows whose columns equal a pattern frame's ground values (logic variables and `_` constrain nothing), and `query-rows` answers them as frames for binding the pattern's variables row by row under `~`, `matches?` or `choose`. Joins, grouping and loading are the dataset words (`merge-by`, `aggregate`, `rows>dataset`, `db-query`).
 
 ### Numeric / matrix
 
-- **Polymorphic arithmetic** — `+`/`-`/`*`/`/` dispatch on operand tags: floats compute, strings concatenate (`+`), sets union/difference/intersection, matrices element-wise, a scalar broadcasts over a matrix, and arrays concatenate (`+`).
+- **Polymorphic arithmetic** — `+`/`-`/`*`/`/` dispatch on operand tags: floats compute, strings concatenate (`+`), sets union/difference/intersection, matrices element-wise, and a scalar broadcasts over a matrix.
 - **Integer division** — `%` truncating divmod, with `mod` (sign follows the dividend) and `quotient` (toward zero) on top; all three broadcast element-wise like the arithmetic words.
 - **`min2`** / **`max2`** — pairwise minimum and maximum, element-wise with scalar broadcast.
 - **In-place matrix ops** — `+!`/`-!`/`*!`/`/!` mutate the left matrix in place. Float-only fast paths (`f+`, `f-`, `f*`, `f/`, `f^`, …) skip the type dispatch when both operands are known floats.
@@ -365,9 +365,9 @@ Symbol-keyed nested maps — the associative type, and the compound term the log
 
 ### Segments
 
-Flat, fixed-length typed numeric buffers stored off the arena (one allocation, freed by GC), for dense numeric data without per-element boxing and as FFI scratch.
+A flat, fixed-length `int` buffer stored off the arena (one allocation, freed by GC), for the `int *` arguments and out-parameters of C libraries; dense double storage is a matrix.
 
-- **`int-segment`** / **`double-segment`** — `( n -- seg )` an n-element zero-filled buffer; both store doubles internally, so `@i` reads and `!i` writes a float, sharing the array indexing words.
+- **`int-segment`** — `( n -- seg )` an n-element zero-filled buffer; `@i` reads an element as a float and `!i` writes one truncated to an int, sharing the array indexing words.
 - **`segment>pointer`** — intern the backing buffer as a `T_PTR` for an FFI `:ptr` argument, no copy.
 
 ### Time and dates

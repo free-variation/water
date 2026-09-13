@@ -168,7 +168,7 @@ void p_at_e(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 }
 
-static Val *matrix_element_read(Interpreter *interp, cell *resume_ip, Val *slot_sp, Val source_val, int index) {
+static inline __attribute__((always_inline)) Val *matrix_element_read(Interpreter *interp, cell *resume_ip, Val *slot_sp, Val source_val, int index) {
 	if (VAL_TAG(source_val) != T_MATRIX) {
 		SYNC_REGISTERS(interp, resume_ip, slot_sp);
 		fail(interp, "expected a matrix; got %s", tag_name(VAL_TAG(source_val)));
@@ -215,7 +215,96 @@ void p_at_e_ll0(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
 }
 
-static int matrix_element_write(Interpreter *interp, cell *resume_ip, Val *fail_sp, Val target_val, int index, Val element_val) {
+void p_at_e_lit_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
+	Val source_val = interp->return_stack[interp->local_base + (int)chain_ip[0]];
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 2, chain_sp, source_val, (int)chain_ip[1]);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
+}
+
+void p_at_e_swap_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 1);
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+
+	Val source_val = interp->return_stack[interp->local_base + (int)chain_ip[0]];
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 1, chain_sp - 1, source_val, (int)VAL_NUMBER(index_val));
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
+}
+
+void p_at_e_depth_top(DISPATCH_ARGS) {
+	int matrix_depth = (int)chain_ip[0];
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, matrix_depth + 1);
+	Val index_val = chain_sp[-1];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+
+	Val source_val = chain_sp[-1 - matrix_depth];
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 1, chain_sp - 1, source_val, (int)VAL_NUMBER(index_val));
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
+}
+
+void p_at_e_depth(DISPATCH_ARGS) {
+	int matrix_depth = (int)chain_ip[0];
+	int index_depth = (int)chain_ip[1];
+	int deepest = matrix_depth > index_depth ? matrix_depth : index_depth;
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 2, chain_sp, deepest + 1);
+	REQUIRE_STACK_ROOM(interp, chain_ip + 2, chain_sp, 1);
+
+	Val index_val = chain_sp[-1 - index_depth];
+	if (VAL_TAG(index_val) != T_FLOAT) {
+		SYNC_REGISTERS(interp, chain_ip + 2, chain_sp);
+		fail(interp, "expected a float index; got %s", tag_name(VAL_TAG(index_val)));
+		return;
+	}
+
+	Val source_val = chain_sp[-1 - matrix_depth];
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 2, chain_sp, source_val, (int)VAL_NUMBER(index_val));
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 2, pushed_sp);
+}
+
+void p_gather_e_local0(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip + 1, chain_sp, 2);
+	int position = (int)interp->return_stack[interp->local_base + (int)chain_ip[0]].number;
+	Val index_vector_val = chain_sp[-1];
+	Val value_val = chain_sp[-2];
+	if (VAL_TAG(index_vector_val) != T_MATRIX) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "expected a matrix; got %s", tag_name(VAL_TAG(index_vector_val)));
+		return;
+	}
+	Object *index_vector = OBJECT_AT(VAL_DATA(index_vector_val));
+
+	int n_elements = index_vector->matrix.rows * index_vector->matrix.columns;
+	if (position < 0 || position >= n_elements) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "element index %d out of bounds (%d elements)", position, n_elements);
+		return;
+	}
+	int gathered_index = (int)index_vector->matrix.elements[position];
+
+	Val *pushed_sp = matrix_element_read(interp, chain_ip + 1, chain_sp - 2, value_val, gathered_index);
+	if (!pushed_sp)
+		return;
+	DISPATCH_REGISTERS(interp, chain_ip + 1, pushed_sp);
+}
+
+static inline __attribute__((always_inline)) int matrix_element_write(Interpreter *interp, cell *resume_ip, Val *fail_sp, Val target_val, int index, Val element_val) {
 	if (VAL_TAG(element_val) != T_FLOAT && VAL_TAG(element_val) != T_NONE) {
 		SYNC_REGISTERS(interp, resume_ip, fail_sp);
 		fail(interp, "expected a float or null value; got %s", tag_name(VAL_TAG(element_val)));

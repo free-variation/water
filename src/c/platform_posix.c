@@ -131,8 +131,7 @@ static const char *lf_token_style(const char *s, long len) {
 	if (lf_is_number(s, len))
 		return "ansi-teal";
 	if (len == 2 && (memcmp(s, "[:", 2) == 0 || memcmp(s, ":]", 2) == 0
-			|| memcmp(s, "[(", 2) == 0 || memcmp(s, ")]", 2) == 0
-			|| memcmp(s, "[>", 2) == 0))
+			|| memcmp(s, "[<", 2) == 0 || memcmp(s, ">]", 2) == 0))
 		return "ansi-blue";
 	if (s[0] == ':' && len > 1)
 		return "ansi-olive";
@@ -170,11 +169,10 @@ static long lf_token_end(const char *input, long n, long start) {
 	char after_lead = start + 1 < n ? input[start + 1] : 0;
 	if (lead == ';' || lead == ']' || lead == '}')
 		return start + 1;
-	if ((lead == ':' || lead == ')') && after_lead == ']')
+	if ((lead == ':' || lead == '>') && after_lead == ']')
 		return start + 2;
 	if (lead == '[') {
-		int two_char_opener = after_lead == ':' || after_lead == '('
-			|| after_lead == '|' || after_lead == '>';
+		int two_char_opener = after_lead == ':' || after_lead == '<';
 		return start + (two_char_opener ? 2 : 1);
 	}
 	if (lead == '{')
@@ -189,7 +187,7 @@ static long lf_token_end(const char *input, long n, long start) {
 			break;
 		if (c == ']' && bracket_depth == 0) {
 			char preceding = input[i - 1];
-			if ((preceding == ':' || preceding == ')') && i - 1 > start)
+			if ((preceding == ':' || preceding == '>') && i - 1 > start)
 				i--;
 			break;
 		}

@@ -587,14 +587,12 @@ void p_add(DISPATCH_ARGS) {
 		BROADCAST_SCALAR_OP_MATRIX(+);
 	else if (VAL_TAG(left) == T_MATRIX && VAL_TAG(right) == T_FLOAT)
 		BROADCAST_MATRIX_OP_SCALAR(+);
-	else if (VAL_TAG(left) == T_ARRAY && VAL_TAG(right) == T_ARRAY)
-		execute_cfa(interp, find("concat"));
 	else if (exact_binary_word(interp, left, right, EXACT_OP_ADD)) {
 	}
 	else if (complex_binary_word(interp, left, right, '+')) {
 	}
 	else if (!quantity_additive_op(interp, left, right, scalar_add, EXACT_OP_ADD, "+", "add"))
-		fail(interp, "expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got %s and %s",
+		fail(interp, "expected two floats, exacts, complexes, strings, sets, or matrices, scalar/matrix, or two quantities of one dimension; got %s and %s",
 				tag_name(VAL_TAG(left)), tag_name(VAL_TAG(right)));
 
 	DISPATCH(interp);
@@ -1156,21 +1154,21 @@ void p_null(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
-int type_of_symbols[T_COMPLEX + 1];
+int type_of_symbols[T_REST + 1];
 
 void type_of_intern_names(Interpreter *interp) {
-	static const char *names[T_COMPLEX + 1] = {
+	static const char *names[T_REST + 1] = {
 		[T_NONE] = "null",        [T_SYMBOL] = "symbol",  [T_FLOAT] = "float",
 		[T_STRING] = "string",    [T_SET] = "set",        [T_ARRAY] = "array",
-		[T_PAIR] = "pair",        [T_FRAME] = "frame",    [T_MATRIX] = "matrix",
+		[T_FRAME] = "frame",      [T_MATRIX] = "matrix",
 		[T_XT] = "xt",            [T_ADDR] = "addr",      [T_CONT] = "continuation",
 		[T_MARK] = "mark",        [T_STREAM] = "stream",  [T_LOGIC_VAR] = "lvar",
 		[T_UNBOUND] = "wildcard", [T_DB] = "db",          [T_PTR] = "ptr",
 		[T_SEGMENT] = "segment",  [T_QUANTITY] = "quantity",
 		[T_CURRIED] = "xt",       [T_EXACT] = "exact",
-		[T_COMPLEX] = "complex"
+		[T_COMPLEX] = "complex",  [T_REST] = "rest"
 	};
-	for (int tag = 0; tag <= T_COMPLEX; tag++)
+	for (int tag = 0; tag <= T_REST; tag++)
 		type_of_symbols[tag] = intern_symbol(interp, names[tag]);
 }
 

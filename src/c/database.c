@@ -232,7 +232,7 @@ static int dataset_consume_row(Interpreter *interp, sqlite3_stmt *statement, voi
 			columns_context->column_numeric[j] = 0;
 
 		Object *column = OBJECT_AT(column_handle);
-		GROW_IF_FULL(column->len, column->capacity, column->items);
+		ITEMS_GROW_IF_FULL(column);
 		column->items[column->len++] = value;
 	}
 

@@ -47,7 +47,7 @@ ledger { :paid 200 ¢ } query :name @ . cr               \ [ "bo" ]  quantities 
 lvar to Age
 family { :child :django } query-rows [: row | lvar to Id { :id Id } row ~ drop Id ? . :] each cr   \ 1 3
 family { :child :django } query-rows 0 @i :parent @ . cr                \ :john
-family { :parent :john } query-rows null add-last! array>cons
+family { :parent :john } query-rows
 [: row | lvar to Kid { :child Kid } row ~ drop Kid ? :bob = not if fail then row :id @ . :] choose cr   \ 2  choose backtracks to the row that binds :bob
 family { :child :nope } query-rows . cr                 \ [ ]
 

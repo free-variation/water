@@ -36,7 +36,7 @@ insignificant). `make test` extracts and verifies every pair, and
 
 Tokens are whitespace-delimited, with self-delimiting punctuation: `;`, `]`,
 and `}` always end a token and `[` and `{` always start one (the two-char
-openers `[:` `[(` `[<` and closers `:]` `)]` `>]` stay whole), so
+openers `[:` `[<` and closers `:]` `>]` stay whole), so
 `[1 2 3]`, `{:a 1}`, and `dup *;` parse without inner spaces. A path literal's
 predicate brackets (`/a[x>3]`) are kept whole by bracket balance. `<` `>` `<=`
 `>=` are ordinary comparison words; set literals `[< … >]` still need spaces
@@ -183,7 +183,7 @@ float fast path first; the heavy cases are captured by the O column.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
-| `+` | `( a b -- a+b )` | float: add. string+string: concat → new string. set+set: union → new set. matrix+matrix: element-wise → new matrix. scalar+matrix / matrix+scalar: broadcast → new matrix. array+array: defers to `concat`. exact+exact: exact sum. complex (either side, floats promote): complex sum. | 3 (float) | float none; string `1s` + temp buffer; set `1o`; matrix `1m(r×c)`; array `1a(m+n)` | float O(1); string O(\|s\|); set O(n log n); matrix O(r×c); array O(m+n) |
+| `+` | `( a b -- a+b )` | float: add. string+string: concat → new string. set+set: union → new set. matrix+matrix: element-wise → new matrix. scalar+matrix / matrix+scalar: broadcast → new matrix. exact+exact: exact sum. complex (either side, floats promote): complex sum. | 3 (float) | float none; string `1s` + temp buffer; set `1o`; matrix `1m(r×c)` | float O(1); string O(\|s\|); set O(n log n); matrix O(r×c) |
 | `-` | `( a b -- a-b )` | float: subtract. set−set: difference. matrix: element-wise. scalar/matrix broadcast. exact−exact: exact. complex: complex. | 3 (float) | as `+` | as `+` |
 | `*` | `( a b -- a*b )` | float: multiply. set∩set: intersection. matrix: element-wise. scalar/matrix broadcast. exact×exact: exact. complex: complex. | 3 (float) | as `+` | as `+` |
 | `/` | `( a b -- a/b )` | float: divide (errors on zero divisor). matrix÷matrix: element-wise (errors on any zero element). scalar/matrix broadcast. exact÷exact: exact, closed. complex: complex. | 3 (float) | matrix `1m(r×c)` | float O(1); matrix O(r×c) |
@@ -960,13 +960,12 @@ Result is `1.0` (true) or `0.0` (false), with a float fast path. `=` uses `val_c
 | `false?` | `( a -- bool )` | core.telic: `1` when the value is falsy, else `0` | 2 | none | O(1) |
 | `between?` | `( v low high -- bool )` or `( mat/arr low high -- mat )` | core.telic: low ≤ v ≤ high, inclusive; a matrix or array operand answers an element-wise mask, and any ordered scalars compare (strings lexicographic, quantities rescaled within a dimension) | 9 | matrix `2m(r×c)` | O(1); matrix/array O(n) |
 | `clamp` | `( x low high -- x' )` | core.telic: x limited to [low, high] — values under low answer low, over high answer high; a matrix clamps element-wise with scalar bounds, an array clamps each element (nested arrays included), and quantities clamp within their dimension | 6 | matrix `2m(r×c)`; array `1a(n)` | O(1); matrix/array O(n) |
-| `type-of` | `( a -- sym )` | The value's type as a symbol: `:float` `:string` `:symbol` `:array` `:set` `:pair` `:frame` `:matrix` `:quantity` `:xt` `:continuation` `:stream` `:db` `:ptr` `:segment` `:null` `:wildcard` `:lvar` `:exact` `:complex`. A bound logic var reports its value's type; an unbound one is `:lvar` | 2 | none | O(1) |
+| `type-of` | `( a -- sym )` | The value's type as a symbol: `:float` `:string` `:symbol` `:array` `:set` `:frame` `:matrix` `:quantity` `:xt` `:continuation` `:stream` `:db` `:ptr` `:segment` `:null` `:wildcard` `:lvar` `:exact` `:complex` `:rest`. A bound logic var reports its value's type; an unbound one is `:lvar` | 2 | none | O(1) |
 | `float?` | `( a -- bool )` | core.telic: `1` when the value is a float, else `0` | 5 | none | O(1) |
 | `string?` | `( a -- bool )` | core.telic: `1` when the value is a string, else `0` | 5 | none | O(1) |
 | `symbol?` | `( a -- bool )` | core.telic: `1` when the value is a symbol, else `0` | 5 | none | O(1) |
 | `array?` | `( a -- bool )` | core.telic: `1` when the value is an array, else `0` | 5 | none | O(1) |
 | `set?` | `( a -- bool )` | core.telic: `1` when the value is a set, else `0` | 5 | none | O(1) |
-| `pair?` | `( a -- bool )` | core.telic: `1` when the value is a pair, else `0` | 5 | none | O(1) |
 | `frame?` | `( a -- bool )` | core.telic: `1` when the value is a frame, else `0` | 5 | none | O(1) |
 | `matrix?` | `( a -- bool )` | core.telic: `1` when the value is a matrix, else `0` | 5 | none | O(1) |
 | `quantity?` | `( a -- bool )` | core.telic: `1` when the value is a quantity, else `0` | 5 | none | O(1) |
@@ -1146,13 +1145,6 @@ null nan? . cr
 
 ```forth set?
 [< 1 >] set? . cr
-```
-```output
-1
-```
-
-```forth pair?
-1 2 cons pair? . cr
 ```
 ```output
 1
@@ -1858,8 +1850,6 @@ closers are self-delimiting tokens (see the note in the introduction).
 | `}` | — | Close a frame literal |
 | `[<` | — | Open a set literal; `>]` closes it (both need surrounding spaces) |
 | `>]` | — | Close a set literal |
-| `[(` | — | Open a cons-list literal; `)]` closes it |
-| `)]` | — | Close a cons-list literal |
 | `:]` | — | Close a quotation (`[:` itself is under Defining) |
 | `\|` | — | Close a body's locals head, and open it when no name precedes: `\| x y \|` and `x y \|` both receive x and y (see Locals) |
 
@@ -1903,20 +1893,6 @@ closers are self-delimiting tokens (see the note in the introduction).
 ```
 ```output
 [< 1 2 3 >]
-```
-
-```forth [(
-[( 1 2 null )] . cr
-```
-```output
-[( 1 2 null )]
-```
-
-```forth )]
-[( 1 2 null )] . cr
-```
-```output
-[( 1 2 null )]
 ```
 
 ```forth :]
@@ -2672,10 +2648,10 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `slice!` | `( src sstart sstep slen arr tstart -- arr )` | Copy `slen` elements `src[sstart], src[sstart+sstep], …` into `arr[tstart…]` in place | 6 + slen | self-overlap may malloc slen | O(slen) |
 | `to-slice!` | `( v₀ … vₙ₋₁ n arr offset -- arr )` | Store the n values under their count into `arr[offset…offset+n)`; leaves arr | 2 + n | none | O(n) |
 | `nlast` | `( arr/matrix n -- arr/vector )` | arrays.telic: the last n elements, n clamped to [0, length]; a matrix answers its last n row-major elements as an n×1 vector | 3n | 3×`1a(n)`; matrix `2m` | O(n) |
-| `first` | `( arr/matrix/pair -- v )` | core.telic: element 0 of an array, the first row-major element of a matrix (as a float), or a cons's head | 9 | none | O(1) |
+| `first` | `( arr/matrix -- v )` | core.telic: element 0 of an array, or the first row-major element of a matrix (as a float) | 9 | none | O(1) |
 | `last` | `( arr/matrix -- v )` | core.telic: the final element of an array, or the last row-major element of a matrix (as a float); empty array errors | 9 | none | O(1) |
-| `second` | `( arr/pair -- v )` | core.telic: element 1 of an array, or a cons's tail (`5 6 cons second` → 6; on a list literal the rest, not the next element) | 9 | none | O(1) |
-| `assoc` | `( entries key -- value )` | core.telic: the value paired with `key`, the first match by structural equality (so tuple arrays, frames and pairs serve as keys, `1` and `"1"` are distinct, quantities match within a dimension, `null` is a key). An array holds entries — `[ key value ]` arrays or conses, `first` the key and `second` the value — as `count`, `group-indices` and `split-by` answer them; a chain of pairs is a property chain, heads alternating key and value along the tails, `[( k1 v1 k2 v2 )]`, the last value the terminal tail or the element before a closing `null`. A missing key answers `null`, as a stored `null` value does | 3 + entries scanned | none | O(n) |
+| `second` | `( arr -- v )` | core.telic: element 1 of an array | 3 | none | O(1) |
+| `assoc` | `( entries key -- value )` | core.telic: the value paired with `key`, the first match by structural equality (so tuple arrays, frames and pairs serve as keys, `1` and `"1"` are distinct, quantities match within a dimension, `null` is a key). The entries are `[ key value ]` arrays, `first` the key and `second` the value, as `count`, `group-indices` and `split-by` answer them. A missing key answers `null`, as a stored `null` value does | 3 + entries scanned | none | O(n) |
 | `skip` | `( arr n -- arr )` | arrays.telic: all but the first n elements | 3n | 3×`1a(n)` | O(n) |
 | `sort` | `( arr/set/v -- arr/v )` | Sorted copy: an array orders ascending in natural order; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error) | 1 + n log n | `1a(n)` / `1m(n)` | O(n log n); vectors above 8k elements O(n) radix |
 | `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
@@ -2805,11 +2781,11 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 
 ```forth assoc
 [ [ "a" 1 ] [ "b" 2 ] ] "b" assoc . cr
-[( :x 10 :y 20 )] :y assoc . cr
+[ [ :x 10 ] [ :y 20 ] ] :z assoc . cr
 ```
 ```output
 2
-20
+null
 ```
 
 ```forth skip
@@ -2863,50 +2839,6 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 
 ---
 
-## Pairs (cons lists)
-
-Cons cells in a dense, GC'd table — the linked, recursively-decomposable counterpart to arrays (O(1) prepend, tail-sharing, head/tail recursion). A list is a chain of pairs; `null` is the empty list and the terminator. The `[( … )]` reader takes the **last element as the tail**, so `[( a b c )]` is `cons(a, cons(b, c))` and a proper list is written `[( a b c null )]`. That makes `[( H T )]` exactly Prolog's `[H|T]` under `unify`. Printing resolves bound vars; output round-trips.
-
-| Word | Stack effect | Behavior | Ops | Alloc | O |
-|------|-------------|----------|-----|-------|---|
-| `[( v… )]` | `( -- list )` | List literal; the last element is the tail (`[( a b c )]` = `cons(a, cons(b, c))`; `[( )]` = `null`; one element = itself) | n | `n−1` pairs | O(n) |
-| `cons` | `( head tail -- pair )` | Build a cons cell | 2 | `1 pair` | O(1) |
-| `head-tail` | `( pair -- head tail )` | Split a pair — head under, tail on top; no auto-deref; errors on a non-pair | 1 | none | O(1) |
-| `array>cons` | `( arr -- list )` | Cons chain from an array's elements (last element becomes the tail; `[ ]` → `null`) | n | `n−1` pairs | O(n) |
-| `cons>array` | `( list -- arr )` | Walk a cons chain into an array, **dereferencing** the spine and each element and including the terminal | n | `1a(n)` | O(n) |
-
-```forth cons
-1 2 cons . cr
-```
-```output
-[( 1 2 )]
-```
-
-```forth head-tail
-[( 1 2 3 null )] head-tail . . cr
-```
-```output
-[( 2 3 null )] 1
-```
-
-```forth array>cons
-[ 1 2 3 ] array>cons . cr
-```
-```output
-[( 1 2 3 )]
-```
-
-```forth cons>array
-[( 4 5 6 null )] cons>array . cr
-```
-```output
-[ 4 5 6 null ]
-```
-
-`unify` decomposes/builds pairs (head then tail), and `=` compares them structurally — see Logic.
-
----
-
 ## Frames
 
 Symbol-keyed sorted maps; binary-search lookup. A **path** is an array of steps; a plain *locator* is all symbols, and the literal `/a/b/c` is a compile-time constant array that allocates nothing at run time. A path may instead be a **search path** matching a set of nodes (see Path queries below). The single-target words (`@`, `!`, `delete-at`, `update-at`) require a locator and reject a search path (the error names `select-keys`/`select-values`); `has?` accepts either. `d` = path depth, `n` = frame size.
@@ -2930,8 +2862,8 @@ Symbol-keyed sorted maps; binary-search lookup. A **path** is an array of steps;
 | `key-set` | `( fr -- set )` | The keys as a set of symbols, for membership tests and set algebra against other key sets | 1 + n log n | `1o` | O(n log n) |
 | `values` | `( fr -- arr )` | Values in key order | 1 + n | `1a(n)` | O(n) |
 | `merge` | `( fr₁ fr₂ -- fr )` | New frame with all keys; fr₂ wins collisions | m+n | `1o` | O(m+n) |
-| `copy` | `( a -- a' )` | Deep copy of any value: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations, pairs; identity for scalars. Defined generally, not frame-specific. | tree size | one object per node | O(tree size) |
-| `reify` | `( a -- a' )` | Deep copy of any value, dereferencing bound logic vars and recursing into frames, arrays, matrices, strings, sets, continuations, pairs, but each unbound var becomes a canonical inert symbol `:_0`, `:_1`, … numbered by first appearance — a ground, storable, comparable snapshot. | tree size | one object per node | O(tree size) |
+| `copy` | `( a -- a' )` | Deep copy of any value: dereferences bound logic vars to their values and gives each unbound var a fresh shared var; recurses into frames, arrays, matrices, strings, sets, continuations; identity for scalars. Defined generally, not frame-specific. | tree size | one object per node | O(tree size) |
+| `reify` | `( a -- a' )` | Deep copy of any value, dereferencing bound logic vars and recursing into frames, arrays, matrices, strings, sets, continuations, but each unbound var becomes a canonical inert symbol `:_0`, `:_1`, … numbered by first appearance — a ground, storable, comparable snapshot. | tree size | one object per node | O(tree size) |
 
 ```forth frame
 [ :a :b ] [ 1 2 ] frame frame>array . cr
@@ -3074,7 +3006,7 @@ So `/users/*/name` is the `:name` of every child of `:users`, `/root//city` is e
 | `select-values` | `( fr path -- arr )` | Every matched value, in document (pre-order) order, duplicates kept | s | `1a` + reallocs | O(s) |
 | `select-keys` | `( fr path -- arr )` | The full root-to-match path (a symbol array) for every match, document order | s | `1a` + `1a` per match | O(s + total path length) |
 
-`select-values` is the cheaper word (it captures the node directly, no per-match path array); `array>set` the result when distinct values are wanted, or `array>cons` to pass the matches to `choose` as backtracking choice points.
+`select-values` is the cheaper word (it captures the node directly, no per-match path array); `array>set` the result when distinct values are wanted, or hand the array to `choose` as backtracking choice points.
 
 ```forth select-values
 { :a { :n 1 } :b { :n 2 } } /*/n select-values . cr
@@ -3938,14 +3870,13 @@ null [ 5 ] vector vstack matrix>array . cr
 
 ## Segments
 
-Flat, fixed-length typed numeric buffers stored off the arena (one `calloc`, freed by GC). Both `int-segment` and `double-segment` store values as doubles internally; `@i` reads a float and `!i` stores a float, so they share the array index ops. Use them for FFI scratch (`segment>pointer`) and dense numeric data without per-element boxing.
+A flat, fixed-length buffer of C `int`s stored off the arena (one `calloc`, freed by GC): the out-parameter and index buffer a C library takes as `int *`, reached through `segment>pointer`. `@i` reads an element as a float and `!i` stores a float truncated toward zero, sharing the array index ops. Dense double storage is a matrix (`n 1 0-matrix`, `@e`/`!e`, `matrix>pointer`), and the fusions cover both alike.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `int-segment` | `( n -- seg )` | n-element int segment, zero-filled; errors if n < 0 | 1 | `1seg(n)` | O(n) |
-| `double-segment` | `( n -- seg )` | n-element double segment, zero-filled; errors if n < 0 | 1 | `1seg(n)` | O(n) |
-| `@i` | `( seg i -- f )` | Read element i as a float | 3 | none | O(1) |
-| `!i` | `( seg f i -- seg )` | Store float f at index i in place; leaves seg | 4 | none | O(1) |
+| `@i` | `( seg i -- f )` | Read element i as a float; bounds-checked | 3 | none | O(1) |
+| `!i` | `( seg f i -- seg )` | Store float f at index i in place, truncated toward zero to a C int; bounds-checked; leaves seg | 4 | none | O(1) |
 | `segment>pointer` | `( seg -- ptr )` | Intern the backing buffer and return an FFI pointer handle (no copy) | 1 | none | O(1)† |
 
 `†` amortized; the pointer-intern table grows occasionally.
@@ -3957,13 +3888,6 @@ Flat, fixed-length typed numeric buffers stored off the arena (one `calloc`, fre
 0 7
 ```
 
-```forth double-segment
-2 double-segment 1.5 0 !i 0 @i . cr
-```
-```output
-1.5
-```
-
 ```forth @i
 3 int-segment 0 @i . cr
 ```
@@ -3972,7 +3896,7 @@ Flat, fixed-length typed numeric buffers stored off the arena (one `calloc`, fre
 ```
 
 ```forth-noexec segment>pointer
-4 double-segment segment>pointer ptr? . cr
+4 int-segment segment>pointer ptr? . cr
 ```
 ```output
 1
@@ -4158,7 +4082,7 @@ wall-now time>iso . cr
 | `select-eq` | `( dataset sym value -- dataset )` | datasets.telic: the rows whose `sym` column equals `value`; other rows drop | n + n·c | mask + index vector + one column each | O(n·c) |
 | `select-neq` | `( dataset sym value -- dataset )` | datasets.telic: the rows whose `sym` column differs from `value`; other rows drop | n + n·c | mask + index vector + one column each | O(n·c) |
 | `query` | `( dataset pattern -- dataset )` | datasets.telic: the rows whose columns equal the pattern frame's ground values — each key names a column (a key that is not a column errors), each value is dereferenced and compared with `eq` (so symbols, strings, floats and quantities within their dimension all serve; `1` and `"1"` differ), and a value that is an unbound logic variable or `_` constrains nothing and takes no binding; the masks multiply, and `{ }` keeps every row. Rows keep their order and every column | n·k + n·c | k masks + index vector + one column each | O(n·(k + c)) |
-| `query-rows` | `( dataset pattern -- rows )` | datasets.telic: `query`'s rows as frames, one per row keyed by column, for binding the pattern's logic variables row by row — `[: row | pattern row ~ drop … :]` under `each`, or `choose` over `null add-last! array>cons` of them | query + n·c | query + `1o` per row | O(n·(k + c)) |
+| `query-rows` | `( dataset pattern -- rows )` | datasets.telic: `query`'s rows as frames, one per row keyed by column, for binding the pattern's logic variables row by row — `[: row | pattern row ~ drop … :]` under `each`, or `choose` over them | query + n·c | query + `1o` per row | O(n·(k + c)) |
 | `complete-rows` | `( dataset cols -- dataset )` | datasets.telic: the rows where none of the named columns is missing — NaN in a vector or dimensioned vector, `null` in a text column; `cols` is a symbol, a symbol array, or `[ ]` for every column; a missing name errors. Every column reorders together and keeps its representation | n·k + n·c | one array and mask per named column, index vector, one column each | O(n·(k + c)) |
 | `sort-rows` | `( dataset sym -- dataset )` | datasets.telic: rows sorted ascending by the named column, so every column reorders together and keeps its representation; a missing key errors | n log n + n·c | permutation + one column each | O(n log n + n·c) |
 | `sort-rows-descending` | `( dataset sym -- dataset )` | datasets.telic: rows sorted descending by the named column in natural order (so text columns descend too); equal keys keep dataset order, so chained sorts compose — minor key first, major key last — and missing cells sort last; a missing key errors | n log n + n·c | permutation ×3 + one column each | O(n log n + n·c) |
@@ -4604,7 +4528,7 @@ ho ho ho
 
 ### Parallel
 
-Run the xt across worker threads over the shared heap; `w` worker threads, `c` items per claim. The bare forms default to `num-cores` workers and claim 1. The worker contract: the xt produces fresh values — reading shared inputs is fine, writing into them from several workers is an unguarded race — and it must not print (workers share one stdout; print from the coordinator after the join), nor may it start another parallel region — `pmap`/`pfilter`/`pmap-reduce` called inside a worker raise a clean error, so a worker uses `map`/`filter`/`reduce` for inner iteration. Allocation of any type inside a worker is unrestricted — strings, arrays, sets, frames, matrices, segments, cons cells, interned symbols all take the per-thread path. A faulting xt (a throw, wrong arity, out-allocating the region) aborts the whole region and raises a clean error, never a partial result. Each worker's logic-variable bindings are private, so unification inside a parallel quotation is local to its worker and does not compose into a shared search.
+Run the xt across worker threads over the shared heap; `w` worker threads, `c` items per claim. The bare forms default to `num-cores` workers and claim 1. The worker contract: the xt produces fresh values — reading shared inputs is fine, writing into them from several workers is an unguarded race — and it must not print (workers share one stdout; print from the coordinator after the join), nor may it start another parallel region — `pmap`/`pfilter`/`pmap-reduce` called inside a worker raise a clean error, so a worker uses `map`/`filter`/`reduce` for inner iteration. Allocation of any type inside a worker is unrestricted — strings, arrays, sets, frames, matrices, segments, interned symbols all take the per-thread path. A faulting xt (a throw, wrong arity, out-allocating the region) aborts the whole region and raises a clean error, never a partial result. Each worker's logic-variable bindings are private, so unification inside a parallel quotation is local to its worker and does not compose into a shared search.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
@@ -4876,21 +4800,22 @@ A producer drops nothing after `yield`. The word does not consume the value it e
 
 ## Logic
 
-Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. The primer behind these words — unknowns and substitutions, unification, the trail, search, reification, and the fact database as a worked application — is docs/logic.md. A logic var is always created explicitly: `lvar` pushes a fresh one, `lvar to x` names a persistent global (`to` auto-creates the global at the top level), and a `?` prefix in a locals list (`| ?x |`) declares a fresh per-call local. Capitalizing logic-var names (`X`, `Hs`) is stylistic convention; case carries no meaning. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`. Lists are cons pairs (see Pairs): `[( H T )]` is the `[H|T]` head/tail pattern under `unify`. To keep a result past backtracking, snapshot it with `copy` (fresh vars) or `reify` (canonical `:_N`). A **goal** is any quotation run for success or failure: it either completes, leaving its results, or fails — through an explicit `fail` or a `unify` mismatch — and failure is a control transfer to the nearest choice point, not a returned boolean. That is the contract `choose`, `solutions`, and `take-solutions` expect, and what separates a goal from `filter`'s predicate, which must always return and answer 1/0. A logic var prints by the name of a variable that holds it — `?x` while free (the `?` marks it unbound, matching the `| ?x |` declaration form), `x=value` once bound — or `_N` when anonymous; an anonymous bound var prints its value.
+Logic variables, unification, and committed choice, built on the trail and a `PROMPT_CHOICE` prompt. The primer behind these words — unknowns and substitutions, unification, the trail, search, reification, and the fact database as a worked application — is docs/logic.md. A logic var is always created explicitly: `lvar` pushes a fresh one, `lvar to x` names a persistent global (`to` auto-creates the global at the top level), and a `?` prefix in a locals list (`| ?x |`) declares a fresh per-call local. Capitalizing logic-var names (`X`, `Hs`) is stylistic convention; case carries no meaning. `unify` records every binding on the trail; a `unify` mismatch or an explicit `fail` backtracks to the nearest `amb`. A trailing `rest` in an array pattern, `[ H T rest ]`, is the `[H|T]` head/tail split under `unify`. To keep a result past backtracking, snapshot it with `copy` (fresh vars) or `reify` (canonical `:_N`). A **goal** is any quotation run for success or failure: it either completes, leaving its results, or fails — through an explicit `fail` or a `unify` mismatch — and failure is a control transfer to the nearest choice point, not a returned boolean. That is the contract `choose`, `solutions`, and `take-solutions` expect, and what separates a goal from `filter`'s predicate, which must always return and answer 1/0. A logic var prints by the name of a variable that holds it — `?x` while free (the `?` marks it unbound, matching the `| ?x |` declaration form), `x=value` once bound — or `_N` when anonymous; an anonymous bound var prints its value.
 
 | Word | Stack effect | Behavior | Ops | Alloc | O |
 |------|-------------|----------|-----|-------|---|
 | `lvar` | `( -- v )` | Push a fresh, unbound logic variable | 2 | `1 lvar` | O(1) |
 | `_` | `( -- wild )` | The anonymous wildcard — unifies with anything, binds nothing, allocates nothing (a constant, not a fresh var) | 2 | none | O(1) |
-| `unify` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; pairs head then tail; arrays element-wise; frames as open records — shared keys must unify, extra keys on either side allowed. A `_` on either side matches anything and binds nothing. On a mismatch, `fail`s. | n | none | O(n) |
-| `~` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term; atoms by value, pairs head then tail, arrays element-wise, frames as open records; `_` on either side matches anything and binds nothing; on a mismatch, `fail`s. A C primitive, so `cons ~` fuses to `(cons~)` | n | none | O(n) |
+| `unify` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term. Atoms by value; arrays element-wise, a trailing `rest` pattern taking the remaining elements; frames as open records — shared keys must unify, extra keys on either side allowed. A `_` on either side matches anything and binds nothing. On a mismatch, `fail`s. | n | none | O(n) |
+| `~` | `( a b -- term )` | Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term; atoms by value, arrays element-wise with a trailing `rest` pattern taking the remaining elements, frames as open records; `_` on either side matches anything and binds nothing; on a mismatch, `fail`s | n | none | O(n) |
 | `deref` | `( v -- val )` | Follow a logic var's binding chain to the first non-variable value (v itself if unbound). Shallow — a returned structure still has bound vars inside; for a fully resolved snapshot use `reify` or `copy` | d | none | O(d) |
+| `rest` | `( var -- pattern )` | Wrap a logic variable or `_` as a rest pattern. As the last element of an array pattern under `unify`, `matches?`, `unify?`, or `case`/`of`, it takes the other side's remaining elements as a fresh array: `[ H T rest ]` binds H to the first element and T to the rest, `[ _ _ rest ]` matches any nonempty array, `[ _ rest ]` any array at all. Prefix elements unify pairwise; a subject shorter than the prefix is a mismatch. A rest anywhere but last, or on both sides, errors; the pattern is not serializable; `copy` gives it a fresh variable | 2 | `1a(n − prefix)` on binding | O(n) |
 | `?` | `( v -- val )` | logic.telic: follow a logic var's binding chain to the first non-variable value (v itself if unbound); shallow | d | none | O(d) |
 | `amb` | `( xt1 xt2 -- … )` | Run xt1; if it fails (a `unify` mismatch or `fail`), roll its bindings back through the trail and run xt2. Commits to the first branch that succeeds. | xt1 | none | O(xt1 + xt2) |
 | `fail` | `( -- )` | Backtrack to the nearest enclosing `amb`, failing the current branch; with no enclosing `amb`, an error | 1 | none | O(L) |
-| `choose` | `( list goal -- )` | logic.telic: run the goal with each element of a cons list in turn, committing to the first for which it succeeds; `fail` if none do | n·goal | none | O(n·goal) |
-| `solutions` | `( list goal -- arr )` | logic.telic: the goal's value for every cons-list element it succeeds on, in list order. Each answer is snapshotted (fresh vars) before the search moves on, and every binding rolls back, so nothing stays bound afterward | n·goal | `1a` + a copy per answer | O(n·goal) |
-| `take-solutions` | `( list goal n -- arr )` | logic.telic: the first n of the goal's values for the cons-list elements it succeeds on, in list order; once n are collected the goal no longer runs (the rest of the list is walked only to unwind), and every binding rolls back so nothing stays bound afterward | n·goal | `1a` + a copy per answer | O(n·goal) |
+| `choose` | `( items goal -- )` | logic.telic: run the goal with each element of the array in turn, committing to the first for which it succeeds; `fail` if none do, and on an empty array | n·goal | one curried token per element tried | O(n·goal) |
+| `solutions` | `( items goal -- arr )` | logic.telic: the goal's value for every element of the array it succeeds on, in order. Each answer is snapshotted (fresh vars) before the search moves on, and every binding rolls back, so nothing stays bound afterward | n·goal | `1a` + a copy per answer | O(n·goal) |
+| `take-solutions` | `( items goal n -- arr )` | logic.telic: the first n of the goal's values for the array's elements it succeeds on, in order; once n are collected the goal no longer runs (the remaining elements are walked only to unwind), and every binding rolls back so nothing stays bound afterward | n·goal | `1a` + a copy per answer | O(n·goal) |
 | `matches?` | `( a b -- flag )` | Non-destructive unify test: mark the trail, unify a and b, roll the trail back, push whether they unified. Leaves no bindings and never backtracks, so it composes in straight-line code | n | none | O(n) |
 | `unify?` | `( a b -- flag )` | Committed unify test: on success the bindings stay and it answers true; on a mismatch the trail rolls back and it answers false, never backtracking. `case`/`of` dispatch through it | n | none | O(n) |
 
@@ -4929,6 +4854,16 @@ lvar dup 7 ~ drop deref . cr
 7
 ```
 
+```forth rest
+lvar to Head  lvar to Tail
+[ 1 2 3 ] [ Head Tail rest ] ~ drop Head ? . Tail ? . cr
+[ 4 5 ] [ _ _ rest ] matches? . [ ] [ _ _ rest ] matches? . cr
+```
+```output
+1 [ 2 3 ]
+1 0
+```
+
 ```forth ?
 lvar dup 9 ~ drop ? . cr
 ```
@@ -4951,15 +4886,15 @@ fallback
 ```
 
 ```forth choose
-[( 1 2 3 null )] [: dup 2 < if fail then . cr :] choose
+[ 1 2 3 ] [: dup 2 < if fail then . cr :] choose
 ```
 ```output
 2
 ```
 
 ```forth solutions
-[( 1 2 3 4 null )] [: dup 2 mod if fail then dup * :] solutions . cr
-[( { :n 1 :ok :y } { :n 2 :ok :n } { :n 3 :ok :y } null )]
+[ 1 2 3 4 ] [: dup 2 mod if fail then dup * :] solutions . cr
+[ { :n 1 :ok :y } { :n 2 :ok :n } { :n 3 :ok :y } ]
 [: { :ok :y } ~ :n @ :] solutions . cr
 ```
 ```output
@@ -4968,7 +4903,7 @@ fallback
 ```
 
 ```forth take-solutions
-[( 1 2 3 4 5 null )] [: dup * :] 3 take-solutions . cr
+[ 1 2 3 4 5 ] [: dup * :] 3 take-solutions . cr
 ```
 ```output
 [ 1 4 9 ]
@@ -5022,7 +4957,7 @@ These are normally produced by the compiler's auto-fuser rather than typed by ha
 
 The auto-fuser also collapses a comparison immediately before a branch — `= if`, `> while`, `0= until` — into a single compare-and-branch instruction (shown by `see-compiled` as `(=0branch)`, `(>0branch)`, and the like). These are internal and never typed; the source stays the plain comparison followed by the control word.
 
-Stack reads fuse too, so a body reading parked values costs the same as one reading locals. A literal depth before `pick` becomes one op (`(pick.n) 2`); a `pick` immediately before an unsafe float op becomes a depth-addressed arithmetic op that reads the slot in place (`2 pick f+` → `(f+.d) 2`, and `over f+` → `(f+.d) 1`); and two picks feeding `@i` become a single indexed read (`3 pick 2 pick @i` → `(@i.dd) 3 1`, the index operand adjusted for the copy the first pick would have pushed). `see-compiled` shows all three, and they are what a `times` / `i-times` / `fold-times` body compiles to when it reads values a caller parked below the combinator's operands.
+Stack reads fuse too, so a body reading parked values costs the same as one reading locals. A literal depth before `pick` becomes one op (`(pick.n) 2`), and a literal count before `array` becomes one op that gathers without pushing the count (`2 array` → `(array.lit) 2`); a `pick` immediately before an unsafe float op becomes a depth-addressed arithmetic op that reads the slot in place (`2 pick f+` → `(f+.d) 2`, and `over f+` → `(f+.d) 1`); and two picks feeding `@i` become a single indexed read (`3 pick 2 pick @i` → `(@i.dd) 3 1`, the index operand adjusted for the copy the first pick would have pushed). `@e` fuses in every shape `@i` does (`(@e.lit.l0)`, `(@e.swap.l0)`, `(@e.d)`, `(@e.dd)`, `(gather.e.l0)`, and the in-place step ops), so a matrix read and written as a flat buffer costs what an array does. `see-compiled` shows all three, and they are what a `times` / `i-times` / `fold-times` body compiles to when it reads values a caller parked below the combinator's operands.
 
 Word-locals fuse the same way. A float op over two locals, or a local and a float literal, becomes one instruction that reads the slots directly (`(ll*0)`, `(ll.lit+0)`); a following `to name` fuses into it, so `zr zr f* to zr2` is a single instruction that reads two slots and writes a third (`(ll*0!)`). An op taking one operand from the stack and one from a local fuses with its store the same way — `ci f+ to zi` is one instruction (`(sl+!0)`) — and when the destination is also the operand, `total x f+ to total` becomes an accumulate (`(acc+0)`). `++ name` / `f++ name` are the one-instruction forms of incrementing a local, so `iter 1+ to iter` written as `f++ iter` compiles to `(local f+!0)`. Sources are read before the destination is written, so a slot may be both.
 
@@ -5209,7 +5144,7 @@ variable b 4 to b variable c 10 to c
 | `man` | `( xt -- fr )` | Frame of a word's reference entry (`:word :effect :summary`, plus `:ops :alloc :order` for runtime words); a unit word synthesizes its entry from the unit's definition (`unit: m × 1000`); a word a `load` defined under a `( a b -- c ) \\ summary` comment answers `{ :word :effect :summary }` from that comment, continuation lines starting with `\\` extending the summary; `null` otherwise | dict scan + log n | `1o` + strings | O(\|dict\|) |
 | `help` | `( "name" -- )` | repl.telic: parse the next word and print its reference entry, or the entry `man` builds from the comment above a loaded definition; bare `help` (no name on the line) prints a starter cheat sheet, and an unknown name prints `unknown word: <name>` without erroring | dict scan + log n | `1o` + strings + print | O(\|dict\|) |
 | `gc` | `( -- )` | Force a mark-sweep now | walks stacks + dict + roots, frees unmarked | none | O(objects + dict) |
-| `gauges` | `( -- fr )` | repl.telic: the interpreter's resource readings as a frame of six frames; memory is in MiB (dictionary pools in KiB), processor time in s, counts are floats, and a `[ used capacity ]` pair is an array. `:dictionary`: `:cells`, `:name-pool`, `:source-pool`, `:symbol-pool`, `:quotations`, `:word-locations`, `:cell-lines`, `:loaded-files` as pairs, plus `:words`, `:session-words` (defined since the embedded library), `:symbols`. `:heap`: `:arena` `[ used reserved ]`, `:live`, `:gc-threshold`, `:memory-headroom` (until the next collection), `:objects` `[ live table-size ]` (live is claimed handles minus the free list), `:handles-claimed` `[ claimed table-size ]` (the high-water mark; a collection refills the free list rather than lowering it), `:max-objects`, `:free-handles`, `:handle-headroom` `[ unclaimed trigger ]` (a collection is requested when unclaimed falls under trigger), `:pairs` `[ live table-size ]`, `:collections`. `:stacks`: `:data`, `:return`, `:side`, `:calls`, `:trail`, `:logic-vars`, `:roots`, each `[ depth capacity ]`. `:resources`: `:databases`, `:regex-cache`, `:workers`, each `[ in-use capacity ]`. `:computer`: `:cpu-count`, `:physical-memory`, the load averages `:load-1` `:load-5` `:load-15`, and this process's `:user-time`, `:system-time`, `:max-rss` (peak resident memory), `:minor-faults`, `:major-faults`, `:voluntary-switches`, `:involuntary-switches` — `null` under wasm, which has no such calls. `:session`: `:line`, `:interactive`, `:load-depth`, `:gc-disabled`, `:tracing` | dict walk + symbol scan | `1fr` × 6 + pairs | O(words + symbols) |
+| `gauges` | `( -- fr )` | repl.telic: the interpreter's resource readings as a frame of six frames; memory is in MiB (dictionary pools in KiB), processor time in s, counts are floats, and a `[ used capacity ]` pair is an array. `:dictionary`: `:cells`, `:name-pool`, `:source-pool`, `:symbol-pool`, `:quotations`, `:word-locations`, `:cell-lines`, `:loaded-files` as pairs, plus `:words`, `:session-words` (defined since the embedded library), `:symbols`. `:heap`: `:arena` `[ used reserved ]`, `:live` (matrix, segment and continuation payload bytes, the ones that drive the collection trigger), `:gc-threshold`, `:memory-headroom` (until the next collection), `:objects` `[ live table-size ]` (live is claimed handles minus the free list), `:handles-claimed` `[ claimed table-size ]` (the high-water mark; a collection refills the free list rather than lowering it), `:max-objects`, `:free-handles`, `:handle-headroom` `[ unclaimed trigger ]` (a collection is requested when unclaimed falls under trigger), `:pairs` `[ live table-size ]`, `:collections`. `:stacks`: `:data`, `:return`, `:side`, `:calls`, `:trail`, `:logic-vars`, `:roots`, each `[ depth capacity ]`. `:resources`: `:databases`, `:regex-cache`, `:workers`, each `[ in-use capacity ]`. `:computer`: `:cpu-count`, `:physical-memory`, the load averages `:load-1` `:load-5` `:load-15`, and this process's `:user-time`, `:system-time`, `:max-rss` (peak resident memory), `:minor-faults`, `:major-faults`, `:voluntary-switches`, `:involuntary-switches` — `null` under wasm, which has no such calls. `:session`: `:line`, `:interactive`, `:load-depth`, `:gc-disabled`, `:tracing` | dict walk + symbol scan | `1fr` × 6 + pairs | O(words + symbols) |
 | `print-gauges` | `( -- )` | repl.telic: print the readings of `gauges` that move during a run as a six-row table: live memory, objects, pairs, and arena against their capacities with a percentage; collections with their rate; data, return, and call depth; trail and logic-variable depth; CPU percentage, peak resident memory, major faults per second, load average against the core count, involuntary switches per second; then the interval since the previous call and the clock. Rates are computed against the previous `print-gauges` call, so a first call shows them as 0. On a terminal the labels are dim and a percentage or rate is yellow above 60% of its capacity, red above 85% | gauges + format | strings | O(words + symbols) |
 | `gauges>rows` | `( g -- rows )` | repl.telic: the six row strings `print-gauges` prints, from a `gauges` frame — live or saved: the rates and the interval compare against the frame given on the previous call, the sample clock is the frame's `:sampled-at` (monotonic seconds) when present, else `now`, and the footer's clock its `:published-at` when present, else `wall-now`; ink directives as on a tty | gauges>rows + format | strings | O(words + symbols) |
 | `after-entry` | `( -- )` | repl.telic: the REPL hook — a deferred word the interactive loop runs after every entry's report, with the data stack as the entry left it; the default target does nothing, `' xt embodies after-entry` installs another (lib/gauges-view.telic installs its publisher). An error in the hook prints `after-entry: <message>` and leaves the stack as it was | target | target | target |
@@ -6213,10 +6148,9 @@ freed
 | `T_SYMBOL` | symbol-pool offset; equal names share one offset |
 | `T_ARRAY` | heap object; `Val[]` |
 | `T_SET` | heap object; sorted `Val[]`, binary-search membership |
-| `T_PAIR` | cons cell in the dense, GC'd pair table; `{head, tail}`. Lists are `null`-terminated chains |
 | `T_FRAME` | heap object; parallel keys (`cell[]`) and values (`Val[]`) ordered by symbol id — interning order, not alphabetical — for binary-search lookup |
 | `T_MATRIX` | heap object; r×c row-major `double[]` |
-| `T_SEGMENT` | heap object; flat fixed-length numeric buffer (`double[]`, calloc'd off the arena); see Segments |
+| `T_SEGMENT` | heap object; flat fixed-length `int[]` buffer, calloc'd off the arena; see Segments |
 | `T_QUANTITY` | a magnitude (float or matrix) plus a unit id, in a pair-table slot `{magnitude, unit}`; see Dimensioned quantities. Dimensionless results collapse away, so a live quantity always carries a real unit |
 | `T_EXACT` | heap object; a reduced fraction — sign plus numerator and denominator as 32-bit-limb magnitudes in one buffer; see Exact rationals |
 | `T_COMPLEX` | a pair-table slot `{real, imaginary}`, both floats; see Complex numbers |
@@ -6230,6 +6164,7 @@ freed
 | `T_MARK` | ephemeral sentinel from `[<`, `[`, `{`, `reset`; not user-visible |
 | `T_LOGIC_VAR` | index into the logic-var stack; unbound, or bound to a Val (resolve with `deref`) |
 | `T_UNBOUND` | binding sentinel for an unbound logic var; also the `_` wildcard value when on the stack |
+| `T_REST` | a rest pattern: the logic-var index it binds, or the wildcard sentinel; see `rest` under Logic |
 | `T_NONE` | uninitialized / sentinel; the empty list and `null` |
 
 Boolean convention: `1.0` true, `0.0` false.
@@ -6238,15 +6173,15 @@ Boolean convention: `1.0` true, `0.0` false.
 
 ## Object allocation
 
-Most heap values use one slot in the `objects[]` table (pointer-bump, grown on demand to a 64M-entry ceiling, GC on exhaustion) plus a `calloc`'d `Object` struct plus one payload allocation. Two types are exceptions: **pairs** live in a separate dense, GC'd table (`{head, tail}` inline, no payload), and **logic vars** on a bump-allocated stack reclaimed by truncation on backtrack.
+Most heap values use one slot in the `objects[]` table (recycled from the free list after a collection, otherwise a pointer bump into a table that doubles up to a 64M-entry ceiling) plus an arena `Object` struct plus one payload allocation. A collection runs when the ceiling is reached, on an explicit `gc`, or when matrix, segment and continuation payload bytes pass the threshold (twice the survivors of the last collection, at least 256 MiB); arena objects alone never trigger one, so array, string and frame churn grows the heap until one of those events. Two kinds are exceptions: **quantities and complexes** live in a separate dense, GC'd pair table (`{head, tail}` inline, no payload), and **logic vars** on a bump-allocated stack reclaimed by truncation on backtrack.
 
 | Type | Payload |
 |------|---------|
 | String | `len + 1` bytes (NUL-terminated) |
-| Array | `max(n,1) × sizeof(Val)` |
+| Array | `n × sizeof(Val)`; two or fewer elements live inside the `Object` struct with no payload allocation |
 | Set | 4 × `sizeof(Val)` initial, doubles on overflow |
 | Frame | 4 × (`sizeof(cell)` keys + `sizeof(Val)` values), doubles on overflow |
 | Matrix | `r × c × sizeof(double)` (calloc, zero-filled) |
-| Segment | `n × sizeof(double)` (calloc, zero-filled) |
+| Segment | `n × sizeof(int)` (calloc, zero-filled) |
 | Exact | `(numerator limbs + denominator limbs) × 4` bytes |
 | Continuation | `max(L,1) × sizeof(Val)` |

@@ -503,14 +503,6 @@ static int references_region_depth(Val value, ParallelRegion *snapshot, int dept
 					return 1;
 			return 0;
 		}
-		case T_PAIR: {
-			int handle = (int)VAL_DATA(value);
-			if (handle >= snapshot->n_pairs)
-				return 1;
-			Pair *pair = &pairs.table[handle];
-			return references_region_depth(pair->head, snapshot, depth + 1)
-					|| references_region_depth(pair->tail, snapshot, depth + 1);
-		}
 		case T_QUANTITY:
 		case T_COMPLEX: {
 			int handle = (int)VAL_DATA(value);
@@ -519,6 +511,7 @@ static int references_region_depth(Val value, ParallelRegion *snapshot, int dept
 			return references_region_depth(pairs.table[handle].head, snapshot, depth + 1);
 		}
 		case T_LOGIC_VAR:
+		case T_REST:
 			return 1;
 		default:
 			return 0;
@@ -635,7 +628,7 @@ void p_pfilter(DISPATCH_ARGS) {
 #ifdef GC_DEBUG
 static int val_refs_young(Val v, int object_base, int pair_base) {
 	Tag t = VAL_TAG(v);
-	if (t == T_PAIR)
+	if (t == T_QUANTITY || t == T_COMPLEX)
 		return (int)VAL_DATA(v) >= pair_base;
 	if (t == T_STRING || t == T_SET || t == T_ARRAY || t == T_CURRIED || t == T_FRAME ||
 			t == T_MATRIX || t == T_SEGMENT || t == T_CONT)

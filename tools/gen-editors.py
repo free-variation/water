@@ -11,7 +11,7 @@ single bare-backtick token is a word). That set is exactly the public surface
 Categorization: a small curated map fixes the stable structural groups
 (defining / control / logic / boolean / operators); every other public word is
 auto-routed to "builtins". New words therefore highlight automatically. The
-bracket/quotation delimiters ([ ] { } < > | [: :] [( )]) are matched by regex
+bracket/quotation delimiters ([ ] { } < > | [: :] [< >]) are matched by regex
 rules in the templates, not keyword lists, so they are excluded here.
 
 Emits:
@@ -47,7 +47,7 @@ OPERATORS = [
     "2dup", ".s", ".a", ".",
 ]
 # Handled by regex match rules in the templates, never a keyword.
-DELIMITERS = {"[", "]", "{", "}", "<", ">", "|", "[:", ":]", "[(", ")]", "[<", ">]"}
+DELIMITERS = {"[", "]", "{", "}", "<", ">", "|", "[:", ":]", "[<", ">]"}
 # Documentation pseudo-words (symbol-literal examples), matched by the symbol scope.
 EXCLUDE = {":name"}
 
@@ -155,8 +155,6 @@ def emit_vim(auto):
     # characters (array>set, x>px, >local) and only delimit as standalone tokens.
     L.append('syn match   telicDelimiter "[][{}]"')
     L.append('syn match   telicDelimiter "\\%(^\\|\\s\\)\\zs[<>]\\ze\\%(\\s\\|$\\)"')
-    L.append('syn match   telicDelimiter "\\[("')
-    L.append('syn match   telicDelimiter ")\\]"')
     L.append('syn match   telicDelimiter "\\[<"')
     L.append('syn match   telicDelimiter ">\\]"')
     L.append('syn match   telicDelimiter "\\%(^\\|\\s\\)\\zs|\\ze\\%(\\s\\|$\\)"')

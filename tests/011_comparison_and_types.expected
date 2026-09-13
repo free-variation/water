@@ -102,7 +102,6 @@ in <
 :symbol 
 :array 
 :set 
-:pair 
 :frame 
 :matrix 
 :quantity 
@@ -118,7 +117,7 @@ in <
 :continuation 
 1 
 1 
-1 1 1 1 1 1 
+1 1 1 1 1 
 1 1 1 1 
 1 1 1 1 
 0 0 0 

@@ -28,7 +28,8 @@ clear
 [< 3 1 "s" :y 2/4 >] survives . cr            \ 1
 { :a { :b { :c { :d [ 1 2 3 ] } } } } round-trip /a/b/c/d @ . cr     \ [ 1 2 3 ]
 [ [ [ [ [ 42 ] ] ] ] ] round-trip 0 @i 0 @i 0 @i 0 @i 0 @i . cr      \ 42
-[( 1 2 3 null )] survives . 1 2 cons survives . cr                   \ 1 1
+\ value data written when cons pairs existed (tag 9) is refused by name
+[ 84 69 76 67 1  9 1 1 ] codepoints>string bytes>value                 \ (cons pair no longer exists)
 
 clear
 \ === numeric types ===
@@ -47,7 +48,9 @@ clear
 [ 1 2 3 4 5 6 ] 2 3 matrix round-trip dim swap . . cr   \ 2 3
 0 0 0-matrix round-trip dim swap . . cr                 \ 0 0
 4 int-segment dup 7 2 !i round-trip dup 2 @i . 0 @i . cr   \ 7 0
-3 double-segment dup 1.5 1 !i round-trip 1 @i . cr         \ 1.5
+\ value data written when double-segment existed (kind 1) loads as an nx1 matrix
+[ 84 69 76 67 1  11  1 0 0 0  1 0 0 0  0 0 0 0 0 0 16 0 ] codepoints>string bytes>value
+dup dim swap . . 0 @e 2.2250738585072014e-308 = . cr        \ 1 1 1
 
 clear
 \ === dimensions: units, compound units, exotic magnitudes ===
@@ -97,7 +100,7 @@ clear
 big-matrix round-trip dup 0 0 @i,j . dim swap . . cr    \ 7 200 200
 big-matrix value>bytes byte-size . cr                   \ 320014 (8 bytes an element plus the header)
 20000 iota round-trip dup size . 19999 @i . cr          \ 20000 19999
-2000 iota [: dup 2 * cons :] map round-trip 1999 @i . cr   \ [( 1999 3998 )]
+2000 iota [: dup 2 * 2 array :] map round-trip 1999 @i . cr   \ [ 1999 3998 ]
 20000 iota [: "row{0}" format :] map round-trip 19999 @i . cr   \ row19999 (20000 strings)
 [ [ "id" "score" ] [ 1 0.5 ] [ 2 0.25 ] ] true rows>dataset round-trip :score @ mean . cr  \ 0.375
 

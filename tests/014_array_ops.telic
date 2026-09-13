@@ -141,7 +141,6 @@ clear
 [ 7 8 9 ] first . [ 7 8 9 ] last . cr                          \ 7 9
 [ 1 2 3 4 ] 2 2 matrix first . [ 1 2 3 4 ] 2 2 matrix last . cr \ 1 4  row-major
 [ 1 2 3 ] 1 3 matrix last . [ 1 2 3 ] vector last . cr         \ 3 3
-5 6 cons first . cr                                            \ 5  a cons's head
 
 \ ---- failures ----
 \ skip is built atop take, so its errors surface as take's
@@ -370,14 +369,9 @@ one-el remove-last!                             \ error: empty array
 [ ] remove-last!                                \ error: empty array
 
 clear
-\ first / second ( arr/pair -- v ): element 0/1 of an array; a cons's
-\ head/tail.
+\ first / second ( arr -- v ): element 0/1 of an array.
 [ 7 8 9 ] first . cr                            \ 7
 [ 7 8 9 ] second . cr                           \ 8
-5 6 cons first . cr                             \ 5
-5 6 cons second . cr                            \ 6
-[( 1 2 3 )] first . cr                          \ 1
-[( 1 2 3 )] second . cr                         \ [( 2 3 )]  (the tail)
 [ "a" ] first . cr                              \ a
 
 \ errors
@@ -385,15 +379,8 @@ clear
 
 clear
 \ assoc ( entries key -- value ): the value paired with key, first match by
-\ structural equality; an array holds [ key value ] arrays or conses, a chain
-\ of pairs is a property chain [( k1 v1 k2 v2 )]
+\ structural equality; the entries are [ key value ] arrays
 [ [ "a" 1 ] [ "b" 2 ] ] "b" assoc . cr                          \ 2
-[ [( :x 10 )] [ :y 20 ] ] :x assoc . cr                         \ 10   entry kinds may mix
-[( :x 10 :y 20 )] :y assoc . cr                                 \ 20   property chain, last value the terminal tail
-[( :x 10 :y 20 null )] :y assoc . cr                            \ 20   or null-terminated
-[( :x 10 :y 20 )] :x assoc . cr                                 \ 10
-[( [( 1 2 )] "test" [( 3 4 )] "test2" )] [( 3 4 )] assoc . cr   \ test2  pairs as keys
-[( :x 10 :y null )] :y assoc . cr                               \ null
 [ [ 1 "one" ] [ 1 "uno" ] ] 1 assoc . cr                        \ one  first match wins
 [ [ [ 1 2 ] "tuple" ] [ [ 1 3 ] "other" ] ] [ 1 3 ] assoc . cr  \ other  a tuple key compares structurally
 [ [ 1 "int" ] [ "1" "str" ] ] "1" assoc . cr                    \ str  1 and "1" are distinct keys
@@ -402,7 +389,6 @@ clear
 [ [ null 1 ] [ 2 3 ] ] null assoc . cr                          \ 1    null is a key
 [ [ "a" null ] ] "a" assoc . cr                                 \ null a null value comes back
 [ [ "a" [ 1 2 ] ] ] "a" assoc . cr                              \ [ 1 2 ]
-[ [( "a" 1 2 null )] ] "a" assoc . cr                           \ [( 1 2 null )]  a cons entry's second is its tail
 [ "b" "a" "b" ] count "b" assoc . cr                            \ 2    count's pairs
 [ "b" "a" "b" ] group-indices "a" assoc . cr                    \ [ 1 ]  group-indices' pairs
 
@@ -410,14 +396,12 @@ clear
 [ [ "a" 1 ] ] "z" assoc . cr                                    \ null
 [ [ 1 $ "dollar" ] ] 1 m assoc . [ [ 1 $ "dollar" ] ] 1 assoc . cr   \ null null  another dimension, a plain number
 [ ] "a" assoc . cr                                              \ null
-[( :x 10 :y 20 )] :z assoc . cr                                 \ null
-[( :x 10 :y )] :y assoc . cr                                    \ null  a terminal key has no value
 
 \ errors
 [ [ "a" ] ] "a" assoc                                           \ (index out of bounds: an entry without a value)
 null "a" assoc                                                  \ (expected array or set)
 [ ] first                                       \ (index out of bounds)
-5 first                                         \ (neither array nor pair)
+5 first                                         \ (expected an array or matrix)
 
 clear
 
@@ -465,30 +449,31 @@ range
 
 clear
 
-\ ==== array plus ====
+\ ==== small arrays keep their items inline and move to a block on growth ====
 
-\ basic: + on two arrays does concat
-[ 1 2 3 ] [ 4 5 6 ] + .
+\ arrays of two or fewer elements store their items inside the object; a
+\ third element moves them out. Growth across that boundary, copies of
+\ small arrays, and the array-turned-set bags of group-by must all read back
+\ intact.
+[ ] to tiny
+tiny 1 add-last! drop  tiny 2 add-last! drop  tiny . cr            \ [ 1 2 ]
+tiny 3 add-last! drop  tiny 4 add-last! drop  tiny . cr            \ [ 1 2 3 4 ]
+[ 7 ] copy dup 8 add-last! drop dup 9 add-last! drop . cr          \ [ 7 8 9 ]
+[ 1 2 ] copy . cr                                                  \ [ 1 2 ]
+[ [ 1 ] [ 2 3 ] ] copy 1 @i . cr                                   \ [ 2 3 ]
+[ ] 1 array 1 array 0 @i 0 @i . cr                                 \ [ ]
+[: [ ] to grown  [: grown swap add-last! drop :] 100 i-times  grown size . cr :] 3 times   \ 100 100 100
+gc [ 1 2 ] 5 add-last! . cr                                         \ [ 1 2 5 ]
 
-\ empties on either or both sides
-[ ] [ 1 2 ] + .
-[ 1 2 ] [ ] + .
-[ ] [ ] + .
+clear
 
-\ self-add via dup
-[ 1 2 ] dup + .
+\ ==== array plus is an error ====
 
-\ + and concat produce identical results
-[ 1 2 3 ] [ 4 5 ] +      .
+\ concat is the one spelling for two arrays
 [ 1 2 3 ] [ 4 5 ] concat .
 
-\ composes
-[ 1 2 ] [ 3 4 ] + size .
-[ 1 2 ] [ 3 4 ] + reverse .
-[ 1 2 ] [ 3 4 ] + [ 5 6 ] + .
-0 4 range  5 9 range  + .
-
-\ failures: + with one array and a non-array
+\ failures: + with an array on either side
+[ 1 2 3 ] [ 4 5 6 ] +
 [ 1 2 ] 5 +
 [ 1 2 ] "x" +
 5 [ 1 2 ] +

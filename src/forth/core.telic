@@ -15,7 +15,6 @@
 : symbol? type-of :symbol = ; inline
 : array? type-of :array = ; inline
 : set? type-of :set = ; inline
-: pair? type-of :pair = ; inline
 : frame? type-of :frame = ; inline
 : matrix? type-of :matrix = ; inline
 : quantity? type-of :quantity = ; inline
@@ -72,11 +71,11 @@ inline
 
 : , peek ; inline
 
-( arr/matrix/pair -- v ) \ element 0: an array's first element, a matrix's
-\ first row-major element, a cons's head
+( arr/matrix -- v ) \ element 0: an array's first element, a matrix's
+\ first row-major element
 : first
 	dup matrix? if 0 @e exit then
-	dup pair? if head-tail drop else 0 @i then ;
+	0 @i ;
 
 ( arr/matrix -- v ) \ the final element: an array's, or a matrix's last row-major element
 : last
@@ -89,28 +88,14 @@ inline
 	| target-frame old-key new-key |
 	target-frame target-frame old-key @ new-key ! old-key delete-at ;
 
-( arr/pair -- v ) \ element 1: an array's second element, a cons's tail
-: second dup pair? if head-tail nip else 1 @i then ;
-
-( chain key -- value ) \ the value after key in a property chain: the heads
-\ alternate key, value along the tails, and the value of the last key may be
-\ the terminal tail itself; null when the key is absent
-: chain-assoc
-	| chain key |
-	begin chain pair? while
-		chain head-tail to rest to entry-key
-		rest pair? if rest head-tail to chain to value else rest to value null to chain then
-		entry-key key = if value exit then
-	repeat
-	null ; internal
+( arr -- v ) \ element 1
+: second 1 @i ; inline
 
 ( entries key -- value ) \ the value paired with key, the first match by
-\ structural equality: in an array, entries are [ key value ] arrays or conses
-\ (first is the key, second the value); a chain of pairs is a property chain,
-\ [( k1 v1 k2 v2 )]; null when the key is absent
+\ structural equality: entries are [ key value ] arrays (first is the key,
+\ second the value); null when the key is absent
 : assoc
 	| entries key |
-	entries pair? if entries key chain-assoc exit then
 	entries [: first key = :] find-first
 	dup null? not if second then ;
 

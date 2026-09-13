@@ -268,6 +268,11 @@ static inline __attribute__((always_inline)) int array_element_store(Interpreter
 			return 0;
 		}
 		Object *segment = OBJECT_AT(VAL_DATA(target_val));
+		if (index < 0 || index >= segment->segment.length) {
+			SYNC_REGISTERS(interp, sync_ip, sp);
+			fail(interp, "segment index %d out of bounds (length %d)", index, segment->segment.length);
+			return 0;
+		}
 		segment_set(segment, index, VAL_NUMBER(value));
 		return 1;
 	}
@@ -348,9 +353,18 @@ void fn(DISPATCH_ARGS) { \
 			return; \
 		} \
 		segment_set(segment, index, segment_get(segment, index) combine delta); \
+	} else if (VAL_TAG(target_val) == T_MATRIX) { \
+		Object *matrix = OBJECT_AT(VAL_DATA(target_val)); \
+		int n_elements = matrix->matrix.rows * matrix->matrix.columns; \
+		if (index < 0 || index >= n_elements) { \
+			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
+			fail(interp, "element index %d out of bounds (%d elements)", index, n_elements); \
+			return; \
+		} \
+		matrix->matrix.elements[index] = matrix->matrix.elements[index] combine delta; \
 	} else { \
 		SYNC_REGISTERS(interp, chain_ip, chain_sp); \
-		fail(interp, "expected an array or segment; got %s", tag_name(VAL_TAG(target_val))); \
+		fail(interp, "expected an array, segment, or matrix; got %s", tag_name(VAL_TAG(target_val))); \
 		return; \
 	} \
 	DISPATCH_REGISTERS(interp, chain_ip + 1, chain_sp - (n_operands)); \

@@ -3,7 +3,7 @@
 \ unit length; then componentwise-maximize across all points.
 \
 \ The reference builds n Point objects; telic keeps the three coordinates
-\ in flat double-segments (no per-point boxing), so the inner loops are pure
+\ in flat nx1 vectors (no per-point boxing), so the inner loops are pure
 \ raw-double reads and writes — exactly the shape the compiler's vf*/vvf*
 \ fusion targets. The whole benchmark is repeated REPEAT times for a stable
 \ measurement; the reported result is the final maximized point.
@@ -20,32 +20,32 @@ variable maxx variable maxy variable maxz
 : build-points
   [: i |
      i fsin to sxi
-     xs sxi i !i drop
-     ys  i fcos 3.0 f*  i  !i drop
-     zs  sxi sxi f* 2.0 f/  i  !i drop
+     xs sxi i !e drop
+     ys  i fcos 3.0 f*  i  !e drop
+     zs  sxi sxi f* 2.0 f/  i  !e drop
   :] points i-times ;
 
 : normalize-points
   [: i |
-     xs i @i to xi  ys i @i to yi  zs i @i to zi
+     xs i @e to xi  ys i @e to yi  zs i @e to zi
      xi xi f* yi yi f* f+ zi zi f* f+ fsqrt to length
-     xs  xi length f/  i  !i drop
-     ys  yi length f/  i  !i drop
-     zs  zi length f/  i  !i drop
+     xs  xi length f/  i  !e drop
+     ys  yi length f/  i  !e drop
+     zs  zi length f/  i  !e drop
   :] points i-times ;
 
 : maximize-points ^maxx ^maxy ^maxz |
-  xs 0 @i to maxx  ys 0 @i to maxy  zs 0 @i to maxz
+  xs 0 @e to maxx  ys 0 @e to maxy  zs 0 @e to maxz
   [: i |
-     xs i @i to xi  xi maxx >= if xi to maxx then
-     ys i @i to xi  xi maxy >= if xi to maxy then
-     zs i @i to xi  xi maxz >= if xi to maxz then
+     xs i @e to xi  xi maxx >= if xi to maxx then
+     ys i @e to xi  xi maxy >= if xi to maxy then
+     zs i @e to xi  xi maxz >= if xi to maxz then
   :] points i-times ;
 
 : float-once ^xs ^ys ^zs |
-  points double-segment to xs
-  points double-segment to ys
-  points double-segment to zs
+  points 1 0-matrix to xs
+  points 1 0-matrix to ys
+  points 1 0-matrix to zs
   build-points
   normalize-points
   maximize-points ;

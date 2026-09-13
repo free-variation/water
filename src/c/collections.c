@@ -10,7 +10,7 @@ void set_add(Interpreter *interp, int set_handle, Val value) {
 		return;
 	}
 
-	GROW_IF_FULL(set->len, set->capacity, set->items);
+	ITEMS_GROW_IF_FULL(set);
 
 	memmove(&set->items[low + 1], &set->items[low],
 			sizeof(Val) * (size_t)(set->len - low));
@@ -63,7 +63,7 @@ int set_union(Interpreter *interp, int handle_a, int handle_b) {
 			}
 		}
 
-		GROW_IF_FULL(union_set->len, union_set->capacity, union_set->items);
+		ITEMS_GROW_IF_FULL(union_set);
 		union_set->items[union_set->len++] = merged_value;
 	}
 
@@ -86,7 +86,7 @@ int set_intersect(Interpreter *interp, int handle_a, int handle_b) {
 		else if (cmp > 0)
 			j++;
 		else {
-			GROW_IF_FULL(intersection_set->len, intersection_set->capacity, intersection_set->items);
+			ITEMS_GROW_IF_FULL(intersection_set);
 			intersection_set->items[intersection_set->len++] = set_a->items[i];
 			i++;
 			j++;
@@ -108,7 +108,7 @@ int set_difference(Interpreter *interp, int handle_a, int handle_b) {
 	while (i < set_a->len) {
 		int cmp = (j >= set_b->len) ? -1 : val_cmp(interp, set_a->items[i], set_b->items[j]);
 		if (cmp < 0) {
-			GROW_IF_FULL(difference_set->len, difference_set->capacity, difference_set->items);
+			ITEMS_GROW_IF_FULL(difference_set);
 			difference_set->items[difference_set->len++] = set_a->items[i++];
 		} else if (cmp > 0) {
 			j++;
@@ -192,13 +192,6 @@ void p_array_open(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
 }
 
-void p_list_open(DISPATCH_ARGS) {
-	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
-	*chain_sp = make_tagged(T_MARK, '(');
-
-	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
-}
-
 void p_array_close(DISPATCH_ARGS) {
 	FIND_MARK(mark_index, "] : no matching [ on the stack");
 	int num_elements = interp->dsp - mark_index;
@@ -207,26 +200,6 @@ void p_array_close(DISPATCH_ARGS) {
 		array->items[i] = interp->data_stack[mark_index + i];
 	interp->data_stack[mark_index - 1] = make_array(array_handle);
 
-	DISPATCH_REGISTERS(interp, chain_ip, interp->data_stack + mark_index);
-}
-
-void p_list_close(DISPATCH_ARGS) {
-	FIND_MARK(mark_index, ")] : no matching [( on the stack");
-
-	int num_elements = interp->dsp - mark_index;
-	if (num_elements == 0) {
-		interp->data_stack[mark_index - 1] = make_tagged(T_NONE, 0);
-	} else {
-		interp->data_stack[mark_index - 1] = interp->data_stack[mark_index + num_elements - 1];
-		for (int i = num_elements - 2; i >= 0; i--) {
-			int slot = object_new_pair(interp);
-			if (interp->error_flag)
-				return;
-			pairs.table[slot].head = interp->data_stack[mark_index + i];
-			pairs.table[slot].tail = interp->data_stack[mark_index - 1];
-			interp->data_stack[mark_index - 1] = make_pair(slot);
-		}
-	}
 	DISPATCH_REGISTERS(interp, chain_ip, interp->data_stack + mark_index);
 }
 
@@ -250,93 +223,23 @@ void p_array(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip, gathered_base + 1);
 }
 
-void p_cons(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 2);
-	int slot = object_new_pair(interp);
-	if (interp->error_flag) return;
-
-	pairs.table[slot].head = chain_sp[-2];
-	pairs.table[slot].tail = chain_sp[-1];
-	chain_sp[-2] = make_pair(slot);
-
-	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
-}
-
-void p_head_tail(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	REQUIRE_STACK_ROOM(interp, chain_ip, chain_sp, 1);
-	Val pair_val = chain_sp[-1];
-	REQUIRE_CHAIN_TAG(pair_val, T_PAIR, "head-tail", "a pair");
-	Pair *pair = &pairs.table[VAL_DATA(pair_val)];
-	chain_sp[-1] = pair->head;
-	chain_sp[0] = pair->tail;
-
-	DISPATCH_REGISTERS(interp, chain_ip, chain_sp + 1);
-}
-
-void p_array_to_cons(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val array_val = chain_sp[-1];
-	REQUIRE_CHAIN_TAG(array_val, T_ARRAY, "array>cons", "an array");
-	Object *array = OBJECT_AT(VAL_DATA(array_val));
-	int n = array->len;
-
-	Val result;
-	if (n == 0)
-		result = make_tagged(T_NONE, 0);
-	else {
-
-		gc_root_push(interp, array->items[n - 1]);
-		for (int i = n - 2; i >= 0; i--) {
-			int slot = object_new_pair(interp);
-			if (interp->error_flag) {
-				gc_root_pop(interp);
-				return;
-			}
-			pairs.table[slot].head = array->items[i];
-			pairs.table[slot].tail = interp->gc_roots[interp->n_gc_roots - 1];
-			interp->gc_roots[interp->n_gc_roots - 1] = make_pair(slot);
-		}
-		result = interp->gc_roots[interp->n_gc_roots - 1];
-		gc_root_pop(interp);
-	}
-
-	chain_sp[-1] = result;
-
-	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
-}
-
-void p_cons_to_array(DISPATCH_ARGS) {
-	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
-	Val list_val = chain_sp[-1];
-
-	int count = 1;
-	Val cur = deref(interp, list_val);
-	while (VAL_TAG(cur) == T_PAIR) {
-		if (count > LIST_SPINE_MAX) {
-			fail(interp, "list too long or cyclic");
-			return;
-		}
-		count++;
-		cur = deref(interp, pairs.table[VAL_DATA(cur)].tail);
-	}
-
-	int handle = object_new_array(interp, count);
-	if (interp->error_flag)
+void p_array_lit(DISPATCH_ARGS) {
+	int count = (int)chain_ip[0];
+	Val *gathered_base = chain_sp - count;
+	if (unlikely(gathered_base < interp->data_stack)) {
+		SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+		fail(interp, "count %d out of range (stack has %d available)", count, (int)(chain_sp - interp->data_stack));
 		return;
-	Object *array = OBJECT_AT(handle);
-
-	int i = 0;
-	cur = deref(interp, list_val);
-	while (VAL_TAG(cur) == T_PAIR) {
-		array->items[i++] = deref(interp, pairs.table[VAL_DATA(cur)].head);
-		cur = deref(interp, pairs.table[VAL_DATA(cur)].tail);
 	}
-	array->items[i] = deref(interp, cur);
 
-	chain_sp[-1] = make_array(handle);
+	SYNC_REGISTERS(interp, chain_ip + 1, chain_sp);
+	NEW_ARRAY(array_handle, array, count);
 
-	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+	for (int i = 0; i < count; i++)
+		array->items[i] = gathered_base[i];
+	gathered_base[0] = make_array(array_handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip + 1, gathered_base + 1);
 }
 
 static int val_cmp_qsort(void *interp, const void *left, const void *right) {
@@ -349,10 +252,7 @@ int build_set_from_values(Interpreter *interp, const Val *values, int count) {
 		return -1;
 
 	Object *set = OBJECT_AT(set_handle);
-	if (count > set->capacity) {
-		set->items = arena_realloc(set->items, sizeof(Val) * (size_t)count);
-		set->capacity = count;
-	}
+	items_reserve(set, count);
 	memcpy(set->items, values, sizeof(Val) * (size_t)count);
 
 	if (count > 0) {
@@ -604,7 +504,7 @@ void p_add_last(DISPATCH_ARGS) {
 	REQUIRE_CHAIN_TAG(array_val, T_ARRAY, "add-last!", "an array");
 	Object *array = OBJECT_AT(VAL_DATA(array_val));
 	SYNC_REGISTERS(interp, chain_ip, chain_sp - 1);
-	GROW_IF_FULL(array->len, array->capacity, array->items);
+	ITEMS_GROW_IF_FULL(array);
 	array->items[array->len++] = chain_sp[-1];
 
 	DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
@@ -628,28 +528,24 @@ void p_remove_last(DISPATCH_ARGS) {
 }
 
 
-#define NEW_SEGMENT(name, word, element_type) \
-	void name(DISPATCH_ARGS) { \
-		REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1); \
-		Val length_val = chain_sp[-1]; \
-		REQUIRE_CHAIN_TAG(length_val, T_FLOAT, "int-segment", "a float length"); \
-		int length = (int)VAL_NUMBER(length_val); \
-		if (length < 0) { \
-			SYNC_REGISTERS(interp, chain_ip, chain_sp); \
-			fail(interp, "length must be non-negative; got %d", length); \
-			return; \
-		} \
-		\
-		SYNC_REGISTERS(interp, chain_ip, chain_sp); \
-		int handle = object_new_segment(interp, length, element_type); \
-		if (interp->error_flag) return; \
-		chain_sp[-1] = make_segment(handle); \
-		\
-		DISPATCH_REGISTERS(interp, chain_ip, chain_sp); \
+void p_int_segment(DISPATCH_ARGS) {
+	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
+	Val length_val = chain_sp[-1];
+	REQUIRE_CHAIN_TAG(length_val, T_FLOAT, "int-segment", "a float length");
+	int length = (int)VAL_NUMBER(length_val);
+	if (length < 0) {
+		SYNC_REGISTERS(interp, chain_ip, chain_sp);
+		fail(interp, "length must be non-negative; got %d", length);
+		return;
 	}
 
-NEW_SEGMENT(p_int_segment,    "int-segment",    SEGMENT_INT)
-NEW_SEGMENT(p_double_segment, "double-segment", SEGMENT_DOUBLE)
+	SYNC_REGISTERS(interp, chain_ip, chain_sp);
+	int handle = object_new_segment(interp, length);
+	if (interp->error_flag) return;
+	chain_sp[-1] = make_segment(handle);
+
+	DISPATCH_REGISTERS(interp, chain_ip, chain_sp);
+}
 
 #define REQUIRE_CHAIN_SEQUENCE(value) \
 	do { \
@@ -1439,7 +1335,7 @@ static void select_walk(Interpreter *interp, Val tree_node, Object *path, int de
 			captured = tree_node;
 		}
 		Object *matches_array = OBJECT_AT(matches);
-		GROW_IF_FULL(matches_array->len, matches_array->capacity, matches_array->items);
+		ITEMS_GROW_IF_FULL(matches_array);
 		matches_array->items[matches_array->len++] = captured;
 		return;
 	}
@@ -1788,7 +1684,7 @@ void p_group_by(DISPATCH_ARGS) {
 		Object *source = OBJECT_AT(VAL_DATA(rows_val));
 		int j = i;
 		while (j < row_count && entries[j].key == key) {
-			GROW_IF_FULL(bag_obj->len, bag_obj->capacity, bag_obj->items);
+			ITEMS_GROW_IF_FULL(bag_obj);
 			bag_obj->items[bag_obj->len++] = source->items[entries[j].index];
 			j++;
 		}
@@ -2110,7 +2006,7 @@ static void json_parse_array(Interpreter *interp, JSONParser *parser, Val *desti
 
 	for (;;) {
 		Object *array = OBJECT_AT(handle);
-		GROW_IF_FULL(array->len, array->capacity, array->items);
+		ITEMS_GROW_IF_FULL(array);
 
 		array->items[array->len] = make_tagged(T_NONE, 0);
 		array->len++;

@@ -41,7 +41,7 @@
 -16+0i m^2 7200+7200i m.s 
 error: division by zero
 in /
-error: expected two floats, two strings, two sets, two matrices, scalar/matrix, or two arrays; got a complex and an exact
+error: expected two floats, exacts, complexes, strings, sets, or matrices, scalar/matrix, or two quantities of one dimension; got a complex and an exact
 in +
 error: expected a set, array, matrix, string, segment, or frame; got a complex
 in size ← vector

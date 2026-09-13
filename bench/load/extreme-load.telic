@@ -20,16 +20,16 @@ dup array>set size                     "distinct (sorted) = {0}" format . cr
 size                                   "array length      = {0}" format . cr
 
 \ ---------------- ultra-deep unification ----------------
-\ unify recurses on the head and tail-calls (musttail) on the tail, so a long
-\ cons list unifies in constant C stack however deep it is.
-"=== ultra-deep unification ===" . cr
-1 500000 range array>cons
-dup copy ~ cons>array size             "unified two 500k-deep lists, len = {0}" format . cr
+\ unify walks an array element by element, so a long array unifies in
+\ constant C stack however long it is.
+"=== ultra-wide unification ===" . cr
+1 500000 range
+dup copy ~ size                        "unified two 500k-element arrays, len = {0}" format . cr
 \ one unify that binds a very large number of logic vars — grows the lvar
 \ stack and the bind trail past their declared 65536 starting size.
-1 200000 range [: drop lvar :] map array>cons
-1 200000 range array>cons
-~ cons>array size                      "deep unify bound {0} logic vars" format . cr
+1 200000 range [: drop lvar :] map
+1 200000 range
+~ size                                 "wide unify bound {0} logic vars" format . cr
 
 \ ---------------- very large numbers of objects ----------------
 "=== very large numbers of objects ===" . cr

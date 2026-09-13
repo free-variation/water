@@ -1,0 +1,53 @@
+\ rest ( var -- pattern ): wrap a logic variable or _ so that, as the last
+\ element of an array pattern, it takes the remaining elements of the other
+\ side as a fresh array under unify. Prefix elements unify pairwise; a subject
+\ shorter than the prefix is a mismatch, not an error.
+
+\ === binding the head and the rest ===
+lvar to Hd  lvar to Tl
+[ 1 2 3 4 ] [ Hd Tl rest ] ~ drop  Hd ? . Tl ? . cr      \ 1 [ 2 3 4 ]
+lvar to Only
+[ 7 ] [ _ Only rest ] ~ drop  Only ? . cr               \ [ ]  (the rest of a one-element array is empty)
+lvar to Whole
+[ 5 6 ] [ Whole rest ] ~ drop  Whole ? . cr             \ [ 5 6 ]  (a bare rest takes everything)
+
+\ === the wildcard rest ignores the remainder ===
+[ 1 2 ] [ _ rest ] matches? .  [ ] [ _ rest ] matches? .  [ ] [ _ _ rest ] matches? . cr   \ 1 1 0  (a bare wildcard rest takes an empty remainder too)
+
+\ === nested, and inside a frame value ===
+lvar to Inner
+[ [ 1 2 3 ] 9 ] [ [ _ Inner rest ] _ ] ~ drop  Inner ? . cr   \ [ 2 3 ]
+lvar to Args
+{ :cmd :run :args [ :x 1 2 ] } { :args [ _ Args rest ] } ~ drop  Args ? . cr   \ [ 1 2 ]
+
+\ === case/of dispatches by shape ===
+: shape case [ ] of "empty" endof [ _ ] of "one" endof [ _ _ rest ] of "two or more" endof drop "not an array" endcase . cr ;
+[ ] shape [ 5 ] shape [ 5 6 7 ] shape 42 shape           \ empty / one / two or more / not an array
+
+\ === a fresh rest variable per call via a ?-local ===
+: tail-of | ?tail-var | [ _ tail-var rest ] ~ drop tail-var ? ;
+[ 1 2 3 ] tail-of . [ 1 ] tail-of . cr                  \ [ 2 3 ] [ ]
+
+\ === a bound rest variable compares structurally on the next use ===
+lvar to Bound
+[ 1 2 ] [ Bound rest ] ~ drop
+[ 5 6 ] [ Bound rest ] matches? . [ 1 2 ] [ Bound rest ] matches? . cr   \ 0 1
+
+\ === printing, type, copy ===
+[ Hd Tl rest ] . cr                                     \ [ Hd=1 ..Tl=[ 2 3 4 ] ]
+lvar rest . _ rest . cr                                 \ .._N .._
+lvar rest type-of . cr                                  \ :rest
+lvar to Orig
+[ _ Orig rest ] copy [ 1 2 3 ] ~ drop  Orig ? . cr       \ ?Orig  (the copy carries a fresh variable)
+
+\ === the binding survives a collection ===
+lvar to Kept
+[ 1 2 3 4 5 ] [ _ Kept rest ] ~ drop gc Kept ? . cr      \ [ 2 3 4 5 ]
+
+clear
+
+\ === errors ===
+5 rest                                                  \ (rest takes a logic variable or _)
+[ lvar rest 1 ] [ 1 2 ] ~                               \ (rest must be last)
+[ lvar rest ] [ lvar rest ] ~                           \ (two rest patterns)
+lvar rest value>bytes                                   \ (not serializable)

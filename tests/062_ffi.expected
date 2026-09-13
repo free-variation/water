@@ -5,6 +5,8 @@ hello from ffi variadic
 0 
 0.75 
 3 
+0.5 
+4 
 0 
 error: cannot read through a null pointer
 in pointer-deref

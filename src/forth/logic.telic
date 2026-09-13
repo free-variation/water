@@ -1,30 +1,32 @@
 \ logic words
-\ (~ is registered in C as a primitive alias of unify, so cons ~ fuses to (cons~))
 
 ( v -- val ) \ resolve a logic var to its current binding
 : ? deref ;
 inline
 
-( list goal -- ) \ run goal with each element of list in turn; commit to the first element for which goal succeeds, fail if none do
-: choose
-	| list goal |
-	list null = if fail exit then
-	list head-tail to list-tail to list-head
-	list-tail null = if
-		list-head goal execute
+( items goal i -- ) \ choose from element i on: the goal on element i, else
+\ the same from i+1; the last element runs without a choice point
+: choose-from
+	| items goal i |
+	i items size >= if fail exit then
+	i items size 1- = if
+		items i @i goal execute
 	else
-		list-head goal ' execute 2curry
-		list-tail goal ' choose 2curry
+		items i @i goal ' execute 2curry
+		items goal i 1+ ' choose-from 3 ncurry
 		amb
-	then ;
+	then ; internal
 
-( list goal -- arr ) \ goal's value for every element of the cons list it
-\ succeeds on, in list order; answers snapshot through copy, and every
+( items goal -- ) \ run goal with each element of the array in turn; commit to the first element for which goal succeeds, fail if none do
+: choose 0 choose-from ;
+
+( items goal -- arr ) \ goal's value for every element of the array it
+\ succeeds on, in order; answers snapshot through copy, and every
 \ binding rolls back — choose collects all instead of committing to one
 : solutions
-	| list goal |
+	| items goal |
 	[ ] to answers
-	list
+	items
 	[: element |
 		element goal execute
 		answers swap copy add-last! drop
@@ -35,12 +37,12 @@ inline
 	' identity amb
 	answers ;
 
-( list goal n -- arr ) \ the first n solutions; the goal stops running once
+( items goal n -- arr ) \ the first n solutions; the goal stops running once
 \ n are collected, and bindings roll back as in solutions
 : take-solutions
-	| list goal n |
+	| items goal n |
 	[ ] to answers
-	list
+	items
 	[: element |
 		answers size n >= if fail then
 		element goal execute

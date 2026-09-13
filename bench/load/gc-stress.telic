@@ -13,7 +13,7 @@
 : sum1n ( n -- s ) dup 1 + * 2 / ;
 : ck ( got want -- ) = . cr ;
 
-\ A: arena array churn + reduce, R rounds  (forces array alloc/discard + gc)
+\ A: arena array churn + reduce, R rounds  (array alloc/discard; arena bytes never trigger, so the heap grows until the explicit gc)
 1 rounds range 0 [: drop  1 elems range 0 [: + :] reduce  + :] reduce
 elems sum1n rounds *  ck
 gc
@@ -23,8 +23,8 @@ gc
 big-elems sum1n matrix-rounds *  ck
 gc
 
-\ C: cons lists, R rounds  (pair alloc + epoch mark + pair GC + traversal)
-1 rounds range 0 [: drop  1 elems range array>cons cons>array 0 [: + :] reduce  + :] reduce
+\ C: quantities, R rounds  (pair-table alloc + epoch mark + pair GC + traversal)
+1 rounds range 0 [: drop  1 elems range [: s :] map [: magnitude :] map 0 [: + :] reduce  + :] reduce
 elems sum1n rounds *  ck
 gc
 
@@ -45,10 +45,10 @@ gc
 =  . cr
 gc
 
-\ G: pmap escaping == serial  (each item returns one region pair -> region kept.
+\ G: pmap escaping == serial  (each item returns one region array -> region kept.
 \ One escaping allocation per item stays within pmap's pre-grown headroom.)
-1 domain range [: 0 cons :] map
-1 domain range 6 1 [: 0 cons :] pmap-ext
+1 domain range [: 0 2 array :] map
+1 domain range 6 1 [: 0 2 array :] pmap-ext
 =  . cr
 gc
 

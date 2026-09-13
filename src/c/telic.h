@@ -56,8 +56,8 @@ typedef int64_t cell;
 #define SLAB_BYTES (1 << 16)
 #define SLOTS_PER_CLAIM (1 << 10)
 #define HEAP_GC_FLOOR ((size_t)1 << 28)
+#define INLINE_ITEMS_CAPACITY 2
 #define MAX_GC_ROOTS (1 << 6)
-#define LIST_SPINE_MAX (1 << 24)
 #define PAIR_TABLE_DEPTH (1 << 20)
 #define MAX_WORKER_THREADS (1 << 6)
 #define REGION_CLAIMS_PER_WORKER (1 << 6)
@@ -88,7 +88,6 @@ typedef int64_t cell;
 #define SUMMARY_LINES_MAX 16
 #define PRINT_FIRST 10
 #define PRINT_LAST 3
-#define LIST_PRINT_MAX 100000
 
 typedef enum {
 	T_NONE = 0,
@@ -97,7 +96,6 @@ typedef enum {
 	T_STRING,
 	T_SET,
 	T_ARRAY,
-	T_PAIR,
 	T_FRAME,
 	T_MATRIX,
 	T_XT,
@@ -113,7 +111,8 @@ typedef enum {
 	T_QUANTITY,
 	T_CURRIED,
 	T_EXACT,
-	T_COMPLEX
+	T_COMPLEX,
+	T_REST
 } Tag;
 
 typedef union {
@@ -177,7 +176,6 @@ static inline Val make_symbol(int cfa) { return make_tagged(T_SYMBOL, cfa); }
 static inline Val make_string(int handle) { return make_tagged(T_STRING, handle); }
 static inline Val make_set(int handle) { return make_tagged(T_SET, handle); }
 static inline Val make_array(int handle) { return make_tagged(T_ARRAY, handle); }
-static inline Val make_pair(int handle) { return make_tagged(T_PAIR, handle); }
 static inline Val make_frame(int handle) { return make_tagged(T_FRAME, handle); }
 static inline Val make_matrix(int handle) { return make_tagged(T_MATRIX, handle); }
 static inline Val make_xt(int cfa) { return make_tagged(T_XT, cfa); }
@@ -191,6 +189,9 @@ static inline Val make_exact(int handle) { return make_tagged(T_EXACT, handle); 
 static inline Val make_complex(int pair_slot) { return make_tagged(T_COMPLEX, pair_slot); }
 static inline Val make_continuation(int handle) { return make_tagged(T_CONT, handle); }
 static inline Val make_logic_var(int handle) { return make_tagged(T_LOGIC_VAR, handle); }
+#define REST_WILDCARD ((int64_t)VAL_DATA_MASK)
+static inline Val make_rest(int64_t var_handle) { return make_tagged(T_REST, var_handle); }
+static inline int rest_is_wildcard(Val rest) { return VAL_DATA(rest) == REST_WILDCARD; }
 static inline Val make_mark(void) { return make_tagged(T_MARK, 0); }
 static inline Val make_bool(int is_true) { return make_float(is_true ? 1.0 : 0.0); }
 
@@ -205,17 +206,15 @@ typedef enum {
 	OBJECT_EXACT
 } ObjectKind;
 
-typedef enum {
-	SEGMENT_INT = 0,
-	SEGMENT_DOUBLE
-} SegmentType;
-
 typedef struct Object {
 	ObjectKind kind;
 	int len, capacity;
 	union {
 		char *bytes;
-		Val  *items;
+		struct {
+			Val *items;
+			Val inline_items[INLINE_ITEMS_CAPACITY];
+		};
 		struct {
 			cell *keys;
 			Val *values;
@@ -233,9 +232,8 @@ typedef struct Object {
 			int capture_generation;
 		} continuation;
 		struct {
-			int element_type;
 			int length;
-			void *data;
+			int *data;
 		} segment;
 		struct {
 			int sign;
@@ -248,27 +246,12 @@ typedef struct Object {
 	cell mark_epoch;
 } Object;
 
-static inline size_t segment_element_size(SegmentType element_type) {
-	switch (element_type) {
-		case SEGMENT_DOUBLE: return sizeof(double);
-		case SEGMENT_INT:    return sizeof(int);
-	}
-	return 0;
-}
-
 static inline double segment_get(Object *segment, int index) {
-	switch (segment->segment.element_type) {
-		case SEGMENT_INT:    return ((int *)segment->segment.data)[index];
-		case SEGMENT_DOUBLE: return ((double *)segment->segment.data)[index];
-	}
-	return 0;
+	return segment->segment.data[index];
 }
 
 static inline void segment_set(Object *segment, int index, double value) {
-	switch (segment->segment.element_type) {
-		case SEGMENT_INT:    ((int *)segment->segment.data)[index] = (int)value; break;
-		case SEGMENT_DOUBLE: ((double *)segment->segment.data)[index] = value; break;
-	}
+	segment->segment.data[index] = (int)value;
 }
 
 typedef struct {
@@ -367,6 +350,11 @@ typedef enum {
 		(cap) = (cap) ? (cap) * 2 : 8; \
 		(arr) = arena_realloc((arr), sizeof(*(arr)) * (size_t)(cap)); \
 	} \
+} while (0)
+
+#define ITEMS_GROW_IF_FULL(obj) do { \
+	if ((obj)->len == (obj)->capacity) \
+		items_reserve((obj), (obj)->capacity ? (obj)->capacity * 2 : 8); \
 } while (0)
 
 #define GROW_IF_FULL_SYS(count, cap, arr) do { \
@@ -516,6 +504,7 @@ typedef struct Vocabulary {
 	int eq_cfa, lt_cfa, gt_cfa, zeq_cfa;
 	int eq_f_cfa, lt_f_cfa, gt_f_cfa;
 	int lte_cfa, gte_cfa, lte_f_cfa, gte_f_cfa;
+	int array_cfa;
 	int at_i_cfa;
 	int pick_cfa;
 	int add_f_cfa, sub_f_cfa, mul_f_cfa, div_f_cfa;
@@ -795,7 +784,6 @@ extern int session_unit;
 #define POP_STRING(name, op)  POP_TYPED(name, op, T_STRING);  Object *name = OBJECT_AT(VAL_DATA(name##_val))
 #define POP_ARRAY(name, op)   POP_TYPED(name, op, T_ARRAY);   Object *name = OBJECT_AT(VAL_DATA(name##_val))
 #define POP_SET(name, op)     POP_TYPED(name, op, T_SET);     int name = (int)VAL_DATA(name##_val)
-#define POP_PAIR(name, op)    POP_TYPED(name, op, T_PAIR);    Pair *name = &pairs.table[VAL_DATA(name##_val)]
 #define POP_QUANTITY(name, op) POP_TYPED(name, op, T_QUANTITY); Pair *name = &pairs.table[VAL_DATA(name##_val)]
 #define POP_CONT(name, op)    POP_TYPED(name, op, T_CONT);    Object *name = OBJECT_AT(VAL_DATA(name##_val))
 #define POP_SYMBOL(name, op)  POP_TYPED(name, op, T_SYMBOL);  cell name = VAL_DATA(name##_val)
@@ -998,6 +986,7 @@ void inbuf_reset(void);
 void inline_word_body(Interpreter *interp, int target_cfa);
 int intern_symbol(Interpreter *interp, const char *name);
 void interp_init(Interpreter *interp);
+void items_reserve(Object *obj, int capacity);
 void load_file(Interpreter *interp, const char *filename);
 Interpreter *main_init(void);
 void mark_body(Interpreter *interp, int body_start, int body_end);
@@ -1012,7 +1001,7 @@ int object_new_logic_var(Interpreter *interp);
 int object_new_matrix(Interpreter *interp, int num_rows, int num_columns);
 int object_new_matrix_raw(Interpreter *interp, int num_rows, int num_columns);
 int object_new_pair(Interpreter *interp);
-int object_new_segment(Interpreter *interp, int length, SegmentType element_type);
+int object_new_segment(Interpreter *interp, int length);
 int object_new_set(Interpreter *interp);
 int object_new_string(Interpreter *interp, const char *bytes, int length);
 int object_new_string_uninit(Interpreter *interp, int length);
@@ -1053,9 +1042,12 @@ int stdout_is_tty(void);
 const char *term_bold(void);
 const char *term_plain(void);
 const char *tag_name(Tag t);
+int try_fuse_array_literal(Interpreter *interp);
+int try_fuse_at_e_depth(Interpreter *interp);
 int try_fuse_at_e_lit(Interpreter *interp);
 int try_fuse_at_e_ll(Interpreter *interp);
 int try_fuse_at_e_local(Interpreter *interp);
+int try_fuse_at_e_swap_local(Interpreter *interp);
 int try_fuse_at_i_lit(Interpreter *interp);
 int try_fuse_at_i_ll(Interpreter *interp);
 int try_fuse_at_i_local(Interpreter *interp);
@@ -1063,6 +1055,7 @@ int try_fuse_at_i_swap_local(Interpreter *interp);
 int try_fuse_at_i_depth(Interpreter *interp);
 int try_fuse_float_depth(Interpreter *interp, int op_cfa);
 int try_fuse_pick_literal(Interpreter *interp);
+int try_fuse_gather_e_local(Interpreter *interp);
 int try_fuse_gather_local(Interpreter *interp);
 int try_fuse_local_acc(Interpreter *interp, int depth, int slot);
 int try_fuse_local_arith_store(Interpreter *interp, int depth, int slot);
@@ -1498,17 +1491,14 @@ void p_write_file(DISPATCH_ARGS);
 void p_add_last(DISPATCH_ARGS);
 void p_array(DISPATCH_ARGS);
 void p_array_close(DISPATCH_ARGS);
+void p_array_lit(DISPATCH_ARGS);
 void p_array_of(DISPATCH_ARGS);
 void p_array_open(DISPATCH_ARGS);
-void p_array_to_cons(DISPATCH_ARGS);
 void p_array_to_frame(DISPATCH_ARGS);
 void p_array_to_set(DISPATCH_ARGS);
 void p_byte_size(DISPATCH_ARGS);
 void p_concat(DISPATCH_ARGS);
-void p_cons(DISPATCH_ARGS);
-void p_cons_to_array(DISPATCH_ARGS);
 void p_difference(DISPATCH_ARGS);
-void p_double_segment(DISPATCH_ARGS);
 void p_flatten_array(DISPATCH_ARGS);
 void p_frame(DISPATCH_ARGS);
 void p_frame_delete_at(DISPATCH_ARGS);
@@ -1528,13 +1518,10 @@ void p_frameclose(DISPATCH_ARGS);
 void p_frameopen(DISPATCH_ARGS);
 void p_group_by(DISPATCH_ARGS);
 void p_has(DISPATCH_ARGS);
-void p_head_tail(DISPATCH_ARGS);
 void p_in(DISPATCH_ARGS);
 void p_int_segment(DISPATCH_ARGS);
 void p_intersect(DISPATCH_ARGS);
 void p_json_to_frame(DISPATCH_ARGS);
-void p_list_close(DISPATCH_ARGS);
-void p_list_open(DISPATCH_ARGS);
 void p_merge(DISPATCH_ARGS);
 void p_range(DISPATCH_ARGS);
 void p_remove_last(DISPATCH_ARGS);
@@ -1559,9 +1546,13 @@ void p_0_matrix(DISPATCH_ARGS);
 void p_argmax(DISPATCH_ARGS);
 void p_argmin(DISPATCH_ARGS);
 void p_at_e(DISPATCH_ARGS);
+void p_at_e_depth(DISPATCH_ARGS);
+void p_at_e_depth_top(DISPATCH_ARGS);
 void p_at_e_lit(DISPATCH_ARGS);
+void p_at_e_lit_local0(DISPATCH_ARGS);
 void p_at_e_ll0(DISPATCH_ARGS);
 void p_at_e_local0(DISPATCH_ARGS);
+void p_at_e_swap_local0(DISPATCH_ARGS);
 void p_at_ij(DISPATCH_ARGS);
 void p_at_j(DISPATCH_ARGS);
 void p_augment(DISPATCH_ARGS);
@@ -1573,6 +1564,7 @@ void p_diagonal(DISPATCH_ARGS);
 void p_diagonal_matrix(DISPATCH_ARGS);
 void p_dim(DISPATCH_ARGS);
 void p_frobenius_norm(DISPATCH_ARGS);
+void p_gather_e_local0(DISPATCH_ARGS);
 void p_matmul(DISPATCH_ARGS);
 void p_matrix(DISPATCH_ARGS);
 void p_matrix_range(DISPATCH_ARGS);
@@ -1667,8 +1659,8 @@ void p_amb(DISPATCH_ARGS);
 void p_deref(DISPATCH_ARGS);
 void p_lvar(DISPATCH_ARGS);
 void p_matches(DISPATCH_ARGS);
+void p_rest(DISPATCH_ARGS);
 void p_unify(DISPATCH_ARGS);
-void p_unify_cons(DISPATCH_ARGS);
 void p_unify_keep(DISPATCH_ARGS);
 void p_wildcard(DISPATCH_ARGS);
 

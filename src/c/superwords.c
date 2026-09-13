@@ -246,13 +246,11 @@ static int mul_store_i_cfa;
 static int div_store_i_cfa;
 
 
-static int try_fuse_array_step(Interpreter *interp) {
+static int try_fuse_array_step(Interpreter *interp, cfa_handler fetch_ll0, cfa_handler fetch_local0) {
 	cell *dict = vocab.dict;
 	int here = vocab.here;
 	int floor = compiler.fuse_floor;
 
-	/* new-order in-place step: [arr push][arr i @i fetch][delta?][arith][i push][!i][drop];
-	   the trailing index push feeds !i, and the emitted op carries the index slot inline */
 	if (here - 3 < floor)
 		return 0;
 	if (!dict_op_is(here - 3, p_local_fetch_0depth))
@@ -296,14 +294,11 @@ static int try_fuse_array_step(Interpreter *interp) {
 
 	if (fetch_end - 3 < floor)
 		return 0;
-	if (!dict_is_handler[fetch_end - 3])
-		return 0;
-	cfa_handler folded = (cfa_handler)dict[fetch_end - 3];
 	int arr_form;
 	int arr_key;
 	int idx_slot;
 	int fetch_start;
-	if (folded == p_at_i_ll0) {
+	if (dict_op_is(fetch_end - 3, fetch_ll0)) {
 		arr_form = 1;
 		arr_key = (int)dict[fetch_end - 2];
 		idx_slot = (int)dict[fetch_end - 1];
@@ -311,7 +306,7 @@ static int try_fuse_array_step(Interpreter *interp) {
 	} else {
 		if (fetch_end - 4 < floor)
 			return 0;
-		if (!dict_op_is(fetch_end - 2, p_at_i_local0))
+		if (!dict_op_is(fetch_end - 2, fetch_local0))
 			return 0;
 		if (!dict_op_is(fetch_end - 4, dovar))
 			return 0;
@@ -354,11 +349,11 @@ int superword_is_lit_fold(cell handler) {
 	return 0;
 }
 
-static int unify_cons_cfa;
-
 int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_cfa == vocab.pick_cfa)
 		return try_fuse_pick_literal(interp);
+	if (op_cfa == vocab.array_cfa)
+		return try_fuse_array_literal(interp);
 
 	if (try_fuse_float_depth(interp, op_cfa))
 		return 1;
@@ -379,7 +374,13 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_cfa == vocab.at_e_cfa) {
 		if (try_fuse_at_e_ll(interp))
 			return 1;
+		if (try_fuse_at_e_swap_local(interp))
+			return 1;
+		if (try_fuse_at_e_depth(interp))
+			return 1;
 		if (try_fuse_at_e_local(interp))
+			return 1;
+		if (try_fuse_gather_e_local(interp))
 			return 1;
 		return try_fuse_at_e_lit(interp);
 	}
@@ -388,7 +389,7 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_handler == p_drop
 	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
 	    && dict_op_is(vocab.here - 1, p_store_i)) {
-		if (try_fuse_array_step(interp))
+		if (try_fuse_array_step(interp, p_at_i_ll0, p_at_i_local0))
 			return 1;
 		vocab.here -= 1;
 		emit_call(interp, store_i_drop_cfa);
@@ -398,6 +399,8 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	if (op_handler == p_drop
 	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
 	    && dict_op_is(vocab.here - 1, p_store_e)) {
+		if (try_fuse_array_step(interp, p_at_e_ll0, p_at_e_local0))
+			return 1;
 		if (vocab.here >= 5 && vocab.here - 5 >= compiler.fuse_floor
 		    && vocab.here - 5 == compiler.loadn_at
 		    && dict_op_is(vocab.here - 5, p_load3)) {
@@ -421,14 +424,6 @@ int superword_try_fuse(Interpreter *interp, int op_cfa) {
 	    && dict_op_is(vocab.here - 1, p_store_ij)) {
 		vocab.here -= 1;
 		emit_call(interp, store_ij_drop_cfa);
-		return 1;
-	}
-
-	if (op_handler == p_unify
-	    && vocab.here >= 1 && vocab.here - 1 >= compiler.fuse_floor
-	    && dict_op_is(vocab.here - 1, p_cons)) {
-		vocab.here -= 1;
-		emit_call(interp, unify_cons_cfa);
 		return 1;
 	}
 
@@ -521,7 +516,6 @@ void define_superwords(Interpreter *interp) {
 	store_e_drop_cfa = define_primitive(interp, "(!e-drop)", p_store_e_drop, 4);
 	store_e_lll0_cfa = define_primitive(interp, "(!e.lll0)", p_store_e_lll0, 4);
 	store_ij_drop_cfa = define_primitive(interp, "(!i,j-drop)", p_store_ij_drop, 4);
-	unify_cons_cfa = define_primitive(interp, "(cons~)", p_unify_cons, 4);
 	inc_store_i_cfa = define_primitive(interp, "(inc!i)", p_inc_store_i, 4);
 	dec_store_i_cfa = define_primitive(interp, "(dec!i)", p_dec_store_i, 4);
 	add_store_i_cfa = define_primitive(interp, "(+!i)", p_add_store_i, 4);

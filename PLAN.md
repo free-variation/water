@@ -14,8 +14,7 @@ completes.
 `bytes>value` roots each in-progress container on the GC root stack, so a
 value nested past 62 levels writes but cannot be read, reporting `gc roots
 exhausted`. `value>bytes` recurses per level with no guard and takes SIGSEGV
-above about 50000 levels of array or frame nesting (a cons tail escapes only
-because the compiler makes it a tail call).
+above about 50000 levels of array or frame nesting.
 
 Implementation:
 
@@ -264,7 +263,7 @@ Missing is a representation that reads back through the Telic reader for
 
 - `repr` ( v -- s ) — a string of Telic source that, read back, reconstructs
   an equal value: quoted strings (with `""` escaping), `[ ]` arrays, `{ :k v }`
-  frames, `< >` sets, `[( )]` cons lists, `:name` symbols, floats in shortest
+  frames, `< >` sets, `:name` symbols, floats in shortest
   round-trip form, a matrix as its `[ … ] R C matrix` constructor.
 
 To settle: how a value with no source form (an unbound logic var, continuation,
@@ -556,9 +555,6 @@ live here instead. File and function name each invariant's home.
 - `call_open_callable` roots the token for the whole combinator call: the
   invocation slice holds only its handle, which GC does not scan (core.c,
   `call_open_callable`).
-- Unify walks a cons spine in a loop bounded by `LIST_SPINE_MAX`; only head
-  recursion carries the nesting counter, so list length is not capped by
-  `MAX_NESTING_DEPTH` (logic.c, `unify_depth`).
 - No op receives a frame depth above 0. A quotation reaches an enclosing
   local only as a capture: a trailing received slot of its own frame, copied
   from the immediately enclosing scope at `:]`. The capture pre-scan must
@@ -609,11 +605,32 @@ live here instead. File and function name each invariant's home.
   to `n` (core.c, `local_claim_handle`).
 - `HANDLE_PRESSURE_SLOTS` must exceed one claim per worker, or only the
   worker that trips it collects (telic.h).
+- The byte trigger counts malloc'd payloads only — matrix, segment and
+  continuation storage through `heap_bytes_add`/`heap_bytes_sub` — and is
+  tested once per object, in `object_alloc_slot`, which stays out of line so
+  the test adds no inline cost to the constructors (clang inlines
+  `object_new_frame`/`object_new_string`/`object_new_array` into hot callers
+  such as `copy_value_inner` only while their cost stays under its threshold;
+  a few dozen instructions added to `object_new` flip that and cost 5% on
+  frame-copy loops). Arena objects (arrays, strings, frames, sets,
+  exacts) never request a collection by design: their churn grows the heap
+  until the handle ceiling, an explicit `gc`, or a payload-triggered
+  collection. `GC_PENDING` is set even while `gc_disabled` and stays pending
+  until the collector is enabled again, so a `copy` that crosses the
+  threshold collects at the first instruction after it (core.c,
+  `object_new`, `run_inner`).
+- An Object whose `items` equals its `inline_items` owns no arena block:
+  `object_new_array` keeps up to `INLINE_ITEMS_CAPACITY` elements inside the
+  struct, every growth of `items` (array or set, including an array turned
+  set by `group-by`) goes through `items_reserve`/`ITEMS_GROW_IF_FULL`, and
+  `free_one_object` skips the free. A site that assigns or reallocs `items`
+  directly frees or grows inline storage as if it were a block (core.c,
+  telic.h).
+- `object_alloc_slot` reuses free-listed handles before claiming fresh ones,
+  so the handle table, and every sweep over it, tracks the live set plus one
+  collection's churn rather than the run's total allocation (core.c).
 - The handle-pressure test must stay in the claim branch; per allocation it
   contends on `space->n` (core.c, `local_claim_handle`).
-- In-progress cons chains are gc-rooted during multi-pair allocation so
-  a collection triggered mid-build cannot reap the spine (collections.c,
-  `array>cons`).
 - Bind BLAS and LAPACKE from the statistics shared library's single
   handle; never add a second `ffi-open`. Ports keep BLAS reachable from
   that handle (lib/statistics.telic; Makefile `-reexport_framework` on

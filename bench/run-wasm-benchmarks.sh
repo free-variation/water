@@ -119,7 +119,6 @@ feed_json_loads() { cat "$here/pyperformance/json-loads.telic"; }
 feed_json_dumps() { cat "$here/pyperformance/json-dumps.telic"; }
 feed_leibniz()  { cat "$here/pyperformance/leibniz.telic"; }
 feed_logic()    { cat "$here/logic/logic.telic"; }
-feed_nreverse() { cat "$here/logic/nreverse.telic"; }
 
 # --- python wrappers -------------------------------------------------------
 py_nqueens()  { "$python" "$here/pyperformance/pyperf_nqueens.py" "$nqueens_n"; }
@@ -196,7 +195,6 @@ bench json-dumps     "EMPTY/…/HUGE ×250"                 feed_json_dumps     
 [ "$run_leibniz" = 1 ] && bench leibniz "${leibniz_rounds} it" feed_leibniz py_nqueens 1 1
 
 bench logic          "deep/wide/frame unify"             feed_logic          py_none 1 1
-bench nreverse       "nrev(30) × 30k"                    feed_nreverse       py_none 2 1
 
 # --- emit report -----------------------------------------------------------
 pyver=$("$python" --version 2>&1 | awk '{print $2}')

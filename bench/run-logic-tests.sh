@@ -8,7 +8,7 @@
 # unification "elapsed:" prints before it, so it is still captured).
 #
 #   bench/run-logic-tests.sh            # run all
-#   bench/run-logic-tests.sh nreverse   # by name
+#   bench/run-logic-tests.sh logic   # by name
 #
 # Env: LF_TIMEOUT  seconds to bound each telic run (default 60)
 

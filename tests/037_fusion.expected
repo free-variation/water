@@ -86,6 +86,18 @@
  8: (size.len)
  9: exit
 ;
+[ 1 2 ] 
+: pair-up   \ 3 cells
+ 0: (array.lit) 2
+ 2: exit
+;
+[ 1 2 3 ] 
+[ ] 
+: zero-array   \ 4 cells
+ 0: (lit) 0
+ 2: array
+ 3: exit
+;
 1 
 0 
 0 

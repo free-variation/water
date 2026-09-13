@@ -69,13 +69,13 @@ Kid 5 ~ drop   Kid ? 5 = . cr                                          \ 1  Kid 
 [ 1 2 ] [ 1 9 ] ~                                    \ error (element)
 { :a 1 } { :a 2 } ~                                  \ error (clashing shared key)
 
-\ === a cons spine unifies to any length: the nesting counter guards head
-\         recursion only, the spine has its own length bound, so the depth
-\         limit that bounds nested structures never caps a list ===
-50000 iota array>cons  dup copy  ~  cons>array size . cr     \ 50000
-50000 iota [: drop lvar :] map array>cons  dup
-50000 iota array>cons  ~ drop
-cons>array 700 @i ? . cr                                     \ 700  every spine cell bound
+\ === a long array unifies element-wise at any length: the nesting counter
+\         guards depth, not width, so the limit that bounds nested structures
+\         never caps an array ===
+50000 iota  dup copy  ~  size . cr                          \ 50000
+50000 iota [: drop lvar :] map  dup
+50000 iota  ~ drop
+700 @i ? . cr                                                \ 700  every element bound
 
 \ === M9: a binding committed on one line survives a later failing line.
 \         REPL error recovery rolls back only the failing line's own logic

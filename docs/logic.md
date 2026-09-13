@@ -101,7 +101,7 @@ substitution, then, in priority order:
 
 The structural case (4) is where unification threads bindings through an entire
 structure in one pass: arrays unify by position (same length, corresponding
-elements unify); cons pairs unify head-with-head and tail-with-tail; and frames
+elements unify, and a trailing `rest` pattern takes the remaining elements); and frames
 unify as **open records** — only the keys the two frames *share* are constrained,
 and a key present on just one side is left alone. That open-record rule is what
 lets a frame double as a query pattern: a pattern `{ :role :wizard }` unifies with

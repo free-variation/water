@@ -150,11 +150,11 @@ result must compose with `map`/`filter`/`unify`. The two interoperate — a
 
 - Unify for its bindings: `~ drop` asserts a structural equation and keeps
   only the side effects. A variable buried anywhere in the term comes out
-  bound (tests/050_pairs):
+  bound:
 
   ```forth buried-bind
   lvar to A
-  [( 1 2 3 4 5 null )] [( 1 2 A 4 5 null )] ~ drop
+  [ 1 2 3 4 5 ] [ 1 2 A 4 5 ] ~ drop
   A ? . cr
   ```
   ```output
@@ -163,24 +163,21 @@ result must compose with `map`/`filter`/`unify`. The two interoperate — a
 
 - A relation is clauses under `amb`: each clause is a quotation with fresh
   `?`-locals for its own variables, the arguments bound in by `ncurry`,
-  alternatives tried in order. `[( H T )]` under unify is Prolog's `[H|T]`.
-  Prolog's append, verbatim (tests/050_pairs):
+  alternatives tried in order. `[ H T rest ]` under unify is Prolog's `[H|T]`.
+  Prolog's member, clause for clause:
 
   ```forth
-  : lappend | A B R |
-    A B R [: a b r | a null ~ drop r b ~ drop :] 3 ncurry
-    A B R [: a b r ?H ?T ?R1 |
-      a H T cons ~ drop
-      r H R1 cons ~ drop
-      T b R1 lappend :] 3 ncurry
+  : lmember | X L |
+    X L [: x l | l [ x _ rest ] ~ drop :] 2 ncurry
+    X L [: x l ?T | l [ _ T rest ] ~ drop x T lmember :] 2 ncurry
     amb ;
   ```
 
-- `choose` is n-way `amb` over a cons list — a backtracking iteration that
+- `choose` is n-way `amb` over an array — a backtracking iteration that
   commits to the first element the goal accepts:
 
   ```forth choose-commit
-  [( 1 2 3 null )] [: dup 2 < if fail then . cr :] choose
+  [ 1 2 3 ] [: dup 2 < if fail then . cr :] choose
   ```
   ```output
   2
@@ -224,19 +221,19 @@ inline, so it reads and writes the enclosing word's locals, and nested loops
 read each index by name. `times`, `i-times`, and `fold-times` are the
 quotation forms — for the top level, for an xt in hand, and for map-folds.
 
-- Indexed fill — initialize a segment or array by index (the shape of
+- Indexed fill — initialize a vector or array by index (the shape of
   bench/float.telic's `build-points`):
 
   ```forth indexed-fill
   variable xs
-  4 double-segment to xs
+  4 1 0-matrix to xs
   : fill-xs
     0 4 1 do i
        i fsin to sxi
-       xs sxi i !i drop
+       xs sxi i !e drop
     loop ;
   fill-xs
-  xs 1 @i . cr
+  xs 1 @e . cr
   ```
   ```output
   0.841471
@@ -773,16 +770,16 @@ coroutines are short compositions over them (exceptions.telic, generators.telic)
 
 ## Numeric kernels
 
-The register for hot loops: locals, unsafe f-words, segments — the shapes the
+The register for hot loops: locals, unsafe f-words, flat vectors — the shapes the
 compiler's fusion targets.
 
 - Gather–compute–writeback: hoist reads into locals, run fused arithmetic,
-  store with `!i drop` (bench/float.telic, `normalize-points`):
+  store with `!e drop` (bench/float.telic, `normalize-points`):
 
   ```forth
-  xs i @i to xi ys i @i to yi zs i @i to zi
+  xs i @e to xi ys i @e to yi zs i @e to zi
   xi xi f* yi yi f* f+ zi zi f* f+ fsqrt to norm
-  xs  xi norm f/  i !i drop
+  xs  xi norm f/  i !e drop
   ```
 
 - In-place matrix chains avoid allocation in an iteration

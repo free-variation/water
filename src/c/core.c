@@ -95,7 +95,10 @@ static void *arena_alloc_sized(size_t bytes) {
 	void *recycled_block = context->size_class_free[class_index];
 
 	if (recycled_block) {
-		context->size_class_free[class_index] = *(void **)recycled_block;
+		void *next_recycled_block = *(void **)recycled_block;
+		context->size_class_free[class_index] = next_recycled_block;
+		if (next_recycled_block)
+			__builtin_prefetch(next_recycled_block, 1);
 		return recycled_block;
 	}
 
@@ -150,7 +153,10 @@ Object *arena_alloc_object(void) {
 	Object *fresh;
 	if (context->freed_object_structs) {
 		fresh = context->freed_object_structs;
-		context->freed_object_structs = *(void **)fresh;
+		void *next_freed_struct = *(void **)fresh;
+		context->freed_object_structs = next_freed_struct;
+		if (next_freed_struct)
+			__builtin_prefetch(next_freed_struct, 1);
 	} else {
 		fresh = arena_alloc(sizeof(Object));
 	}
@@ -189,6 +195,8 @@ static inline int local_claim_handle(Interpreter *interp, LocalHandles *lh, Hand
 
 int object_alloc_slot(Interpreter *interp) {
 	if (in_parallel) {
+		if (thread_alloc.heap_bytes_live > thread_alloc.heap_gc_threshold)
+			interp->gc_pending |= GC_PENDING;
 		int slot = local_claim_handle(interp, &thread_alloc.objects, &arena.object_space);
 		if (slot < 0) {
 			fail(interp, "object table full in parallel region");
@@ -197,8 +205,14 @@ int object_alloc_slot(Interpreter *interp) {
 		return slot;
 	}
 
+	if (arena.heap_bytes_live > arena.heap_gc_threshold)
+		interp->gc_pending |= GC_PENDING;
+
 	if (main_alloc.objects.next < main_alloc.objects.end)
 		return main_alloc.objects.next++;
+
+	if (arena.object_space.n_free > 0)
+		return arena.object_space.free[--arena.object_space.n_free];
 
 	if (arena.object_space.n < arena.object_space.max) {
 		int claim = arena.object_space.max - arena.object_space.n;
@@ -218,10 +232,6 @@ int object_alloc_slot(Interpreter *interp) {
 		main_alloc.objects.end = arena.object_space.n;
 
 		return main_alloc.objects.next++;
-	}
-
-	if (arena.object_space.n_free > 0) {
-		return arena.object_space.free[--arena.object_space.n_free];
 	}
 
 	if (interp->gc_disabled)
@@ -297,7 +307,7 @@ static void free_object_heap_backing(Object *obj) {
 			free(obj->matrix.elements);
 			break;
 		case OBJECT_SEGMENT:
-			heap_bytes_sub((size_t)obj->segment.length * segment_element_size(obj->segment.element_type));
+			heap_bytes_sub((size_t)obj->segment.length * sizeof(int));
 			free(obj->segment.data);
 			break;
 		case OBJECT_CONTINUATION:
@@ -378,9 +388,29 @@ int object_new_array(Interpreter *interp, int num_elements) {
 	alloc_count_array++;
 	NEW_OBJECT(obj, OBJECT_ARRAY);
 	obj->len = num_elements;
+	if (num_elements <= INLINE_ITEMS_CAPACITY) {
+		obj->capacity = INLINE_ITEMS_CAPACITY;
+		obj->items = obj->inline_items;
+		return slot;
+	}
+
 	obj->capacity = num_elements;
-	obj->items = arena_malloc(sizeof(Val) * (size_t)MAX(num_elements, 1));
+	obj->items = arena_malloc(sizeof(Val) * (size_t)num_elements);
 	return slot;
+}
+
+void items_reserve(Object *obj, int capacity) {
+	if (capacity <= obj->capacity)
+		return;
+
+	if (obj->items == obj->inline_items) {
+		Val *block = arena_malloc(sizeof(Val) * (size_t)capacity);
+		memcpy(block, obj->inline_items, sizeof(Val) * (size_t)obj->len);
+		obj->items = block;
+	} else {
+		obj->items = arena_realloc(obj->items, sizeof(Val) * (size_t)capacity);
+	}
+	obj->capacity = capacity;
 }
 
 int object_new_pair(Interpreter *interp) {
@@ -429,13 +459,6 @@ int object_new_frame(Interpreter *interp) {
 }
 
 static int object_new_matrix_sized(Interpreter *interp, int num_rows, int num_columns, int zeroed) {
-	if (in_parallel) {
-		if (thread_alloc.heap_bytes_live > thread_alloc.heap_gc_threshold)
-			interp->gc_pending |= GC_PENDING;
-	} else if (!interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold) {
-		interp->gc_pending |= GC_PENDING;
-	}
-
 	NEW_OBJECT(obj, OBJECT_MATRIX);
 	obj->matrix.rows = num_rows;
 	obj->matrix.columns = num_columns;
@@ -471,23 +494,14 @@ int object_new_matrix_raw(Interpreter *interp, int num_rows, int num_columns) {
 	return object_new_matrix_sized(interp, num_rows, num_columns, 0);
 }
 
-int object_new_segment(Interpreter *interp, int length, SegmentType element_type) {
-	if (in_parallel) {
-		if (thread_alloc.heap_bytes_live > thread_alloc.heap_gc_threshold)
-			interp->gc_pending |= GC_PENDING;
-	} else if (!interp->gc_disabled && arena.heap_bytes_live > arena.heap_gc_threshold) {
-		interp->gc_pending |= GC_PENDING;
-	}
-
+int object_new_segment(Interpreter *interp, int length) {
 	NEW_OBJECT(obj, OBJECT_SEGMENT);
 
-	obj->segment.element_type = element_type;
 	obj->segment.length = length;
-	size_t element_size = segment_element_size(element_type);
-	CALLOC_OR_FAIL_RETURNING_CLEANUP(interp, obj->segment.data, (size_t)(length > 0 ? length : 1), element_size,
+	CALLOC_OR_FAIL_RETURNING_CLEANUP(interp, obj->segment.data, (size_t)(length > 0 ? length : 1), sizeof(int),
 			{ arena_free_object(obj); arena.objects[slot] = NULL; }, -1);
 
-	heap_bytes_add((size_t)length * element_size);
+	heap_bytes_add((size_t)length * sizeof(int));
 
 	return slot;
 }
@@ -674,7 +688,7 @@ int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 							 return val_cmp_depth(interp, left_magnitude, right_magnitude, depth + 1);
 						 }
 		case T_SYMBOL: case T_XT: case T_CURRIED: case T_ADDR: case T_LOGIC_VAR:
-		case T_STREAM: case T_DB: case T_PTR: case T_CONT:
+		case T_STREAM: case T_DB: case T_PTR: case T_CONT: case T_REST:
 
 					  if (VAL_DATA(left) < VAL_DATA(right))
 					  	return -1;
@@ -705,15 +719,6 @@ int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 
 									  return left_collection->len - right_collection->len;
 								  }
-		case T_PAIR: {
-			Pair *left_pair = &pairs.table[VAL_DATA(left)];
-			Pair *right_pair = &pairs.table[VAL_DATA(right)];
-			int head_cmp = val_cmp_depth(interp, left_pair->head, right_pair->head, depth + 1);
-			if (head_cmp)
-				return head_cmp;
-			return val_cmp_depth(interp, left_pair->tail, right_pair->tail, depth + 1);
-		}
-
 		case T_MATRIX: {
 						   Object *left_matrix = OBJECT_AT(VAL_DATA(left));
 						   Object *right_matrix = OBJECT_AT(VAL_DATA(right));
@@ -737,9 +742,6 @@ int val_cmp_depth(Interpreter *interp, Val left, Val right, int depth) {
 							Object *left_segment = OBJECT_AT(VAL_DATA(left));
 							Object *right_segment = OBJECT_AT(VAL_DATA(right));
 
-
-							if (left_segment->segment.element_type != right_segment->segment.element_type)
-								return left_segment->segment.element_type - right_segment->segment.element_type;
 							if (left_segment->segment.length != right_segment->segment.length)
 								return left_segment->segment.length - right_segment->segment.length;
 
@@ -923,6 +925,15 @@ static void print_logic_var(FILE *out, Interpreter *interp, Val var,
 	pr(out, interp, resolved);
 }
 
+static void print_rest(FILE *out, Interpreter *interp, Val rest,
+		void (*pr)(FILE *, Interpreter *, Val)) {
+	fputs("..", out);
+	if (rest_is_wildcard(rest))
+		putc('_', out);
+	else
+		print_logic_var(out, interp, make_logic_var((int)VAL_DATA(rest)), pr);
+}
+
 static void print_complex_parts(FILE *out, double real_part, double imaginary_part) {
 	print_double(out, real_part);
 	if (imaginary_part >= 0.0)
@@ -1006,32 +1017,6 @@ void print_val(FILE *out, Interpreter *interp, Val value) {
 					   }
 					   print_depth_leave();
 					   break;
-		case T_PAIR: {
-			print_depth_enter();
-			if (print_depth > MAX_NESTING_DEPTH) {
-				fputs("[(...)]", out);
-			} else {
-				fputs("[( ", out);
-				Val cur = value;
-				int count = 0;
-				while (VAL_TAG(cur) == T_PAIR && count < LIST_PRINT_MAX) {
-					Pair *pair = &pairs.table[VAL_DATA(cur)];
-					print_val(out, interp, pair->head);
-					putc(' ', out);
-					cur = deref(interp, pair->tail);
-					count++;
-				}
-				if (count == LIST_PRINT_MAX)
-					fputs("... ", out);
-				else {
-					print_val(out, interp, cur);
-					putc(' ', out);
-				}
-				fputs(")]", out);
-			}
-			print_depth_leave();
-			break;
-		}
 		case T_XT: fprintf(out, "<xt %lld>", (long long)VAL_DATA(value)); break;
 	case T_CURRIED: {
 						Object *curried = OBJECT_AT(VAL_DATA(value));
@@ -1049,12 +1034,7 @@ void print_val(FILE *out, Interpreter *interp, Val value) {
 		case T_PTR: fprintf(out, "<ptr %lld>", (long long)VAL_DATA(value)); break;
 		case T_SEGMENT: {
 							Object *segment = OBJECT_AT(VAL_DATA(value));
-							const char *name = "?";
-							switch (segment->segment.element_type) {
-								case SEGMENT_INT:    name = "int"; break;
-								case SEGMENT_DOUBLE: name = "double"; break;
-							}
-							fprintf(out, "<%s-segment %d>", name, segment->segment.length);
+							fprintf(out, "<int-segment %d>", segment->segment.length);
 							break;
 						}
 		case T_LOGIC_VAR: fprintf(out, "_%d", (int)VAL_DATA(value)); break;
@@ -1069,6 +1049,7 @@ void print_val(FILE *out, Interpreter *interp, Val value) {
 					   }
 		case T_EXACT: exact_print(out, value); break;
 		case T_COMPLEX: print_complex(out, value); break;
+		case T_REST: print_rest(out, interp, value, print_val); break;
 		case T_QUANTITY: {
 							 int slot = (int)VAL_DATA(value);
 							 int unit = (int)pairs.table[slot].tail.bits;
@@ -1097,10 +1078,7 @@ void print_val(FILE *out, Interpreter *interp, Val value) {
 					  }
 		case T_MARK: {
 						 int bracket = (int)VAL_DATA(value);
-						 if (bracket == '(')
-							 fputs("[(", out);
-						 else
-							 putc(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?', out);
+						 putc(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?', out);
 						 break;
 					 }
 		default: fputs("<?>", out); break;
@@ -1232,9 +1210,6 @@ void print_val_compact(FILE *out, Interpreter *interp, Val value) {
 						  print_depth_leave();
 						  break;
 					  }
-		case T_PAIR:
-					   fputs("[(…)]", out);
-					   break;
 		case T_FRAME: {
 						  Object *frame = OBJECT_AT(VAL_DATA(value));
 						  if (print_depth > 0) {
@@ -1267,6 +1242,7 @@ void print_val_compact(FILE *out, Interpreter *interp, Val value) {
 					   }
 		case T_EXACT: exact_print(out, value); break;
 		case T_COMPLEX: print_complex(out, value); break;
+		case T_REST: print_rest(out, interp, value, print_val_compact); break;
 		case T_QUANTITY: {
 							 int slot = (int)VAL_DATA(value);
 							 int unit = (int)pairs.table[slot].tail.bits;
@@ -1306,22 +1282,14 @@ void print_val_compact(FILE *out, Interpreter *interp, Val value) {
 		case T_PTR: fprintf(out, "<ptr %lld>", (long long)VAL_DATA(value)); break;
 		case T_SEGMENT: {
 							Object *segment = OBJECT_AT(VAL_DATA(value));
-							char element = '?';
-							switch (segment->segment.element_type) {
-								case SEGMENT_INT:    element = 'I'; break;
-								case SEGMENT_DOUBLE: element = 'D'; break;
-							}
-							fprintf(out, "*%c%d", element, segment->segment.length);
+							fprintf(out, "*I%d", segment->segment.length);
 							break;
 						}
 		case T_CONT: fputs("k", out); break;
 		case T_LOGIC_VAR: fprintf(out, "_%d", (int)VAL_DATA(value)); break;
 		case T_MARK: {
 						 int bracket = (int)VAL_DATA(value);
-						 if (bracket == '(')
-							 fputs("[(", out);
-						 else
-							 putc(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?', out);
+						 putc(bracket == '{' || bracket == '[' || bracket == '<' ? bracket : '?', out);
 						 break;
 					 }
 		default: fputs("?", out); break;
@@ -1519,11 +1487,13 @@ void run_inner(Interpreter *interp, int floor) {
 			if (interp->gc_pending & TRACE_PENDING)
 				trace_step(interp);
 			if (interp->gc_pending & GC_PENDING) {
-				interp->gc_pending &= ~GC_PENDING;
-				if (in_parallel)
+				if (in_parallel) {
+					interp->gc_pending &= ~GC_PENDING;
 					worker_local_gc(interp);
-				else if (!interp->gc_disabled)
+				} else if (!interp->gc_disabled) {
+					interp->gc_pending &= ~GC_PENDING;
 					gc(interp);
+				}
 			}
 		}
 
@@ -2437,7 +2407,6 @@ const char *tag_name(Tag t) {
 		case T_STRING: return "a string";
 		case T_SET:    return "a set";
 		case T_ARRAY:  return "an array";
-		case T_PAIR:   return "a pair";
 		case T_FRAME:  return "a frame";
 		case T_MATRIX: return "a matrix";
 		case T_XT:     return "an execution token";
@@ -2453,6 +2422,7 @@ const char *tag_name(Tag t) {
 		case T_QUANTITY: return "a quantity";
 		case T_EXACT:  return "an exact";
 		case T_COMPLEX: return "a complex";
+		case T_REST:   return "a rest pattern";
 		default:       return "an unknown value";
 	}
 }
@@ -2896,6 +2866,7 @@ static void p_ll_litrev_sub_0_store(DISPATCH_ARGS) {
 	DISPATCH_REGISTERS(interp, chain_ip + 3, chain_sp);
 }
 
+static int array_lit_cfa;
 static int at_i_local0_cfa;
 static int at_i_lit_cfa;
 static int at_i_lit_local0_cfa;
@@ -2904,6 +2875,11 @@ static int at_i_ll0_cfa;
 static int at_e_lit_cfa;
 static int at_e_local0_cfa;
 static int at_e_ll0_cfa;
+static int at_e_lit_local0_cfa;
+static int gather_e_local0_cfa;
+static int at_e_swap_l0_cfa;
+static int at_e_depth_cfa;
+static int at_e_depth_top_cfa;
 static int at_i_swap_l0_cfa;
 static int at_i_depth_cfa;
 static int at_i_depth_top_cfa;
@@ -3083,6 +3059,29 @@ int try_fuse_at_i_local(Interpreter *interp) {
 	return try_fuse_operand_op(interp, p_local_fetch_0depth, at_i_local0_cfa);
 }
 
+int try_fuse_array_literal(Interpreter *interp) {
+	if (!compiler.compiling)
+		return 0;
+
+	cell *dict = vocab.dict;
+	int here = vocab.here;
+	if (here < 2 || here - 2 < compiler.fuse_floor)
+		return 0;
+	if (!dict_op_is(here - 2, p_literal))
+		return 0;
+
+	Val count_val;
+	count_val.bits = (uint64_t)dict[here - 1];
+	if (VAL_TAG(count_val) != T_FLOAT)
+		return 0;
+
+	double count = VAL_NUMBER(count_val);
+	if (count < 1 || count > (double)DATA_STACK_DEPTH || count != (double)(int)count)
+		return 0;
+
+	return fuse_rewrite(interp, 2, array_lit_cfa, (cell)(int)count);
+}
+
 int try_fuse_gather_local(Interpreter *interp) {
 	return try_fuse_operand_op(interp, p_at_i_local0, gather_local0_cfa);
 }
@@ -3091,8 +3090,8 @@ int try_fuse_at_e_local(Interpreter *interp) {
 	return try_fuse_operand_op(interp, p_local_fetch_0depth, at_e_local0_cfa);
 }
 
-int try_fuse_at_e_lit(Interpreter *interp) {
-	return try_fuse_literal_index_op(interp, at_e_lit_cfa);
+int try_fuse_gather_e_local(Interpreter *interp) {
+	return try_fuse_operand_op(interp, p_at_e_local0, gather_e_local0_cfa);
 }
 
 static int try_fuse_two_local_op(Interpreter *interp, int ll0_cfa) {
@@ -3131,7 +3130,7 @@ int try_fuse_at_i_ll(Interpreter *interp) {
 	return try_fuse_two_local_op(interp, at_i_ll0_cfa);
 }
 
-int try_fuse_at_i_swap_local(Interpreter *interp) {
+static int try_fuse_swap_local_index(Interpreter *interp, int fused_cfa) {
 	if (!compiler.compiling)
 		return 0;
 
@@ -3144,9 +3143,17 @@ int try_fuse_at_i_swap_local(Interpreter *interp) {
 		return 0;
 
 	if (dict_op_is(here - 3, p_local_fetch_0depth))
-		return fuse_rewrite(interp, 3, at_i_swap_l0_cfa, dict[here - 2]);
+		return fuse_rewrite(interp, 3, fused_cfa, dict[here - 2]);
 
 	return 0;
+}
+
+int try_fuse_at_i_swap_local(Interpreter *interp) {
+	return try_fuse_swap_local_index(interp, at_i_swap_l0_cfa);
+}
+
+int try_fuse_at_e_swap_local(Interpreter *interp) {
+	return try_fuse_swap_local_index(interp, at_e_swap_l0_cfa);
 }
 
 int try_fuse_pick_literal(Interpreter *interp) {
@@ -3223,7 +3230,7 @@ int try_fuse_float_depth(Interpreter *interp, int op_cfa) {
 	return try_fuse_depth_op(interp, fused_cfa);
 }
 
-int try_fuse_at_i_depth(Interpreter *interp) {
+static int try_fuse_depth_index(Interpreter *interp, int depth_top_cfa, int depth_cfa) {
 	if (!compiler.compiling)
 		return 0;
 
@@ -3235,7 +3242,7 @@ int try_fuse_at_i_depth(Interpreter *interp) {
 		if (vocab.here - 1 - array_cells < compiler.fuse_floor)
 			return 0;
 
-		return fuse_rewrite(interp, array_cells + 1, at_i_depth_top_cfa, array_depth);
+		return fuse_rewrite(interp, array_cells + 1, depth_top_cfa, array_depth);
 	}
 
 	int index_depth, index_cells;
@@ -3251,8 +3258,16 @@ int try_fuse_at_i_depth(Interpreter *interp) {
 	if (index_depth < 1)
 		return 0;
 
-	return fuse_rewrite_pair(interp, index_cells + array_cells, at_i_depth_cfa,
+	return fuse_rewrite_pair(interp, index_cells + array_cells, depth_cfa,
 			array_depth, index_depth - 1);
+}
+
+int try_fuse_at_i_depth(Interpreter *interp) {
+	return try_fuse_depth_index(interp, at_i_depth_top_cfa, at_i_depth_cfa);
+}
+
+int try_fuse_at_e_depth(Interpreter *interp) {
+	return try_fuse_depth_index(interp, at_e_depth_top_cfa, at_e_depth_cfa);
 }
 
 int try_fuse_at_e_ll(Interpreter *interp) {
@@ -3326,7 +3341,7 @@ int try_fuse_local_arith(Interpreter *interp, cfa_handler op_handler) {
 }
 
 
-int try_fuse_at_i_lit(Interpreter *interp) {
+static int try_fuse_index_lit(Interpreter *interp, int lit_local0_cfa, int lit_cfa) {
 	if (!compiler.compiling)
 		return 0;
 
@@ -3348,9 +3363,17 @@ int try_fuse_at_i_lit(Interpreter *interp) {
 
 	if (here >= 4 && here - 4 >= compiler.fuse_floor
 	    && dict_op_is(here - 4, p_local_fetch_0depth))
-		return fuse_rewrite_pair(interp, 4, at_i_lit_local0_cfa, dict[here - 3], (cell)index);
+		return fuse_rewrite_pair(interp, 4, lit_local0_cfa, dict[here - 3], (cell)index);
 
-	return try_fuse_literal_index_op(interp, at_i_lit_cfa);
+	return try_fuse_literal_index_op(interp, lit_cfa);
+}
+
+int try_fuse_at_i_lit(Interpreter *interp) {
+	return try_fuse_index_lit(interp, at_i_lit_local0_cfa, at_i_lit_cfa);
+}
+
+int try_fuse_at_e_lit(Interpreter *interp) {
+	return try_fuse_index_lit(interp, at_e_lit_local0_cfa, at_e_lit_cfa);
 }
 
 void inbuf_reset(void) {
@@ -3391,11 +3414,10 @@ char *next_token(void) {
 
 	if (lead == ';' || lead == ']' || lead == '}') {
 		compiler.input_buffer_pos++;
-	} else if ((lead == ':' || lead == ')' || lead == '>') && after_lead == ']') {
+	} else if ((lead == ':' || lead == '>') && after_lead == ']') {
 		compiler.input_buffer_pos += 2;
 	} else if (lead == '[') {
-		int two_char_opener = after_lead == ':' || after_lead == '('
-			|| after_lead == '<';
+		int two_char_opener = after_lead == ':' || after_lead == '<';
 		compiler.input_buffer_pos += two_char_opener ? 2 : 1;
 	} else if (lead == '{') {
 		compiler.input_buffer_pos++;
@@ -3408,7 +3430,7 @@ char *next_token(void) {
 				break;
 			if (c == ']' && bracket_depth == 0) {
 				char preceding = buffer[compiler.input_buffer_pos - 1];
-				if ((preceding == ':' || preceding == ')' || preceding == '>')
+				if ((preceding == ':' || preceding == '>')
 						&& compiler.input_buffer_pos - 1 > start)
 					compiler.input_buffer_pos--;
 				break;
@@ -3515,7 +3537,7 @@ static void compile_or_push(Interpreter *interp, Val value) {
 
 static void path_append(int handle, Val element) {
 	Object *path = OBJECT_AT(handle);
-	GROW_IF_FULL(path->len, path->capacity, path->items);
+	ITEMS_GROW_IF_FULL(path);
 	path->items[path->len++] = element;
 }
 
@@ -4228,6 +4250,13 @@ static void mark_value_at(Interpreter *interp, Val value, int depth) {
 			continue;
 		}
 
+		if (VAL_TAG(value) == T_REST) {
+			if (rest_is_wildcard(value))
+				return;
+			value = interp->lvar_stack[VAL_DATA(value)];
+			continue;
+		}
+
 		if (VAL_TAG(value) == T_PTR) {
 			value = ffi_pointer_owner_of((int)VAL_DATA(value));
 			continue;
@@ -4237,7 +4266,6 @@ static void mark_value_at(Interpreter *interp, Val value, int depth) {
 				VAL_TAG(value) != T_SET &&
 				VAL_TAG(value) != T_ARRAY &&
 				VAL_TAG(value) != T_CURRIED &&
-				VAL_TAG(value) != T_PAIR &&
 				VAL_TAG(value) != T_FRAME &&
 				VAL_TAG(value) != T_MATRIX &&
 				VAL_TAG(value) != T_SEGMENT &&
@@ -4245,19 +4273,6 @@ static void mark_value_at(Interpreter *interp, Val value, int depth) {
 				VAL_TAG(value) != T_EXACT &&
 				VAL_TAG(value) != T_QUANTITY &&
 				VAL_TAG(value) != T_COMPLEX) return;
-
-		if (VAL_TAG(value) == T_PAIR) {
-			int slot = (int)VAL_DATA(value);
-			if (slot < interp->gc_pair_base)
-				return;
-			GC_ASSERT(!in_parallel || handle_in_chunks(slot, thread_alloc.pairs.chunks, thread_alloc.pairs.n_chunks, thread_alloc.pairs.next), "worker marked a pair outside its own chunks");
-			if (pairs.mark_epoch[slot] == interp->gc_epoch)
-				return;
-			pairs.mark_epoch[slot] = interp->gc_epoch;
-			mark_child(interp, pairs.table[slot].head, depth);
-			value = pairs.table[slot].tail;
-			continue;
-		}
 
 		if (VAL_TAG(value) == T_QUANTITY || VAL_TAG(value) == T_COMPLEX) {
 			int slot = (int)VAL_DATA(value);
@@ -4344,6 +4359,15 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 							  *copy_val = varmap_lookup(interp, map, (int)VAL_DATA(source_val));
 							  return;
 						  }
+		case T_REST: {
+						 if (rest_is_wildcard(source_val) || map->reify) {
+							 *copy_val = source_val;
+							 return;
+						 }
+						 Val fresh = varmap_lookup(interp, map, (int)VAL_DATA(source_val));
+						 *copy_val = make_rest(VAL_DATA(fresh));
+						 return;
+					 }
 		case T_STRING: {
 						   Object *source = OBJECT_AT(VAL_DATA(source_val));
 						   copy_handle = object_new_string(interp, source->bytes, source->len);
@@ -4372,11 +4396,7 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 							return;
 
 						Object *copy = OBJECT_AT(copy_handle);
-						if (source->len > copy->capacity) {
-							while (copy->capacity < source->len)
-								copy->capacity *= 2;
-							copy->items = arena_realloc(copy->items, sizeof(Val) * (size_t)copy->capacity);
-						}
+						items_reserve(copy, source->len);
 
 						memset(copy->items, 0, sizeof(Val) * (size_t)source->len);
 						copy->len = source->len;
@@ -4385,42 +4405,6 @@ static void copy_value_inner(Interpreter *interp, VarMap *map, Val source_val, V
 							copy_value_inner(interp, map, source->items[i], &copy->items[i], depth + 1);
 						return;
 					}
-		case T_PAIR: {
-						 int prev_slot = -1;
-						 int spine_len = 0;
-						 Val current = source_val;
-
-						 while(VAL_TAG(current) == T_PAIR) {
-							 if (spine_len++ > LIST_SPINE_MAX) {
-								 fail(interp, "list too long or cyclic");
-								 return;
-							 }
-
-							 int source_slot = (int)VAL_DATA(current);
-							 int new_slot = object_new_pair(interp);
-							 if (interp->error_flag) return;
-
-							 if (prev_slot < 0)
-								 *copy_val = make_pair(new_slot);
-							 else
-								 pairs.table[prev_slot].tail = make_pair(new_slot);
-
-							 Val head_copy;
-							 copy_value_inner(interp, map, pairs.table[source_slot].head, &head_copy, depth + 1);
-							 if (interp->error_flag) return;
-
-							 pairs.table[new_slot].head = head_copy;
-							 prev_slot = new_slot;
-							 current = deref(interp, pairs.table[source_slot].tail);
-						 }
-
-						 Val tail_copy;
-						 copy_value_inner(interp, map, current, &tail_copy, depth + 1);
-						 if (interp->error_flag) return;
-
-						 pairs.table[prev_slot].tail = tail_copy;
-						 return;
-					 }
 		case T_FRAME: {
 						  Object *source = OBJECT_AT(VAL_DATA(source_val));
 						  copy_handle = object_new_frame(interp);
@@ -4544,6 +4528,8 @@ int op_cell_count(int cursor) {
 	    || handler == (cell)p_at_i_lit_local0
 	    || handler == (cell)p_at_i_ll0
 	    || handler == (cell)p_at_e_ll0
+	    || handler == (cell)p_at_e_lit_local0
+	    || handler == (cell)p_at_e_depth
 	    || handler == (cell)p_at_i_depth)
 		return 3;
 
@@ -4560,10 +4546,14 @@ int op_cell_count(int cursor) {
 	    || handler == (cell)p_mul_f_depth
 	    || handler == (cell)p_div_f_depth
 	    || handler == (cell)p_pick_n
+	    || handler == (cell)p_array_lit
 	    || handler == (cell)p_at_i_lit
 	    || handler == (cell)p_at_e_local0
 	    || handler == (cell)p_at_e_lit
-	    || handler == (cell)p_gather_local0)
+	    || handler == (cell)p_at_e_swap_local0
+	    || handler == (cell)p_at_e_depth_top
+	    || handler == (cell)p_gather_local0
+	    || handler == (cell)p_gather_e_local0)
 		return 2;
 
 	if (handler == vocab.dict[vocab.dostr_cfa]
@@ -4688,6 +4678,8 @@ static void mark_roots(Interpreter *interp) {
 		mark_value(interp, interp->entry_snapshot[i]);
 }
 
+#define SWEEP_PREFETCH_DISTANCE 16
+
 void gc(Interpreter *interp) {
 	int i;
 
@@ -4740,7 +4732,10 @@ void gc(Interpreter *interp) {
 	}
 
 	arena.object_space.n_free = 0;
-	for (int handle = 0; handle < arena.object_space.n; handle++) {
+	int n_handles = arena.object_space.n;
+	for (int handle = 0; handle < n_handles; handle++) {
+		if (handle + SWEEP_PREFETCH_DISTANCE < n_handles && arena.objects[handle + SWEEP_PREFETCH_DISTANCE])
+			__builtin_prefetch(arena.objects[handle + SWEEP_PREFETCH_DISTANCE]);
 		Object *obj = arena.objects[handle];
 		if (obj && obj->mark_epoch == interp->gc_epoch)
 			continue;
@@ -5609,7 +5604,10 @@ void free_one_object(Object *obj) {
 		case OBJECT_STRING: arena_free(obj->bytes); break;
 		case OBJECT_EXACT: arena_free(obj->exact.limbs); break;
 		case OBJECT_SET:
-		case OBJECT_ARRAY: arena_free(obj->items); break;
+		case OBJECT_ARRAY:
+			if (obj->items != obj->inline_items)
+				arena_free(obj->items);
+			break;
 		case OBJECT_FRAME: arena_free(obj->frame.keys); arena_free(obj->frame.values); break;
 		default: free_object_heap_backing(obj); break;
 	}
@@ -5833,6 +5831,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "matches?", p_matches, 0);
 	define_primitive(interp, "unify?", p_unify_keep, 0);
 	define_primitive(interp, "deref", p_deref, 0);
+	define_primitive(interp, "rest", p_rest, 0);
 	define_primitive(interp, "amb", p_amb, 0);
 	define_primitive(interp, "alloc-stats", p_alloc_stats, 0);
 	define_primitive(interp, ".", p_dot, 0);
@@ -5903,19 +5902,12 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, ">]", p_setclose, 0);
 	define_primitive(interp, "[", p_array_open, 0);
 	define_primitive(interp, "]", p_array_close, 0);
-	define_primitive(interp, "[(", p_list_open, 0);
-	define_primitive(interp, ")]", p_list_close, 0);
-	define_primitive(interp, "cons", p_cons, 0);
-	define_primitive(interp, "head-tail", p_head_tail, 0);
-	define_primitive(interp, "array>cons", p_array_to_cons, 0);
-	define_primitive(interp, "cons>array", p_cons_to_array, 0);
 	define_primitive(interp, "array>set", p_array_to_set, 0);
 	define_primitive(interp, "group-by", p_group_by, 0);
 
-	define_primitive(interp, "array", p_array, 0);
+	vocab.array_cfa = define_primitive(interp, "array", p_array, 0);
 	define_primitive(interp, "array-of", p_array_of, 0);
 	define_primitive(interp, "int-segment", p_int_segment, 0);
-	define_primitive(interp, "double-segment", p_double_segment, 0);
 	define_primitive(interp, "array>frame", p_array_to_frame, 0);
 	define_primitive(interp, "frame>array", p_frame_to_array, 0);
 	define_primitive(interp, "select-values", p_select_values, 0);
@@ -6013,6 +6005,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	load3_cfa = define_primitive(interp, "(load3)", p_load3, 4);
 	at_i_local0_cfa = define_primitive(interp, "(@i.l0)", p_at_i_local0, 4);
 	at_i_lit_cfa = define_primitive(interp, "(@i.lit)", p_at_i_lit, 4);
+	array_lit_cfa = define_primitive(interp, "(array.lit)", p_array_lit, 4);
 	at_i_lit_local0_cfa = define_primitive(interp, "(@i.lit.l0)", p_at_i_lit_local0, 4);
 	gather_local0_cfa = define_primitive(interp, "(gather.l0)", p_gather_local0, 4);
 	at_i_ll0_cfa = define_primitive(interp, "(@i.ll0)", p_at_i_ll0, 4);
@@ -6030,6 +6023,11 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	at_e_lit_cfa = define_primitive(interp, "(@e.lit)", p_at_e_lit, 4);
 	at_e_local0_cfa = define_primitive(interp, "(@e.l0)", p_at_e_local0, 4);
 	at_e_ll0_cfa = define_primitive(interp, "(@e.ll0)", p_at_e_ll0, 4);
+	at_e_lit_local0_cfa = define_primitive(interp, "(@e.lit.l0)", p_at_e_lit_local0, 4);
+	gather_e_local0_cfa = define_primitive(interp, "(gather.e.l0)", p_gather_e_local0, 4);
+	at_e_swap_l0_cfa = define_primitive(interp, "(@e.swap.l0)", p_at_e_swap_local0, 4);
+	at_e_depth_cfa = define_primitive(interp, "(@e.dd)", p_at_e_depth, 4);
+	at_e_depth_top_cfa = define_primitive(interp, "(@e.d)", p_at_e_depth_top, 4);
 	define_primitive(interp, "(!i.array)", p_store_i_array, 4);
 	define_primitive(interp, "(!i-drop.array)", p_store_i_drop_array, 4);
 	define_primitive(interp, "(size.len)", p_size_len, 4);

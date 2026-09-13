@@ -9,7 +9,7 @@
 [ 1 2 3 4 5 6 ] 2 3 matrix dup 0 0 @i,j swap 1 2 @i,j + .
 3 identity-matrix 0 0 @i,j .
 3 identity-matrix 0 1 @i,j . cr
-3 double-segment 10 0 !i 20 1 !i 30 2 !i 1 @i .
+3 int-segment 10.7 0 !i 0 @i .
 3 int-segment 7 0 !i 8 1 !i 9 2 !i 2 @i .
 
 cr \ @e / !e: flat row-major element read and store; !i,j: the (row,column) store.
@@ -38,8 +38,41 @@ fused-target 2 double-into  fused-target . cr        \ 4 at index 2 via (!e-drop
 2 2 0-matrix to fused-block
 fused-block corner-nine  fused-block . cr            \ 9 at (0,1) via (!i,j-drop)
 
+\ === fused reads: @e gets every fusion @i has, so a matrix reads as a flat buffer ===
+[ 10 20 30 40 ] vector to fused-vector
+[ 3 0 2 ] vector to fused-indices
+: element-two | m | m 2 @e ;
+' element-two see-compiled
+fused-vector element-two . cr                        \ 30 via (@e.lit.l0)
+
+: element-swap | m | m swap @e ;
+' element-swap see-compiled
+3 fused-vector element-swap . cr                     \ 40 via (@e.swap.l0)
+
+: element-over 1 pick swap @e ;
+' element-over see-compiled
+fused-vector 1 element-over . drop cr                \ 20 via (@e.d)
+
+: element-below 2 pick 2 pick @e ;
+' element-below see-compiled
+fused-vector 0 99 element-below . drop drop drop cr  \ 10 via (@e.dd)
+
+: gather-at | k | fused-vector fused-indices k @e @e ;
+' gather-at see-compiled
+0 gather-at . 1 gather-at . 2 gather-at . cr         \ 40 10 30 via (gather.e.l0)
+
+: bump-at | m i | m m i @e f1+ i !e drop ;
+' bump-at see-compiled
+fused-vector 1 bump-at fused-vector matrix>array . cr    \ [ 10 21 30 40 ] via (inc!i)
+
+: add-at | i d | fused-vector fused-vector i @e d f+ i !e drop ;
+' add-at see-compiled
+1 2.5 add-at fused-vector matrix>array . cr          \ [ 10 23.5 30 40 ] via (+!i)
+
 \ errors
 [ 1 2 3 ] vector 3 @e                       \ (element index out of bounds)
 [ 1 2 3 ] vector :x 1 !e                    \ (value must be a float or null)
 [ 1 2 3 4 ] 2 2 matrix 5 0 2 !i,j           \ (column index out of bounds)
 "x" 0 @e                                    \ (not a matrix)
+fused-vector 9 bump-at                      \ (element index out of bounds through (inc!i))
+2 int-segment 5 100 !i                      \ (segment index out of bounds)
