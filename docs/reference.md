@@ -2533,7 +2533,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `in?` | `( members values -- mask/binary )` | datasets.telic: membership by binary search — a scalar `values` answers 1 when it is a member of `members` (a set, array, or vector; a dimensioned vector contributes quantities, so units reconcile); an array answers an n×1 mask, a vector a mask of its shape, each element 1 when a member; a NaN or `null` answers 0. `[ 10 20 ] vector prices in? where select-rows` keeps the rows at listed prices | log m per element | `1m(n)`; a non-set `members` adds `1a(m)` + `1o`; a dimensioned `values` adds `2a(n)` | O(n log m), plus O(m log m) to build the set |
 | `array>set` | `( array -- set )` | Sort a copy of the array and dedup into a set; the source array is unchanged | n log n | `1o` + realloc | O(n log n) |
 | `set>array` | `( set -- arr )` | arrays.telic: the elements as an array in sorted order | 1 | `1o` | O(n) |
-| `group-by` | `( array col -- frame )` | Group an array of frames by their symbol-valued `col` into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted | n log n | frame + sets | O(n log n) |
+| `group-by` | `( array key -- frame )` | arrays.telic: group elements into a frame from each symbol to the set of elements under it. The key's type chooses the path: a symbol names a field read from each element frame, grouped in one sorted pass in C; an execution token `( element -- sym )` computes each element's group symbol | symbol n log n; xt n·(xt + log n) | frame + sets | symbol O(n log n); xt O(n·xt + n log n) |
 | `size` | `( coll -- n )` | Element count: set/array members, **codepoints** of a string, pair count of a frame; a string's codepoint count is computed on first use and memoized on the object | 2 | none | O(1); a string's first `size` is O(n) |
 | `byte-size` | `( str -- n )` | Byte length of a string | 2 | none | O(1) |
 
@@ -2606,9 +2606,11 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 
 ```forth group-by
 [ { :name "ann" :team :red } { :name "bo" :team :blue } { :name "cy" :team :red } ] :team group-by /red @ size . cr
+[ 1 2 3 4 ] [: 2 mod 0= if :even else :odd then :] group-by frame>array . cr
 ```
 ```output
 2
+[ :even [< 2 4 >] :odd [< 1 3 >] ]
 ```
 
 ```forth size
@@ -2654,7 +2656,7 @@ Sorted `Val` arrays with binary-search insertion; equality is structural. `+`/`*
 | `assoc` | `( entries key -- value )` | core.telic: the value paired with `key`, the first match by structural equality (so tuple arrays, frames and pairs serve as keys, `1` and `"1"` are distinct, quantities match within a dimension, `null` is a key). The entries are `[ key value ]` arrays, `first` the key and `second` the value, as `count`, `group-indices` and `split-by` answer them. A missing key answers `null`, as a stored `null` value does | 3 + entries scanned | none | O(n) |
 | `skip` | `( arr n -- arr )` | arrays.telic: all but the first n elements | 3n | 3×`1a(n)` | O(n) |
 | `sort` | `( arr/set/v -- arr/v )` | Sorted copy: an array orders ascending in natural order; a set projects its already-ordered elements to an array; an nx1 or 1xn vector sorts ascending with NaNs last (other matrix shapes error) | 1 + n log n | `1a(n)` / `1m(n)` | O(n log n); vectors above 8k elements O(n) radix |
-| `flatten-array` | `( arr -- arr )` | Flatten one level; returns the input unchanged if no element is itself an array | 1 + m | `1a(m)` | O(m) |
+| `flatten` | `( arr/mat -- arr/mat )` | arrays.telic: one dimension. An array answers its elements with every nested array spliced in, recursively; a flat array answers itself unchanged. A matrix answers the same elements as a 1×(r·c) row | 1 + m | `1a(m)`; matrix `1m(1×r·c)` | O(m) |
 | `sample` | `( arr/set count repl -- arr )` | Draw `count` elements; `repl` truthy = with replacement, else without (count ≤ len) | 3 + n | `1a(count)` (+ `malloc(n)` without replacement) | O(n) |
 | `shuffle` | `( arr -- arr )` | datasets.telic: new array, elements uniformly permuted; input untouched | 3 + n | as `sample` | O(n) |
 | `resample` | `( arr/set -- arr )` | datasets.telic: same-size draw with replacement (the bootstrap draw); input untouched | 3 + n | `1a(n)` | O(n) |
@@ -2802,11 +2804,13 @@ null
 [ 1 2 3 ]
 ```
 
-```forth flatten-array
-[ [ 1 2 ] [ 3 ] ] flatten-array . cr
+```forth flatten
+[ [ 1 2 ] [ 3 [ 4 ] ] ] flatten . cr
+[ 1 2 3 4 ] 2 2 matrix flatten dim swap . . cr
 ```
 ```output
-[ 1 2 3 ]
+[ 1 2 3 4 ]
+1 4
 ```
 
 ```forth sample
@@ -2854,7 +2858,7 @@ Symbol-keyed sorted maps; binary-search lookup. A **path** is an array of steps;
 | `name!key` | `( val -- )` | Set in one token, dropping the frame `!` returns: `99 row!price` stores 99 at `:price` in `row`'s frame and leaves the stack empty. The left part resolves as a local, else a defined word, supplying the frame; an empty left part takes the frame from above the value, `( val fr -- )`. A chain may end in a set — `row@address!city` — but only its last step may, since a set leaves no frame to walk | 2 + log n | none | O(log n) |
 | `@or` | `( fr sym/path fallback -- val )` | Get by key or path, the fallback when absent in one probe, no error on miss; the fallback is already evaluated, so it suits values, not expensive computations | 4 + d log n | none | O(d log n) |
 | `!` | `( fr val sym/path -- fr )` | Set by key or path, vivifying intermediates; mutates fr; errors on a search path. Writes take the address last, so the value is computed first and the destination named beside the word | d log n | realloc on growth; `1o` per vivified frame | O(d log n) amortized |
-| `has?` | `( fr sym/path -- bool )` | Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string `( str pat -- bool )`, true if regex `pat` matches anywhere | 3 + d log n | none | O(d log n) |
+| `has?` | `( fr sym/path -- bool )` | Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a set `( set v -- bool )`, membership by binary search in natural order (`in?` is the mask-producing form); on a string `( str pat -- bool )`, true if regex `pat` matches anywhere | 3 + d log n | none | O(d log n) |
 | `delete-at` | `( fr sym/path -- fr )` | Remove a key (errors if absent or on a search path); mutates fr | n | none | O(n) |
 | `rename-key!` | `( fr old new -- fr )` | core.telic: move the value at key `old` to key `new` in place and leave fr — a dataset column renames the same way (`ds :price :cost rename-key!`); `old` absent errors, an existing `new` is overwritten; keys stay in symbol-id order | 2n | none | O(n) |
 | `update-at` | `( fr xt sym/path -- fr )` | Apply xt to the value at the key, store the result back; errors on a search path | d log n + xt | none | O(d log n + xt) |
@@ -2922,10 +2926,10 @@ Symbol-keyed sorted maps; binary-search lookup. A **path** is an array of steps;
 ```
 
 ```forth has?
-{ :a 1 } :a has? . { :a 1 } :b has? . cr
+{ :a 1 } :a has? . { :a 1 } :b has? . [< 1 2 >] 2 has? . "abc" "b+" has? . cr
 ```
 ```output
-1 0
+1 0 1 1
 ```
 
 ```forth delete-at
@@ -3195,7 +3199,6 @@ Row-major `double` storage. `r` rows, `c` columns.
 | `reshape` | `( mat r c -- mat' )` | Same elements, new shape (must match); memcpy | 3 + r×c | `1m(r×c)` | O(r×c) |
 | `transpose` | `( mat -- mat' )` | Rows/columns swapped | 1 + r×c | `1m(c×r)` | O(r×c) |
 | `diagonal` | `( mat -- mat' )` | Diagonal as a 1×min(r,c) matrix | 1 + min(r,c) | `1m(1×min)` | O(min(r,c)) |
-| `flatten` | `( mat -- mat' )` | matrix.telic: the same elements as a 1×(r·c) matrix | r×c | `1m(1×r·c)` | O(r×c) |
 | `as-column` | `( v -- v' )` | matrix.telic: any vector shape as n×1 | r×c | `1m(n×1)` | O(n) |
 | `matrix>array` | `( mat -- arr )` | The elements as an array in row-major order: floats from a bare matrix; a dimensioned matrix yields one quantity per element in its unit; a NaN element becomes `null` either way | 1 + r×c | `1a(r×c)`; dimensioned + 1 pair per non-NaN element | O(r×c) |
 | `num-elements` | `( mat -- n )` | matrix.telic: the element count, rows × columns | 5 | none | O(1) |
@@ -3263,13 +3266,6 @@ Row-major `double` storage. `r` rows, `c` columns.
 ```
 ```output
 [ 1 4 ]
-```
-
-```forth flatten
-[ 1 2 3 4 ] 2 2 matrix flatten dim swap . . cr
-```
-```output
-1 4
 ```
 
 ```forth as-column
@@ -4405,7 +4401,6 @@ The quotation/predicate cost dominates; `xt` denotes one call.
 | `flat-map` | `( items xt -- arr )` | arrays.telic: xt returns an array per element, results concatenated | n·xt + total | `1a(n)` + `1a(total)` | O(n·xt + total) |
 | `sort-by` | `( items xt -- arr )` | arrays.telic: sorted by the key xt `( element -- key )` extracts, one evaluation per element; equal keys keep index order | n·xt + n log n | 3×`1a(n)` + `malloc(4n)` | O(n·xt + n log n) |
 | `partition` | `( items pred -- matches rest )` | arrays.telic: the elements satisfying pred and the others, one pass, input order kept | n·xt | 2 arrays + the curried predicate token | O(n·xt) |
-| `group-with` | `( items xt -- fr )` | arrays.telic: group elements into `{ key → set }` by the symbol key xt `( element -- sym )` computes | n·(xt + log n) | frame + sets | O(n·xt + n log n) |
 
 ```forth map
 [ 1 2 3 ] [: dup * :] map . cr
@@ -4517,13 +4512,6 @@ ho ho ho
 ```
 ```output
 [ 2 4 ] [ 1 3 ]
-```
-
-```forth group-with
-[ 1 2 3 4 ] [: 2 mod 0= if :even else :odd then :] group-with frame>array . cr
-```
-```output
-[ :even [< 2 4 >] :odd [< 1 3 >] ]
 ```
 
 ### Parallel

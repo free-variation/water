@@ -354,8 +354,7 @@ const HelpEntry help_entries[] = {
 	{ "fit-weighted-linear", "( X y w -- beta )", "Weighted least squares: each row of X and y scaled by √wᵢ, then ordinary least squares, so a weight of 2 equals the row appearing twice; unit weights give fit-linear's answer", NULL, NULL, NULL, 39 },
 	{ "fit-xgb", "( X y fit-params -- booster )", "Train an XGBoost booster on features X (n×k) and response y (n×1); fit-params are keyed by xgboost parameter name, :rounds drives the boosting loop (default 100). Native-only (libxgboost via FFI)", NULL, NULL, NULL, 42 },
 	{ "flat-map", "( items xt -- arr )", "arrays.telic: xt returns an array per element, results concatenated", "n·xt + total", "1a(n) + 1a(total)", "O(n·xt + total)", 25 },
-	{ "flatten", "( mat -- mat' )", "matrix.telic: the same elements as a 1×(r·c) matrix", "r×c", "1m(1×r·c)", "O(r×c)", 20 },
-	{ "flatten-array", "( arr -- arr )", "Flatten one level; returns the input unchanged if no element is itself an array", "1 + m", "1a(m)", "O(m)", 16 },
+	{ "flatten", "( arr/mat -- arr/mat )", "arrays.telic: one dimension. An array answers its elements with every nested array spliced in, recursively; a flat array answers itself unchanged. A matrix answers the same elements as a 1×(r·c) row", "1 + m", "1a(m); matrix 1m(1×r·c)", "O(m)", 16 },
 	{ "fln", "( a -- ln a ) ⚠", "natural log, in place", "1", "none", "O(1)", 1 },
 	{ "fln1+", "( a -- ln(1+a) ) ⚠", "log1p, in place — natural log of 1+a, accurate for small a", "1", "none", "O(1)", 1 },
 	{ "float>exact", "( f -- x )", "The float's exact value — every float is an integer divided by a power of two, so nothing is lost; errors on NaN or an infinity. An exact passes through unchanged", "limbs", "1o", "O(limbs)", 6 },
@@ -398,11 +397,10 @@ const HelpEntry help_entries[] = {
 	{ "gpd-draw", "( shape scale -- draw )", "one exceedance drawn from the generalized-Pareto tail (shape, scale) by inverse-transform sampling of a uniform [0, 1) variate on the shared RNG stream, so seed fixes the sequence", NULL, NULL, NULL, 44 },
 	{ "gpd-fit", "( exceedances -- shape scale )", "maximum-likelihood generalized Pareto (GPD) fit to a vector of threshold exceedances — four refining rounds of a 9×9 grid over (shape, ln scale), reaching about [−0.8, 1.4] in shape at a resolution of 0.02, so a returned shape at either endpoint is the grid boundary, not an optimum", NULL, NULL, NULL, 44 },
 	{ "gpd-quantile", "( shape scale p -- q )", "the generalized-Pareto quantile — scale/shape · ((1−p)^−shape − 1), and the exponential limit −scale · ln(1−p) when |shape| < 1e-9; errors unless p is in [0, 1)", NULL, NULL, NULL, 44 },
-	{ "group-by", "( array col -- frame )", "Group an array of frames by their symbol-valued col into a frame from each value to a set of the matching rows; one sorted pass, distinct values sorted", "n log n", "frame + sets", "O(n log n)", 15 },
+	{ "group-by", "( array key -- frame )", "arrays.telic: group elements into a frame from each symbol to the set of elements under it. The key's type chooses the path: a symbol names a field read from each element frame, grouped in one sorted pass in C; an execution token ( element -- sym ) computes each element's group symbol", "symbol n log n; xt n·(xt + log n)", "frame + sets", "symbol O(n log n); xt O(n·xt + n log n)", 15 },
 	{ "group-indices", "( column -- pairs )", "datasets.telic: [ [ value [indices] ] … ] per distinct value in natural order — each index array holds the value's row positions, ascending; a numeric column's NaN group orders last, a text column's null group first", "2n log n", "permutation + one pair and array per value", "O(n log n)", 24 },
-	{ "group-with", "( items xt -- fr )", "arrays.telic: group elements into { key → set } by the symbol key xt ( element -- sym ) computes", "n·(xt + log n)", "frame + sets", "O(n·xt + n log n)", 25 },
 	{ "halt", "( code -- )", "Exit the process with the given code as its exit status", "—", "—", "—", 30 },
-	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a string ( str pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)", 17 },
+	{ "has?", "( fr sym/path -- bool )", "Existence test for a frame key or path, no error on miss; a search path is true if any node matches (short-circuits at the first); on a set ( set v -- bool ), membership by binary search in natural order (in? is the mask-producing form); on a string ( str pat -- bool ), true if regex pat matches anywhere", "3 + d log n", "none", "O(d log n)", 17 },
 	{ "head", "( dataset -- )", "datasets.telic: print the first 10 rows as an aligned table, columns alphabetical by name", "r·c", "rendered cells", "O(r·c)", 24 },
 	{ "headn", "( dataset n leading-columns -- )", "datasets.telic: print the first min(n, rows) rows as an aligned table — the leading-columns symbols appear first in the given order, the remaining columns alphabetical by name (an empty leading-columns orders every column alphabetically); column names as the header line, two-space gutter, numeric/quantity columns right-aligned, text left, :datetime columns as ISO time strings, other cells in their default rendering; empty dataset prints nothing", "r·c", "rendered cells", "O(r·c)", 24 },
 	{ "help", "( \"name\" -- )", "repl.telic: parse the next word and print its reference entry, or the entry man builds from the comment above a loaded definition; bare help (no name on the line) prints a starter cheat sheet, and an unknown name prints unknown word: <name> without erroring", "dict scan + log n", "1o + strings + print", "O(|dict|)", 30 },
@@ -804,7 +802,7 @@ const HelpEntry help_entries[] = {
 	{ "~", "( a b -- term )", "Unify a and b, binding logic vars (recorded on the trail) so the two match, then leave the dereffed left term; atoms by value, arrays element-wise with a trailing rest pattern taking the remaining elements, frames as open records; _ on either side matches anything and binds nothing; on a mismatch, fails", "n", "none", "O(n)", 28 },
 };
 
-const int help_entry_count = 747;
+const int help_entry_count = 745;
 
 const HelpExample help_examples[] = {
 	{ "!", "{ } 5 /a/b ! /a/b @ . cr", "5" },
@@ -1107,8 +1105,7 @@ const HelpExample help_examples[] = {
 	{ "fit-weighted-linear", "\"statistics\" load-library\n[ 1 1 1 2 1 3 ] 3 2 matrix [ 1 2 4 ] vector [ 2 1 1 ] vector fit-weighted-linear matrix>array . cr", "[ -0.545455 1.45455 ]" },
 	{ "fit-xgb", "\"statistics\" load-library\n[ 0 1 2 3 4 5 6 7 ] 8 1 matrix [ 0 1 2 3 4 5 6 7 ] vector { :rounds 5 :nthread 1 } fit-xgb dup ptr? . xgb-free cr", "1" },
 	{ "flat-map", "[ 1 2 ] [: dup 1 + 2 array :] flat-map . cr", "[ 1 2 2 3 ]" },
-	{ "flatten", "[ 1 2 3 4 ] 2 2 matrix flatten dim swap . . cr", "1 4" },
-	{ "flatten-array", "[ [ 1 2 ] [ 3 ] ] flatten-array . cr", "[ 1 2 3 ]" },
+	{ "flatten", "[ [ 1 2 ] [ 3 [ 4 ] ] ] flatten . cr\n[ 1 2 3 4 ] 2 2 matrix flatten dim swap . . cr", "[ 1 2 3 4 ]\n1 4" },
 	{ "fln", "E fln . cr", "1" },
 	{ "fln1+", "0 fln1+ . 1e-15 fln1+ . cr", "0 1e-15" },
 	{ "float>exact", "0.5 float>exact . cr\n0.1 float>exact denominator . cr", "1/2\n36028797018963968" },
@@ -1151,11 +1148,10 @@ const HelpExample help_examples[] = {
 	{ "gpd-draw", "\"statistics\" load-library\n42 seed\n0.25 2 gpd-draw . cr\n0.25 2 gpd-draw . cr", "0.177111\n1.01184" },
 	{ "gpd-fit", "\"statistics\" load-library\n[ 0.2 0.5 0.9 1.4 2.1 3.5 6.0 12.0 ] vector gpd-fit\nswap \"shape {0}\" format . cr\n\"scale {0}\" format . cr", "shape 0.225\nscale 2.63029" },
 	{ "gpd-quantile", "\"statistics\" load-library\n0.2 1.5 0.9 gpd-quantile . cr\n0 2 0.5 gpd-quantile . cr", "4.3867\n1.38629" },
-	{ "group-by", "[ { :name \"ann\" :team :red } { :name \"bo\" :team :blue } { :name \"cy\" :team :red } ] :team group-by /red @ size . cr", "2" },
+	{ "group-by", "[ { :name \"ann\" :team :red } { :name \"bo\" :team :blue } { :name \"cy\" :team :red } ] :team group-by /red @ size . cr\n[ 1 2 3 4 ] [: 2 mod 0= if :even else :odd then :] group-by frame>array . cr", "2\n[ :even [< 2 4 >] :odd [< 1 3 >] ]" },
 	{ "group-indices", "[ :x :y :x ] group-indices . cr", "[ [ :x\n    [ 0 2 ] ]\n  [ :y\n    [ 1 ] ] ]" },
-	{ "group-with", "[ 1 2 3 4 ] [: 2 mod 0= if :even else :odd then :] group-with frame>array . cr", "[ :even [< 2 4 >] :odd [< 1 3 >] ]" },
 	{ "halt", "3 halt", "" },
-	{ "has?", "{ :a 1 } :a has? . { :a 1 } :b has? . cr", "1 0" },
+	{ "has?", "{ :a 1 } :a has? . { :a 1 } :b has? . [< 1 2 >] 2 has? . \"abc\" \"b+\" has? . cr", "1 0 1 1" },
 	{ "head", "[ [ \"name\" \"age\" ] [ \"ann\" 34 ] [ \"bo\" 25 ] ] true rows>dataset head", "age  name\n 34  ann\n 25  bo" },
 	{ "headn", "[ [ \"name\" \"age\" ] [ \"ann\" 34 ] [ \"bo\" 25 ] ] true rows>dataset 1 [ :name ] headn", "name  age\nann    34" },
 	{ "help", "help nip", "nip ( a b -- b )\n  Drop the second item, keeping the top\n  ops 1, alloc none, O(1)\n\n  > 1 2 nip . cr\n  2" },
@@ -1557,4 +1553,4 @@ const HelpExample help_examples[] = {
 	{ "~", "[ 1 2 ] [ 1 2 ] ~ . cr", "[ 1 2 ]" },
 };
 
-const int help_example_count = 748;
+const int help_example_count = 746;

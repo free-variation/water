@@ -5903,7 +5903,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "[", p_array_open, 0);
 	define_primitive(interp, "]", p_array_close, 0);
 	define_primitive(interp, "array>set", p_array_to_set, 0);
-	define_primitive(interp, "group-by", p_group_by, 0);
+	define_primitive(interp, "(group-by)", p_group_by, 4);
 
 	vocab.array_cfa = define_primitive(interp, "array", p_array, 0);
 	define_primitive(interp, "array-of", p_array_of, 0);
@@ -5918,7 +5918,7 @@ int construct_vocabulary(Interpreter *interp, int load_lib) {
 	define_primitive(interp, "take", p_take, 0);
 	define_primitive(interp, "reverse", p_reverse, 0);
 	define_primitive(interp, "concat", p_concat, 0);
-	define_primitive(interp, "flatten-array", p_flatten_array, 0);
+	define_primitive(interp, "(flatten-array)", p_flatten_array, 4);
 	define_primitive(interp, "sort", p_sort, 0);
 	define_primitive(interp, "argsort", p_argsort, 0);
 	define_primitive(interp, "sample", p_sample, 0);

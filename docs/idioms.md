@@ -297,7 +297,7 @@ quotation forms — for the top level, for an xt in hand, and for map-folds.
 `map`, `filter`, `reduce`, and `each` are the default way over a collection;
 an explicit loop appears only when the body needs an index or writes the
 enclosing word's locals. The derived family — `find-first`, `any?`, `all?`,
-`sort-by`, `partition`, `flat-map`, `group-with`, `nmap` — keeps common
+`sort-by`, `partition`, `flat-map`, `group-by`, `nmap` — keeps common
 traversals to one word each (`find-first` and `any?` short-circuit).
 
 - A named word passes by tick where a quotation would only wrap it:
@@ -660,7 +660,7 @@ How values reach a quotation body, beyond its own locals.
 - `>side … side>` carries a value across code that owns the stack: a handler
   across `catch` (`try-catch`), a shared FFI handle across a block of
   definitions (lib/statistics.telic), a key xt under a fold via `side-peek`
-  (`group-with`).
+  (`group-by` with an xt key).
 
 - Extend a word by type without breaking early binding: capture the old xt in
   a constant, redefine with a type test in front (datasets.telic does this for

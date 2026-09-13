@@ -34,8 +34,17 @@ inline
 ( items pred -- flag ) \ do all elements satisfy pred?
 : all? map 1 ' * reduce ;
 
+( arr/mat -- arr/mat ) \ one dimension: an array with every nested array spliced
+\ in, recursively (a flat array answers itself); a matrix as a 1x(r*c) row
+: flatten
+	dup array? if (flatten-array) exit then
+	dup matrix? over quantity? or not if
+		type-of "expected an array or matrix; got {0}" format throw
+	then
+	dup dim * 1 swap reshape ;
+
 ( items xt -- items' ) \ xt maps an element to an array; results concatenated
-: flat-map map flatten-array ;
+: flat-map map flatten ;
 inline
 
 
@@ -52,9 +61,14 @@ inline
 	-rot [: execute not :] curry 
 	filter ;
 
-( items xt -- frame ) \ group elements into { key -> set } by the symbol key
-\ xt ( element -- sym ) computes; the quotation-keyed kin of group-by
-: group-with
+( items key -- frame ) \ group elements into { sym -> set }: a symbol key names the
+\ field read from each element frame (one sorted pass in C); an xt key
+\ ( element -- sym ) computes each element's group symbol
+: group-by
+	dup symbol? if (group-by) exit then
+	dup xt? not if
+		type-of "expected a symbol or execution token key; got {0}" format throw
+	then
 	>side
 	{ }
 	[:

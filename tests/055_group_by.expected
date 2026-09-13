@@ -12,5 +12,5 @@
 2 
 2 
 1 
-error: expected a symbol; got a float
-in group-by
+error: uncaught exception: "expected a symbol or execution token key; got float"
+in throw ← group-by

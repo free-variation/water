@@ -187,13 +187,13 @@ clear
 clear [ 1 2 3 ] concat
 clear concat
 
-\ flatten-array: deep flatten of nested arrays; a flat array returns unchanged
-[ 1 2 3 ] flatten-array .                      \ already flat -> as-is
-[ [ 1 2 ] [ 3 ] [ 4 5 6 ] ] flatten-array .    \ array of arrays
-[ 1 [ 2 3 ] 4 ] flatten-array .                \ mixed scalars and arrays
-[ [ 1 [ 2 3 ] ] [ 4 ] ] flatten-array .        \ deeply nested
-[ ] flatten-array .                            \ empty
-5 flatten-array                                \ non-array argument errors
+\ flatten: deep flatten of nested arrays; a flat array returns unchanged
+[ 1 2 3 ] flatten .                      \ already flat -> as-is
+[ [ 1 2 ] [ 3 ] [ 4 5 6 ] ] flatten .    \ array of arrays
+[ 1 [ 2 3 ] 4 ] flatten .                \ mixed scalars and arrays
+[ [ 1 [ 2 3 ] ] [ 4 ] ] flatten .        \ deeply nested
+[ ] flatten .                            \ empty
+5 flatten                                \ non-array argument errors
 
 clear
 \ sort ( arr -- arr ): a NEW array ordered by the system total order (val_cmp) —

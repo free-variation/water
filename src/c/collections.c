@@ -668,7 +668,7 @@ for (int i = 0; i < source->len; i++) {
 void p_flatten_array(DISPATCH_ARGS) {
 	REQUIRE_STACK_DEPTH(interp, chain_ip, chain_sp, 1);
 	Val arrays_val = chain_sp[-1];
-	REQUIRE_CHAIN_TAG(arrays_val, T_ARRAY, "flatten-array", "an array");
+	REQUIRE_CHAIN_TAG(arrays_val, T_ARRAY, "flatten", "an array");
 	Object *arrays = OBJECT_AT(VAL_DATA(arrays_val));
 
 	int has_nested = 0;
@@ -1523,6 +1523,15 @@ void p_has(DISPATCH_ARGS) {
 		FRAME_LOOKUP(lookup_frame, VAL_DATA(chain_sp[-1]), at, present);
 		(void)at;
 		chain_sp[-2] = make_bool(present);
+		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
+	}
+
+	if (VAL_TAG(chain_sp[-2]) == T_SET) {
+		int member = set_member(interp, (int)VAL_DATA(chain_sp[-2]), chain_sp[-1]);
+		if (interp->error_flag)
+			return;
+		chain_sp[-2] = make_bool(member);
+
 		DISPATCH_REGISTERS(interp, chain_ip, chain_sp - 1);
 	}
 

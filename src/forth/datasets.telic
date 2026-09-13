@@ -654,7 +654,7 @@
 	rows period % drop if
 		rows period "repeat-column!: {1} rows is not a multiple of {0}" format throw
 	then
-	dataset cells rows period / array-of flatten-array column-from-cells column-name ! ;
+	dataset cells rows period / array-of flatten column-from-cells column-name ! ;
 
 ( dataset unit-xt sym -- dataset ) \ set the named column's unit, replacing any
 \ existing one: strips with magnitude, then applies the unit word (' m). In place,

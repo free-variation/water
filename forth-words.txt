@@ -298,7 +298,6 @@ fit-weighted-linear
 fit-xgb
 flat-map
 flatten
-flatten-array
 fln
 fln1+
 float>exact
@@ -343,7 +342,6 @@ gpd-fit
 gpd-quantile
 group-by
 group-indices
-group-with
 halt
 has?
 head

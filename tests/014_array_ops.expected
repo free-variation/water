@@ -39,8 +39,8 @@ error: stack underflow
 in concat
 error: stack underflow
 in concat
-[ 1 2 3 ] [ 1 2 3 4 5 6 ] [ 1 2 3 4 ] [ 1 2 3 4 ] [ ] error: expected an array; got a float
-in flatten-array
+[ 1 2 3 ] [ 1 2 3 4 5 6 ] [ 1 2 3 4 ] [ 1 2 3 4 ] [ ] error: uncaught exception: "expected an array or matrix; got float"
+in throw ← flatten
 [ 1 1 2 3 3 ] 
 [ 1 2 3 4 5 ] 
 [ -5 -5 -2 0 1.5 3.5 ] 

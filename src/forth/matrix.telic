@@ -12,9 +12,6 @@
 ( m -- n ) \ rows times columns
 : num-elements dim * ; inline
 
-( m -- 1xN-matrix )
-: flatten dup dim * 1 swap reshape ;
-
 ( m -- mean ) \ mean of the non-NaN elements
 : mean
 	dup nonmissing-count dup 0= if "all elements are NaN (missing)" throw then

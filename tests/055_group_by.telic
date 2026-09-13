@@ -34,6 +34,6 @@ dup :z @ size . cr                             \ 2
 dup :a @ size . cr                             \ 2
 :m @ size . cr                                 \ 1
 
-\ === a non-symbol column is rejected ===
+\ === a key that is neither a symbol nor an xt is rejected ===
 [ { :id 1 } ] 5 group-by
 bye

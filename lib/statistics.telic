@@ -482,7 +482,7 @@ drop
 ( train-units xy lambda -- beta ) \ ridge fit on the drawn units' rows of [1|X|y]
 : cv-ridge-fit
 	| xy lambda |
-	flatten-array xy swap select-rows to rows
+	flatten xy swap select-rows to rows
 	rows n-columns 1 - to n-predictors
 	rows 0 rows n-rows 0 n-predictors submatrix
 	rows n-predictors @j
@@ -491,7 +491,7 @@ drop
 ( beta test-units xy -- dev ) \ mean held-out deviance of beta
 : cv-ridge-score
 	| beta test xy |
-	test flatten-array xy swap select-rows to rows
+	test flatten xy swap select-rows to rows
 	rows n-columns 1 - to n-predictors
 	1 rows 0 rows n-rows 0 n-predictors submatrix beta
 	0 rows n-rows 1 0-matrix dgemm-nn sigmoid to p
@@ -517,7 +517,7 @@ drop
 			fold 0 @i fold 1 @i xy lambda
 			' cv-ridge-cell curry curry curry curry :]
 		map :]
-	map flatten-array
+	map flatten
 	' execute mapper execute
 	vector lambdas size n-folds reshape row-means to losses
 	{ :lambdas lambdas

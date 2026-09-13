@@ -340,14 +340,14 @@ A thread-local xoshiro256\*\* stream. Each worker thread derives its own stream 
 
 ### Sets, arrays, higher-order
 
-- **Set literals** — `[< 1 2 3 >]`, set operations, `in?` (membership of a scalar, or an element-wise mask of an array or vector), `size`, in-place `set-add!`/`set-remove!`, and `array>set` (sort-and-dedup an array into a set in one pass).
-- **`group-by`** — `array :col group-by` groups frames by a symbol field into a frame from each value to a set of rows.
+- **Set literals** — `[< 1 2 3 >]`, set operations, `has?` (membership), `in?` (an element-wise membership mask of an array or vector), `size`, in-place `set-add!`/`set-remove!`, and `array>set` (sort-and-dedup an array into a set in one pass).
+- **`group-by`** — `array :col group-by` groups frames by a symbol field into a frame from each value to a set of rows; an execution token key computes each element's group symbol instead.
 - **Array literals** — `[ 1 2 3 ]`, `array` to gather N from the stack, `array-of` to fill, `range` and `iota` for integer sequences, `@i` and `!i` to read and store by index.
-- **Array operations** — `sort`, `reverse`, `take`, `concat`, `flatten-array`, `sample` (with or without replacement), `shuffle`, `resample` (the bootstrap draw), and `first`/`second`.
+- **Array operations** — `sort`, `reverse`, `take`, `concat`, `flatten`, `sample` (with or without replacement), `shuffle`, `resample` (the bootstrap draw), and `first`/`second`.
 - **Growing at the end** — `add-last!` and `remove-last!` over a doubling buffer, both amortized O(1) with indexing still O(1).
 - **Map, fold, zip-map, filter** — `map` for a single source, `reduce` for a left fold over a collection, `nmap` for N-ary zip, `filter` to select by predicate, with anonymous quotations as the higher-order argument.
 - **Counted map-fold** — `fold-times` folds over an index range with no collection, the accumulator staying off the data stack; `sum-times` and `product-times` are the common defaults and `pmap-reduce` the parallel form.
-- **Search, traversal, and reshaping** — `find-first` (short-circuits), `any?` / `all?`, `each` for side effects, `flat-map`, `sort-by` on an extracted key, `partition`, and `group-with` for grouping by a computed key.
+- **Search, traversal, and reshaping** — `find-first` (short-circuits), `any?` / `all?`, `each` for side effects, `flat-map`, `sort-by` on an extracted key, and `partition`.
 - **Destructuring** — `spread` pushes a set/array/frame's elements onto the stack (a frame as alternating symbol/value); a locals head, `unify`, or a `case` pattern receives the pieces by name.
 - **In-place slicing** — `slice!` copies a strided run from one array into another (a negative step with source and target aligned reverses in place), `to-slice!` stores values from the stack into a range.
 
